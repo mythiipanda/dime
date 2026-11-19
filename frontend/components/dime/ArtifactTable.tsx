@@ -1,27 +1,21 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp } from "lucide-react";
+import { Button } from "@/components/ds/Button";
 
 export type ArtifactColumn = { key: string; label: string; numeric?: boolean };
 
-function Chevron({ dir }: { dir: 1 | -1 }) {
-  return (
-    <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden
-      style={{ transform: dir === 1 ? "rotate(180deg)" : "none", transition: "transform 150ms cubic-bezier(0.16,1,0.3,1)" }}>
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}
-
-export default function ArtifactTable<T extends (string | number)[]>({
+export default function ArtifactTable<T extends (string | number | null)[]>({
   columns,
   rows,
   renderCell,
+  title = "Evidence table",
 }: {
   columns: ArtifactColumn[];
   rows: T[];
   renderCell?: (row: T, col: number) => ReactNode;
+  title?: string;
 }) {
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
 
@@ -31,6 +25,8 @@ export default function ArtifactTable<T extends (string | number)[]>({
     arr.sort((ra, rb) => {
       const va = ra[sort.col];
       const vb = rb[sort.col];
+      if (va == null || va === "") return vb == null || vb === "" ? 0 : 1;
+      if (vb == null || vb === "") return -1;
       const cmp =
         typeof va === "number" && typeof vb === "number"
           ? va - vb
@@ -48,24 +44,27 @@ export default function ArtifactTable<T extends (string | number)[]>({
     );
 
   const cell = (row: T, i: number): ReactNode =>
-    renderCell ? renderCell(row, i) : String(row[i]);
+    renderCell ? renderCell(row, i) : row[i] == null || row[i] === "" ? <span aria-label="Not available" className="text-ink-3">—</span> : String(row[i]);
 
   return (
+    <div>
+    <div role="region" aria-label={`${title} records`} tabIndex={0} className="max-h-[420px] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-ink">
     <table className="w-full text-[13px]">
+      <caption className="sr-only">{title}</caption>
       <thead className="sticky top-0 z-10 bg-surface">
         <tr className="border-b border-line">
           {columns.map((c, i) => (
-            <th key={c.key} className={`p-0 text-[13px] font-medium ${i === 0 ? "pl-4" : "pl-3"} ${i === columns.length - 1 ? "pr-4" : "pr-3"}`}>
-              <button
-                type="button"
+            <th key={c.key} scope="col" aria-sort={sort?.col === i ? sort.dir === 1 ? "ascending" : "descending" : "none"} className={`p-0 text-[13px] font-medium ${i === 0 ? "pl-4" : "pl-3"} ${i === columns.length - 1 ? "pr-4" : "pr-3"}`}>
+              <Button
+                variant="quiet" size="sm"
                 onClick={() => toggle(i)}
-                className={`flex h-[32px] w-full items-center gap-1 transition-colors duration-100 hover:text-ink ${
+                className={`w-full gap-1 whitespace-nowrap rounded-none px-0 ${
                   c.numeric ? "justify-end tabular-nums" : "justify-start"
                 } ${sort?.col === i ? "text-ink" : "text-ink-2"}`}
               >
                 {c.label}
-                {sort?.col === i && <Chevron dir={sort.dir} />}
-              </button>
+                {sort?.col === i && (sort.dir === 1 ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />)}
+              </Button>
             </th>
           ))}
         </tr>
@@ -77,8 +76,9 @@ export default function ArtifactTable<T extends (string | number)[]>({
               <td
                 key={c.key}
                 className={`${i === 0 ? "pl-4" : "pl-3"} ${i === columns.length - 1 ? "pr-4" : "pr-3"} ${
-                  c.numeric ? "text-right font-mono tabular-nums" : ""
+                  c.numeric ? "text-right tabular-nums" : ""
                 }`}
+                style={{ overflowWrap: "anywhere", minWidth: 88 }}
               >
                 {cell(row, i)}
               </td>
@@ -86,6 +86,8 @@ export default function ArtifactTable<T extends (string | number)[]>({
           </tr>
         ))}
       </tbody>
-    </table>
+    </table></div>
+    <p className="border-t border-line px-4 py-2 text-xs text-ink-3">{rows.length} {rows.length === 1 ? "record" : "records"}{rows.length === 0 && ". No records available. Adjust the query or choose another season."}</p>
+    </div>
   );
 }

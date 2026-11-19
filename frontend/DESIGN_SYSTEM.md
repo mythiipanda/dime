@@ -67,6 +67,8 @@ even when a reference suggests custom animation.
 | Evidence table | `components/ds/RecordsTable` | Named scroll region, caption, scoped column headings, right-aligned numbers, honest missing values, count, source footer and meaningful empty state. Units belong in headings or source text. |
 | Status / metadata | `components/ds/StatusPill`, `components/ds/Chip` | Label plus semantic tone. Color is never the sole meaning. |
 | Analyst-specific | `PromptBar`, `CitationChip`, `ThinkingState`, `ToolChips` in `components/ds` | Preserve Pi/SSE state, evidence navigation and provenance. Domain composition is not a new component framework. |
+| Generative answers | `components/site/harness/ArtifactsView`, `components/dime/ArtifactPlayerCard` | Allowlisted payloads from the answer stream, never generated code. Source-resolved player identity and metrics; Radix source-value inspection; exact ratios, zero and missing values. Labels/conclusions remain unassessed. |
+| Trend / sortable evidence | `components/dime/ArtifactChart`, `ArtifactTable`, `ArtifactShell` | Recharts with no animation and a data-table alternative. Shared surface/actions; named overflow region, announced sort direction, record count, wrapping titles and honest clipboard failures. |
 
 ## Interaction and data rules
 
@@ -80,6 +82,11 @@ even when a reference suggests custom animation.
 - New feature work uses the shared system; legacy screens are not automatically fully migrated.
 
 ## Verification
+
+`/design-system#generative` shows the actual answer components with fictional
+players and values. `?replay=generative` is a development-only chat replay; it
+makes no provider or warehouse calls. `npm run test:generative` covers parsing,
+source inspection, sorting, missing-value positions, copy errors and restoration.
 
 Run `npm run typecheck`, `npm test`, `npm run build` from `frontend`, plus
 `python backend/scripts/no_comments.py` from the root. The focused suite is

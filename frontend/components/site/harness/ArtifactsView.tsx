@@ -7,6 +7,7 @@ import ArtifactScatter from "@/components/dime/ArtifactScatter";
 import ArtifactShell from "@/components/dime/ArtifactShell";
 import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
 import ArtifactTable from "@/components/dime/ArtifactTable";
+import ArtifactPlayerCard from "@/components/dime/ArtifactPlayerCard";
 import {
   originPhrase,
   undeclaredProvenance,
@@ -22,13 +23,14 @@ function toChartSeries(series: ChartSeriesPayload[]): ChartSeries[] {
     .map((s) => ({
       name: s.name,
       values: s.values,
-      ...(s.tone === "ink" || s.tone === "muted" ? { tone: s.tone } : {}),
+      ...(s.tone ? { tone: s.tone } : {}),
     }));
 }
 
 export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
+  if (artifact.kind === "player_card") return <ArtifactPlayerCard artifact={artifact} />;
   if (artifact.kind === "table") {
-    return <ArtifactTable columns={artifact.columns} rows={artifact.rows} />;
+    return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} />;
   }
   if (artifact.kind === "compare") {
     return (
@@ -49,6 +51,7 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
     if (!series.length) return null;
     return (
       <ArtifactChart
+        title={artifact.title}
         series={series}
         footnote={artifact.footnote}
         unit={artifact.unit}
@@ -156,6 +159,11 @@ function escapeCsvCell(val: unknown): string {
 }
 
 export function artifactToCopyText(artifact: DimeArtifact): string {
+  if (artifact.kind === "player_card") {
+    return ["Player,Team,Metric,Value,Unit,Source,Row,Column", ...artifact.metrics.map(metric =>
+      [artifact.playerName, artifact.team, metric.label, metric.value, metric.unit, artifact.sourceRef, artifact.sourceRow, metric.column].map(escapeCsvCell).join(",")
+    )].join("\n");
+  }
   if (artifact.kind === "table") {
     const header = artifact.columns.map((c) => escapeCsvCell(c.label || c.key)).join(",");
     const rows = artifact.rows.map((row) => row.map(escapeCsvCell).join(","));
@@ -205,7 +213,6 @@ export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
           title={artifact.title}
           source={artifact.source}
           copyText={artifactToCopyText(artifact)}
-          delay={i * 40}
         >
           <ArtifactBody artifact={artifact} />
           <ProvenancePanel provenance={artifact.provenance ?? undeclaredProvenance()} />

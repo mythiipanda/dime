@@ -6,6 +6,7 @@ import type {
   CompareArtifactPayload,
   DimeArtifact,
   DimeProvenance,
+  PlayerCardArtifactPayload,
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   TableArtifactPayload,
@@ -45,8 +46,8 @@ function parseChartSeries(raw: unknown): ChartSeriesPayload[] {
     const name = typeof record.name === "string" ? record.name : "";
     const tone = parseChartTone(record.tone);
     const values = (Array.isArray(record.values) ? record.values : [])
-      .filter((value): value is number => finiteNumber(value) !== undefined);
-    if (name && values.length > 0) {
+      .map(value => finiteNumber(value) ?? null);
+    if (name && values.some(value => value !== null)) {
       series.push({ name, values, ...(tone ? { tone } : {}) });
     }
   }
@@ -62,7 +63,7 @@ function resolveChart(
   if (series.length === 0) return null;
   const unit = typeof entry.unit === "string" ? entry.unit : undefined;
   const xLabels = Array.isArray(entry.xLabels)
-    ? entry.xLabels.map((lbl) => String(lbl ?? "")).filter(Boolean)
+    ? entry.xLabels.map((lbl) => typeof lbl === "string" ? lbl : "")
     : undefined;
   const footnote =
     typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined;
@@ -249,12 +250,35 @@ type ArtifactResolver = (
   provenance: DimeProvenance | undefined,
 ) => DimeArtifact | null;
 
+function resolvePlayerCard(entry: Record<string, unknown>, title: string, provenance: DimeProvenance | undefined): PlayerCardArtifactPayload | null {
+  if (typeof entry.playerName !== "string" || !entry.playerName.trim() ||
+      typeof entry.sourceRef !== "string" || !entry.sourceRef ||
+      typeof entry.sourceRow !== "number" || !Number.isInteger(entry.sourceRow) || entry.sourceRow < 0 ||
+      typeof entry.nameColumn !== "string" || !entry.nameColumn ||
+      !Array.isArray(entry.metrics) || entry.metrics.length === 0 || entry.metrics.length > 6) return null;
+  const metrics: PlayerCardArtifactPayload["metrics"] = [];
+  for (const raw of entry.metrics) {
+    if (!raw || typeof raw !== "object") return null;
+    const metric = raw as Record<string, unknown>;
+    if (typeof metric.column !== "string" || !metric.column || typeof metric.label !== "string" || !metric.label ||
+        (metric.value !== null && finiteNumber(metric.value) === undefined)) return null;
+    metrics.push({ column: metric.column, label: metric.label, value: metric.value as number | null,
+      ...(typeof metric.unit === "string" ? { unit: metric.unit } : {}) });
+  }
+  return { kind: "player_card", title, playerName: entry.playerName,
+    ...(typeof entry.team === "string" ? { team: entry.team } : {}),
+    sourceRef: entry.sourceRef, sourceRow: entry.sourceRow, nameColumn: entry.nameColumn,
+    ...(typeof entry.teamColumn === "string" ? { teamColumn: entry.teamColumn } : {}),
+    metrics, source: provenanceSource(provenance), provenance };
+}
+
 const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   chart: resolveChart,
   shot_chart: resolveShotChart,
   table: resolveTable,
   compare: resolveCompare,
   scatter: resolveScatter,
+  player_card: resolvePlayerCard,
 };
 
 export function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
@@ -264,7 +288,7 @@ export function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
     if (typeof item !== "object" || item === null) continue;
     const entry = item as Record<string, unknown>;
     const kind = typeof entry.kind === "string" ? entry.kind : "";
-    const resolver = ARTIFACT_RESOLVERS[kind];
+    const resolver = Object.hasOwn(ARTIFACT_RESOLVERS, kind) ? ARTIFACT_RESOLVERS[kind] : undefined;
     const title = typeof entry.title === "string" ? entry.title : "";
     if (!resolver || !title) continue;
     const provenance =

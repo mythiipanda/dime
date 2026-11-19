@@ -1,114 +1,42 @@
 "use client";
 
-export type ChartSeries = { name: string; tone?: "ink" | "muted"; values: number[] };
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { ChartSeriesPayload, ChartTone } from "@/lib/dime-stream";
+import ArtifactTable from "./ArtifactTable";
 
-export default function ArtifactChart({
-  series,
-  height = 180,
-  footnote,
-  unit = "pts",
-  xLabels,
-}: {
+export type ChartSeries = ChartSeriesPayload;
+
+const toneColor: Record<ChartTone, string> = { ink: "var(--ink)", muted: "var(--ink-3)", accent: "var(--accent-ink)", good: "var(--green)", warn: "var(--orange)" };
+
+export default function ArtifactChart({ series, height = 220, footnote, unit, xLabels, title = "Trend chart" }: {
   series: ChartSeries[];
   height?: number;
   footnote?: string;
   unit?: string;
   xLabels?: string[];
+  title?: string;
 }) {
-  const W = 720;
-  const H = height;
-  const PAD = 10;
-  const LABEL_W = 30;
-  const BOTTOM_PAD = xLabels && xLabels.length > 0 ? 18 : 0;
-  const all = series.flatMap((s) => s.values);
-  const rawMin = Math.min(...all);
-  const rawMax = Math.max(...all);
-  const lo = Math.floor(rawMin / 5) * 5;
-  const hi = Math.ceil((rawMax + 0.5) / 5) * 5;
-  const span = Math.max(hi - lo, 5);
-  const n = Math.max(...series.map((s) => s.values.length));
-  const x0 = PAD + LABEL_W;
-  const x = (i: number) => x0 + (i / Math.max(n - 1, 1)) * (W - x0 - PAD);
-  const y = (v: number) => PAD + (1 - (v - lo) / span) * (H - PAD * 2 - BOTTOM_PAD);
-  const line = (vals: number[]) =>
-    vals.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-
-  const mid = (lo + hi) / 2;
-  const ticks = [hi, mid, lo];
-  const unitSuffix = unit ? ` ${unit}` : "";
-
-  return (
-    <div className="px-4 py-3">
-      <div className="flex items-center gap-4">
-        {series.map((s, i) => {
-          const isInk = s.tone === "ink" || (s.tone === undefined && i === 0);
-          return (
-            <span key={s.name} className="flex items-center gap-1.5 text-[11.5px] text-ink-2">
-              <span className={`h-[2px] w-4 rounded-full ${isInk ? "bg-ink" : "bg-ink-3"}`} />
-              {s.name}
-            </span>
-          );
-        })}
-        <span className="ml-auto font-mono text-[11px] tabular-nums text-ink-3">
-          {rawMin.toFixed(0)}–{rawMax.toFixed(0)}{unitSuffix}
-        </span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full" role="img" aria-label="Scoring trend chart">
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={x0} x2={W - PAD} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeWidth={1} />
-            <text
-              x={x0 - 6} y={y(t) + 3} textAnchor="end"
-              fontSize={9} fontFamily="var(--font-mono)" fill="var(--ink-3)"
-            >
-              {Number.isInteger(t) ? t : t.toFixed(1)}
-            </text>
-          </g>
-        ))}
-        {xLabels && xLabels.slice(0, n).map((label, i) => (
-          <text
-            key={i}
-            x={x(i)}
-            y={H - 4}
-            textAnchor="middle"
-            fontSize={9}
-            fontFamily="var(--font-mono)"
-            fill="var(--ink-3)"
-          >
-            {label}
-          </text>
-        ))}
-        {series.map((s, i) => {
-          const last = s.values[s.values.length - 1];
-          const isInk = s.tone === "ink" || (s.tone === undefined && i === 0);
-          return (
-            <g key={s.name}>
-              <path
-                d={line(s.values)}
-                fill="none"
-                stroke={isInk ? "var(--ink)" : "var(--ink-3)"}
-                strokeWidth={isInk ? 1.5 : 1.25}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeDasharray={isInk ? undefined : "4 3"}
-              />
-              <circle
-                cx={x(s.values.length - 1)} cy={y(last)} r={3}
-                fill={isInk ? "var(--ink)" : "var(--ink-3)"}
-                stroke="var(--surface)" strokeWidth={1.5}
-              />
-              <text
-                x={Math.min(x(s.values.length - 1) + 7, W - PAD - 18)} y={y(last) + 3.5}
-                fontSize={10} fontWeight={600} fontFamily="var(--font-mono)"
-                fill={isInk ? "var(--ink)" : "var(--ink-2)"}
-              >
-                {last.toFixed(0)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      {footnote && <div className="mt-1 font-mono text-[11px] text-ink-3">{footnote}</div>}
-    </div>
-  );
+  const count = Math.max(0, ...series.map(s => s.values.length));
+  const data = Array.from({ length: count }, (_, i) => Object.fromEntries([
+    ["label", xLabels?.[i] || `Observation ${i + 1}`], ...series.map((s, j) => [`series${j}`, s.values[i] ?? null]),
+  ]));
+  return <figure className="min-w-0 p-4" aria-label={title}>
+    <figcaption className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-2">
+      {series.map((s, i) => <span key={i} className="inline-flex min-w-0 items-center gap-2 break-words"><span aria-hidden="true" className="w-4 shrink-0 border-t-2" style={{ borderColor: toneColor[s.tone ?? (i === 0 ? "ink" : "muted")], borderTopStyle: i % 2 ? "dashed" : "solid" }} />{s.name}</span>)}
+      <span className="text-ink-3">{unit || "Unit not declared"}</span>
+    </figcaption>
+    <ResponsiveContainer width="100%" height={height} minWidth={0} initialDimension={{ width: 640, height }}>
+      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 8, left: 0 }} accessibilityLayer>
+        <CartesianGrid vertical={false} stroke="var(--line)" />
+        <XAxis dataKey="label" tick={{ fill: "var(--ink-3)", fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={24} />
+        <YAxis tick={{ fill: "var(--ink-3)", fontSize: 11 }} tickLine={false} axisLine={false} width={48} domain={["auto", "auto"]} />
+        <Tooltip contentStyle={{ background: "var(--surface)", borderColor: "var(--line)", borderRadius: 8, fontSize: 12, color: "var(--ink)" }} isAnimationActive={false} />
+        {series.map((s, i) => <Line key={i} type="linear" dataKey={`series${i}`} name={s.name} stroke={toneColor[s.tone ?? (i === 0 ? "ink" : "muted")]} strokeWidth={2} strokeDasharray={i % 2 ? "4 3" : undefined} dot={count <= 12} connectNulls={false} isAnimationActive={false} />)}
+      </LineChart>
+    </ResponsiveContainer>
+    {footnote && <p className="mt-2 break-words text-xs leading-relaxed text-ink-3">{footnote}</p>}
+    <details className="mt-3 text-xs text-ink-2"><summary className="cursor-pointer py-2">View chart data</summary>
+      <ArtifactTable title={`${title} data`} columns={[{ key: "label", label: "Observation" }, ...series.map((s, i) => ({ key: `series${i}`, label: `${s.name}${unit ? ` (${unit})` : ""}`, numeric: true }))]} rows={data.map(row => [String(row.label), ...series.map((_, i) => row[`series${i}`] as number | null)])} />
+    </details>
+  </figure>;
 }

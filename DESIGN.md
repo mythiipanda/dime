@@ -109,6 +109,50 @@ social profile was inspected when only its link was available.
 
 ## Architecture and verification boundaries
 
+### Generative answers: a bounded component catalog
+
+The agent chooses small, useful inline views through `submit_answer.artifacts`:
+player snapshots, sortable tables, trends, comparisons, scatter and shot charts.
+Prose still leads with the answer. We adopt OpenUI's application-owned component
+catalog pattern and ChatGPT's single-purpose inline-card guidance, not their chat
+runtimes, theme providers, hosted gateways or arbitrary generated HTML/JSX.
+No provider is called just to choose a layout on the client.
+
+`player_card` is source-resolved: the model selects one successful source ref/row,
+identity columns and up to six numeric metric columns. The Dime host supplies
+the actual values and units from source metadata. No cross-row joins, synthesized
+values, unit conversion, invented portraits or model-supplied provenance. Null is
+missing; zero is zero; an undeclared unit is labeled. The source-value popover
+shows the ref, zero-based row and columns without asserting semantic verification.
+Model-authored labels, scope and conclusions remain unassessed. Existing artifact
+kinds are still model-authored and are not made source-verified by this change.
+
+Compose Beautiful UI `Surface`, shared Radix/shadcn actions and source popovers.
+Use installed Recharts for trend axes, hover/keyboard inspection and responsive
+sizing; always offer a labeled data table, preserve missing observation positions
+and disable chart animation. Artifact shells grow naturally rather than clipping
+the answer. Only wide/tall data tables scroll locally; they have a focusable named
+region and announce sort order. CSV copy reports clipboard failure honestly.
+Final stored submissions restore the same allowlisted components after reload.
+
+| Reference | Decision |
+| --- | --- |
+| [OpenUI component libraries](https://www.openui.com/docs/build-agents/ui-generation) | Use the bounded, application-owned catalog idea through the existing Pi tool/SSE contract. Defer a second rendering language/runtime until it fills a measured gap. |
+| [ChatGPT inline UI](https://developers.openai.com/apps-sdk/concepts/ui-guidelines) | One focused card, small metadata, no deep navigation or duplicate chat inputs. Dime keeps its own typography and evidence-table overflow rules. |
+| [AICSS](https://www.aicss.dev/llms.txt), [data-table recipe](https://www.aicss.dev/r/data-table?format=md), [HextaUI](https://hextaui.com/) | Reference compact structured output/action patterns. Reuse the installed Beautiful UI/Radix primitives instead of copying a second palette, hand-built motion or licensed components. |
+
+| Before | After | Why |
+| --- | --- | --- |
+| Generic table for every player summary | Source-selected identity and up to six exact metrics | The reader scans a player without losing the source fields. |
+| Bespoke SVG trend, generic accessible name | Recharts, answer-specific label and inspectable data table | Existing chart library owns plot behavior; missing values never shift dates. |
+| Clipped animated artifact container | Shared surface, wrapping title, natural height | Long names and provenance stay readable without extra reveal controls. |
+| Sort direction shown only by an icon | Scoped headings, `aria-sort`, numeric alignment, named scroll region | Keyboard and assistive-technology users can inspect the same data. |
+
+`/design-system#generative` renders the actual exports with fictional players,
+missing/zero values and ratio units. Development `?replay=generative` exercises
+the real chat reducer without provider/warehouse calls. Neither proves live
+agent component selection or basketball answer quality.
+
 The product host is Node under `backend/analyst`; Python provides the data engine.
 Keep domain operations, route validation, public contracts and frontend transport
 separate. UI work does not change provider settings, warehouse semantics or the

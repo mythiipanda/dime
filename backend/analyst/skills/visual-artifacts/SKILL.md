@@ -1,6 +1,6 @@
 ---
 name: visual-artifacts
-description: Guidelines for selecting, structuring, and grounding Dime multimodal visual artifacts (scatter, shot_chart, compare, table, chart).
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart).
 ---
 
 # Dime Visual Artifacts & Multimodal Output Guide
@@ -11,6 +11,7 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 
 | Query Intent / Data Shape | Optimal Artifact | Key Features & Attributes |
 |---|---|---|
+| **One Player at a Glance** | `player_card` | Select identity and up to six metrics from a single actual source row. The host supplies values and declared units; no invented statistics, team names or portraits. |
 | **Two Continuous Variables** (e.g., TS% vs USG%, ORAPM vs DRAPM) | `scatter` | Quadrant divisions via `xMid` & `yMid`, point labels, `highlight` flag for focal players, CSV export. |
 | **Court Location & Shooting Profiles** | `shot_chart` | Court zones with attempt counts (`att`) and shooting percentages (`pct`). |
 | **Head-to-Head Showdowns** (2 players or 2 teams) | `compare` | Visual bars comparing normalized metrics between entity `a` and entity `b`. |
@@ -20,6 +21,40 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 ---
 
 ## 2. Artifact Schema Specifications
+
+### `player_card`
+
+Use for a compact player overview, not a ranking or a replacement for the prose.
+Query a row with a player name and numeric statistics first. Select fields; never
+copy values into this artifact. All fields refer to the same `ref` and `row` so
+identity cannot accidentally be joined to a different player's statistics.
+The host rejects missing/error sources, missing columns, nonnumeric metrics and
+model-supplied values or units. Null stays missing; zero stays zero. Units come
+only from the source's `declared_column_semantics` or `units`; absent units are
+shown as undeclared. Use source column names as labels when their meaning is
+uncertain. A numeric string must be queried/cast as a number before selecting it.
+
+```typescript
+{
+  kind: "player_card",
+  title: "Player snapshot",
+  ref: "actual-ref-from-query",
+  row: 0,
+  nameColumn: "player_name",
+  teamColumn: "team_name",
+  metrics: [
+    { column: "points_per_game", label: "Points per game" },
+    { column: "games", label: "Games played" }
+  ]
+}
+```
+
+`teamColumn` is optional. Only use it if the source row contains that text field.
+Never output JSX, HTML, CSS, executable scripts, component imports or arbitrary
+OpenUI programs. Dime's allowlisted components render in the existing answer
+stream; choose only the components that make this question clearer, not every
+component on every answer. Existing chart/table artifacts still require explicit
+grounding in the prose: unlike player-card values, they are not source-resolved.
 
 ### `scatter`
 ```typescript
@@ -119,7 +154,8 @@ Every quantitative claim and artifact must be anchored in queried evidence withi
   anchors: [
     { ref: "ref_rapm_query", row: 0, columns: ["player_name", "drapm", "possessions"] }
   ],
-  artifacts: [ ... ]
 }
 ```
-This guarantees verifiable integrity and eliminates ungrounded hallucination.
+Pass `artifacts` beside `blocks` in `submit_answer({ blocks: [...], artifacts: [...] })`,
+not inside a prose block. Selectors validate traceability to actual rows/columns;
+they do not prove the prose, metric label, scope or basketball conclusion correct.
