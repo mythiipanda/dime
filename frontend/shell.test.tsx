@@ -14,7 +14,7 @@ import { parseShellTab, shellNavigation, shellUrl, validThread } from "./lib/she
 import { citationDetails } from "./lib/citation-details";
 import { DimeStream, streamDimeChat } from "./lib/dime-stream";
 import { scoutingEvents } from "./lib/replay-fixture";
-import { getClientId } from "./lib/api";
+import { getClientId, getThreads } from "./lib/api";
 import { LibraryView } from "./components/shell/WorkspaceViews";
 
 test("navigation exposes only this port's destinations, with Tools grouped", () => {
@@ -42,8 +42,37 @@ test("Library keeps conversations available when projects returns 404", async ()
     await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Open conversation"))!.click());
     assert.equal(opened, "conversation");
     await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Conversations")!.click());
-    assert.match(host.textContent!, /Available conversation/); assert.doesNotMatch(host.textContent!, /Projects could not be loaded/);
+    assert.match(host.textContent!, /Available conversation/); assert.match(host.textContent!, /Projects could not be loaded/);
   } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
+});
+
+for (const mode of ["http", "network", "cached"]) test(`Library exposes ${mode} failures and retry under every filter`, async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true });
+  const previous = globalThis.fetch, previousStorage = globalThis.localStorage;
+  globalThis.localStorage = dom.window.localStorage;
+  const threads = [{ id: "cached", title: "Cached conversation", updated: "2026-11-19", turns: 1 }];
+  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  try {
+    if (mode === "cached") { globalThis.fetch = async () => Response.json({ threads }); await getThreads(); }
+    globalThis.fetch = async () => { if (mode === "network") throw new Error("offline"); return new Response("unavailable", { status: 503 }); };
+    await act(async () => root.render(<LibraryView onThread={() => {}} />));
+    for (const label of ["All research", "Conversations", "Projects"]) {
+      await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === label)!.click());
+      if (mode === "cached") {
+        assert.match(host.textContent!, /Showing cached conversations/);
+        assert.ok([...host.querySelectorAll("button")].some(button => button.textContent === "Retry conversations"));
+      } else {
+        assert.match(host.querySelector('[role="alert"]')!.textContent!, /Could not load your library/);
+        assert.ok([...host.querySelectorAll("button")].some(button => button.textContent === "Try again"));
+        assert.doesNotMatch(host.textContent!, /Your research starts here/);
+      }
+    }
+    globalThis.fetch = async input => Response.json(String(input).includes("/projects") ? { projects: [] } : { threads });
+    await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === (mode === "cached" ? "Retry conversations" : "Try again"))!.click());
+    await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent === "Conversations")!.click());
+    assert.match(host.textContent!, /Cached conversation/); assert.doesNotMatch(host.textContent!, /could not be loaded|Could not load your library/);
+  } finally { await act(async () => root.unmount()); globalThis.fetch = previous; globalThis.localStorage = previousStorage; dom.window.close(); }
 });
 
 test("PromptBar has a real ellipsis, clean model labels and disabled unavailable models", () => {
