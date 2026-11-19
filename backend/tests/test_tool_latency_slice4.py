@@ -65,6 +65,7 @@ def test_error_paths_unchanged():
         assert _norm(fn.invoke(kwargs)) == _load(name)
 
 
+@pytest.mark.canonical_warehouse
 def test_lineup_stats_max_of_5_under_150ms():
     for name, kwargs in STATS_CASES.items():
         assert _max_of_5(get_lineup_stats, kwargs) < 150, name
