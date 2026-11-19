@@ -21,13 +21,36 @@ it("ties compact citation chips to source rows and recorded query metadata", () 
   assert.equal(detail.season, "2025-26");
   assert.equal(detail.count, 1);
   assert.equal(detail.rows[0].NET, 9.4);
-  assert.equal(detail.target, "evidence-team_ratings");
+  assert.equal(detail.target, "evidence-0");
   const html = renderToStaticMarkup(<CitedAnswerText text={ai.text} ai={ai} compact />);
   assert.match(html, /citation-chip/);
   assert.doesNotMatch(html, /id="cite-/);
   const empty = aiFromRun({ question: "", answer: "", created_at: "", suggestions: [], tables: [] });
   assert.equal(renderToStaticMarkup(<CitedAnswerText text="" ai={empty} compact />), "<div></div>");
   assert.equal(citationDetails(empty, sources[0]).query, "");
+});
+
+it("resolves each citation to its own table rather than the first matching capability", () => {
+  const ai = aiFromRun({ question: "Ratings", answer: "", created_at: "", suggestions: [], tables: [
+    { tool: "team_ratings", table_id: "okc", rows: [{ Team: "Oklahoma City", NET: 9.4 }], meta: { season: "2025-26", sql: "SELECT NET WHERE TEAM = 'OKC'" } },
+    { tool: "team_ratings", table_id: "den", rows: [{ Team: "Denver", NET: 4.6 }], meta: { season: "2024-25", sql: "SELECT NET WHERE TEAM = 'DEN'" } },
+    { output_id: "NET", value: 4.6, provenance: { capability: "team_ratings", table_id: "den", season: "2024-25" } },
+    { output_id: "NET", value: 4.6, provenance: { capability: "team_ratings" } },
+  ] });
+  const sources = evidenceSources(ai);
+  const first = citationDetails(ai, sources[0]);
+  const second = citationDetails(ai, sources[1]);
+  const bound = citationDetails(ai, sources[2]);
+  const ambiguous = citationDetails(ai, sources[3]);
+  assert.equal(first.rows[0].NET, 9.4);
+  assert.equal(second.rows[0].NET, 4.6);
+  assert.equal(second.season, "2024-25");
+  assert.match(second.query, /DEN/);
+  assert.equal(second.target, "evidence-1");
+  assert.equal(bound.target, second.target);
+  assert.equal(bound.query, second.query);
+  assert.deepEqual(ambiguous.rows, []);
+  assert.equal(ambiguous.query, "");
 });
 
 it("preserves statistical drivers when reopening a saved comps result", () => {
