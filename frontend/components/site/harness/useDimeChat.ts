@@ -29,7 +29,7 @@ const VIEW_LABELS: { id: "chat" | ViewKey; label: string }[] = [
   { id: "warehouse", label: "Warehouse" },
 ];
 
-export function useDimeChat(options?: { thread: string; replay?: string | null; onRunDone?: (question: string) => void }) {
+export function useDimeChat(options?: { thread: string; replay?: string | null; onRunDone?: (question: string) => void; onSubmit?: () => void }) {
   const [tabs, setTabs] = useState<Tab[]>([{ id: REFERENCE_TAB, label: "New analysis" }]);
   const [activeTab, setActiveTab] = useState(REFERENCE_TAB);
   const [messagesByTab, setMessagesByTab] = useState<Record<string, ChatMsg[]>>({});
@@ -100,6 +100,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
   const submit = (raw?: string) => {
     const q = (raw ?? draft).trim();
     if (!q || live || historyLoading || (!options?.replay && !modelOptions.some(item => item.id === model && item.available !== false))) return;
+    options?.onSubmit?.();
     const tabId = thread ?? activeTab;
     abortRef.current?.abort();
     const ctrl = new AbortController();

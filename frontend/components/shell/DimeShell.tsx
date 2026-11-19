@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Award, BookOpen, Command, Database, Home, MessageCircle, Moon, Search, Sun, Swords, ArrowLeftRight } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Award, BookOpen, Command, Database, Home, MessageCircle, Moon, Search, Sun, Swords, ArrowLeftRight, Workflow } from "lucide-react";
 import { SidebarNav } from "../ds/SidebarNav";
 import DimeCommandPalette, { type PaletteEntry } from "../site/DimeCommandPalette";
 import TradesView from "../dime/views/TradesView";
@@ -10,11 +10,13 @@ import AwardsView from "../dime/views/AwardsView";
 import { ChatView } from "./ChatView";
 import { DataView, HomeView, LibraryView } from "./WorkspaceViews";
 import { getThreads, type ThreadInfo } from "../../lib/api";
+import WorkflowsPanel from "../WorkflowsPanel";
 import { parseShellTab, shellNavigation, shellUrl, validThread, type ShellTab } from "../../lib/shell-navigation";
 import { replayName } from "../../lib/replay";
+import { createWorkflowDraft } from "../../lib/workflow-drafts";
 
 export { parseShellTab, shellNavigation } from "../../lib/shell-navigation";
-const icons = { today: Home, chat: MessageCircle, briefs: BookOpen, data: Database, trades: ArrowLeftRight, matchups: Swords, awards: Award };
+const icons = { today: Home, chat: MessageCircle, workflows: Workflow, briefs: BookOpen, data: Database, trades: ArrowLeftRight, matchups: Swords, awards: Award };
 const navigation = shellNavigation.map(item => { const Icon = icons[item.id]; return { ...item, icon: <Icon size={17} strokeWidth={1.5} /> }; });
 
 export function DimeShell() {
@@ -24,6 +26,8 @@ export function DimeShell() {
   const [replay, setReplay] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
   const [dark, setDark] = useState(true);
+  const [workflowRequest, setWorkflowRequest] = useState<{ thread: string; text: string } | null>(null);
+  const workflowStarting = useRef(false);
   useEffect(() => {
     const read = () => {
       const url = new URL(window.location.href);
@@ -47,6 +51,15 @@ export function DimeShell() {
     window.history.pushState({}, "", shellUrl(window.location.href, nextTab, nextThread));
   };
   const newChat = () => navigate("chat", crypto.randomUUID());
+  const runWorkflow = (text: string) => {
+    if (workflowStarting.current) return;
+    workflowStarting.current = true;
+    const nextThread = crypto.randomUUID();
+    createWorkflowDraft(nextThread, text);
+    setWorkflowRequest({ thread: nextThread, text });
+    navigate("chat", nextThread);
+    queueMicrotask(() => { workflowStarting.current = false; });
+  };
   const pick = (id: string) => { if (validThread(id)) navigate("chat", id); };
   const toggleTheme = () => {
     const next = !document.documentElement.classList.contains("dark");
@@ -69,8 +82,9 @@ export function DimeShell() {
     <main className="dime-main">
       <header className="dime-header"><div className="dime-top-tab"><span>{label}</span>{tab === "chat" && <span className="max-w-48 truncate text-ink-3">{threads.find(item => item.id === thread)?.title || "New conversation"}</span>}</div><div className="flex items-center gap-1"><button className="icon-button" aria-label="Open command palette" onClick={() => setPalette(true)}><Search size={15} /></button><button className="icon-button" aria-label="Toggle theme" onClick={toggleTheme}>{dark ? <Sun size={15} /> : <Moon size={15} />}</button></div></header>
       <div className="dime-content">
-        {tab === "chat" && thread && <ChatView key={`${thread}-${replay ?? "live"}`} thread={thread} replay={replay} onRunDone={onRunDone} />}
-        {tab === "today" && <HomeView onAsk={newChat} />}
+        {tab === "chat" && thread && <ChatView key={`${thread}-${replay ?? "live"}`} thread={thread} replay={replay} onRunDone={onRunDone} workflowRequest={workflowRequest?.thread === thread ? workflowRequest : null} onWorkflowConsumed={() => { workflowStarting.current = false; setWorkflowRequest(null); }} />}
+        {tab === "workflows" && <WorkflowsPanel onRun={runWorkflow} />}
+        {tab === "today" && <HomeView onAsk={() => navigate("workflows")} />}
         {tab === "briefs" && <LibraryView onThread={pick} />}
         {tab === "data" && <DataView />}
         {tab === "trades" && <div className="tools-view"><TradesView /></div>}
