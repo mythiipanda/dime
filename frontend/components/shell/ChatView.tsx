@@ -25,6 +25,13 @@ const suggestions = [
   { icon: Database, text: "Find the most effective five-man lineups this season" },
 ];
 
+function scrollToHash() {
+  const id = window.location.hash.slice(1);
+  const target = id ? document.getElementById(id) : null;
+  target?.scrollIntoView({ block: "start" });
+  return !!target;
+}
+
 export function AssistantTurn({ ai, question, onAsk }: { ai: AiMessage; question: string; onAsk: (q: string) => void }) {
   const evidencePrefix = useId();
   const [copied, setCopied] = useState(false);
@@ -75,7 +82,11 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { if (preset) setInput(preset); }, [preset]);
-  useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [messages]);
+  useEffect(() => { if (!scrollToHash()) end.current?.scrollIntoView({ block: "nearest" }); }, [messages]);
+  useEffect(() => {
+    window.addEventListener("hashchange", scrollToHash);
+    return () => window.removeEventListener("hashchange", scrollToHash);
+  }, []);
 
   const send = async (raw: string, fixture?: string) => {
     const q = raw.trim();
@@ -131,7 +142,7 @@ export function ChatView({ thread, preset, autoSend, replay, onConsumed, onRunDo
     </div> : <>
       <div className="conversation">
         {replay && <div className="mb-6"><StatusPill tone="orange" dot={false}>Development replay · synthetic data</StatusPill></div>}
-        {messages.map((message, i) => message.role === "human" ? <div key={i} className="user-turn">{message.text}</div> : <AssistantTurn key={i} ai={message.ai!} question={messages[i - 1]?.text || ""} onAsk={send} />)}
+        {messages.map((message, i) => message.role === "human" ? <div key={i} id={`m-${i}`} className="user-turn">{message.text}</div> : <div key={i} id={`m-${i}`}><AssistantTurn ai={message.ai!} question={messages[i - 1]?.text || ""} onAsk={send} /></div>)}
         <div ref={end} />
       </div>
       <div className="composer-dock">{composer}<p className="mt-2 text-center text-[10px] text-ink-3">Dime can make mistakes. Review the evidence behind every decision.</p></div>

@@ -7,7 +7,7 @@ import { DimeShell, parseShellTab, shellNavigation } from "./components/shell/Di
 import { availableModel, modelLabel } from "./lib/model-catalog";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PromptBar } from "./components/ds/PromptBar";
-import { AssistantTurn } from "./components/shell/ChatView";
+import { AssistantTurn, ChatView } from "./components/shell/ChatView";
 import { aiFromRun, applyEvent } from "./lib/stream-event";
 import { citationDetails } from "./lib/citation-details";
 import { evidenceSources } from "./lib/evidence";
@@ -113,6 +113,42 @@ it("keeps old URL values and defines the requested navigation", () => {
   assert.deepEqual(shellNavigation.map((n) => n.label), ["Home", "Ask", "Boards", "Workflows", "Library", "Data"]);
   for (const tab of ["chat", "today", "data", "workflows"] as const) assert.equal(parseShellTab(tab), tab);
   assert.equal(parseShellTab("unknown"), "chat");
+});
+
+for (const hash of ["#m-1", "", "#m-99"]) it(`restores indexed message anchors and scrolls saved history with hash '${hash}'`, async () => {
+  const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: `http://localhost/?tab=chat&thread=t-linked${hash}` });
+  const gx = globalThis as unknown as Record<string, unknown>;
+  Object.assign(gx, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, localStorage: dom.window.localStorage, sessionStorage: dom.window.sessionStorage, IS_REACT_ACT_ENVIRONMENT: true });
+  const scrolled: { id: string; block?: string }[] = [];
+  Object.assign(dom.window.HTMLElement.prototype, { scrollIntoView(this: HTMLElement, options?: ScrollIntoViewOptions) { scrolled.push({ id: this.id, block: options?.block }); }, attachEvent() {}, detachEvent() {} });
+  const originalFetch = globalThis.fetch;
+  let releaseHistory!: () => void;
+  const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve; });
+  globalThis.fetch = async (url) => {
+    if (String(url).includes("/models")) return Response.json({ models: [] });
+    await historyGate;
+    return Response.json({ runs: [{ question: "Saved question", answer: "Saved answer", created_at: "2026-01-01", tables: [], suggestions: [] }] });
+  };
+  const host = dom.window.document.getElementById("root")!;
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ChatView thread="t-linked" preset={null} autoSend={null} replay={null} onConsumed={() => {}} onRunDone={() => {}} />));
+    assert.equal(host.querySelector("#m-1"), null);
+    await act(async () => releaseHistory());
+    assert.match(host.querySelector("#m-0")!.textContent!, /Saved question/);
+    assert.match(host.querySelector("#m-1")!.textContent!, /Saved answer/);
+    assert.deepEqual(scrolled.at(-1), hash === "#m-1" ? { id: "m-1", block: "start" } : { id: "", block: "nearest" });
+    scrolled.length = 0;
+    await act(async () => {
+      dom.window.history.replaceState(null, "", "#m-0");
+      dom.window.dispatchEvent(new dom.window.HashChangeEvent("hashchange"));
+    });
+    assert.deepEqual(scrolled, [{ id: "m-0", block: "start" }]);
+  } finally {
+    await act(async () => root.unmount());
+    globalThis.fetch = originalFetch;
+    dom.window.close();
+  }
 });
 
 for (const catalog of ["available", "unconfigured", "empty", "error"] as const) it(`dispatches workflows to a new chat with an ${catalog} model catalog`, async () => {
