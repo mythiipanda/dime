@@ -36,24 +36,22 @@ def _hist_pairings(season, abbr_a, abbr_b):
     finally:
         con.close()
 
-def test_warehouse_has_no_2024_25_team_games_or_ratings():
+def test_warehouse_has_2024_25_ratings_but_no_team_games():
     assert _season_rows("silver_team_games", "2024-25") == 0
-    assert _season_rows("silver_team_ratings", "2024-25") == 0
+    assert _season_rows("silver_team_ratings", "2024-25") == 30
     assert _season_rows("silver_hist_gamelogs", "2024-25") > 0
 
-def test_prediction_derives_2024_25_ratings_offline():
+def test_prediction_reads_2024_25_ratings_from_store():
     out = get_game_prediction.invoke(
         {"a": "BOS", "b": "NYK", "season": "2024-25", "n_sims": 2_000})
     assert out["ok"] is True
-    assert out["inputs"]["ratings_source"] == "silver_hist_gamelogs"
-    assert out["meta"]["ratings_fetched_at"] is None
-    assert "silver_hist_gamelogs" in out["methodology"][0]
-    assert "No live source" in out["methodology"][0]
+    assert out["inputs"]["ratings_source"] == "silver_team_ratings"
+    assert "silver_team_ratings" in out["methodology"][0]
     home = out["inputs"]["home"]
     assert home["record"] == "61-21"
-    assert home["off_rating"] == pytest.approx(118.9, abs=0.1)
-    assert home["def_rating"] == pytest.approx(109.6, abs=0.1)
-    assert home["net_rating"] == pytest.approx(9.3, abs=0.1)
+    assert home["off_rating"] == pytest.approx(119.5, abs=0.1)
+    assert home["def_rating"] == pytest.approx(110.1, abs=0.1)
+    assert home["net_rating"] == pytest.approx(9.4, abs=0.1)
     assert home["net_rating"] == pytest.approx(
         home["off_rating"] - home["def_rating"], abs=0.15)
     assert out["inputs"]["game_pace"] > 90.0
