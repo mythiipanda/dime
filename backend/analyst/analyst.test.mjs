@@ -91,7 +91,7 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
   const seenHistories=[];
   const mockExec={
     async *stream(ctx){
-      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE});
+      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE,timeout:ctx.runTimeoutMs});
       seenHistories.push(ctx.history);
       await writeFile(join(ctx.bridge.cwd,"turn-artifact.txt"),"persisted-data","utf8");
       yield {type:"answer",text:"Turn complete",reasoning:"Turn reasoning"};
