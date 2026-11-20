@@ -3876,6 +3876,29 @@
         "type": "object"
       }
     },
+    "product_morning": {
+      "name": "product_morning",
+      "description": "Aggregate one team's morning page: last result, next game, opponent form, injuries, news, standings vs projection and cap status.",
+      "args_schema": {
+        "description": "Aggregate one team's morning page: last result, next game, opponent form, injuries, news, standings vs projection and cap status.",
+        "properties": {
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "product_morning",
+        "type": "object"
+      }
+    },
     "product_debate": {
       "name": "product_debate",
       "description": "Build the current debate card with the domain season clamp.",
