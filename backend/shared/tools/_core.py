@@ -707,13 +707,15 @@ def season_to_date_meta(season: str | None,
     if baseline is not None:
         out["league_games_played_baseline"] = baseline
     if gp is not None:
+        in_progress = not season_static(resolved)
         early = gp < 30
         behind = baseline is not None and gp < 0.7 * baseline
         out["small_sample"] = bool(early or behind)
         if out["small_sample"]:
             out["small_sample_reason"] = (
-                "early in the season" if early
-                else "well under the league games-played baseline")
+                "early in the season" if early and in_progress
+                else "well under the league games-played baseline" if behind
+                else "fewer than 30 games played")
     if prior_full_season:
         out["prior_full_season"] = prior_full_season
     return out

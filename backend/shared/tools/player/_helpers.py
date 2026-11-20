@@ -109,8 +109,7 @@ def _gamelog_coverage() -> str:
 def _std_context(player_id: object, season: str,
                  line: dict[str, Any] | None) -> dict[str, Any] | None:
     pkg = _pkg()
-    if pkg.season_static(season):
-        return None
+    static = pkg.season_static(season)
     gp = None
     if line is not None:
         try:
@@ -136,7 +135,10 @@ def _std_context(player_id: object, season: str,
                              ("rpg", "RPG"), ("apg", "APG")):
                 if prior_line.get(col) is not None:
                     prior[key] = prior_line[col]
-    return pkg.season_to_date_meta(season, gp, prior)
+    meta = pkg.season_to_date_meta(season, gp, prior)
+    if static and not meta.get("small_sample"):
+        return None
+    return meta
 
 
 def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
