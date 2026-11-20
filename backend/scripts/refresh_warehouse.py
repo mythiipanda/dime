@@ -27,7 +27,7 @@ SEEDERS = [
     ("team_ratings", "seed_team_ratings.py", [], True),
     ("impact", "seed_bref_impact.py", [], True),
     ("salaries", "seed_salaries.py", [], False),
-    ("stints", "seed_stints.py", [], True),
+    ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
     ("repair_shot_names", "repair_shot_names.py", [], False),
