@@ -12,7 +12,7 @@ from ..prediction import (
     season_team_ratings,
 )
 from ..rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
-from ._helpers import _pkg
+from ._helpers import _owned_connection, _pkg
 
 _RequestedMetric = Literal.__getitem__(tuple(["", *TEAM_RATING_METRICS]))
 _RankingDirection = Literal.__getitem__(tuple(["", *RANKING_DIRECTIONS]))
@@ -400,6 +400,84 @@ def get_rapm(player: str = "", top: int = 10, season: str | None = None) -> dict
                      "qualification": "players under 500 possessions "
                                       "excluded; estimates shrink "
                                       "toward the prior"}}
+
+
+_IMPACT_SOURCES = (
+    ("silver_impact", "PLAYER_NAME", "BPM", "bpm", "MP"),
+    ("silver_rapm", "name", "rapm", "rapm_lite", "possessions"),
+    ("silver_rapm_prior", "name", "rapm", "rapm_lite", "possessions"),
+    ("silver_raptor_player", "PLAYER_NAME", "RAPTOR_TOTAL", "raptor_total", "MP"),
+)
+
+
+@tool(description='Player impact and league rank for a season across all-in-one '
+      'plus-minus metrics the warehouse covers: published BPM '
+      '(basketball-reference advanced), rapm-lite estimates, and '
+      'FiveThirtyEight RAPTOR for older seasons. One row per metric covering '
+      'the season; rank is 1..N by value within that season\'s player pool. '
+      'Player required; season optional. Warehouse only; each row cites its '
+      'source.')
+def get_impact_rank(player: str = "", season: str | None = None) -> dict[str, Any]:
+    from ...contracts import normalize_name
+    pkg = _pkg()
+    season = pkg.resolve_season(season)
+    target = normalize_name(player or "")
+    if not target:
+        return {"tool": "get_impact_rank", "ok": False,
+                "error": "player needed"}
+    rows: list[dict[str, Any]] = []
+    coverage: set[str] = set()
+    with _owned_connection(None, read_only=True) as con:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        for table, name_col, val_col, metric, qual_col in _IMPACT_SOURCES:
+            if table not in tables:
+                continue
+            for (found_season,) in con.execute(
+                    f"SELECT DISTINCT _season FROM {table}").fetchall():
+                if found_season:
+                    coverage.add(str(found_season))
+            board = [(str(n), float(v), q) for n, v, q in con.execute(
+                f"""SELECT {name_col}, {val_col}, {qual_col} FROM {table}
+                WHERE _season = ? AND {val_col} IS NOT NULL""",
+                [season]).fetchall() if n]
+            if not board:
+                continue
+            sources = [str(s[0]) for s in con.execute(
+                f"SELECT DISTINCT _source FROM {table} WHERE _season = ?",
+                [season]).fetchall()]
+            board.sort(key=lambda r: r[1], reverse=True)
+            order = {n: i + 1 for i, (n, _, _) in enumerate(board)}
+            norm_map = {normalize_name(n): n for n, _, _ in board}
+            hit = norm_map.get(target)
+            if hit is None:
+                like = [n for n, _, _ in board
+                        if target in normalize_name(n)]
+                if like:
+                    hit = min(like, key=lambda n: order[n])
+            if hit is None:
+                continue
+            value, qualifier = next(
+                (v, q) for n, v, q in board if n == hit)
+            rows.append({
+                "player": hit, "season": season, "metric": metric,
+                "value": round(value, 2), "rank": order[hit],
+                "players": len(board),
+                "qualifier": int(qualifier) if qualifier is not None else None,
+                "source": "; ".join(sources)})
+    if not rows:
+        if not coverage:
+            return {"tool": "get_impact_rank", "ok": False,
+                    "error": "no impact tables loaded"}
+        if season not in coverage:
+            return {"tool": "get_impact_rank", "ok": False,
+                    "error": f"no impact data for {season}; "
+                             f"coverage: {', '.join(sorted(coverage))}"}
+        return {"tool": "get_impact_rank", "ok": False,
+                "error": f"unknown player for {season}: {player}"}
+    return {"tool": "get_impact_rank", "ok": True, "rows": rows,
+            "meta": {"season": season, "player": rows[0]["player"],
+                     "metrics": [r["metric"] for r in rows],
+                     "coverage": sorted(coverage)}}
 
 
 @tool(description='Back-to-back plus rest-day splits from history game dates.')

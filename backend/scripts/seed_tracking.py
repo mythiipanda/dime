@@ -24,6 +24,7 @@ class Unit:
     season: str
     scope: str
     label: str
+    season_type: str = "Regular Season"
 
 def unit_table(unit: Unit) -> str:
     if unit.kind == "pt_stats":
@@ -34,28 +35,38 @@ def unit_table(unit: Unit) -> str:
 
 def unit_entity(unit: Unit) -> str:
     if unit.kind == "pt_stats":
-        return f"ptstats:{unit.scope}:{unit.label}"
-    if unit.kind == "pt_defend":
-        return f"ptdefend:{unit.label}"
-    return "ptshot:overall"
+        base = f"ptstats:{unit.scope}:{unit.label}"
+    elif unit.kind == "pt_defend":
+        base = f"ptdefend:{unit.label}"
+    else:
+        base = "ptshot:overall"
+    if unit.season_type != "Regular Season":
+        base += ":" + unit.season_type.lower().replace(" ", "_")
+    return base
 
-def planned_units(seasons: list[str]) -> list[Unit]:
+def planned_units(seasons: list[str],
+                  season_types: tuple[str, ...] = ("Regular Season",)
+                  ) -> list[Unit]:
     units: list[Unit] = []
     for season in seasons:
-        for scope in nba_stats.PT_SCOPES:
-            for measure in nba_stats.PT_MEASURE_TYPES:
-                units.append(Unit("pt_stats", season, scope, measure))
-        for category in nba_stats.PT_DEFEND_CATEGORIES:
-            units.append(Unit("pt_defend", season, "", category))
-        units.append(Unit("pt_shot", season, "", "overall"))
+        for season_type in season_types:
+            for scope in nba_stats.PT_SCOPES:
+                for measure in nba_stats.PT_MEASURE_TYPES:
+                    units.append(Unit("pt_stats", season, scope, measure,
+                                      season_type))
+            for category in nba_stats.PT_DEFEND_CATEGORIES:
+                units.append(Unit("pt_defend", season, "", category,
+                                  season_type))
+            units.append(Unit("pt_shot", season, "", "overall", season_type))
     return units
 
 def fetch(unit: Unit):
     if unit.kind == "pt_stats":
-        return nba_stats.pt_stats(unit.scope, unit.label, unit.season)
+        return nba_stats.pt_stats(unit.scope, unit.label, unit.season,
+                                  unit.season_type)
     if unit.kind == "pt_defend":
-        return nba_stats.pt_defend(unit.label, unit.season)
-    return nba_stats.pt_shot(unit.season)
+        return nba_stats.pt_defend(unit.label, unit.season, unit.season_type)
+    return nba_stats.pt_shot(unit.season, unit.season_type)
 
 def unit_complete(table: str, season: str, entity: str) -> bool:
     try:
@@ -161,6 +172,7 @@ def table_count(table: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seasons", default="2024-25,2025-26")
+    ap.add_argument("--season-types", default="Regular Season")
     ap.add_argument("--scratch-db", default="")
     ap.add_argument("--limit-units", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
@@ -179,7 +191,9 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run(args, target) -> int:
     seasons = [s.strip() for s in str(args.seasons).split(",") if s.strip()]
-    units = planned_units(seasons)
+    season_types = tuple(
+        t.strip() for t in str(args.season_types).split(",") if t.strip())
+    units = planned_units(seasons, season_types)
     if args.limit_units and args.limit_units > 0:
         units = units[:args.limit_units]
     if args.dry_run:

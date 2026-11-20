@@ -16,6 +16,8 @@ from analyst.tools import (
     LIVE_CALL_TIMEOUT_S,
     LIVE_ONLY_TOOLS,
     NETWORK_TOOL_SOURCES,
+    PARAM_SCHEMA_DESCRIPTIONS as _PARAM_DESCRIPTIONS,
+    TOOL_PARAM_DESCRIPTIONS as _TOOL_PARAM_DESCRIPTIONS,
     TOOL_SCHEMA_DESCRIPTIONS as _TOOL_SCHEMA_DESCRIPTIONS,
     WAREHOUSE_ALTERNATIVES,
     WAREHOUSE_FALLBACK_TOOL,
@@ -49,6 +51,7 @@ _TOOL_ORDER = (
     "sql_exec",
     "warehouse_schema",
     "get_rapm",
+    "get_impact_rank",
     "get_game_prediction",
     "get_wpa_leaders",
     "get_comps",
@@ -56,11 +59,14 @@ _TOOL_ORDER = (
     "get_win_prob",
     "get_on_off",
     "get_shot_zones",
+    "get_phase_shot_splits",
     "get_four_factors",
     "get_clutch_stats",
     "get_competitive_ratings",
     "get_hustle",
     "get_injuries",
+    "get_news_feed",
+    "get_team_daily_brief",
     "get_award_results",
     "get_briefing",
     "get_standings",
@@ -81,6 +87,7 @@ _TOOL_ORDER = (
     "get_contract_value",
     "get_trade_check",
     "get_trade_value",
+    "get_trade_partners",
     "get_situational_splits",
     "get_playoff_sim",
     "get_playoff_team_ratings",
@@ -106,6 +113,7 @@ _TOOL_ORDER = (
     "get_team_game_log",
     "get_zone_deltas",
     "search_shots",
+    "get_shot_chart",
     "get_stint_timeline",
     "get_possession_log",
     "get_elo",
@@ -125,6 +133,7 @@ _TOOL_ORDER = (
     "get_matchup_splits",
     "get_regression_check",
     "get_scout_pack",
+    "get_opponent_scout",
     "get_rotation_check",
     "get_injury_impact",
     "get_matchup_brief",
@@ -139,6 +148,10 @@ _TOOL_ORDER = (
     "get_splits",
     "get_recap",
     "get_scouting_report",
+    "get_free_agents",
+    "get_prospect",
+    "get_roster_fit",
+    "get_expectations",
 )
 
 _REGISTRARS = (
@@ -152,6 +165,28 @@ _REGISTRARS = (
     _matchup_tools,
     _briefing_tools,
 )
+
+
+def _season_param_doc(default: Any) -> str:
+    if isinstance(default, int) or (isinstance(default, str) and default.isdigit()):
+        return f"Season year number (e.g. 2025 means the 2025-26 season). Default: {default!r}."
+    if default in (None, ""):
+        return "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season."
+    return f"Season id 'YYYY-YY' (e.g. '2026-27'). Default: {default!r}."
+
+
+def _param_doc(tool_name: str, field_name: str, field: Any) -> str | None:
+    if field_name == "season":
+        return _season_param_doc(field.default)
+    doc = _TOOL_PARAM_DESCRIPTIONS.get((tool_name, field_name)) or _PARAM_DESCRIPTIONS.get(field_name)
+    if doc is None:
+        return None
+    from pydantic_core import PydanticUndefined
+    if "{d}" in doc:
+        doc = doc.format(d=field.default)
+    elif field.default is not PydanticUndefined:
+        doc = f"{doc} Default: {field.default!r}."
+    return doc
 
 
 def _apply_tool_metadata(registry: dict[str, Any]) -> None:
@@ -168,6 +203,24 @@ def _apply_tool_metadata(registry: dict[str, Any]) -> None:
         schema_tool = registry.get(schema_name)
         if schema_tool is not None and schema_tool.args_schema is not None:
             schema_tool.args_schema.__doc__ = schema_doc
+    for tool_name, tool in registry.items():
+        apply_param_docs(tool_name, tool)
+
+
+def apply_param_docs(tool_name: str, tool: Any) -> None:
+    fields = getattr(tool.args_schema, "model_fields", None)
+    if not fields:
+        return
+    changed = False
+    for field_name, field in fields.items():
+        if field.description:
+            continue
+        doc = _param_doc(tool_name, field_name, field)
+        if doc:
+            field.description = doc
+            changed = True
+    if changed:
+        tool.args_schema.model_rebuild(force=True)
 
 
 def catalogue() -> dict[str, Any]:

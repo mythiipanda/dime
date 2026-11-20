@@ -20,7 +20,7 @@ function Court() {
   );
 }
 
-function mapCoordinates(zones: ShotZone[]): { cx: number; cy: number; att: number; pct: number }[] {
+function mapCoordinates(zones: ShotZone[]): { cx: number; cy: number; att: number; pct: number; makes?: number; delta?: number; label?: string }[] {
   if (zones.length === 0) return [];
   const minX = Math.min(...zones.map((z) => z.x));
   const maxX = Math.max(...zones.map((z) => z.x));
@@ -30,8 +30,7 @@ function mapCoordinates(zones: ShotZone[]): { cx: number; cy: number; att: numbe
     return zones.map((z) => ({
       cx: Math.max(15, Math.min(485, 250 + z.x * 10)),
       cy: Math.max(15, Math.min(455, 52.5 + z.y * 10)),
-      att: z.att,
-      pct: z.pct,
+      att: z.att, pct: z.pct, makes: z.makes, delta: z.delta, label: z.label,
     }));
   }
 
@@ -39,16 +38,14 @@ function mapCoordinates(zones: ShotZone[]): { cx: number; cy: number; att: numbe
     return zones.map((z) => ({
       cx: Math.max(15, Math.min(485, 250 + z.x)),
       cy: Math.max(15, Math.min(455, 52.5 + z.y)),
-      att: z.att,
-      pct: z.pct,
+      att: z.att, pct: z.pct, makes: z.makes, delta: z.delta, label: z.label,
     }));
   }
 
   return zones.map((z) => ({
     cx: (z.x / 100) * 500,
     cy: (z.y / 100) * 470,
-    att: z.att,
-    pct: z.pct,
+    att: z.att, pct: z.pct, makes: z.makes, delta: z.delta, label: z.label,
   }));
 }
 
@@ -70,19 +67,28 @@ export default function ArtifactShotChart({
         <Court />
         {mapped.map((z, i) => {
           const r = 5 + (z.att / maxAtt) * 9;
+          const delta = z.delta;
+          const fill = delta === undefined
+            ? "var(--ink)"
+            : delta >= 2
+              ? "var(--green)"
+              : delta <= -2
+                ? "var(--orange)"
+                : "var(--ink)";
           const opacity = 0.4 + (z.pct / 100) * 0.55;
+          const caption = z.makes !== undefined ? `${z.makes}/${z.att} · ${z.pct}` : `${z.pct}`;
           return (
             <g key={i}>
               <circle
                 cx={z.cx} cy={z.cy} r={r}
-                fill="var(--ink)" opacity={opacity}
+                fill={fill} opacity={opacity}
                 stroke="var(--page)" strokeWidth={2}
               />
               <text
                 x={z.cx} y={z.cy + r + 11} textAnchor="middle"
                 fontSize={9} fontFamily="var(--font-mono)" fill="var(--ink-2)"
               >
-                {z.pct}
+                {caption}
               </text>
             </g>
           );
@@ -97,14 +103,25 @@ export default function ArtifactShotChart({
           </span>
           shots
         </span>
-        <span className="flex items-center gap-2">
-          <span className="flex items-center gap-1.5" aria-hidden>
-            <span className="rounded-full bg-ink" style={{ width: 11, height: 11, opacity: 0.4 }} />
-            <span className="rounded-full bg-ink" style={{ width: 11, height: 11, opacity: 0.68 }} />
-            <span className="rounded-full bg-ink" style={{ width: 11, height: 11, opacity: 0.95 }} />
+        {mapped.some((z) => z.delta !== undefined) ? (
+          <span className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5" aria-hidden>
+              <span className="rounded-full" style={{ width: 11, height: 11, background: "var(--orange)", opacity: 0.7 }} />
+              <span className="rounded-full bg-ink" style={{ width: 11, height: 11, opacity: 0.6 }} />
+              <span className="rounded-full" style={{ width: 11, height: 11, background: "var(--green)", opacity: 0.7 }} />
+            </span>
+            vs league fg%
           </span>
-          fg%
-        </span>
+        ) : (
+          <span className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5" aria-hidden>
+              <span className="rounded-full bg-ink" style={{ width: 11, height: 11, opacity: 0.4 }} />
+              <span className="rounded-full bg-ink" style={{ width: 11, height: 11, opacity: 0.68 }} />
+              <span className="rounded-full bg-ink" style={{ width: 11, height: 11, opacity: 0.95 }} />
+            </span>
+            fg%
+          </span>
+        )}
       </div>
       {footnote && <div className="mt-1 font-mono text-[11px] text-ink-3">{footnote}</div>}
     </div>
