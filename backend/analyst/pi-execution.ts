@@ -381,12 +381,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
             let acceptedSubmission: AnswerSubmission | undefined;
             let answerEmitted = false;
+            let replayReasoning: Record<string, unknown> = {};
             const emitAcceptedAnswer = () => {
                 if (answerEmitted || !acceptedSubmission)
                     return;
                 answerEmitted = true;
                 const canonicalText = acceptedSubmission.blocks.map(block => block.text).join("\n\n");
-                emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+                emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
             };
             const onAbort = () => { emitAcceptedAnswer(); controller.abort(); };
             signal?.addEventListener("abort", onAbort, { once: true });
@@ -509,19 +510,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                     const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                     const reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
-                    const replayReasoning = reasoning ? { reasoning } : {};
+                    replayReasoning = reasoning ? { reasoning } : {};
                     if (acceptedSubmission) {
-                        const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
-                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
+                        emitAcceptedAnswer();
                     } else {
-                        const last = session.messages.filter(m => m.role === "assistant").at(-1);
-                        if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
-                            const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
-                            throw new Error(detail || "Model failed");
-                        }
-                        const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                         if (!text.trim())
                             throw new Error("Model returned no answer");
+                        answerEmitted = true;
                         emit({ type: "answer", text, ...replayReasoning });
                     }
                 }
