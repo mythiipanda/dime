@@ -1,7 +1,7 @@
 ---
 name: visual-artifacts
-description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart).
----
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, team_card, scatter, shot_chart, compare, table, chart).
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart, memo).---
 
 # Dime Visual Artifacts & Multimodal Output Guide
 
@@ -12,11 +12,13 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 | Query Intent / Data Shape | Optimal Artifact | Key Features & Attributes |
 |---|---|---|
 | **One Player at a Glance** | `player_card` | Select identity and up to six metrics from a single actual source row. The host supplies values and declared units; no invented statistics, team names or portraits. |
+| **One Team at a Glance** | `team_card` | Team name plus up to six headline metrics from one row; optional sections each resolve their own source row for roster, payroll vs cap/aprons, four factors, lineups, injuries or picks, with per-section provenance. |
 | **Two Continuous Variables** (e.g., TS% vs USG%, ORAPM vs DRAPM) | `scatter` | Quadrant divisions via `xMid` & `yMid`, point labels, `highlight` flag for focal players, CSV export. |
 | **Court Location & Shooting Profiles** | `shot_chart` | Court zones with attempt counts (`att`) and shooting percentages (`pct`). |
 | **Head-to-Head Showdowns** (2 players or 2 teams) | `compare` | Visual bars comparing normalized metrics between entity `a` and entity `b`. |
 | **Rankings, Rosters, Ledgers, Multi-Metric Lists** | `table` | Sortable columns with typed numeric formatting, source citation headers, CSV export. |
 | **Time-Series, Trajectories, Multi-Game Trends** | `chart` | Line/bar series over ordered games, months, or seasons with `unit`, `xLabels`, and semantic `tone`. |
+| **Executive Briefings, GM/Owner Deliverables, Multi-Section Reports** | `memo` | Titled document with headed `sections`, per-section citation `anchors`, and markdown export. |
 
 ---
 
@@ -54,11 +56,80 @@ uncertain. A numeric string must be queried/cast as a number before selecting it
 ```
 
 `teamColumn` is optional. Only use it if the source row contains that text field.
+
+Optional `sections` extends the card into a multi-source snapshot — each section
+selects from its own `ref`/`row`, so contract, season line, impact, zones and
+injury status can each cite a different queried source. Identity stays on the
+header row only; a section never carries a name column. Per section the host
+resolves values, declared units and provenance (capability, dataset, season)
+from that source's result. `metrics` selects numbers (finite or null);
+`fields` selects text (e.g. status, contract type). Up to 6 sections, each with
+1-6 metrics and/or fields; a section with neither is rejected.
+
+```typescript
+{
+  kind: "player_card",
+  title: "Player snapshot",
+  ref: "ref-identity",
+  row: 0,
+  nameColumn: "player_name",
+  teamColumn: "team",
+  metrics: [{ column: "pts", label: "PTS" }, { column: "ts_pct", label: "TS%" }],
+  sections: [
+    { label: "Contract", ref: "ref-contract", row: 0,
+      fields: [{ column: "contract_type", label: "Deal" }],
+      metrics: [{ column: "salary", label: "Salary" }] },
+    { label: "Impact rank", ref: "ref-rapm", row: 0,
+      metrics: [{ column: "rapm", label: "RAPM" }, { column: "rank", label: "Rank" }] },
+    { label: "Availability", ref: "ref-injury", row: 0,
+      fields: [{ column: "status", label: "Status" }] }
+  ]
+}
+```
 Never output JSX, HTML, CSS, executable scripts, component imports or arbitrary
 OpenUI programs. Dime's allowlisted components render in the existing answer
 stream; choose only the components that make this question clearer, not every
 component on every answer. Existing chart/table artifacts still require explicit
 grounding in the prose: unlike player-card values, they are not source-resolved.
+
+### `team_card`
+
+Use for a compact team overview — record, net rating, cap sheet status — not a
+standings list or roster dump (use `table` for those). Same selector contract as
+`player_card`: `nameColumn` selects the team name from the header `ref`/`row`,
+`metrics` selects up to six headline numbers, and optional `sections` extend the
+card across sources — roster size, payroll vs cap and aprons, four factors and
+rank, top lineup, injuries, future picks — each citing its own `ref`/`row` with
+per-section provenance. One `ref`/`row` selects one source row, so multi-row
+sections like a roster or pick list belong in `table`, not `fields`.
+
+```typescript
+{
+  kind: "team_card",
+  title: "Team snapshot",
+  ref: "ref-team",
+  row: 0,
+  nameColumn: "team_name",
+  metrics: [
+    { column: "wins", label: "W" }, { column: "losses", label: "L" },
+    { column: "net_rating", label: "Net Rtg" }
+  ],
+  sections: [
+    { label: "Payroll", ref: "ref-cap", row: 0,
+      metrics: [{ column: "total_salary", label: "Payroll" },
+                { column: "first_apron_room", label: "Apron room" }] },
+    { label: "Four factors", ref: "ref-4f", row: 0,
+      metrics: [{ column: "efg_pct", label: "eFG%" },
+                { column: "tov_pct", label: "TOV%" },
+                { column: "orb_pct", label: "ORB%" },
+                { column: "ftr", label: "FTr" }] },
+    { label: "Injuries", ref: "ref-inj", row: 0,
+      fields: [{ column: "injury_summary", label: "Out/DTD" }] },
+    { label: "Draft capital", ref: "ref-picks", row: 0,
+      fields: [{ column: "pick_summary", label: "Picks" }] }
+  ]
+}
+```
 
 ### `scatter`
 ```typescript
@@ -129,23 +200,73 @@ grounding in the prose: unlike player-card values, they are not source-resolved.
 ```
 
 ### `shot_chart`
+Call `get_shot_chart` (player or team, season, playoffs, opponent) to fill `zones`
+from `silver_shots`; pass its `x`/`y`/`att`/`pct` through and forward `makes`
+and `delta` (its `delta_pp`) when present. `makes` renders a `makes/att`
+caption; `delta` colors each region vs the league average.
 ```typescript
 {
   kind: "shot_chart",
-  title: "Shai Gilgeous-Alexander Spatial Shot Diet (2025-26)",
+  title: "Shai Gilgeous-Alexander Shot Diet vs League (2025-26)",
   zones: [
-    { x: 0, y: 0, att: 380, pct: 68.4 },
-    { x: 0, y: 10, att: 195, pct: 49.2 },
-    { x: -14, y: 14, att: 120, pct: 46.5 },
-    { x: 14, y: 14, att: 110, pct: 45.8 },
-    { x: -22, y: 5, att: 45, pct: 41.2 },
-    { x: 22, y: 5, att: 40, pct: 39.5 },
-    { x: 0, y: 25, att: 210, pct: 37.8 }
+    { x: 0, y: 4, att: 380, makes: 260, pct: 68.4, delta: 8.1, label: "rim-C" },
+    { x: -14, y: 14, att: 120, makes: 56, pct: 46.5, delta: 3.4, label: "long_mid-L" },
+    { x: 22, y: 5, att: 40, makes: 16, pct: 39.5, delta: -1.2, label: "corner_3-R" },
+    { x: 0, y: 25, att: 210, makes: 79, pct: 37.8, delta: 1.6, label: "atb_3-C" }
   ],
-  footnote: "Source: silver_shotchart. Field goal percentages vs volume."
+  footnote: "Source: silver_shots via get_shot_chart. Dot size is attempts; color is FG% vs league."
 }
 ```
 
+### `memo`
+```typescript
+{
+  kind: "memo",
+  title: "2026-27 Cap & Roster Strategy — Orlando Magic",
+  subtitle: "Owner briefing",
+  sections: [
+    {
+      heading: "Cap position",
+      body: "Orlando sits $3.2M under the first apron with a locked multi-year core...",
+      anchors: [{ ref: "actual-ref-from-query", row: 0, columns: ["team", "payroll"] }]
+    },
+    { heading: "Trade options", body: "The flexible path is aggregating mid-tier salary..." }
+  ],
+  footnote: "Sources: silver_salaries, silver_rapm."
+}
+```
+
+Use `memo` when the deliverable is a document — an executive memo, owner
+briefing, scenario playbook or strategy report — not a single visual. Each
+`sections[].body` is markdown-style prose. `anchors` on a section cite source
+rows exactly like block anchors and are validated the same way; cite the rows a
+section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
+as a document card that downloads as Markdown or PDF; keep it to one memo per answer.
+
+### `memo`
+```typescript
+{
+  kind: "memo",
+  title: "2026-27 Cap & Roster Strategy — Orlando Magic",
+  subtitle: "Owner briefing",
+  sections: [
+    {
+      heading: "Cap position",
+      body: "Orlando sits $3.2M under the first apron with a locked multi-year core...",
+      anchors: [{ ref: "actual-ref-from-query", row: 0, columns: ["team", "payroll"] }]
+    },
+    { heading: "Trade options", body: "The flexible path is aggregating mid-tier salary..." }
+  ],
+  footnote: "Sources: silver_salaries, silver_rapm."
+}
+```
+
+Use `memo` when the deliverable is a document — an executive memo, owner
+briefing, scenario playbook or strategy report — not a single visual. Each
+`sections[].body` is markdown-style prose. `anchors` on a section cite source
+rows exactly like block anchors and are validated the same way; cite the rows a
+section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
+as a document card with a download affordance; keep it to one memo per answer.
 ---
 
 ## 3. Evidence Grounding & Source Anchors

@@ -4,6 +4,9 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { objectValue, sourceResult, sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 import { resolvePlayerCard } from "./player-card.js";
 import { validateAnswerArtifact } from "./artifact-schemas.js";
+=======
+import { resolveTeamCard } from "./team-card.js";
+>>>>>>> origin/dev
 
 export { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 
@@ -24,7 +27,8 @@ export type AnswerBlock = Static<typeof answerBlockSchema>;
 
 export const submitAnswerSchema = Type.Object({
     blocks: Type.Array(answerBlockSchema, { minItems: 1 }),
-    artifacts: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown())))
+    artifacts: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()))),
+    omitted: Type.Optional(Type.Array(Type.String({ minLength: 1 })))
 }, { additionalProperties: false });
 
 export type AnswerSubmission = Static<typeof submitAnswerSchema>;
@@ -63,10 +67,62 @@ function validateAnchor(
     }
 }
 
+=======
+function normalizeShotChart(artifact: Record<string, unknown>): Record<string, unknown> {
+    if (artifact.kind !== "shot_chart" || !Array.isArray(artifact.zones) || artifact.zones.length === 0)
+        return artifact;
+    const zones = artifact.zones.map(objectValue);
+    if (zones.some(z => !z || typeof z.pct !== "number" || z.pct <= 0 || z.pct > 1))
+        return artifact;
+    return {
+        ...artifact,
+        zones: zones.map(z => ({ ...z, pct: Math.round((z!.pct as number) * 1000) / 10 }))
+    };
+}
+
+const KNOWN_ARTIFACT_KINDS: readonly string[] = ["table", "compare", "chart", "shot_chart", "scatter", "player_card", "memo"];
+
+function nonEmptyArray(value: unknown): boolean {
+    return Array.isArray(value) && value.length > 0;
+}
+
+function artifactRejectionReason(artifact: Record<string, unknown>): string | null {
+    const kind = typeof artifact.kind === "string" ? artifact.kind : "";
+    if (!KNOWN_ARTIFACT_KINDS.includes(kind))
+        return kind ? `unknown artifact kind "${kind}"` : "artifact has no kind";
+    if (typeof artifact.title !== "string" || !artifact.title)
+        return `"${kind}" artifact has no title`;
+    switch (kind) {
+        case "table":
+            return nonEmptyArray(artifact.columns) && nonEmptyArray(artifact.rows) ? null : `"table" artifact has no columns or rows`;
+        case "compare":
+            return nonEmptyArray(artifact.rows) ? null : `"compare" artifact has no rows`;
+        case "chart":
+            return nonEmptyArray(artifact.series) ? null : `"chart" artifact has no series`;
+        case "scatter":
+            return nonEmptyArray(artifact.points) ? null : `"scatter" artifact has no points`;
+        case "shot_chart":
+            return nonEmptyArray(artifact.zones) ? null : `"shot_chart" artifact has no zones`;
+        case "memo":
+            return nonEmptyArray(artifact.sections) &&
+                (artifact.sections as unknown[]).some(s => {
+                    const sec = objectValue(s);
+                    return sec && typeof sec.heading === "string" && sec.heading !== "" &&
+                        typeof sec.body === "string" && sec.body !== "";
+                })
+                ? null
+                : `"memo" artifact has no sections with heading and body`;
+        default:
+            return null;
+    }
+}
+
+>>>>>>> origin/dev
 export function validateAnswerSubmission(
     input: unknown,
     getSource: (ref: string) => SourceRecord | undefined,
-    availableRefs?: readonly string[]
+    availableRefs?: readonly string[],
+    artifactWarnings?: string[]
 ): AnswerSubmission {
     if (!Value.Check(submitAnswerSchema, input)) {
         throw new Error("Invalid answer submission schema: blocks with non-empty text required");
@@ -79,8 +135,56 @@ export function validateAnswerSubmission(
     });
     const artifacts = input.artifacts ? structuredClone(input.artifacts).map((artifact, index) =>
         artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource) : validateAnswerArtifact(artifact, index)
+=======
+    const artifacts = input.artifacts ? structuredClone(input.artifacts).flatMap(artifact => {
+        const reason = artifactRejectionReason(artifact);
+        if (reason) {
+            artifactWarnings?.push(`dropped artifact: ${reason}`);
+            return [];
+        }
+        if (artifact.kind === "player_card") return [resolvePlayerCard(artifact, getSource)];
+        if (artifact.kind === "memo") {
+            for (const section of artifact.sections as unknown[]) {
+                const anchors = objectValue(section)?.anchors;
+                if (Array.isArray(anchors)) {
+                    for (const anchor of anchors) {
+                        if (!Value.Check(anchorSelectorSchema, anchor))
+                            throw new Error("Invalid memo section anchor: ref, row and columns required");
+                        validateAnchor(anchor, getSource, availableRefs);
+                    }
+                }
+            }
+        }
+        return [normalizeShotChart(artifact)];
+    }) : undefined;
+        artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource)
+            : artifact.kind === "team_card" ? resolveTeamCard(artifact, getSource)
+            : normalizeShotChart(artifact)
+>>>>>>> origin/dev
     ) : undefined;
-    return artifacts !== undefined ? { blocks, artifacts } : { blocks };
+=======
+>>>>>>> origin/dev
+    const artifacts = input.artifacts ? structuredClone(input.artifacts).map(artifact => {
+        if (artifact.kind === "player_card") return resolvePlayerCard(artifact, getSource);
+        if (artifact.kind === "memo" && Array.isArray(artifact.sections)) {
+            for (const section of artifact.sections) {
+                const anchors = objectValue(section)?.anchors;
+                if (Array.isArray(anchors)) {
+                    for (const anchor of anchors) {
+                        if (!Value.Check(anchorSelectorSchema, anchor))
+                            throw new Error("Invalid memo section anchor: ref, row and columns required");
+                        validateAnchor(anchor, getSource, availableRefs);
+                    }
+                }
+            }
+        }
+        return normalizeShotChart(artifact);
+    }) : undefined;    const omitted = input.omitted?.map(item => String(item));
+    return {
+        blocks,
+        ...(artifacts !== undefined ? { artifacts } : {}),
+        ...(omitted !== undefined ? { omitted } : {})
+    };
 }
 
 export function createSubmitAnswerTool(
@@ -91,14 +195,33 @@ export function createSubmitAnswerTool(
         name: "submit_answer",
         label: "Submit answer",
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. Validates selector traceability and artifact schemas, not semantic correctness.",
+=======
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, team_card). Load visual-artifacts for schemas. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",
+>>>>>>> origin/dev
         parameters: submitAnswerSchema,
+=======
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",
+        parameters: submitAnswerSchema,
+>>>>>>> origin/dev
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, memo). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. memo sections may carry anchors validated like block anchors. Artifacts with unknown kinds or no usable data are dropped and reported back as warnings. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, memo). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. memo sections may carry anchors validated like block anchors. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",        parameters: submitAnswerSchema,        async execute(_callId, args) {
+=======
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, memo). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. memo sections may carry anchors validated like block anchors. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",        parameters: submitAnswerSchema,
         async execute(_callId, args) {
+>>>>>>> origin/dev
             const sources = getContextSources();
             const sourceMap = new Map(sources.map(s => [s.ref, s]));
-            const validated = validateAnswerSubmission(args, ref => sourceMap.get(ref), [...sourceMap.keys()]);
+            const warnings: string[] = [];
+            const validated = validateAnswerSubmission(args, ref => sourceMap.get(ref), [...sourceMap.keys()], warnings);
             onAccept(validated);
+            const omittedNote = validated.omitted && validated.omitted.length > 0
+                ? ` ${validated.omitted.length} omitted part(s) recorded.`
+                : "";
+            const warningText = warnings.length > 0
+                ? ` Warning: ${warnings.join("; ")}. Supported kinds: ${KNOWN_ARTIFACT_KINDS.join(", ")}. Resubmit with a corrected submission if the artifact matters.`
+                : "";
             return {
-                content: [{ type: "text", text: `Answer submitted with ${validated.blocks.length} block(s).` }],
+                content: [{ type: "text", text: `Answer submitted with ${validated.blocks.length} block(s).${omittedNote}${warningText}` }],
                 details: undefined
             };
         }

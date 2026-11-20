@@ -22,6 +22,7 @@ DESK_OVERRIDE = {
     "get_shot_compare": "player",
     "get_preview": "team",
     "get_scout_pack": "team",
+    "get_opponent_scout": "team",
     "get_rotation_check": "team",
     "get_injury_impact": "team",
     "get_matchup_preview": "preview",

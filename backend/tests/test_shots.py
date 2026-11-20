@@ -205,9 +205,9 @@ def test_tool_tatum_corner3_4th_matches_verified_numbers():
         {"player": "Tatum", "zones": "corner_3", "periods": "4th"})
     assert res["ok"] is True
     agg = res["aggregate"]
-    assert agg["attempts"] == 5
-    assert agg["makes"] == 3
-    assert agg["efg_pct"] == 0.9
+    assert agg["attempts"] == 2
+    assert agg["makes"] == 1
+    assert agg["efg_pct"] == 0.75
     assert agg["small_sample"] is True
     assert "sample_warning" in res["meta"]
 

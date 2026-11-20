@@ -1,6 +1,7 @@
 import hashlib
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -64,6 +65,7 @@ def test_off_probe_region_byte_mutation_with_restored_mtime_and_size_is_never_st
     first = store.warehouse_identity()
     assert first["warehouse_sha256"] == hashlib.sha256(payload).hexdigest()
     stat = db.stat()
+    time.sleep(0.01)
     mutated = bytearray(payload)
     mutated[20000] = ord("b")
     db.write_bytes(mutated)
@@ -83,6 +85,7 @@ def test_in_place_single_byte_mutation_with_restored_mtime_is_never_stale(monkey
     store.warehouse_identity_cache_clear()
     first = store.warehouse_identity()
     stat = db.stat()
+    time.sleep(0.01)
     with open(db, "r+b") as handle:
         handle.seek(20000)
         handle.write(b"q")
@@ -110,6 +113,7 @@ def _torn_digest_for(db: Path, payload: bytes, mutated: bytes, offset: int, stat
         os.lseek(descriptor, 0, os.SEEK_SET)
         half = len(payload) // 2
         digest.update(os.read(descriptor, half))
+        time.sleep(0.01)
         with open(db, "r+b") as handle:
             handle.seek(offset)
             handle.write(mutated)
@@ -182,6 +186,7 @@ def test_change_token_advances_when_mtime_and_size_are_restored(tmp_path):
         os.close(descriptor)
     assert isinstance(before, int)
     stat = db.stat()
+    time.sleep(0.01)
     with open(db, "r+b") as handle:
         handle.seek(4096)
         handle.write(b"m")

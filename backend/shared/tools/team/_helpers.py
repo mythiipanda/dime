@@ -243,3 +243,32 @@ def game_links(game_id: str) -> dict[str, str]:
 
 def _sample_tier(minutes: object) -> tuple[str, int]:
     return _pkg().sample_tier(minutes)
+
+
+def _std_context(team_id: object, season: str,
+                 games: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    pkg = _pkg()
+    static = pkg.season_static(season)
+    hist = pkg._hist_team_games(team_id, season)
+    if hist:
+        gp = len(hist)
+    elif games:
+        gp = len(games)
+    else:
+        gp = None
+    prior = None
+    prior_season = pkg.last_completed_season()
+    if prior_season and prior_season != season:
+        prior_games = pkg._hist_team_games(team_id, prior_season)
+        if prior_games:
+            wins = sum(1 for g in prior_games
+                       if str(g.get("WL", g.get("wl", ""))).strip().upper().startswith("W"))
+            prior = {"season": prior_season,
+                     "games_played": len(prior_games),
+                     "wins": wins,
+                     "losses": len(prior_games) - wins,
+                     "w_pct": round(wins / len(prior_games), 3)}
+    meta = pkg.season_to_date_meta(season, gp, prior)
+    if static and not meta.get("small_sample"):
+        return None
+    return meta
