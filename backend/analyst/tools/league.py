@@ -127,6 +127,7 @@ def register() -> dict[str, Any]:
         get_draft_board as _orig_get_draft_board,
         get_draft_model as _orig_get_draft_model,
         get_elo_standings as _orig_get_elo_standings,
+        get_expectations as _orig_get_expectations,
         get_hustle as _orig_get_hustle,
         get_injuries as _orig_get_injuries,
         get_news_feed as _orig_get_news_feed,
@@ -268,6 +269,17 @@ def register() -> dict[str, Any]:
                                 ["dimension", "team", "league_avg",
                                  "contender_avg", "gap_vs_contenders"])
 
+    @tool("get_expectations", description=_orig_get_expectations.description)
+    def get_expectations(team_id=None, team: str = "", season=None,
+                         seasons: int = 3) -> dict:
+        res = call_sync(_orig_get_expectations, "get_expectations", {
+            "team_id": team_id, "team": team, "season": season,
+            "seasons": seasons})
+        return finish_dict_list(res, "get_expectations",
+                                ["season", "team", "projected_wins",
+                                 "actual_wins", "wins_vs_projection",
+                                 "net_rating", "status"])
+
     @tool("get_draft_board", description=_orig_get_draft_board.description)
     def get_draft_board(season: str = "2025") -> dict:
         res = _offline_call(_orig_get_draft_board, "get_draft_board", {"season": season})
@@ -304,6 +316,7 @@ def register() -> dict[str, Any]:
         "get_injuries": get_injuries,
         "get_news_feed": get_news_feed,
         "get_roster_fit": get_roster_fit,
+        "get_expectations": get_expectations,
         "get_draft_board": get_draft_board,
         "get_combine": get_combine,
         "get_draft_model": get_draft_model,

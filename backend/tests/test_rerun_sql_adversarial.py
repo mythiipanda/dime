@@ -162,7 +162,7 @@ def test_rerun_sql_rejects_unknown_physical_table_before_execution(monkeypatch):
     )
 
     assert result["ok"] is False
-    assert result["error"] == "unknown or unavailable tables"
+    assert result["error"] == "unknown or unavailable tables: not_a_declared_table"
     assert executed == []
 
 

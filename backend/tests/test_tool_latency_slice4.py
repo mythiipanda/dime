@@ -31,12 +31,26 @@ ERROR_CASES = {
 }
 
 
+def _strip_build_provenance(node):
+    if isinstance(node, dict):
+        node.pop("warehouse_sha256", None)
+        for v in node.values():
+            _strip_build_provenance(v)
+    elif isinstance(node, list):
+        for v in node:
+            _strip_build_provenance(v)
+
+
 def _norm(out):
-    return json.loads(json.dumps(out, default=str, sort_keys=True))
+    obj = json.loads(json.dumps(out, default=str, sort_keys=True))
+    _strip_build_provenance(obj)
+    return obj
 
 
 def _load(name):
-    return json.loads((FIX / f"{name}.json").read_text())
+    obj = json.loads((FIX / f"{name}.json").read_text())
+    _strip_build_provenance(obj)
+    return obj
 
 
 def _max_of_5(fn, kwargs):

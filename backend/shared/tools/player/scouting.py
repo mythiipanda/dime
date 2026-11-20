@@ -219,7 +219,13 @@ def get_player_report(player: str | int, season: str | None = None) -> dict[str,
         "tool": "get_player_report",
         "ok": True,
         "rows": {"season_line": line, "advanced": a, "shot_profile": z, "clutch": crow},
-        "meta": {"source": "warehouse composite", "season": season, "player": name, "deterministic_answer": "\n".join(lines)},
+        "meta": {
+            "source": "warehouse composite",
+            "season": season,
+            "player": name,
+            "deterministic_answer": "\n".join(lines),
+            **({"season_to_date": avg["meta"]["season_to_date"]} if "season_to_date" in avg.get("meta", {}) else {}),
+        },
     }
 
 

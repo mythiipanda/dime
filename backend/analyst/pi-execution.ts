@@ -6,6 +6,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
+import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
@@ -88,7 +89,7 @@ const turnSchema = Type.Object({
     reasoning: Type.Optional(Type.String())
 });
 export const analystContextSchema = Type.Object({
-    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(), runTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
     sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),
     bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
 });
@@ -207,12 +208,15 @@ function buildLoopRecord(
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
     results: Map<string, SourceRecord>,
-    emit: (event: AnalystEvent) => void
+    emit: (event: AnalystEvent) => void,
+    tracker: RunStatusTracker
 ) {
     const callCounts = new Map<string, { count: number; lastRef?: string }>();
+    const lastErrors = new Map<string, { error: string; count: number }>();
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
+            tracker.toolCalls += 1;
             emit({ type: "tool_call", name: tool.name });
             const key = `${tool.name}:${canonicalArgsKey(args[1] ?? {})}`;
             const entry = callCounts.get(key) ?? { count: 0 };
@@ -238,6 +242,19 @@ function wrapBridgeTools(
                 const domain = objectValue(result.structuredContent.result);
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
+                if (failed && domain) {
+                    const errorText = typeof error === "string" ? error : "Tool failed";
+                    const previous = lastErrors.get(tool.name);
+                    const count = previous && previous.error === errorText ? previous.count + 1 : 1;
+                    lastErrors.set(tool.name, { error: errorText, count });
+                    if (count >= 2) {
+                        domain.repeated_error = `Same error as ${count - 1} earlier ${tool.name} call(s) in this run`;
+                        domain.recovery_hint = "Treat as a data limitation: note the gap and move to the next sub-question instead of retrying.";
+                        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                    }
+                }
+                else if (!failed)
+                    lastErrors.delete(tool.name);
                 emit({
                     type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
                     ...(failed ? { error: typeof error === "string" ? error : "Tool failed" } : {}),
@@ -264,7 +281,16 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             let wake: (() => void) | undefined;
             let finished = false;
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
-            const onAbort = () => controller.abort();
+            let acceptedSubmission: AnswerSubmission | undefined;
+            let answerEmitted = false;
+            const emitAcceptedAnswer = () => {
+                if (answerEmitted || !acceptedSubmission)
+                    return;
+                answerEmitted = true;
+                const canonicalText = acceptedSubmission.blocks.map(block => block.text).join("\n\n");
+                emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+            };
+            const onAbort = () => { emitAcceptedAnswer(); controller.abort(); };
             signal?.addEventListener("abort", onAbort, { once: true });
             let abandoned = false;
             const abandon = new Promise<void>(resolve => controller.signal.addEventListener("abort", () => setTimeout(resolve, abortGraceMs).unref(), { once: true }));
@@ -276,8 +302,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridge: Awaited<ReturnType<typeof connectPythonTools>> | undefined;
                 let kind = "configuration";
                 let bridgePid: number | undefined;
-                let acceptedSubmission: AnswerSubmission | undefined;
                 let modelApiKey: string | undefined;
+                const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
                 try {
@@ -292,9 +318,17 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     bridgePid = bridge.pid;
                     controller.signal.throwIfAborted();
                     const connected = bridge;
+                    const tracker: RunStatusTracker = {
+                        startedAt,
+                        budgetMs: start.runTimeoutMs,
+                        toolCalls: 0,
+                        sourceCount: () => (start.sources?.length ?? 0) + connected.results.size,
+                        submitted: false,
+                    };
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
+                            tracker.submitted = true;
                             acceptedSubmission = submission;
                             if (submission.artifacts && submission.artifacts.length > 0)
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
@@ -302,8 +336,14 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
-                        tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), submitTool],
+                        tools: [
+                            ...wrapBridgeTools(bridge.tools, connected.results, emit, tracker),
+                            countToolCall(priorSourceTool(start.sources ?? []), tracker),
+                            countToolCall(submitTool, tracker),
+                            countToolCall(createRunStatusTool(tracker), tracker),
+                        ],
                         onSkillLoad: () => {
+                            tracker.toolCalls += 1;
                             emit({ type: "tool_call", name: "load_skill" });
                             emit({ type: "tool_result", name: "load_skill", status: "ok" });
                         }
@@ -333,6 +373,15 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         session.sessionManager.appendMessage(workspaceContext);
                         session.agent.state.messages.push(workspaceContext);
                     }
+                    if (start.runTimeoutMs !== undefined) {
+                        const budgetContext: Message = {
+                            role: "user",
+                            content: `Host run budget: ${Math.round(start.runTimeoutMs / 1000)}s (${Math.round(start.runTimeoutMs)}ms total). The host aborts this run when it expires; tools.run_status({}) reports elapsed and remaining budget.`,
+                            timestamp: Date.now()
+                        };
+                        session.sessionManager.appendMessage(budgetContext);
+                        session.agent.state.messages.push(budgetContext);
+                    }
                     kind = "model";
                     await session.prompt(start.q);
                     controller.signal.throwIfAborted();
@@ -348,13 +397,20 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
                         emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
                     } else {
+                        const last = session.messages.filter(m => m.role === "assistant").at(-1);
+                        if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
+                            const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
+                            throw new Error(detail || "Model failed");
+                        }
+                        const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                         if (!text.trim())
                             throw new Error("Model returned no answer");
                         emit({ type: "answer", text, ...replayReasoning });
                     }
                 }
                 catch (error) {
-                    if (!controller.signal.aborted)
+                    emitAcceptedAnswer();
+                    if (!answerEmitted && !controller.signal.aborted)
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
                 }
                 finally {

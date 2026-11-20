@@ -1,4 +1,6 @@
+import difflib
 import os as _os
+import re
 from typing import Any
 
 from langchain_core.tools import tool
@@ -30,6 +32,30 @@ def _failure(query: str, message: str, recovery_hint: str | None = None) -> dict
         out["recovery_hint"] = recovery_hint
     return out
 
+_TABLE_ERROR_RE = re.compile(r"(?:no such table|table with name)\s*[:=]?\s*[`\"]?([A-Za-z0-9_]+)", re.I)
+_COLUMN_ERROR_RE = re.compile(r"(?:does not have a column|no such column|column)\s*(?:named\s+|called\s+)?[`\"]?([A-Za-z0-9_]+)", re.I)
+
+def _error_suggestions(query: str, error: str) -> list[str]:
+    try:
+        _, columns = _get_warehouse_schema()
+    except Exception:
+        return []
+    declared_tables = [name for name in TABLES if name in columns]
+    table_match = _TABLE_ERROR_RE.search(error)
+    if table_match:
+        return difflib.get_close_matches(table_match.group(1), declared_tables, n=3, cutoff=0.55)
+    column_match = _COLUMN_ERROR_RE.search(error)
+    if not column_match:
+        return []
+    token = column_match.group(1)
+    mentioned = [name for name in declared_tables if re.search(rf"\b{re.escape(name)}\b", query, re.I)]
+    scope = mentioned or declared_tables
+    names = sorted({column for name in scope for column in columns.get(name, {})})
+    matches = difflib.get_close_matches(token, names, n=3, cutoff=0.55)
+    if len(mentioned) == 1 and mentioned[0] in columns:
+        return [f"{mentioned[0]}.{name}" for name in matches]
+    return matches
+
 @tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
 async def sql_exec(sql: str) -> dict[str, Any]:
     query = (sql or "").strip()
@@ -46,10 +72,14 @@ async def sql_exec(sql: str) -> dict[str, Any]:
         )
     out = await rerun_sql(query)
     if not out.get("ok"):
+        hint = "Call warehouse_schema to verify exact table names, column names, and season encodings."
+        matches = _error_suggestions(query, str(out.get("error", "")))
+        if matches:
+            hint += " Closest declared matches: " + ", ".join(matches) + "."
         return _failure(
             query,
             f"{out.get('error', 'query failed')}; sql: {query[:500]}",
-            "Call warehouse_schema to verify exact table names, column names, and season encodings.",
+            hint,
         )
     rows = out.get("rows") or []
     if not rows and _os.environ.get("DIME_STRICT_NONEMPTY_SQL") == "1":
