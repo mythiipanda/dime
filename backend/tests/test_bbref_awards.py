@@ -815,6 +815,17 @@ def test_a_ballot_whose_share_disagrees_with_its_points_is_refused():
         src.verify_ballots(doctored, _winner_index())
     assert "0.5" in str(excinfo.value) or "share" in str(excinfo.value).lower()
 
+def test_a_share_within_the_source_rounding_drift_is_accepted():
+    frame = src.parse_season_page(_page(2004), 2004)
+    first = frame.filter((pl.col("AWARD") == "MVP") & (pl.col("RANK") == 1)
+                         ).row(0, named=True)
+    drifted = round(first["POINTS_WON"] / first["POINTS_MAX"] + 0.007, 3)
+    doctored = frame.with_columns(
+        pl.when((pl.col("AWARD") == "MVP") & (pl.col("RANK") == 1))
+        .then(pl.lit(drifted)).otherwise(pl.col("AWARD_SHARE"))
+        .alias("AWARD_SHARE"))
+    src.verify_ballots(doctored, _winner_index())
+
 def test_a_ballot_whose_first_place_votes_exceed_the_voter_count_is_refused():
     frame = src.parse_season_page(_page(2004), 2004)
     doctored = frame.with_columns(
