@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Award, BookOpen, Command, Database, Home, MessageCircle, Moon, Search, Sun, Swords, ArrowLeftRight, Workflow, Table2 } from "lucide-react";
+import { Award, BookOpen, ClipboardList, Columns3, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, ArrowLeftRight, Workflow, Table2 } from "lucide-react";
 import { SidebarNav } from "../ds/SidebarNav";
 import DimeCommandPalette, { type PaletteEntry } from "../site/DimeCommandPalette";
 import TradesView from "../dime/views/TradesView";
+import CompareView from "../dime/views/CompareView";
+import DraftView from "../dime/views/DraftView";
 import MatchupsView from "../dime/views/MatchupsView";
 import AwardsView from "../dime/views/AwardsView";
 import { ChatView } from "./ChatView";
@@ -12,18 +14,20 @@ import { DataView, HomeView, LibraryView } from "./WorkspaceViews";
 import { getThreads, type ThreadInfo } from "../../lib/api";
 import WorkflowsPanel from "../WorkflowsPanel";
 import { BoardsPanel } from "../BoardsPanel";
+import { NotebooksPanel } from "../NotebooksPanel";
 import { parseShellTab, shellNavigation, shellUrl, validThread, type ShellTab } from "../../lib/shell-navigation";
 import { replayName } from "../../lib/replay";
 import { createWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
 export { parseShellTab, shellNavigation } from "../../lib/shell-navigation";
-const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, briefs: BookOpen, data: Database, trades: ArrowLeftRight, matchups: Swords, awards: Award };
+const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, compare: Columns3, draft: ClipboardList, matchups: Swords, awards: Award };
 const navigation = shellNavigation.map(item => { const Icon = icons[item.id]; return { ...item, icon: <Icon size={17} strokeWidth={1.5} /> }; });
 
 export function DimeShell() {
   const [tab, setTab] = useState<ShellTab>("chat");
   const [thread, setThread] = useState("");
   const [boardId, setBoardId] = useState<string | null>(null);
+  const [notebookId, setNotebookId] = useState<string | null>(null);
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
   const [replay, setReplay] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
@@ -38,6 +42,7 @@ export function DimeShell() {
       const selected = validThread(candidate) ? candidate : crypto.randomUUID();
       setTab(nextTab); setThread(selected); setReplay(replayName(url.search));
       setBoardId(nextTab === "boards" && validThread(url.searchParams.get("board")) ? url.searchParams.get("board") : null);
+      setNotebookId(nextTab === "notebooks" && validThread(url.searchParams.get("nb")) ? url.searchParams.get("nb") : null);
       url.searchParams.set("tab", nextTab); url.searchParams.set("thread", selected);
       window.history.replaceState({}, "", url);
     };
@@ -52,6 +57,7 @@ export function DimeShell() {
   const navigate = (nextTab: ShellTab, nextThread = thread) => {
     setTab(nextTab); setThread(nextThread); setReplay(null);
     if (nextTab !== "boards") setBoardId(null);
+    if (nextTab !== "notebooks") setNotebookId(null);
     window.history.pushState({}, "", shellUrl(window.location.href, nextTab, nextThread));
   };
   const newChat = () => navigate("chat", crypto.randomUUID());
@@ -59,6 +65,12 @@ export function DimeShell() {
     navigate("boards"); setBoardId(id);
     const url = new URL(window.location.href);
     if (id) url.searchParams.set("board", id); else url.searchParams.delete("board");
+    window.history.replaceState({}, "", url);
+  };
+  const openNotebook = (id: string | null) => {
+    navigate("notebooks"); setNotebookId(id);
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("nb", id); else url.searchParams.delete("nb");
     window.history.replaceState({}, "", url);
   };
   const askBoard = (text: string) => {
@@ -100,10 +112,13 @@ export function DimeShell() {
         {tab === "chat" && thread && <ChatView key={`${thread}-${replay ?? "live"}`} thread={thread} replay={replay} onRunDone={onRunDone} workflowRequest={workflowRequest?.thread === thread ? workflowRequest : null} onWorkflowConsumed={() => { workflowStarting.current = false; setWorkflowRequest(null); }} />}
         {tab === "workflows" && <WorkflowsPanel onRun={runWorkflow} />}
         {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={askBoard} />}
+        {tab === "notebooks" && <NotebooksPanel notebookId={notebookId} onOpen={openNotebook} />}
         {tab === "today" && <HomeView onAsk={() => navigate("workflows")} />}
         {tab === "briefs" && <LibraryView onThread={pick} onBoard={openBoard} />}
         {tab === "data" && <DataView />}
-        {tab === "trades" && <div className="tools-view"><TradesView /></div>}
+        {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} /></div>}
+        {tab === "compare" && <div className="tools-view"><CompareView onAsk={askBoard} /></div>}
+        {tab === "draft" && <div className="tools-view"><DraftView onAsk={askBoard} /></div>}
         {tab === "matchups" && <div className="tools-view"><MatchupsView /></div>}
         {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
       </div>

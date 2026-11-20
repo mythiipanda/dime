@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { addColumn, addRow, boardCsv, boardPrompt, boardTemplates, boardsArePersistent, columnPercentiles, deleteBoard, duplicateBoard, getBoard, listBoards, newBoard, removeColumn, removeRow, reorderColumns, reorderRows, saveBoard, sortByColumn, validBoard, type Board, type BoardCell, type BoardMetric } from "./boards";
+import { addColumn, addRow, applyPinRerun, boardCsv, boardPrompt, boardTemplates, boardsArePersistent, cardRequeries, columnPercentiles, deleteBoard, duplicateBoard, getBoard, listBoards, newBoard, pinArtifact, removeColumn, removeRow, reorderColumns, reorderRows, saveBoard, sortByColumn, unpinArtifact, updatePin, validBoard, type Board, type BoardCell, type BoardMetric } from "./boards";
+import type { DimeArtifact, TableArtifactPayload } from "./dime-stream";
 
 const metric: BoardMetric = { id: "ppg", label: "Points", category: "Scoring", unit: "per_game", table: "silver_player_season", column: "PPG", higher_is_better: true, definition: "Points per game." };
 const cell = (value: number | null): BoardCell => ({ value, citation: { table: metric.table, column: metric.column, season: "2025-26", sql: "SELECT * FROM silver_player_season WHERE _season = ?", params: ["2025-26"], source: "warehouse", fetched_at: "2026-09-01", row_key: { PLAYER_ID: 1 } }, ...(value == null ? { reason: "no_metric_row" } : {}) });
@@ -173,4 +174,88 @@ test("templates are declarative and board prompts list the season, players and m
   for (const template of boardTemplates) { assert.ok(validBoard(newBoard(template))); assert.ok(template.summary); }
   const prompt = boardPrompt(sample(), [metric]);
   for (const text of ["FA guard targets", "2025-26", "Player 1", "Points", "citations"]) assert.ok(prompt.includes(text));
+});
+
+const cardArtifact = {
+  kind: "player_card",
+  title: "Shai Gilgeous-Alexander",
+  playerName: "Shai Gilgeous-Alexander",
+  nameColumn: "PLAYER",
+  sourceRef: "silver_player_season",
+  sourceRow: 0,
+  provenance: { origin: "warehouse", liveSources: [], capability: "sql_exec", season: "2026-27", as_of: "2026-11-19", sql: "SELECT * FROM silver_player_season WHERE PLAYER = 'Shai Gilgeous-Alexander'" },
+  metrics: [
+    { column: "PTS", label: "Points", value: 31.4, unit: "per_game" },
+    { column: "AST", label: "Assists", value: 6.1, unit: "per_game" },
+  ],
+  sections: [
+    { label: "Contract", sourceRef: "cap_ledger", sourceRow: 2, provenance: { origin: "warehouse", liveSources: [], capability: "sql_exec", sql: "SELECT * FROM cap_ledger WHERE PLAYER = 'Shai Gilgeous-Alexander'" }, metrics: [{ column: "SALARY", label: "Salary", value: 39, unit: "usd_millions" }], fields: [{ column: "TEAM", label: "Team", value: "OKC" }] },
+    { label: "Injury", sourceRef: "injuries", sourceRow: 0 },
+  ],
+} as unknown as DimeArtifact & { metrics: { column: string; label: string; value: number | null }[]; sections: { metrics: { column: string; label: string; value: number | null }[]; fields: { column: string; label: string; value: string | null }[] }[] };
+
+test("pinArtifact persists cards and memos with ids and dates, enforces the cap", () => {
+  const dom = install();
+  try {
+    const board = sample();
+    const pinned = pinArtifact(board, cardArtifact);
+    assert.equal(pinned.pins?.length, 1);
+    const pin = pinned.pins![0];
+    assert.match(pin.id, /^pin-/);
+    assert.ok(!Number.isNaN(Date.parse(pin.pinned_at)));
+    assert.equal(pin.artifact, cardArtifact);
+    assert.ok(validBoard(pinned));
+    saveBoard(pinned);
+    assert.equal(getBoard(board.id)?.pins?.[0].artifact.title, "Shai Gilgeous-Alexander");
+    const memo: TableArtifactPayload = { kind: "table", title: "Notes", columns: [{ key: "A", label: "A" }], rows: [["1"]] };
+    const withMemo = pinArtifact(pinned, memo);
+    assert.equal(withMemo.pins?.length, 2);
+    assert.notEqual(withMemo.pins![0].id, withMemo.pins![1].id);
+    assert.throws(() => saveBoard({ ...withMemo, pins: Array(61).fill(pin) }), /invalid document/);
+  } finally { dom.window.close(); }
+});
+
+test("unpinArtifact and updatePin are immutable and stamp refreshed_at", () => {
+  const dom = install();
+  try {
+    const pinned = saveBoard(pinArtifact(sample(), cardArtifact));
+    const pinId = pinned.pins![0].id;
+    const updated = updatePin(pinned, pinId, { ...cardArtifact, title: "Updated" });
+    assert.equal(updated.pins?.[0].artifact.title, "Updated");
+    assert.ok(!Number.isNaN(Date.parse(updated.pins![0].refreshed_at!)));
+    assert.equal(pinned.pins![0].artifact.title, "Shai Gilgeous-Alexander");
+    assert.equal(unpinArtifact(updated, pinId).pins?.length, 0);
+    assert.equal(unpinArtifact(updated, "missing").pins?.length, 1);
+    assert.equal(getBoard(pinned.id)?.pins?.[0].artifact.title, "Shai Gilgeous-Alexander");
+  } finally { dom.window.close(); }
+});
+
+test("cardRequeries pulls header and section sql requeries and skips sections without sql", () => {
+  const queries = cardRequeries(cardArtifact);
+  assert.equal(queries.length, 2);
+  assert.equal(queries[0].key, "header");
+  assert.equal(queries[0].row, 0);
+  assert.match(queries[0].sql, /silver_player_season/);
+  assert.equal(queries[1].key, 0);
+  assert.equal(queries[1].row, 2);
+  assert.match(queries[1].sql, /cap_ledger/);
+  const bare = { ...cardArtifact, sections: undefined, provenance: { origin: "warehouse", liveSources: [], capability: "get_leaders" } } as unknown as DimeArtifact;
+  assert.equal(cardRequeries(bare).length, 0);
+});
+
+test("applyPinRerun re-resolves values from rerun rows and keeps pinned values on misses", () => {
+  const rows = new Map<"header" | number, Record<string, unknown> | undefined>();
+  rows.set("header", { PTS: 33.0, AST: null });
+  rows.set(0, { SALARY: 41, TEAM: "Oklahoma City Thunder" });
+  const next = applyPinRerun(cardArtifact, rows) as typeof cardArtifact;
+  assert.equal(next.metrics[0].value, 33.0);
+  assert.equal(next.metrics[1].value, null);
+  assert.equal(next.sections[0].metrics[0].value, 41);
+  assert.equal(next.sections[0].fields[0].value, "Oklahoma City Thunder");
+  assert.equal(cardArtifact.metrics[0].value, 31.4);
+  const missed = applyPinRerun(cardArtifact, new Map()) as typeof cardArtifact;
+  assert.equal(missed.metrics[0].value, 31.4);
+  assert.equal(missed.sections[0].metrics[0].value, 39);
+  const wrongType = applyPinRerun(cardArtifact, new Map([["header", { PTS: "not-a-number" }]])) as typeof cardArtifact;
+  assert.equal(wrongType.metrics[0].value, 31.4);
 });

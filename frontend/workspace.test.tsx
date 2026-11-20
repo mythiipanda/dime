@@ -10,6 +10,9 @@ import WarehouseView from "./components/dime/views/WarehouseView";
 import { PromptBar } from "./components/ds/PromptBar";
 import { ShotsExplorer } from "./components/shell/ShotsExplorer";
 import TradesView from "./components/dime/views/TradesView";
+import MorningPage from "./components/dime/views/MorningPage";
+import CompareView from "./components/dime/views/CompareView";
+import DraftView from "./components/dime/views/DraftView";
 import type { HomeSnapshot } from "./lib/warehouse";
 import { clearEnvelopeCache } from "./lib/api";
 
@@ -94,13 +97,189 @@ test("Shots explorer preserves zone data even if shot coordinates are unavailabl
 });
 
 test("Trades renders the backend's readable domain error on HTTP 422", async () => {
-  await mount(<TradesView />, async () => Response.json({ ok: false, error: "Salary data lists Luka with LAL, not DAL" }, { status: 422 }), async host => {
+  await mount(<TradesView />, async input => {
+    const url = String(input);
+    if (url.includes("/trade/assets")) {
+      const abbr = new URL(url).searchParams.get("team");
+      const players = abbr === "DAL" ? [{ name: "Luka Doncic", salary: 49.8 }] : [{ name: "Karl-Anthony Towns", salary: 57.1 }];
+      return Response.json({ ok: true, team: abbr, season: "2026-27", players, picks: [], meta: { source: "salary_records", season: "2026-27" } });
+    }
+    return Response.json({ ok: false, error: "Salary data lists Luka with LAL, not DAL" }, { status: 422 });
+  }, async host => {
     await act(async () => [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Luka"))!.click());
-    const button = [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Check with real cap rules"));
-    assert.ok(button);
-    await act(async () => button.click());
+    await act(async () => [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Towns"))!.click());
+    await act(async () => new Promise(resolve => setTimeout(resolve, 50)));
     assert.match(host.textContent!, /Salary data lists Luka with LAL, not DAL/);
     assert.doesNotMatch(host.textContent!, /Could not reach the backend/);
+  });
+});
+
+test("Morning page renders blocks with provenance and degrades missing tables", async () => {
+  const morning = {
+    ok: true, team: "NYK", season: "2025-26",
+    blocks: {
+      last_result: { ok: true, game: { date: "2026-04-12", home: "NYK", away: "CHA", home_pts: 110, away_pts: 96, result: "W", opponent: "CHA" }, provenance: { table: "silver_scoreboard", as_of: "2026-09-11T05:50:59Z" } },
+      next_game: { ok: true, game: { date: "2026-04-13T00:30Z", name: "Utah Jazz at New York Knicks", short_name: "UTAH @ NY", season_type: "Regular Season", opponent: "UTA" }, provenance: { table: "silver_schedule", as_of: "2026-09-10T05:37:42Z" } },
+      opponent: { ok: true, row: { team: "Utah Jazz", wins: 22, losses: 60, win_pct: 0.268, playoff_rank: 15, l10: "1-9", conference: "West" }, name: "Utah Jazz", provenance: { table: "silver_standings", as_of: "2026-09-07T20:26:48Z" } },
+      standings: { ok: true, row: { team: "New York Knicks", wins: 53, losses: 29, win_pct: 0.646, playoff_rank: 3, l10: "6-4", conference: "East" }, projection: { projected_wins: 44.5, projected_losses: 37.5, make_playoffs_pct: 0.92, win_title_pct: 0.03 }, pace_wins: 53.0, provenance: { table: "silver_standings + silver_preseason_projections", as_of: "2026-09-07T20:26:48Z" } },
+      injuries: { ok: true, rows: [], provenance: { table: "silver_injuries", as_of: null } },
+      news: { ok: false, rows: [], error: "silver_news not in warehouse", provenance: { table: "silver_news", as_of: null } },
+      cap: { ok: true, row: { team: "NYK", payroll: 201332759, room_under_apron2: 5537241, over_tax: true }, meta: { apron1: 178132000, apron2: 206870000 }, provenance: { table: "silver_salaries", as_of: "2026-09-07" } },
+    },
+  };
+  await mount(<MorningPage />, async input => {
+    const url = String(input);
+    if (url.includes("/morning")) return Response.json(morning);
+    return Response.json({ ok: true });
+  }, async host => {
+    assert.match(host.textContent!, /W\s*CHA 96 @ NYK 110/);
+    assert.match(host.textContent!, /Utah Jazz at New York Knicks/);
+    assert.match(host.textContent!, /22-60, West #15/);
+    assert.match(host.textContent!, /53 wins pace vs 44\.5 projected/);
+    assert.match(host.textContent!, /\$201\.3M/);
+    assert.match(host.textContent!, /silver_news not in warehouse/);
+    assert.match(host.textContent!, /silver_scoreboard · as of 2026-09-11/);
+    assert.match(host.textContent!, /salary|silver_salaries/);
+    assert.ok(host.querySelectorAll("button").length > 3);
+  });
+});
+
+test("Morning page shows the backend error without substituting data", async () => {
+  await mount(<MorningPage />, async () => Response.json({ ok: false, error: "warehouse unreachable" }, { status: 422 }), async host => {
+    assert.match(host.textContent!, /warehouse unreachable/);
+    assert.match(host.textContent!, /No sample data is substituted/);
+    assert.ok(host.querySelector('[role="alert"]'));
+  });
+});
+
+const compareFixture = {
+  ok: true, season: "2025-26",
+  players: [
+    {
+      player_id: 2544, name: "LeBron James", season: "2025-26",
+      season_line: { ok: true, row: { season: 2025, age: 40, team: "LAL", gp: 70, mpg: 34.9, ppg: 24.4, rpg: 7.8, apg: 8.2, spg: 1.0, bpg: 0.6, fg_pct: 0.513, fg3_pct: 0.376, ft_pct: 0.782, ts_pct: 0.604, usg_pct: 0.291, off_rating: 112.7, def_rating: 114.0, net_rating: -1.3 }, provenance: { table: "silver_hist_player_seasons", as_of: "2026-09-10T04:33:35Z" } },
+      impact: { ok: false, error: "no impact row for 2025-26", provenance: { table: "silver_raptor_player", as_of: "2026-09-09T18:15:44Z" } },
+      zones: { ok: true, zones: [{ zone: "Restricted Area", x: 0, y: 1.4, att: 680, makes: 514, pct: 75.6, league_pct: 76.7, delta_pp: -1.1 }], provenance: { table: "silver_shots", as_of: "2026-09-10T19:46:39Z" } },
+      contract: { ok: true, row: { team: "LAL", salary: 52000000, contract_type: "MAX", guaranteed: true, player_option: false, team_option: false }, season: "2026-27", provenance: { table: "silver_cap_players", as_of: "2026-09-08T08:05:24Z" } },
+      arc: { ok: true, rows: [{ season: 2024, age: 39, gp: 71, pts: 25.7, ts_pct: 0.63, usg_pct: 0.285 }, { season: 2025, age: 40, gp: 70, pts: 24.4, ts_pct: 0.604, usg_pct: 0.291 }], provenance: { table: "silver_hist_player_seasons", as_of: "2026-09-10T04:33:35Z" } },
+    },
+    {
+      player_id: 1628983, name: "Shai Gilgeous-Alexander", season: "2025-26",
+      season_line: { ok: true, row: { season: 2025, age: 27, team: "OKC", gp: 76, mpg: 34.2, ppg: 32.7, rpg: 5.0, apg: 6.4, spg: 1.7, bpg: 1.0, fg_pct: 0.519, fg3_pct: 0.375, ft_pct: 0.897, ts_pct: 0.637, usg_pct: 0.339, off_rating: 125.0, def_rating: 106.0, net_rating: 19.0 }, provenance: { table: "silver_hist_player_seasons", as_of: "2026-09-10T04:33:35Z" } },
+      impact: { ok: true, raptor_total: 8.4, war_total: 17.2, mp: 2600, rank: 1, of: 450, provenance: { table: "silver_raptor_player", as_of: "2026-09-09T18:15:44Z" } },
+      zones: { ok: true, zones: [{ zone: "Restricted Area", x: 0.2, y: 1.9, att: 412, makes: 250, pct: 60.7, league_pct: 76.7, delta_pp: -16.0 }], provenance: { table: "silver_shots", as_of: "2026-09-10T19:46:39Z" } },
+      contract: { ok: true, row: { team: "OKC", salary: 40806150, contract_type: "DRK-EXT", guaranteed: true, player_option: false, team_option: false }, season: "2026-27", provenance: { table: "silver_cap_players", as_of: "2026-09-08T08:05:24Z" } },
+      arc: { ok: true, rows: [{ season: 2024, age: 26, gp: 75, pts: 30.1, ts_pct: 0.653, usg_pct: 0.33 }, { season: 2025, age: 27, gp: 76, pts: 32.7, ts_pct: 0.637, usg_pct: 0.339 }], provenance: { table: "silver_hist_player_seasons", as_of: "2026-09-10T04:33:35Z" } },
+    },
+  ],
+};
+
+test("Compare view renders cited sections for two players", async () => {
+  const picks = [
+    { id: 2544, name: "LeBron James", season: "2025-26" },
+    { id: 1628983, name: "Shai Gilgeous-Alexander", season: "2025-26" },
+  ];
+  await mount(<CompareView initialPicks={picks} />, async input => {
+    const url = String(input);
+    if (url.includes("/compare")) {
+      assert.match(url, /players=2544%3A2025-26%2C1628983%3A2025-26/);
+      return Response.json(compareFixture);
+    }
+    return Response.json({ ok: true });
+  }, async host => {
+    assert.match(host.textContent!, /LeBron James/);
+    assert.match(host.textContent!, /Shai Gilgeous-Alexander/);
+    assert.match(host.textContent!, /24\.4/);
+    assert.match(host.textContent!, /32\.7/);
+    assert.match(host.textContent!, /RAPTOR 8\.4 · #1 of 450 · WAR 17\.2/);
+    assert.match(host.textContent!, /no impact row for 2025-26/);
+    assert.match(host.textContent!, /\$52\.0M · MAX/);
+    assert.match(host.textContent!, /silver_hist_player_seasons/);
+    assert.match(host.textContent!, /silver_shots/);
+    assert.match(host.textContent!, /Points per game by age/);
+  });
+});
+
+test("Compare view requires at least two players", async () => {
+  await mount(<CompareView initialPicks={[]} />, async () => Response.json({ ok: true }), async host => {
+    assert.match(host.textContent!, /Add at least two players to compare/);
+  });
+});
+
+test("Compare view surfaces the backend error", async () => {
+  const picks = [
+    { id: 2544, name: "LeBron James", season: "2025-26" },
+    { id: 1628983, name: "Shai Gilgeous-Alexander", season: "2025-26" },
+  ];
+  await mount(<CompareView initialPicks={picks} />, async () => Response.json({ ok: false, error: "warehouse_unreachable" }, { status: 422 }), async host => {
+    assert.match(host.textContent!, /warehouse_unreachable/);
+    assert.match(host.textContent!, /No sample data is substituted/);
+  });
+});
+
+const draftFixture = {
+  ok: true, team: "NYK", season: "",
+  blocks: {
+    board: { ok: true, season: "2027-28", rows: [
+      { pick: 1, name: "AJ Dybantsa", position: "F", school: "BYU", gp: 30, pts: 24.1, reb: 6.8, ast: 3.2, ts_pct: 0.61, usg: 0.31 },
+      { pick: 2, name: "Darryn Peterson", position: "G", school: "Kansas", gp: 28, pts: 21.4, reb: 4.0, ast: 4.8, ts_pct: 0.58, usg: 0.28 },
+    ], provenance: { table: "silver_draft_boards + silver_prospect_stats", as_of: "2026-09-10T04:00:00Z" } },
+    free_agents: { ok: true, rows: [
+      { name: "Trae Young", team: "ATL", fa_type: "ufa", prior_salary: 45999600, cap_hold: 59799480 },
+      { name: "Jalen Williams", team: "OKC", fa_type: "rfa", prior_salary: 6580000, cap_hold: 8554000 },
+    ], provenance: { table: "silver_free_agents", as_of: "2026-09-10T05:00:00Z" } },
+    cap_room: { ok: true, rows: [
+      { team: "NYK", committed: 178000000, option_salary: 12000000, fa_holds: 30000000, roster_charges: 6000000, projected_room: -32000000 },
+      { team: "DET", committed: 80000000, option_salary: 0, fa_holds: 9000000, roster_charges: 12000000, projected_room: 75000000 },
+    ], provenance: { table: "silver_cap_room", as_of: "2026-09-10T05:10:00Z" } },
+    fit: { ok: true, team: "NYK",
+      gaps: [{ factor: "ball_security", label: "Ball security", value: 0.139, rank: 22, of: 30 }, { factor: "shooting", label: "Shooting", value: 0.557, rank: 18, of: 30 }],
+      cap: { committed: 178000000, option_salary: 12000000, fa_holds: 30000000, projected_room: -32000000 },
+      targets: [{ name: "Trae Young", team: "ATL", fa_type: "ufa", prior_salary: 45999600, cap_hold: 59799480, ppg: 25.4, rpg: 2.9, apg: 11.2, spg: 1.1, bpg: 0.1, fg3_pct: 0.354, gp: 76 }],
+      errors: [],
+      provenance: { table: "silver_team_ratings + silver_cap_room + silver_free_agents + silver_player_season", as_of: "2026-09-08T16:57:36Z" } },
+  },
+};
+
+test("Draft view renders prospect board, free agents, cap room and fit with provenance", async () => {
+  await mount(<DraftView initialTeam="NYK" />, async input => {
+    const url = String(input);
+    if (url.includes("/draft")) {
+      assert.match(url, /team=NYK/);
+      return Response.json(draftFixture);
+    }
+    return Response.json({ ok: true });
+  }, async host => {
+    assert.match(host.textContent!, /AJ Dybantsa/);
+    assert.match(host.textContent!, /BYU/);
+    assert.match(host.textContent!, /Trae Young/);
+    assert.match(host.textContent!, /\$46\.0M/);
+    assert.match(host.textContent!, /\$75\.0M/);
+    assert.match(host.textContent!, /Ball security · #22 of 30/);
+    assert.match(host.textContent!, /silver_draft_boards/);
+    assert.match(host.textContent!, /silver_free_agents/);
+    assert.match(host.textContent!, /silver_cap_room/);
+    assert.match(host.textContent!, /silver_team_ratings/);
+  });
+});
+
+test("Draft view degrades per block when tables are missing", async () => {
+  const degraded = { ...draftFixture, blocks: { ...draftFixture.blocks,
+    board: { ok: false, rows: [], error: "silver_draft_boards not in warehouse", provenance: { table: "silver_draft_boards", as_of: null } },
+    free_agents: { ok: false, rows: [], error: "silver_free_agents not in warehouse", provenance: { table: "silver_free_agents", as_of: null } },
+  } };
+  await mount(<DraftView initialTeam="NYK" />, async () => Response.json(degraded), async host => {
+    assert.match(host.textContent!, /silver_draft_boards not in warehouse/);
+    assert.match(host.textContent!, /silver_free_agents not in warehouse/);
+    assert.match(host.textContent!, /Trae Young/);
+    assert.match(host.textContent!, /Ball security · #22 of 30/);
+  });
+});
+
+test("Draft view surfaces the backend error", async () => {
+  await mount(<DraftView initialTeam="NYK" />, async () => Response.json({ ok: false, error: "warehouse unreachable" }, { status: 422 }), async host => {
+    assert.match(host.textContent!, /warehouse unreachable/);
+    assert.match(host.textContent!, /No sample data is substituted/);
   });
 });
 
