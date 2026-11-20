@@ -28,7 +28,11 @@ def last_completed_season() -> str | None:
         seasons = store.completed_seasons_across_tables()
     except Exception:
         return None
-    value = seasons[-1] if seasons else None
+    if not seasons:
+        return None
+    cal = calendar_last_completed_season()
+    done = [s for s in seasons if s <= cal] if cal else seasons
+    value = done[-1] if done else seasons[-1]
     _LAST_SEASON_KEY = key
     _LAST_SEASON_VALUE = value
     return value
@@ -662,6 +666,64 @@ def season_static(season: str) -> bool:
         return False
     end_year = 2000 + int(s[5:])
     return _dt.date.today() > _dt.date(end_year, 7, 15)
+
+def league_games_played_baseline(season: str) -> int | None:
+    season = resolve_season(season)
+    if not season:
+        return None
+    try:
+        con = store.connect(read_only=True)
+        try:
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            row = None
+            if "silver_hist_gamelogs" in tables:
+                row = con.execute(
+                    "SELECT MAX(cnt) FROM (SELECT COUNT(*) AS cnt FROM "
+                    "silver_hist_gamelogs WHERE _season = ? "
+                    "AND season_type = 'regular-season' GROUP BY team_id)",
+                    [season]).fetchone()
+            elif "silver_team_games" in tables:
+                row = con.execute(
+                    "SELECT MAX(cnt) FROM (SELECT COUNT(DISTINCT Game_ID) AS cnt "
+                    "FROM silver_team_games WHERE _season = ? GROUP BY _entity)",
+                    [season]).fetchone()
+        finally:
+            con.close()
+    except Exception:
+        return None
+    if not row or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def season_to_date_meta(season: str | None,
+                        games_played: object = None,
+                        prior_full_season: dict | None = None) -> dict[str, Any]:
+    resolved = resolve_season(season)
+    out: dict[str, Any] = {"season": resolved}
+    try:
+        gp = int(games_played) if games_played is not None else None
+    except (TypeError, ValueError):
+        gp = None
+    baseline = league_games_played_baseline(resolved) if resolved else None
+    if gp is not None:
+        out["games_played"] = gp
+    if baseline is not None:
+        out["league_games_played_baseline"] = baseline
+    if gp is not None:
+        in_progress = not season_static(resolved)
+        early = gp < 30
+        behind = baseline is not None and gp < 0.7 * baseline
+        out["small_sample"] = bool(early or behind)
+        if out["small_sample"]:
+            out["small_sample_reason"] = (
+                "early in the season" if early and in_progress
+                else "well under the league games-played baseline" if behind
+                else "fewer than 30 games played")
+    if prior_full_season:
+        out["prior_full_season"] = prior_full_season
+    return out
+
 
 def _bound_warehouse_read(table, where, params):
 

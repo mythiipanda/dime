@@ -118,6 +118,7 @@ from .clutch import (
     get_clutch_stats,
     get_situational_splits,
 )
+from .expectations import get_expectations
 from .draft_contracts import (
     _CONTRACT_WEIGHTS,
     _contract_fetched,
@@ -294,6 +295,7 @@ from .standings import (
     get_standings_deep,
     get_team_trajectory,
 )
+from .daily_brief import get_team_daily_brief
 from .news import get_news_feed
 from .trade_value import (
     PICK_VALUE_M,

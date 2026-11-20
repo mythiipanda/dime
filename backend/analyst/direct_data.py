@@ -688,4 +688,7 @@ def internal_catalogue():
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description
+    from analyst.python_tools import apply_param_docs
+    for name, operation in result.items():
+        apply_param_docs(name, operation)
     return result

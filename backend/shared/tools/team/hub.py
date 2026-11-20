@@ -188,6 +188,7 @@ def get_team_season_summary(
     count = len(games)
     from ... import store as _store
 
+    std = pkg._std_context(resolved_team_id, resolved_season, games)
     return {
         "tool": "get_team_season_summary",
         "ok": True,
@@ -205,6 +206,7 @@ def get_team_season_summary(
             "source": "warehouse:silver_hist_gamelogs",
             **_store.warehouse_identity(),
             "season": resolved_season,
+            **({"season_to_date": std} if std else {}),
             "coverage": (
                 "Summary of rows available for this team, season, and "
                 "regular-season source; season completeness is unverified."),
@@ -266,6 +268,9 @@ def get_team_hub(team_id: str | int, season: str | None = None) -> dict[str, Any
                   "APG": r.get("APG")}
                  for r in frame.to_dicts()),
                 key=lambda r: -(r.get("GP") or 0))
+    std = pkg._std_context(team_id, season, games)
+    if std:
+        meta = {**meta, "season_to_date": std}
     return {
         "tool": "get_team_hub", "ok": True,
         "rows": {"roster": roster, "summary": summary, "games": games},
