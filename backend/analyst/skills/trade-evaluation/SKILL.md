@@ -15,6 +15,9 @@ and every tool reports its own sources, so cite them.
 | Tool | Answers | Reach for it when |
 |---|---|---|
 | `get_trade_check` | Is a specific proposal CBA-legal? Salary matching bands, apron consequences. | The user names a concrete package ("Brown for George + 2 picks"). Always before grading a proposal's value — a grade on an illegal deal is meaningless. |
+| `get_cap_ledger` | One team's payroll, cap space, luxury tax and apron room under the CBA thresholds. | "How much room do they have" — the ledger is what constrains every move; check before proposing targets. |
+| `get_contract_value` | Production-vs-salary residual per player — who outplays or underplays their deal. | Identifying which contracts are moveable or worth acquiring; a bad contract changes what a package must include. |
+| `get_transactions` | Team signings, waivers and trades by date range. | "What have they done lately" — recent moves change the roster the next proposal lands on. |
 | `get_trade_partners` | Which teams can legally match salary for one player, and with what packages? | The question is open-ended ("who could trade for X", "what's the market for X"). Produces candidate packages to then grade. |
 | `get_trade_value` | Rough production-vs-salary grade per side, plus pick valuation. | Any "who wins" question. Runs after legality is established (it layers on `get_trade_check`). |
 | `get_draft_capital` | What picks does a team own/owe, with protections and swaps, and what are slots worth? | Any deal involving picks, or a "can they even afford X" question — a team with no movable firsts can't offer the standard package. |

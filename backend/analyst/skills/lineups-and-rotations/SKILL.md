@@ -7,6 +7,18 @@ description: Analyze 5-man lineup net ratings with sample-size caveats, possessi
 
 Use this playbook for 5-man lineup evaluation, two-player With-Or-Without-You (WOWY) synergy splits, bench survival analysis, and playoff rotation tightening.
 
+## 0. Tools and when they matter
+
+| Tool | Answers | Reach for it when |
+|---|---|---|
+| `get_lineups` / `get_lineup_stats` | One team's five-man units by minutes and their ratings. | Rotation-structure questions — closing unit, starters, most-used combinations. Set `season_type`, `measure_type`, `per_mode` deliberately. |
+| `get_lineup_leaders` | Best/worst qualifying units league-wide or per team. | "Their best five" or league context for one unit's rating. Respect `min_minutes` — the floor already prunes noise. |
+| `get_lineup_matchup_matrix` | Two teams' five-man units head-to-head on shared minutes. | "How does our best lineup fare against theirs" — cells carry sample flags. |
+| `get_wowy` | Two players' four-state with/without-you splits. | The 2-man matrix in §2 — it returns all four quadrants directly. |
+| `get_on_off` | One player's on/off possession-level splits on a team. | Individual impact within a rotation; attribute carefully (teammate context matters). |
+| `get_rotation_check` / `get_stint_timeline` | Rotation patterns, closing units, stint order per game. | Staggering and substitution-pattern questions; playoff-tightening checks in §4. |
+| `get_scout_pack` | Compact opponent dossier: record, roster, lineups, leaders. | First pass before drilling into unit-level detail. |
+
 ## 1. Sample-Size Caveats on 5-Man Lineups
 
 Raw 5-man unit net ratings are dominated by shooting luck (especially opponent 3P% variance) at small minute or possession counts:
