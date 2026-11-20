@@ -7,6 +7,7 @@ const memo: MemoArtifactPayload = {
   kind: "memo",
   title: "Cap & roster strategy",
   subtitle: "Owner briefing",
+  text: "Orlando can aggregate mid-tier salary without crossing the second apron.",
   sections: [
     { heading: "Cap position", body: "Orlando sits under the first apron with a locked core.", anchors: [{ ref: "src-1", row: 0, columns: ["payroll"] }] },
     { heading: "Trade options", body: "Aggregate mid-tier salary for a wing." },

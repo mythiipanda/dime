@@ -5,7 +5,6 @@ import { Button } from "@/components/ds/Button";
 import { StatusPill } from "@/components/ds/StatusPill";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { CardSection, CardSectionSources } from "@/components/dime/ArtifactCardSections";
-import type { PlayerCardArtifactPayload } from "@/lib/dime-stream";
 import type { PlayerCardArtifactPayload, PlayerCardSectionPayload } from "@/lib/dime-stream";
 
 function sectionCitation(section: PlayerCardSectionPayload): string {

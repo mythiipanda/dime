@@ -195,7 +195,6 @@ export interface TeamCardArtifactPayload {
   nameColumn: string;
   metrics: { column: string; label: string; value: number | null; unit?: string }[];
   sections?: PlayerCardSectionPayload[];
-  sections?: PlayerCardSectionPayload[];
 }
 
 export type DimeArtifact =
