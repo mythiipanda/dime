@@ -37,7 +37,10 @@ const shotZoneSchema = Type.Object({
     x: numberValue,
     y: numberValue,
     att: Type.Number({ minimum: 0 }),
-    pct: Type.Number({ minimum: 0 })
+    pct: Type.Number({ minimum: 0 }),
+    makes: Type.Optional(Type.Number({ minimum: 0 })),
+    delta: Type.Optional(numberValue),
+    label: optionalLabel
 }, { additionalProperties: false });
 
 const scatterPointSchema = Type.Object({

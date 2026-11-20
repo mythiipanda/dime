@@ -207,12 +207,14 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_win_prob",
       "get_on_off",
       "get_shot_zones",
+      "get_phase_shot_splits",
       "get_four_factors",
       "get_clutch_stats",
       "get_competitive_ratings",
       "get_hustle",
       "get_injuries",
       "get_news_feed",
+      "get_team_daily_brief",
       "get_award_results",
       "get_briefing",
       "get_standings",
@@ -233,6 +235,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_contract_value",
       "get_trade_check",
       "get_trade_value",
+      "get_draft_capital",
       "get_trade_partners",
       "get_situational_splits",
       "get_playoff_sim",
@@ -377,7 +380,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 95);
+    assert.equal(bridge.tools.length, 107);
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
@@ -1241,6 +1244,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_trade_check: { team_a: "BOS", team_b: "MIA" },
       get_trade_value: { team_a: "BOS", team_b: "MIA" },
       get_trade_partners: { player: "Jaylen Brown", season: "2026-27" },
+      get_draft_capital: { team: "BOS" },
       get_situational_splits: { entity: "LeBron James" },
       get_playoff_sim: { season: "2023-24", sims: 100 },
       get_playoff_team_ratings: { season: "2023-24", limit: 5 },
@@ -1267,6 +1271,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_zone_deltas: { player: "LeBron James", season: 2025 },
       search_shots: { player: "LeBron James", limit: 5 },
       get_shot_chart: { player: "LeBron James" },
+      get_phase_shot_splits: { player: "LeBron James" },
       get_stint_timeline: { game_id: "0022300001" },
       get_possession_log: { game_id: "0022300001" },
       get_elo: { season: "2024-25" },
@@ -1303,8 +1308,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_recap: { game_id: "0022300001", season: "2024-25" },
       get_scouting_report: { team_id: 1610612747, season: "2024-25" },
       web_search: { query: " " },
-      web_fetch: { url: "http://127.0.0.1/" }
-      get_scouting_report: { team_id: 1610612747, season: "2024-25" },
+      web_fetch: { url: "http://127.0.0.1/" },
       get_roster_fit: { team: "BOS", season: "2024-25" },
       get_expectations: { team: "BOS", season: "2024-25" }
     };
@@ -1484,8 +1488,7 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
     const stats = await tools.load_skill({ name: "statistical-modeling" });
     const historical = await tools.load_skill({ name: "historical-grain-and-time" });
     const missing = await tools.load_skill({ name: "nonexistent-skill-xyz" });
-    return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, statsOk: stats.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
-    return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, historicalOk: historical.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
+    return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, statsOk: stats.ok, historicalOk: historical.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
   `, []);
   try {
     await session.prompt("Load bundled skills inside codemode");

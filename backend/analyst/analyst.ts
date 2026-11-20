@@ -263,8 +263,8 @@ export function createAnalyst(options: AnalystOptions) {
                 if (identity)
                     await options.saveChat(identity.thread, "human", input.q.slice(0, MAX_TURN_CHARS), identity.owner.slice(0, 80));
                 const bridgeEnv = dataEnvironment(options.env, directory, workspace.workspaceDir);
-                for await (const event of execution.stream({ q: input.q, history, model, sources: state.records, submissions: identity ? store.priorSubmissions(identity).slice(-8) : undefined, cwd: directory, agentDir: workspace.agentDir, bridge: { python: options.python, cwd: workspace.workspaceDir, env: bridgeEnv } }, signal)) {
-                for await (const event of execution.stream({ q: input.q, history, model, ...(streamOptions.runTimeoutMs === undefined ? {} : { runTimeoutMs: streamOptions.runTimeoutMs }), sources: state.records, cwd: directory, agentDir: workspace.agentDir, bridge: { python: options.python, cwd: workspace.workspaceDir, env: bridgeEnv } }, signal)) {                    const mapped = mapExecutionEvent(event, state);
+                for await (const event of execution.stream({ q: input.q, history, model, submissions: identity ? store.priorSubmissions(identity).slice(-8) : undefined, ...(streamOptions.runTimeoutMs === undefined ? {} : { runTimeoutMs: streamOptions.runTimeoutMs }), sources: state.records, cwd: directory, agentDir: workspace.agentDir, bridge: { python: options.python, cwd: workspace.workspaceDir, env: bridgeEnv } }, signal)) {
+                    const mapped = mapExecutionEvent(event, state);
                     if (mapped)
                         yield mapped;
                 }
