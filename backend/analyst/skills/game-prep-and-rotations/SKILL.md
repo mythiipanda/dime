@@ -14,7 +14,8 @@ endpoint at question time) and tools cite their own sources.
 
 | Tool | Answers | Reach for it when |
 |---|---|---|
-| `get_matchup_preview` / `get_matchup_brief` | Assembled head-to-head prep for a game. | Starting point for any "scouting report for X vs Y" ask — then drill into whatever claims it makes. |
+| `get_matchup_preview` / `get_matchup_brief` / `get_opponent_scout` | Assembled head-to-head prep for a game, or a warehouse dossier on the opponent (form, four factors, shot profile, top lineups, injuries, season head-to-head). | Starting point for any "scouting report for X vs Y" ask — then drill into whatever claims it makes. |
+| `get_team_daily_brief` | One team's dated brief: injuries, news, transactions, last result, standing, upcoming schedule. | The "what changed lately" pass on a team — cheaper than assembling injuries + news + results separately. |
 | `get_lineups` / `get_lineup_stats` | Which five-man units play, how many minutes, and their results. | "What's their closing unit", "what do they start", rotation-structure questions. Filter by `season_type` for playoff prep. |
 | `get_lineup_leaders` | Best/worst units league-wide or per team by minutes and net rating. | "Their best five" and unit-quality claims. Respect `min_minutes` — the default floor already prunes noise. |
 | `get_on_off` / `get_wowy` | Possession-level impact of one player, or of a pair together vs apart. | "How much does X actually matter", "does the A+B pairing work". On/off is the sharpest signal for rotation value. |
