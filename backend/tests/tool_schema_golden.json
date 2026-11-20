@@ -3762,6 +3762,34 @@
         "title": "get_scouting_report",
         "type": "object"
       }
+    },
+    "get_expectations": {
+      "name": "get_expectations",
+      "description": "Actual or season-to-date record and net rating versus preseason expectations (projected win total, playoff/title odds) for one team, per season. Warehouse-backed: silver_preseason_projections plus standings/ratings tables. Pass a team id, abbreviation or name; optional season like '2025-26', else the most recent seasons.",
+      "args_schema": {
+        "properties": {
+          "team_id": {
+            "default": null,
+            "title": "Team Id"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": null,
+            "title": "Season"
+          },
+          "seasons": {
+            "default": 3,
+            "title": "Seasons",
+            "type": "integer"
+          }
+        },
+        "title": "get_expectations",
+        "type": "object"
+      }
     }
   },
   "internal": {
