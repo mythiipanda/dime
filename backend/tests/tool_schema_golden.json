@@ -622,6 +622,28 @@
         "type": "object"
       }
     },
+    "get_team_daily_brief": {
+      "name": "get_team_daily_brief",
+      "description": "GM morning brief for one team: injuries, news, transactions, last result, standing, and upcoming schedule since a date. Each item is dated and cited to its warehouse table. Reads the warehouse only; never calls live endpoints.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "since": {
+            "default": "",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "get_team_daily_brief",
+        "type": "object"
+      }
+    },
     "get_award_results": {
       "name": "get_award_results",
       "description": "Recorded NBA award results read from published ballots.\n\nview=winner returns every subject sharing the leading rank for one award in\none season. view=winner_history returns the leading-rank subject(s) for that\naward in every covered season through the requested season. view=field returns\nthe whole ranked ballot with vote shares and vote counts. view=player_awards\nreturns one player's award record through the named season. Use get_award_race\nfor a model score, never for a result.",
