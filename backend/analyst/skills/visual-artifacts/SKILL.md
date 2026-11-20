@@ -284,3 +284,27 @@ Every quantitative claim and artifact must be anchored in queried evidence withi
 Pass `artifacts` beside `blocks` in `submit_answer({ blocks: [...], artifacts: [...] })`,
 not inside a prose block. Selectors validate traceability to actual rows/columns;
 they do not prove the prose, metric label, scope or basketball conclusion correct.
+
+---
+
+## 4. Headline Numbers Live Inside the Payload
+
+When the task names headline or scope numbers — month/game counts, denominators,
+cohort sizes, first/last endpoint values — every emitted artifact must carry
+them inside its own payload. A number stated only in prose blocks, or only in
+the series it is derived from, does not count as delivered inside the artifact.
+
+- `table`: include summary and denominator rows (e.g. `Months: 7`,
+  `Season games: 82`, first/last rows) alongside the detail rows. If the request
+  asks for a count, give it a row.
+- `chart`: put scope counts and endpoint values in `footnote` — it renders and
+  stays inside the payload (e.g.
+  `"7 months · 82 games · eFG 0.464 → 0.502 · TOV/g 16.5 → 13.0"`).
+  The series arrays alone do not make a count or a summary value visible.
+- `scatter`/`shot_chart`: same rule — scope counts belong in `footnote`.
+- `compare`: headline values go in their own `rows` entries.
+- `memo`: each section's `body` states its own figures; `footnote` carries scope.
+
+Before submitting, re-check each artifact dict: could a reader (or an audit)
+recover every reported headline number from that payload alone? If not, add the
+missing rows or the footnote line rather than hoping the prose covers it.
