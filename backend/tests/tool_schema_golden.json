@@ -4171,21 +4171,25 @@
         "description": "Find salary-matching packages for a player via the existing domain implementation.",
         "properties": {
           "player": {
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
             "title": "Player",
             "type": "string"
           },
           "season": {
             "default": "2026-27",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2026-27'.",
             "title": "Season",
             "type": "string"
           },
           "teams": {
             "default": "",
+            "description": "Comma-separated 3-letter team abbreviations; blank = all teams. Default: ''.",
             "title": "Teams",
             "type": "string"
           },
           "max_packages": {
             "default": 3,
+            "description": "Maximum trade packages returned. Default: 3.",
             "title": "Max Packages",
             "type": "integer"
           }
@@ -4204,11 +4208,13 @@
         "description": "List one team's trade assets: roster salaries and owned draft picks.",
         "properties": {
           "team": {
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
             "title": "Team",
             "type": "string"
           },
           "season": {
             "default": "2026-27",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2026-27'.",
             "title": "Season",
             "type": "string"
           }
@@ -4227,11 +4233,13 @@
         "description": "Aggregate one team's morning page: last result, next game, opponent form, injuries, news, standings vs projection and cap status.",
         "properties": {
           "team": {
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
             "title": "Team",
             "type": "string"
           },
           "season": {
             "default": "",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season",
             "type": "string"
           }
