@@ -1152,6 +1152,71 @@ test("answer events carry assistant reasoning", async () => {
   assert.equal(events.find((event) => event.type === "answer")?.reasoning, "Reasoning about the answer.");
 });
 
+test("near-budget steer nudges submit_answer before the host abort", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-budget-nudge-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+  const seenContexts = [];
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    turn++;
+    seenContexts.push(structuredClone(context));
+    const content = turn === 1
+      ? [{ type: "toolCall", id: "call-nudge", name: "codemode", arguments: { code: "await tools.hold({});" } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn === 1 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason, message: msg });
+    stream.end();
+    return stream;
+  });
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => ({
+      tools: [{
+        name: "hold",
+        label: "hold",
+        description: "Hold briefly",
+        parameters: Type.Object({}, { additionalProperties: false }),
+        async execute() {
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          return sourceResult(makeSourceRecord("hold", { rows: [] }));
+        },
+      }],
+      results: new Map([["hold", makeSourceRecord("hold")]]),
+      pid: 1005,
+      close: async () => {},
+    }),
+    budgetNudgeDelayMs: 5,
+  });
+  try {
+    for await (const _event of pi.stream({
+      q: "Pace a long analysis",
+      history: [],
+      model: "fixture:fixture",
+      runTimeoutMs: 60000,
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+    }
+    const secondTurn = seenContexts[1].messages.map((message) => messageText(message.content)).join("\n");
+    assert.match(secondTurn, /Host run budget nearly exhausted/);
+    assert.match(secondTurn, /submit_answer/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("pi execution stream ends after abort even when the run never settles", async () => {
   const pi = createPiExecution({
     resolveRuntime: () => new Promise(() => {}),
