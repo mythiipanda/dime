@@ -116,10 +116,7 @@ builds derived tables at image time before pushing
 warehouse with `backend/scripts/publish_warehouse.py` after ingest.
 The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
 
-The current dataset holds 54 tables. A fresh backfill covers
-=======
-The current pack holds 58 tables. A fresh backfill covers
->>>>>>> origin/dev
+The current dataset holds 69 tables. A fresh backfill covers
 2015-16 through 2024-25 with 330,485 boxscore rows and 40,000
 lineup rows. The dataset also carries the historical tables:
 RAPTOR, RAPM, shots, advanced stats, on/off splits, clutch
