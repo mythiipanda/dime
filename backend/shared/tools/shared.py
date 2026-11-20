@@ -239,6 +239,18 @@ def _main():
         recovery = "Check Python syntax, variable names, and warehouse column names via warehouse_schema."
         if isinstance(exc, SyntaxError):
             recovery = "Fix the syntax on the marked line of the submitted code, then rerun run_python."
+            js_ish = re.search(
+                r"`|=>|\\$\\{|\\bconst\\b|\\blet\\b|^return\\s", code, re.M)
+            if js_ish:
+                recovery = ("run_python executes Python, not JavaScript: replace "
+                            "backticks and ${...} with string literals, const/let "
+                            "with plain assignment, => with def/lambda, and "
+                            "assign the result to `out` or print it instead of "
+                            "returning.")
+            elif re.match(r"\\s*(SELECT|WITH)\\b", code, re.I):
+                recovery = ("run_python executes Python code; raw SQL is not "
+                            "valid here. Pass the query as a string to "
+                            "con.execute or call sql_exec instead.")
         elif any(h in msg for h in hints):
             col_hint, valid_hint = _table_hint(con, code)
             recovery = f"Unknown table or column.{col_hint} Valid tables: {valid_hint}"

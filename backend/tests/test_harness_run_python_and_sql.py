@@ -200,6 +200,33 @@ out = rows
     assert (ws / "warehouse.duckdb").exists()
 
 
+def test_run_python_syntax_hints_for_js_and_raw_sql(warehouse, tmp_path, monkeypatch):
+    ws = tmp_path / "ws_syn"
+    ws.mkdir()
+    monkeypatch.setenv("DIME_THREAD_WORKSPACE", str(ws))
+
+    res_js = shared_mod.run_python.invoke({"code":
+        "const rows = con.execute(`SELECT * FROM silver_standings`)"})
+    assert res_js["ok"] is False
+    assert "not JavaScript" in res_js["recovery_hint"]
+
+    res_ret = shared_mod.run_python.invoke({"code":
+        "tables = con.execute('SHOW TABLES').fetchall()\nreturn tables"})
+    assert res_ret["ok"] is False
+    assert "not JavaScript" in res_ret["recovery_hint"]
+
+    res_sql = shared_mod.run_python.invoke({"code":
+        "SELECT TEAM, WINS FROM silver_standings ORDER BY WINS DESC"})
+    assert res_sql["ok"] is False
+    assert "con.execute" in res_sql["recovery_hint"]
+    assert "sql_exec" in res_sql["recovery_hint"]
+
+    res_plain = shared_mod.run_python.invoke({"code":
+        "rows = con.execute('SELECT TEAM FROM silver_standings').fetchall()\nout = rows["})
+    assert res_plain["ok"] is False
+    assert "syntax" in res_plain["recovery_hint"].lower()
+
+
 def test_sql_exec_binder_hint_names_column_and_candidates(warehouse):
     res = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
         {"sql": "SELECT team_abbreviation FROM silver_standings"}))
