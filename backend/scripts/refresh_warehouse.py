@@ -26,6 +26,7 @@ SEEDERS = [
     ("playoffs", "seed_historical_playoffs.py", ["--season"], False),
     ("team_ratings", "seed_team_ratings.py", [], True),
     ("impact", "seed_bref_impact.py", [], True),
+    ("awards", "seed_bbref_awards.py", [], False),
     ("salaries", "seed_salaries.py", [], False),
     ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
