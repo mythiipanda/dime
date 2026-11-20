@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,15 +41,49 @@ SEEDERS = [
 ]
 
 
+def _remote_head_sha(dataset: str, token: str | None) -> str | None:
+    try:
+        from huggingface_hub import HfApi
+        return HfApi(token=token).dataset_info(dataset, revision="main").sha
+    except Exception as exc:
+        print(f"remote main resolution failed ({exc!r}); "
+              "downloading default revision")
+        return None
+
+
+def _snapshot_sha(path: Path) -> str | None:
+    p = Path(path)
+    if p.parent.parent.name == "snapshots":
+        return p.parent.name
+    return None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+
+
+def _pid_cmdline(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        return raw.replace(b"\0", b" ").decode(errors="replace").strip()
+    except OSError:
+        return ""
+
+
 def pull_warehouse(dataset: str, work_dir: Path, token: str | None) -> Path:
     target = work_dir / "warehouse.duckdb"
+    remote_sha = _remote_head_sha(dataset, token)
     try:
         from huggingface_hub import hf_hub_download
         got = hf_hub_download(repo_id=dataset, filename="warehouse.duckdb",
-                              repo_type="dataset", token=token)
-        shutil.copy2(got, target)
-        print(f"pulled {dataset} warehouse -> {target}")
-        return target
+                              repo_type="dataset",
+                              revision=remote_sha or "main", token=token)
     except Exception as exc:
         print(f"hub pull failed ({exc!r}); falling back to local warehouse")
         if not LOCAL_WAREHOUSE.is_file():
@@ -57,6 +92,54 @@ def pull_warehouse(dataset: str, work_dir: Path, token: str | None) -> Path:
         shutil.copy2(LOCAL_WAREHOUSE, target)
         print(f"copied local warehouse -> {target}")
         return target
+    got_sha = _snapshot_sha(got)
+    print(f"serving snapshot {got_sha or 'unknown'} "
+          f"(remote main {remote_sha or 'unknown'})")
+    if remote_sha and got_sha and got_sha != remote_sha:
+        raise RuntimeError(
+            f"stale snapshot served: hub cache returned {got_sha} but "
+            f"remote main is {remote_sha}; refusing to seed a stale baseline")
+    shutil.copy2(got, target)
+    print(f"pulled {dataset} warehouse -> {target}")
+    return target
+
+
+def ensure_writable_workdir(work_dir: Path, warehouse: Path) -> None:
+    lock_path = work_dir / ".write.lock"
+    if lock_path.exists():
+        from shared import file_lock
+        holder = lock_path.read_text().strip()
+        fh = open(lock_path, "r+")
+        try:
+            try:
+                file_lock.try_lock_exclusive(fh)
+            except BlockingIOError:
+                detail = (f"pid {holder} ({_pid_cmdline(int(holder))})"
+                          if holder.isdigit() else "unknown holder")
+                raise RuntimeError(
+                    f"write lock {lock_path} held by a live process: "
+                    f"{detail}; stop it or use a fresh --work-dir")
+            file_lock.unlock(fh)
+        finally:
+            fh.close()
+        lock_path.unlink()
+        note = (f" (recorded pid {holder} is gone)" if holder else "")
+        print(f"cleared stale write lock {lock_path}{note}")
+    try:
+        import duckdb
+        con = duckdb.connect(str(warehouse))
+        con.close()
+    except Exception as exc:
+        msg = str(exc)
+        m = re.search(r"PID (\d+)", msg)
+        if m and _pid_alive(int(m.group(1))):
+            holder = f"pid {m.group(1)} ({_pid_cmdline(int(m.group(1)))})"
+            raise RuntimeError(
+                f"warehouse {warehouse} write-locked by a live process: "
+                f"{holder}; stop it or use a fresh --work-dir") from exc
+        raise RuntimeError(
+            f"warehouse {warehouse} not writable at refresh start: {msg}; "
+            "clear the stale process or use a fresh --work-dir") from exc
 
 
 def pull_manifest(dataset: str, token: str | None) -> dict:
@@ -177,6 +260,11 @@ def main(argv: list[str] | None = None) -> int:
     if manifest:
         print(f"previous publish: sha256={manifest.get('sha256', '')[:12]} "
               f"size={manifest.get('size')}")
+    try:
+        ensure_writable_workdir(work_dir, warehouse)
+    except RuntimeError as exc:
+        print(f"FAILED: {exc}")
+        return 6
     backup = work_dir / "warehouse.rollback.duckdb"
     shutil.copy2(warehouse, backup)
     before = snapshot_counts(backup)

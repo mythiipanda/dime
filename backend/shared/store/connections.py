@@ -1,3 +1,4 @@
+import os
 import shutil
 import sys
 import tempfile
@@ -29,6 +30,10 @@ def write_guard(timeout_s: float = 60.0):
                 if time.monotonic() - start > timeout_s:
                     raise TimeoutError("warehouse write lock timed out")
                 time.sleep(file_lock.POLL_INTERVAL_S)
+        fh.seek(0)
+        fh.write(str(os.getpid()))
+        fh.truncate()
+        fh.flush()
         try:
             yield
         finally:

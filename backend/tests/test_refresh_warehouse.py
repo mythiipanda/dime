@@ -1,4 +1,6 @@
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 import duckdb
@@ -80,3 +82,98 @@ def test_failed_seeder_rolls_back(tmp_path, monkeypatch):
                   "--work-dir", str(work)])
     assert rc == 3
     assert rw.snapshot_counts(work / "warehouse.duckdb") == {"t": 4}
+
+
+def _stub_hub(monkeypatch, download):
+    import types
+    fake = types.SimpleNamespace(hf_hub_download=download)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake)
+
+
+def test_pull_warehouse_pins_remote_main_revision(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_download(**kw):
+        seen.update(kw)
+        snap = tmp_path / "hub" / "snapshots" / "abc123"
+        snap.mkdir(parents=True)
+        (snap / "warehouse.duckdb").write_bytes(b"fresh")
+        return str(snap / "warehouse.duckdb")
+
+    _stub_hub(monkeypatch, fake_download)
+    monkeypatch.setattr(rw, "_remote_head_sha", lambda d, t: "abc123")
+    work = tmp_path / "work"
+    work.mkdir()
+    out = rw.pull_warehouse("org/ds", work, None)
+    assert seen["revision"] == "abc123"
+    assert (work / "warehouse.duckdb").read_bytes() == b"fresh"
+    assert out == work / "warehouse.duckdb"
+
+
+def test_pull_warehouse_rejects_stale_snapshot(tmp_path, monkeypatch):
+    snap = tmp_path / "hub" / "snapshots" / "oldsha"
+    snap.mkdir(parents=True)
+    (snap / "warehouse.duckdb").write_bytes(b"stale")
+    _stub_hub(monkeypatch,
+              lambda **kw: str(snap / "warehouse.duckdb"))
+    monkeypatch.setattr(rw, "_remote_head_sha", lambda d, t: "newsha")
+    work = tmp_path / "work"
+    work.mkdir()
+    with pytest.raises(RuntimeError, match="stale snapshot"):
+        rw.pull_warehouse("org/ds", work, None)
+    assert not (work / "warehouse.duckdb").exists()
+
+
+def test_pull_warehouse_skips_check_when_remote_unknown(tmp_path, monkeypatch):
+    snap = tmp_path / "hub" / "snapshots" / "anysha"
+    snap.mkdir(parents=True)
+    (snap / "warehouse.duckdb").write_bytes(b"data")
+    _stub_hub(monkeypatch,
+              lambda **kw: str(snap / "warehouse.duckdb"))
+    monkeypatch.setattr(rw, "_remote_head_sha", lambda d, t: None)
+    work = tmp_path / "work"
+    work.mkdir()
+    out = rw.pull_warehouse("org/ds", work, None)
+    assert out.read_bytes() == b"data"
+
+
+def test_ensure_writable_clears_stale_write_lock(tmp_path):
+    wh = _make_db(tmp_path / "warehouse.duckdb", {"t": 1})
+    lock = tmp_path / ".write.lock"
+    lock.write_text(str(2 ** 23 - 1))
+    rw.ensure_writable_workdir(tmp_path, wh)
+    assert not lock.exists()
+
+
+def test_ensure_writable_refuses_live_lock_holder(tmp_path):
+    from shared import file_lock
+    wh = _make_db(tmp_path / "warehouse.duckdb", {"t": 1})
+    lock = tmp_path / ".write.lock"
+    lock.write_text("4242")
+    fh = open(lock, "r+")
+    try:
+        file_lock.try_lock_exclusive(fh)
+        with pytest.raises(RuntimeError, match="live process"):
+            rw.ensure_writable_workdir(tmp_path, wh)
+    finally:
+        file_lock.unlock(fh)
+        fh.close()
+
+
+def test_ensure_writable_refuses_duckdb_write_lock(tmp_path):
+    wh = _make_db(tmp_path / "warehouse.duckdb", {"t": 1})
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import duckdb, time, sys\n"
+         f"con = duckdb.connect({str(wh)!r})\n"
+         "print('held', flush=True)\n"
+         "time.sleep(30)\n"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        time.sleep(0.3)
+        with pytest.raises(RuntimeError, match="not writable|write-locked"):
+            rw.ensure_writable_workdir(tmp_path, wh)
+    finally:
+        holder.kill()
+        holder.wait()
