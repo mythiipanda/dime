@@ -475,9 +475,24 @@ def test_main_second_run_fetches_nothing_and_returns_zero(tmp_path, monkeypatch)
 
 def test_main_stops_after_consecutive_failures_and_names_them(
         tmp_path, monkeypatch):
-    stale = {2023: "awards_1998.html", 2024: "awards_1998.html",
-             2025: "awards_1998.html", 2026: "awards_1998.html"}
-    assert _run_main(tmp_path, monkeypatch, stale, []) == 1
+    _scratch(tmp_path, monkeypatch)
+    _write_spine(["2022-23", "2023-24", "2024-25", "2025-26"])
+    monkeypatch.setattr(seed, "LOG_FILE", tmp_path / "seed.log")
+
+    def refusing(min_interval_s=0.0):
+        def transport(url: str) -> str:
+            if url in src.WINNER_URLS:
+                return (FIXTURES / _winner_fixture_for(url)).read_text(
+                    encoding="utf-8")
+            raise RuntimeError(f"503 for {url}")
+        return transport
+
+    monkeypatch.setattr(src, "paced_transport", refusing)
+    monkeypatch.setattr(src, "fetch_index",
+                        lambda transport=None: [2023, 2024, 2025, 2026])
+    monkeypatch.setattr(src, "BACKOFF_S", 0.0)
+    assert seed.main(["seed_bbref_awards.py", "--progress",
+                      str(tmp_path / "progress.json")]) == 1
     state = json.loads((tmp_path / "progress.json").read_text())
     assert sorted(state["failed"]) == ["2022-23", "2023-24", "2024-25"]
     assert state["done"] == []
@@ -490,6 +505,23 @@ def test_main_stops_after_consecutive_failures_and_names_them(
     finally:
         con.close()
     assert seed.TABLE not in tables
+
+def test_a_season_with_a_missing_or_inconsistent_ballot_is_a_gap_not_a_failure(
+        tmp_path, monkeypatch):
+    pages = {2023: "awards_1998.html", 2024: "awards_2024.html"}
+    assert _run_main(tmp_path, monkeypatch, pages, []) == 0
+    state = json.loads((tmp_path / "progress.json").read_text())
+    assert state["gaps"]["2022-23"].startswith("AwardsPageError")
+    assert state["done"] == ["2023-24"]
+    assert state["failed"] == {}
+    con = store.connect()
+    try:
+        landed = con.execute(
+            f"SELECT _season, COUNT(*) FROM {seed.TABLE} GROUP BY 1").fetchall()
+    finally:
+        con.close()
+    assert landed == [("2023-24", 145)]
+    assert _run_main(tmp_path, monkeypatch, pages, []) == 0
 
 def test_main_respects_the_seasons_flag(tmp_path, monkeypatch):
     assert _run_main(tmp_path, monkeypatch,
