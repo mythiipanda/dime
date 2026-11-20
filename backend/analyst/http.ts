@@ -276,6 +276,10 @@ export function createProductServer(options: {
         const result = await data.call("product_trade_partners", { player: input.player ?? "", season: input.season ?? "2026-27", teams: teams(input.teams), max_packages: input.max_packages ?? 3 });
         json(res, result, result.ok === false ? 422 : 200);
     });
+    route("GET", /^\/api\/morning$/, async ({ res, url }) => {
+        const result = await data.call("product_morning", { team: (url.searchParams.get("team") ?? "").slice(0, 12), season: url.searchParams.get("season") ?? "" });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
     route("GET", /^\/api\/debate-card$/, async ({ res, url }) => {
         const a = (url.searchParams.get("a") ?? "").trim().slice(0, 80), b = (url.searchParams.get("b") ?? "").trim().slice(0, 80);
         if (!a || !b) {
