@@ -5,9 +5,11 @@ import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
+import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
+||||||| 154f211e
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
-import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
-import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
+import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
@@ -144,9 +146,15 @@ const turnSchema = Type.Object({
     reasoning: Type.Optional(Type.String())
 });
 export const analystContextSchema = Type.Object({
-    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(), runTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
+    sources: Type.Optional(Type.Array(sourceRecordSchema)),
+    submissions: Type.Optional(Type.Array(Type.Object({ run_id: Type.String(), submission: submitAnswerSchema }, { additionalProperties: false }), { maxItems: 8 })),
+    cwd: Type.String(), agentDir: Type.String(),
+||||||| 154f211e
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
     sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),
-    bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(), runTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
+    sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),    bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
 });
 export type AnalystContext = Static<typeof analystContextSchema>;
 export type AnalystEvent = {
@@ -188,6 +196,50 @@ type AnalystDeps = {
     connectTools?: (options: PythonToolsOptions) => ReturnType<typeof connectPythonTools>;
     abortGraceMs?: number;
 };
+
+const PRIOR_SUBMISSION_ITEM_LIMIT = 24;
+const PRIOR_SUBMISSION_TEXT_CHARS = 500;
+const PRIOR_SUBMISSIONS_CHARS = 12000;
+
+function compactArtifactValue(value: unknown, depth: number): unknown {
+    if (Array.isArray(value)) {
+        const items = value.slice(0, PRIOR_SUBMISSION_ITEM_LIMIT).map(item => compactArtifactValue(item, depth + 1));
+        if (value.length > PRIOR_SUBMISSION_ITEM_LIMIT)
+            items.push(`…${value.length - PRIOR_SUBMISSION_ITEM_LIMIT} more`);
+        return items;
+    }
+    const obj = objectValue(value);
+    if (obj) {
+        if (depth >= 5)
+            return "[object]";
+        return Object.fromEntries(Object.entries(obj).map(([key, item]) => [key, compactArtifactValue(item, depth + 1)]));
+    }
+    if (typeof value === "string" && value.length > PRIOR_SUBMISSION_TEXT_CHARS)
+        return value.slice(0, PRIOR_SUBMISSION_TEXT_CHARS) + "…";
+    return value;
+}
+
+export function compactPriorSubmissions(submissions: ReadonlyArray<{ run_id: string; submission: AnswerSubmission }>) {
+    const out: Record<string, unknown>[] = [];
+    let budget = PRIOR_SUBMISSIONS_CHARS;
+    for (const { run_id, submission } of [...submissions].slice(-8).reverse()) {
+        const entry: Record<string, unknown> = {
+            run_id,
+            blocks: submission.blocks.map(block => ({
+                text: block.text.length > PRIOR_SUBMISSION_TEXT_CHARS ? block.text.slice(0, PRIOR_SUBMISSION_TEXT_CHARS) + "…" : block.text,
+                ...(block.anchors?.length ? { anchors: block.anchors } : {})
+            }))
+        };
+        if (submission.artifacts?.length)
+            entry.artifacts = submission.artifacts.map(artifact => compactArtifactValue(artifact, 0));
+        const size = JSON.stringify(entry).length;
+        if (out.length > 0 && size > budget)
+            break;
+        out.push(entry);
+        budget -= size;
+    }
+    return out;
+}
 
 function sourceSummary(record: SourceRecord) {
     const { result, isError } = sourceResult(record).structuredContent;
@@ -423,7 +475,20 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     const restoredStore = readStoredSnapshot(start.bridge.cwd);
                     if (restoredStore)
                         session.sessionManager.appendCustomEntry(CODEMODE_STORE_ENTRY_TYPE, { set: restoredStore, delete: [] });
-                    const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);
+                    const priorSubmissions = start.submissions?.length ? compactPriorSubmissions(start.submissions) : [];
+                    if (priorSubmissions.length > 0) {
+                        const submissionsContext: Message = {
+                            role: "user",
+                            content: "Prior submitted answers and artifacts in this thread, most recent first (compact specs). When the user refers to a previous table/chart/memo, reuse or extend these specs rather than rebuilding from scratch:\n" + JSON.stringify(priorSubmissions),
+                            timestamp: Date.now()
+                        };
+                        session.sessionManager.appendMessage(submissionsContext);
+                        session.agent.state.messages.push(submissionsContext);
+                    }
+||||||| 154f211e
+                    const restoredStore = readStoredSnapshot(start.bridge.cwd);
+                    if (restoredStore)
+                        session.sessionManager.appendCustomEntry(CODEMODE_STORE_ENTRY_TYPE, { set: restoredStore, delete: [] });                    const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);
                     if (workspaceFiles.length > 0) {
                         const workspaceContext: Message = {
                             role: "user",
