@@ -26,12 +26,15 @@ SEEDERS = [
     ("playoffs", "seed_historical_playoffs.py", ["--season"], False),
     ("team_ratings", "seed_team_ratings.py", [], True),
     ("impact", "seed_bref_impact.py", [], True),
+    ("awards", "seed_bbref_awards.py", [], False),
     ("salaries", "seed_salaries.py", [], False),
-    ("stints", "seed_stints.py", [], True),
+    ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
     ("repair_shot_names", "repair_shot_names.py", [], False),
     ("draft_capital", "seed_draft_capital.py", [], False),
+    ("free_agents", "seed_free_agents.py", [], True),
+    ("prospects", "seed_prospects.py", [], True),
     ("four_factors_team", "build_team_four_factors.py", [], False),
 ]
 
@@ -116,8 +119,14 @@ def run_seeders(warehouse: Path, season: str, only: set[str] | None,
         if dry_run and supports_dry:
             cmd.append("--dry-run")
         print(f"=== seeder {name}: {' '.join(cmd)}", flush=True)
-        proc = subprocess.run(cmd, env=env, cwd=str(SCRIPTS_DIR.parent),
-                              capture_output=True, text=True, timeout=3600)
+        try:
+            proc = subprocess.run(cmd, env=env, cwd=str(SCRIPTS_DIR.parent),
+                                  capture_output=True, text=True,
+                                  timeout=3600)
+        except subprocess.TimeoutExpired:
+            print(f"seeder {name} timed out after 3600s")
+            failures.append(name)
+            continue
         tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-8:])
         print(tail)
         if proc.returncode != 0:
@@ -194,6 +203,13 @@ def main(argv: list[str] | None = None) -> int:
             return 4
     else:
         print("dry-run: row-count check skipped (seeders ran dry)")
+
+    from build_data_dictionary import write_dictionary
+    dictionary_path = write_dictionary(warehouse)
+    if warehouse.parent != LOCAL_WAREHOUSE.parent and LOCAL_WAREHOUSE.parent.is_dir():
+        local_dict = LOCAL_WAREHOUSE.parent / dictionary_path.name
+        shutil.copy2(dictionary_path, local_dict)
+        print(f"dictionary also staged at {local_dict}")
 
     if args.skip_publish:
         print("skip-publish: done, warehouse staged at", warehouse)

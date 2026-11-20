@@ -12,6 +12,7 @@ WAREHOUSE_FILE = "warehouse.duckdb"
 MANIFEST_FILE = "manifest.json"
 CHECKSUM_FILE = "warehouse.duckdb.sha256"
 CARD_FILE = "README.md"
+DICTIONARY_FILE = "data_dictionary.json"
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 SOURCE_LICENSES = {
@@ -278,6 +279,12 @@ def publish(warehouse_path, dataset=DEFAULT_DATASET, revision=DEFAULT_REVISION, 
         CommitOperationAdd(path_in_repo=MANIFEST_FILE, path_or_fileobj=manifest_text(manifest).encode()),
         CommitOperationAdd(path_in_repo=CARD_FILE, path_or_fileobj=card.encode()),
     ]
+    dictionary_path = warehouse_path.parent / DICTIONARY_FILE
+    if dictionary_path.is_file():
+        verdict["dictionary_file"] = DICTIONARY_FILE
+        operations.append(CommitOperationAdd(
+            path_in_repo=DICTIONARY_FILE,
+            path_or_fileobj=str(dictionary_path)))
     message = commit_message or f"{WAREHOUSE_FILE} {sha256[:12]} ({size} bytes)"
     info = api.create_commit(
         repo_id=dataset,

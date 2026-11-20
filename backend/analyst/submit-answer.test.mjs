@@ -714,6 +714,27 @@ test("validateAnswerSubmission permits omitted anchors and normalizes shot_chart
   assert.equal(validated.artifacts[0].zones[1].pct, 42.5);
 });
 
+test("shot_chart zones carry optional label, makes and league-delta fields", () => {
+  const validated = validateAnswerSubmission({
+    blocks: [{ text: "Shot diet" }],
+    artifacts: [
+      {
+        kind: "shot_chart",
+        title: "Zone efficiency vs league",
+        zones: [
+          { x: 0, y: 4, att: 380, makes: 260, pct: 68.4, delta: 8.1, label: "rim-C" },
+          { x: -14, y: 14, att: 120, makes: 56, pct: 46.5, delta: -3.4, label: "long_mid-L" },
+        ],
+      },
+    ],
+  }, () => undefined);
+  const zone = validated.artifacts[0].zones[0];
+  assert.equal(zone.label, "rim-C");
+  assert.equal(zone.makes, 260);
+  assert.equal(zone.delta, 8.1);
+  assert.equal(zone.pct, 68.4);
+});
+
 function playerCardInput(overrides = {}) {
   return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
     metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
@@ -722,7 +743,7 @@ function playerCardInput(overrides = {}) {
 function playerCardSource() {
   const source = makeSourceRecord("card-source", { rows: [{ player: "Alex Example", team: "Fixture City", pts: 24.6, missed: 0, impact: null }] });
   source.response.structuredContent.declared_column_semantics = { pts: { unit: "points/game" }, missed: { unit: "games" } };
-  source.response.structuredContent.meta = { season: "fixture-season" };
+  source.response.structuredContent.meta = { season: "fixture-season", sql: "SELECT player, team, pts FROM fixture WHERE player = ?" };
   return source;
 }
 
@@ -738,6 +759,7 @@ test("player cards resolve identity, exact values and declared units from one so
   assert.deepEqual(card.metrics, [{ column: "pts", label: "Points", value: 24.6, unit: "points/game" }, { column: "missed", label: "Missed", value: 0, unit: "games" }, { column: "impact", label: "Impact", value: null }]);
   assert.equal(card.provenance.origin, "undeclared");
   assert.equal(card.provenance.season, "fixture-season");
+  assert.equal(card.provenance.sql, "SELECT player, team, pts FROM fixture WHERE player = ?");
   assert.deepEqual(input, original);
 });
 
@@ -807,4 +829,36 @@ test("priorSubmissions returns thread submissions in order and compactPriorSubmi
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+||||||| 154f211e
+
+test("memo artifacts validate section anchors like block anchors", () => {
+  const sources = new Map([
+    ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],
+  ]);
+  const memo = {
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [
+      { heading: "Cap position", body: "Orlando sits under the first apron.", anchors: [{ ref: "cap-source", row: 0, columns: ["team", "payroll"] }] },
+      { heading: "Options", body: "Aggregate mid-tier salary." },
+    ],
+  };
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [memo] }, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].kind, "memo");
+  assert.equal(validated.artifacts[0].sections[0].anchors[0].ref, "cap-source");
+});
+
+test("memo artifacts reject anchors to unknown refs, bad rows and missing columns", () => {
+  const source = makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] });
+  const memo = anchors => ({
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [{ heading: "Cap position", body: "Body.", anchors }],
+  });
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, ref => ref === "cap-source" ? source : undefined);
+  assert.throws(() => validate(memo([{ ref: "ghost", row: 0, columns: ["team"] }])), /Unknown source ref/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
 });

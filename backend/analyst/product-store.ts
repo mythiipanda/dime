@@ -10,7 +10,11 @@ import { submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
 const MAX_TURN_CHARS = 64000;
 const MAX_HISTORY_TURNS = 24;
 
-const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String({ minLength: 1, maxLength: MAX_TURN_CHARS, pattern: "\\S" }) });
+const turnSchema = Type.Object({
+    role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+    content: Type.String({ minLength: 1, maxLength: MAX_TURN_CHARS, pattern: "\\S" }),
+    reasoning: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_TURN_CHARS, pattern: "\\S" }))
+});
 const referenceSchema = Type.Object({ sequence: Type.Integer(), turn: Type.String(), run_id: Type.Union([Type.String(), Type.Null()]), turn_id: Type.Union([Type.String(), Type.Null()]) });
 const artifactSchema = Type.Object({
     run_id: Type.String(),
@@ -127,8 +131,9 @@ export class ProductStore {
             db.close();
         }
     }
-    append(input: Identity, question: string, answer: string, run: string) {
+    append(input: Identity, question: string, answer: string, run: string, reasoning?: string) {
         const { owner, thread } = identity(input), db = this.connect();
+        const boundedReasoning = reasoning?.trim().slice(0, MAX_TURN_CHARS);
         try {
             db.exec("BEGIN IMMEDIATE");
             const last = db.prepare("SELECT sequence,run_id,turn_id FROM conversations WHERE owner=? AND thread=? ORDER BY sequence DESC LIMIT 1").get(owner, thread);
@@ -137,7 +142,7 @@ export class ProductStore {
                 throw new Error("Invalid sequence");
             const insert = db.prepare("INSERT INTO conversations(owner,thread,sequence,turn,run_id,turn_id) VALUES(?,?,?,?,?,?)");
             insert.run(owner, thread, sequence + 1, JSON.stringify({ role: "user", content: question.slice(0, MAX_TURN_CHARS) }), run, run);
-            insert.run(owner, thread, sequence + 2, JSON.stringify({ role: "assistant", content: answer.slice(0, MAX_TURN_CHARS) }), run, run);
+            insert.run(owner, thread, sequence + 2, JSON.stringify({ role: "assistant", content: answer.slice(0, MAX_TURN_CHARS), ...(boundedReasoning ? { reasoning: boundedReasoning } : {}) }), run, run);
             if (last)
                 db.prepare("INSERT INTO branches VALUES(?,?,?,?,?,?)").run(owner, thread, "br-" + randomUUID().replaceAll("-", "").slice(0, 12), sequence, last.run_id, last.turn_id);
             db.exec("COMMIT");

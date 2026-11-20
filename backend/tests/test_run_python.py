@@ -33,6 +33,26 @@ out = df
     assert res["rows"][0]["player"] == "Luka"
     assert res["rows"][0]["pts"] == 33.9
 
+def test_run_python_syntax_error_marks_failing_line():
+    code = "x = 1\ny = (2 +\nout = x + y\n"
+    res = run_python.invoke({"code": code})
+    assert res["ok"] is False
+    assert res["error_type"] == "SyntaxError"
+    assert res["error"].startswith("SyntaxError:")
+    assert ">>    2| y = (2 +" in res["error"]
+    assert res["error_line"] == 2
+    assert "   3| out = x + y" in res["code_context"]
+    assert "syntax" in res["recovery_hint"].lower()
+
+def test_run_python_runtime_error_marks_failing_line():
+    code = "total = 10\nratio = total / denomiator\nout = ratio\n"
+    res = run_python.invoke({"code": code})
+    assert res["ok"] is False
+    assert res["error_type"] == "NameError"
+    assert res["error_line"] == 2
+    assert ">>    2| ratio = total / denomiator" in res["code_context"]
+    assert "code around line 2" in res["error"]
+
 def test_run_python_banned_writes():
     for banned in ["DROP TABLE silver_boxscores", "CREATE TABLE silver_scratch (x INT)", "DELETE FROM silver_boxscores"]:
         res = run_python.invoke({"code": f"con.execute({banned!r})"})

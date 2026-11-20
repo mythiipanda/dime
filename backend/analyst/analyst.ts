@@ -88,6 +88,10 @@ export type ProductEvent = {
 };
 
 export const backendRoot = fileURLToPath(new URL("../../", import.meta.url));
+export function runTimeoutMs(env: NodeJS.ProcessEnv) {
+    const n = Number(env.DIME_V2_RUN_TIMEOUT_S);
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) : 360000;
+}
 export function productPaths(env: NodeJS.ProcessEnv) {
     const data = join(backendRoot, "data");
     return { conversations: resolve(env.DIME_CONVERSATION_STORE ?? join(data, "v2-conversations.sqlite3")), sources: resolve(env.DIME_PI_SOURCES_DIR ?? join(data, "pi-sources")), private: resolve(env.DIME_PI_PRIVATE_DIR ?? join(data, "pi-private")), warehouse: resolve(env.DIME_WAREHOUSE || join(data, "warehouse.duckdb")) };
@@ -124,6 +128,7 @@ async function prepareRunWorkspace(paths: ReturnType<typeof productPaths>, ident
 
 type RunState = {
     answer?: string;
+    reasoning?: string;
     failed: boolean;
     streamed: boolean;
     submission?: AnswerSubmission;
@@ -140,6 +145,7 @@ function mapExecutionEvent(event: AnalystEvent, state: RunState): ProductEvent |
         case "answer":
             state.answer = event.text;
             state.submission = event.submission;
+            state.reasoning = event.reasoning;
             return undefined;
         case "custom_data":
             return {
@@ -197,7 +203,7 @@ async function persistCompletedRun(
     if (!state.failed && state.answer && identity) {
         await options.saveChat(identity.thread, "ai", state.answer, identity.owner.slice(0, 80));
         await options.saveRun(identity.thread, question.slice(0, MAX_TURN_CHARS), state.answer, identity.owner.slice(0, 80), run);
-        store.append(identity, question, state.answer, run);
+        store.append(identity, question, state.answer, run, state.reasoning);
     }
 }
 
@@ -238,7 +244,7 @@ export function createAnalyst(options: AnalystOptions) {
     const policy = providerPolicy(options.env), execution = options.execution ?? createPiExecution();
     return {
         store,
-        async *stream(input: unknown, signal?: AbortSignal, run = newRunId()): AsyncGenerator<ProductEvent> {
+        async *stream(input: unknown, signal?: AbortSignal, run = newRunId(), streamOptions: { runTimeoutMs?: number } = {}): AsyncGenerator<ProductEvent> {
             if (!Value.Check(analystRequestSchema, input) || (input.thread && !input.client))
                 throw new Error("Invalid analyst request");
             const model = resolveAnalystModel(options.resolveModel ?? policy.resolve, input.model ?? undefined);
@@ -258,7 +264,9 @@ export function createAnalyst(options: AnalystOptions) {
                     await options.saveChat(identity.thread, "human", input.q.slice(0, MAX_TURN_CHARS), identity.owner.slice(0, 80));
                 const bridgeEnv = dataEnvironment(options.env, directory, workspace.workspaceDir);
                 for await (const event of execution.stream({ q: input.q, history, model, sources: state.records, submissions: identity ? store.priorSubmissions(identity).slice(-8) : undefined, cwd: directory, agentDir: workspace.agentDir, bridge: { python: options.python, cwd: workspace.workspaceDir, env: bridgeEnv } }, signal)) {
-                    const mapped = mapExecutionEvent(event, state);
+||||||| 154f211e
+                for await (const event of execution.stream({ q: input.q, history, model, sources: state.records, cwd: directory, agentDir: workspace.agentDir, bridge: { python: options.python, cwd: workspace.workspaceDir, env: bridgeEnv } }, signal)) {
+                for await (const event of execution.stream({ q: input.q, history, model, ...(streamOptions.runTimeoutMs === undefined ? {} : { runTimeoutMs: streamOptions.runTimeoutMs }), sources: state.records, cwd: directory, agentDir: workspace.agentDir, bridge: { python: options.python, cwd: workspace.workspaceDir, env: bridgeEnv } }, signal)) {                    const mapped = mapExecutionEvent(event, state);
                     if (mapped)
                         yield mapped;
                 }
