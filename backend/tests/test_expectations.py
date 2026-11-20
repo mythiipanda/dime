@@ -11,17 +11,17 @@ def exp_db(tmp_path, monkeypatch):
     db = tmp_path / "exp.duckdb"
     con = duckdb.connect(str(db))
     proj = pl.DataFrame({
-            'TEAM': ['BOS'] * 3,
-            'TEAM_NAME': ['Boston Celtics'] * 3,
-            'PROJECTED_WINS': [50.5, 55.0, 57.3],
-            'PROJECTED_LOSSES': [31.5, 27.0, 24.7],
-            'MAKE_PLAYOFFS_PCT': [0.9, 0.95, 1.0],
-            'WIN_TITLE_PCT': [0.1, 0.12, 0.15],
-            'RATING': [3.0, 5.0, 6.1],
-            'PROJECTION_MODEL': ['betiq_power_index'] * 3,
-            'PROJECTION_SOURCE': ['teamrankings:betiq'] * 3,
-            '_season': ['2024-25', '2025-26', '2026-27'],
-            '_fetched_at': ['2026-11-19T00:00:00+00:00'] * 3,
+            'TEAM': ['BOS'] * 4,
+            'TEAM_NAME': ['Boston Celtics'] * 4,
+            'PROJECTED_WINS': [50.5, 55.0, 57.3, 55.0],
+            'PROJECTED_LOSSES': [31.5, 27.0, 24.7, 27.0],
+            'MAKE_PLAYOFFS_PCT': [0.9, 0.95, 1.0, 0.9],
+            'WIN_TITLE_PCT': [0.1, 0.12, 0.15, 0.1],
+            'RATING': [3.0, 5.0, 6.1, 4.0],
+            'PROJECTION_MODEL': ['betiq_power_index'] * 4,
+            'PROJECTION_SOURCE': ['teamrankings:betiq'] * 4,
+            '_season': ['2024-25', '2025-26', '2026-27', '2027-28'],
+            '_fetched_at': ['2026-11-19T00:00:00+00:00'] * 4,
         })
     con.execute("CREATE TABLE silver_preseason_projections AS SELECT * FROM proj")
     hist = pl.DataFrame({
@@ -44,12 +44,14 @@ def exp_db(tmp_path, monkeypatch):
         })
     con.execute("CREATE TABLE silver_hist_gamelogs AS SELECT * FROM gl")
     cur = pl.DataFrame({
-            'TeamID': [1610612738],
-            'WINS': [10], 'LOSSES': [5], 'WinPCT': [0.667],
+            'TeamID': [1610612738, 1610612738],
+            'WINS': [10, 56], 'LOSSES': [5, 26], 'WinPCT': [0.667, 0.683],
+            '_season': ['2026-27', '2025-26'],
         })
     con.execute("CREATE TABLE silver_standings AS SELECT * FROM cur")
     ratings = pl.DataFrame({
             'TEAM_ID': [1610612738], 'NET_RATING': [8.3],
+            '_season': ['2026-27'],
         })
     con.execute("CREATE TABLE silver_team_ratings AS SELECT * FROM ratings")
     con.close()
@@ -71,9 +73,29 @@ def test_expectations_completed_season(exp_db):
 def test_expectations_recent_seasons(exp_db):
     res = get_expectations.invoke({"team_id": 1610612738, "seasons": 2})
     assert res["ok"] is True
-    assert [r["season"] for r in res["rows"]] == ["2025-26", "2026-27"]
-    assert res["rows"][-1]["status"] == "in_progress"
-    assert res["rows"][-1]["net_rating"] == 8.3
+    assert [r["season"] for r in res["rows"]] == ["2026-27", "2027-28"]
+    assert res["rows"][0]["status"] == "in_progress"
+    assert res["rows"][0]["net_rating"] == 8.3
+    assert "status" not in res["rows"][1]
+
+
+def test_expectations_unplayed_season_has_no_actuals(exp_db):
+    res = get_expectations.invoke({"team": "BOS", "season": "2027-28"})
+    assert res["ok"] is True
+    row = res["rows"][0]
+    assert row["projected_wins"] == 55.0
+    assert "actual_wins" not in row
+    assert "status" not in row
+    assert "wins_vs_projection" not in row
+
+
+def test_expectations_standings_row_scoped_to_season(exp_db):
+    res = get_expectations.invoke({"team": "BOS", "season": "2026-27"})
+    assert res["ok"] is True
+    row = res["rows"][0]
+    assert row["actual_wins"] == 10
+    assert row["games_played"] == 15
+    assert row["status"] == "in_progress"
 
 
 def test_expectations_missing_table(tmp_path, monkeypatch):
