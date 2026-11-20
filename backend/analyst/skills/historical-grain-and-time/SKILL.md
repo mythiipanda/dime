@@ -30,12 +30,15 @@ Use this playbook before aggregating across `silver_hist_*`, `silver_boxscores`,
 ## 4. Canonical Lineup Units
 
 - A five-man unit is canonical only after parsing `group_id` into unique player IDs, requiring exactly five, sorting the IDs, and deduplicating to one row per canonical key per team/season/variant.
+- DuckDB has no `OVERLAPS` predicate and no `array_overlaps`/`list_overlap` function. Canonicalize player sets with `array_to_string(list_sort(list_distinct(string_split(group_id, ' - '))), ',')`; test membership overlap with `list_has_any`/`list_has_all` or `len(list_intersect(...))`.
 - Rank units by the requested measure with deterministic tie-breaks (usually ascending player IDs or lexicographic unit key), and report minutes/possessions next to every rating.
 - For continuity or survival questions, intersect canonical unit keys across seasons or windows instead of comparing display names or unsorted `group_id` strings.
 
 ## 5. Shot Zones And Reconciliation
 
 - In `silver_hist_shots`, coordinates may be legacy tenths of feet. Use the task's ordered, mutually exclusive zone rules exactly; do not substitute generic court zones or a different distance cutoff.
+- `silver_shots` (current-season event feed) is a different schema from `silver_hist_shots`: uppercase `GAME_ID`, `GAME_EVENT_ID`, `LOC_X`, `LOC_Y`, `SHOT_DISTANCE`, `SHOT_ZONE_BASIC`, `SHOT_ATTEMPTED_FLAG`, `SHOT_MADE_FLAG` vs lowercase `game_id`, `x_legacy`, `y_legacy`, `shot_distance`, `shot_value`, `shot_result`. Do not carry column names between them.
+- `silver_shots` can carry duplicate shot events — raw rows can be ~2× unique shots unevenly across players. Deduplicate by `(GAME_ID, GAME_EVENT_ID)` before any FGA/FG% aggregation (`COUNT(DISTINCT ...)` or `ROW_NUMBER()` partition), or totals and rates distort differently per player.
 - Retain only valid Made/Missed two- or three-point rows for the requested phase, and separate shot quality (zone mix, expected value) from shot making (actual percentages) when the task asks for both.
 - For feed reconciliation, full-outer join on game and player keys, count keys with any numerator or denominator discrepancy, and report totals from both feeds plus the maximum absolute per-key difference.
 
