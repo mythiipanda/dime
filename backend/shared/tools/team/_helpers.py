@@ -249,7 +249,13 @@ def _std_context(team_id: object, season: str,
                  games: list[dict[str, Any]] | None) -> dict[str, Any] | None:
     pkg = _pkg()
     static = pkg.season_static(season)
-    gp = len(games) if games else None
+    hist = pkg._hist_team_games(team_id, season)
+    if hist:
+        gp = len(hist)
+    elif games:
+        gp = len(games)
+    else:
+        gp = None
     prior = None
     prior_season = pkg.last_completed_season()
     if prior_season and prior_season != season:
