@@ -120,6 +120,7 @@ def register() -> dict[str, Any]:
             get_matchup_brief as _orig_get_matchup_brief,
             get_recap as _orig_get_recap,
             get_rotation_check as _orig_get_rotation_check,
+            get_opponent_scout as _orig_get_opponent_scout,
             get_scout_pack as _orig_get_scout_pack,
         )
     except ImportError:
@@ -130,6 +131,7 @@ def register() -> dict[str, Any]:
             get_matchup_brief as _orig_get_matchup_brief,
             get_recap as _orig_get_recap,
             get_rotation_check as _orig_get_rotation_check,
+            get_opponent_scout as _orig_get_opponent_scout,
             get_scout_pack as _orig_get_scout_pack,
         )
 
@@ -228,6 +230,11 @@ def register() -> dict[str, Any]:
         return await _sectioned_result(_orig_get_scout_pack, "get_scout_pack",
                                        {"team": team, "opponent": opponent, "season": season})
 
+    @tool("get_opponent_scout", description=_orig_get_opponent_scout.description)
+    async def get_opponent_scout(team: str = "", opponent: str = "", season: str | None = None) -> dict:
+        return await _sectioned_result(_orig_get_opponent_scout, "get_opponent_scout",
+                                       {"team": team, "opponent": opponent, "season": season})
+
     @tool("get_injury_impact", description=_orig_get_injury_impact.description)
     async def get_injury_impact(team: str = "", season: str | None = None) -> dict:
         return await _sectioned_result(_orig_get_injury_impact, "get_injury_impact",
@@ -265,6 +272,7 @@ def register() -> dict[str, Any]:
         "get_matchup_brief": get_matchup_brief,
         "get_matchup_preview": get_matchup_preview,
         "get_scout_pack": get_scout_pack,
+        "get_opponent_scout": get_opponent_scout,
         "get_injury_impact": get_injury_impact,
         "get_rotation_check": get_rotation_check,
         "get_matchup_splits": get_matchup_splits,

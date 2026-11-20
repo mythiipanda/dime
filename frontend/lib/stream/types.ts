@@ -43,6 +43,8 @@ export interface DimeProvenance {
   warehouseId?: string;
   season?: string;
   asOf?: string;
+  as_of?: string;
+  sql?: string;
   liveSources: string[];
   liveSourceIds?: string[];
   evidence?: ProvenanceEvidence[];
@@ -118,7 +120,7 @@ export interface ShotChartArtifactPayload {
   title: string;
   source?: string;
   provenance?: DimeProvenance;
-  zones: { x: number; y: number; att: number; pct: number }[];
+  zones: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number }[];
   footnote?: string;
 }
 
@@ -132,6 +134,29 @@ export interface ScatterArtifactPayload {
   points: { label: string; x: number; y: number; highlight?: boolean }[];
   xMid?: number;
   yMid?: number;
+  footnote?: string;
+}
+
+export interface MemoAnchor {
+  ref: string;
+  row: number;
+  columns: string[];
+}
+
+export interface MemoSectionPayload {
+  heading: string;
+  body: string;
+  anchors?: MemoAnchor[];
+}
+
+export interface MemoArtifactPayload {
+  kind: "memo";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  subtitle?: string;
+  text: string;
+  sections?: MemoSectionPayload[];
   footnote?: string;
 }
 
@@ -155,7 +180,8 @@ export type DimeArtifact =
   | ChartArtifactPayload
   | ShotChartArtifactPayload
   | ScatterArtifactPayload
-  | PlayerCardArtifactPayload;
+  | PlayerCardArtifactPayload
+  | MemoArtifactPayload;
 
 export interface ArtifactEvent {
   type: "artifact";

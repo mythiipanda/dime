@@ -58,6 +58,11 @@ def node_suite(env, name, *flags):
 
 
 def run():
+    npm = shutil.which("npm") or shutil.which("npm.cmd")
+    if not npm:
+        raise SystemExit("npm is required to build the analyst host before verifying")
+    subprocess.run([npm, "run", "build"], cwd=module, check=True)
+
     env = environment("runtime")
     for source in ("dist/runtime.js", "runtime.test.mjs", "dist/python-tools.js"):
         subprocess.run([node, "--check", str(module / source)],
@@ -69,6 +74,8 @@ def run():
         env = environment(name)
         owned_warehouse(env)
         node_suite(env, suite, "--test")
+
+    node_suite(environment("boards-routes"), "boards-route.test.mjs", "--test")
 
     env = environment("persistence")
     subprocess.run([sys.executable, "-B", str(module / "persistence_fixture.py"), "prepare"],

@@ -48,3 +48,12 @@ GROUP BY player_id
 - Do **not** treat a 0-row result as a tool crash. First verify your filter literals (spelling, case, season encoding) against `warehouse_schema` or a broader `SELECT DISTINCT` probe.
 - When the named table lacks the requested season, phase, or team, say so, then keep the requested scope: list coverage (`SELECT DISTINCT _season, ...`) in other tables that hold the same measure and verify each requested scope has rows there before switching. Never substitute an adjacent season or shift the comparison window to fit the first table's coverage. If no table covers a requested scope, report that gap for that part.
 - Once filters are verified, a 0-row observation is affirmative evidence that no entity or event satisfied those criteria in the covered warehouse scope (e.g., resolving a false-premise question). Report the exact verified scope and the 0-row finding transparently.
+
+## 5. Call Economy: Fewer Turns, Faster Answers
+
+Every codemode turn costs model latency, so spend calls deliberately:
+
+- Inspect schema once per table with `warehouse_schema({ tables: [...] })` and reuse the result via `store`/`load`; never re-fetch the full catalog or repeat a freshness check within a run.
+- `get_warehouse_freshness` and `get_dataset_freshness` report overlapping coverage; one freshness check per run is enough unless you specifically need Data Engine ingestion timestamps.
+- When `sql_exec` fails, read the error's candidate bindings and `schema_hint` (the referenced tables' real columns, and which tables actually contain a missing column) and correct the query on the next call; call `warehouse_schema` again only when no hint was returned.
+- Prefer one comprehensive `run_python` script (loops and intermediate variables inside Python) over many small one-row probe calls, and batch independent `sql_exec`/`run_python` calls with `Promise.all` inside codemode.

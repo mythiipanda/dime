@@ -1,6 +1,6 @@
 ---
 name: visual-artifacts
-description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart).
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart, memo).
 ---
 
 # Dime Visual Artifacts & Multimodal Output Guide
@@ -17,6 +17,7 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 | **Head-to-Head Showdowns** (2 players or 2 teams) | `compare` | Visual bars comparing normalized metrics between entity `a` and entity `b`. |
 | **Rankings, Rosters, Ledgers, Multi-Metric Lists** | `table` | Sortable columns with typed numeric formatting, source citation headers, CSV export. |
 | **Time-Series, Trajectories, Multi-Game Trends** | `chart` | Line/bar series over ordered games, months, or seasons with `unit`, `xLabels`, and semantic `tone`. |
+| **Executive Briefings, GM/Owner Deliverables, Multi-Section Reports** | `memo` | Titled document with headed `sections`, per-section citation `anchors`, and markdown export. |
 
 ---
 
@@ -125,23 +126,73 @@ grounding in the prose: unlike player-card values, they are not source-resolved.
 ```
 
 ### `shot_chart`
+Call `get_shot_chart` (player or team, season, playoffs, opponent) to fill `zones`
+from `silver_shots`; pass its `x`/`y`/`att`/`pct` through and forward `makes`
+and `delta` (its `delta_pp`) when present. `makes` renders a `makes/att`
+caption; `delta` colors each region vs the league average.
 ```typescript
 {
   kind: "shot_chart",
-  title: "Shai Gilgeous-Alexander Spatial Shot Diet (2025-26)",
+  title: "Shai Gilgeous-Alexander Shot Diet vs League (2025-26)",
   zones: [
-    { x: 0, y: 0, att: 380, pct: 68.4 },
-    { x: 0, y: 10, att: 195, pct: 49.2 },
-    { x: -14, y: 14, att: 120, pct: 46.5 },
-    { x: 14, y: 14, att: 110, pct: 45.8 },
-    { x: -22, y: 5, att: 45, pct: 41.2 },
-    { x: 22, y: 5, att: 40, pct: 39.5 },
-    { x: 0, y: 25, att: 210, pct: 37.8 }
+    { x: 0, y: 4, att: 380, makes: 260, pct: 68.4, delta: 8.1, label: "rim-C" },
+    { x: -14, y: 14, att: 120, makes: 56, pct: 46.5, delta: 3.4, label: "long_mid-L" },
+    { x: 22, y: 5, att: 40, makes: 16, pct: 39.5, delta: -1.2, label: "corner_3-R" },
+    { x: 0, y: 25, att: 210, makes: 79, pct: 37.8, delta: 1.6, label: "atb_3-C" }
   ],
-  footnote: "Source: silver_shotchart. Field goal percentages vs volume."
+  footnote: "Source: silver_shots via get_shot_chart. Dot size is attempts; color is FG% vs league."
 }
 ```
 
+### `memo`
+```typescript
+{
+  kind: "memo",
+  title: "2026-27 Cap & Roster Strategy — Orlando Magic",
+  subtitle: "Owner briefing",
+  sections: [
+    {
+      heading: "Cap position",
+      body: "Orlando sits $3.2M under the first apron with a locked multi-year core...",
+      anchors: [{ ref: "actual-ref-from-query", row: 0, columns: ["team", "payroll"] }]
+    },
+    { heading: "Trade options", body: "The flexible path is aggregating mid-tier salary..." }
+  ],
+  footnote: "Sources: silver_salaries, silver_rapm."
+}
+```
+
+Use `memo` when the deliverable is a document — an executive memo, owner
+briefing, scenario playbook or strategy report — not a single visual. Each
+`sections[].body` is markdown-style prose. `anchors` on a section cite source
+rows exactly like block anchors and are validated the same way; cite the rows a
+section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
+as a document card that downloads as Markdown or PDF; keep it to one memo per answer.
+
+### `memo`
+```typescript
+{
+  kind: "memo",
+  title: "2026-27 Cap & Roster Strategy — Orlando Magic",
+  subtitle: "Owner briefing",
+  sections: [
+    {
+      heading: "Cap position",
+      body: "Orlando sits $3.2M under the first apron with a locked multi-year core...",
+      anchors: [{ ref: "actual-ref-from-query", row: 0, columns: ["team", "payroll"] }]
+    },
+    { heading: "Trade options", body: "The flexible path is aggregating mid-tier salary..." }
+  ],
+  footnote: "Sources: silver_salaries, silver_rapm."
+}
+```
+
+Use `memo` when the deliverable is a document — an executive memo, owner
+briefing, scenario playbook or strategy report — not a single visual. Each
+`sections[].body` is markdown-style prose. `anchors` on a section cite source
+rows exactly like block anchors and are validated the same way; cite the rows a
+section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
+as a document card with a download affordance; keep it to one memo per answer.
 ---
 
 ## 3. Evidence Grounding & Source Anchors

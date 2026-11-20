@@ -2,6 +2,9 @@ import { McpClient, StdioTransport } from "@earendil-works/pi-mcp";
 import { fileURLToPath } from "node:url";
 import { objectValue, type PythonToolsOptions } from "./python-tools.js";
 export type DirectOperations = {
+    product_board_metrics: Record<string, never>;
+    product_board_fill: { payload: Record<string, unknown> };
+    product_board_seed: { payload: Record<string, unknown> };
     product_table_detail: { table: string; season: string };
     product_home: Record<string, never>;
     product_save_chat: {
@@ -53,6 +56,24 @@ export type DirectOperations = {
         players_b: string;
         season: string;
     };
+    product_trade_partners: {
+        player: string;
+        season: string;
+        teams: string;
+        max_packages: number;
+    };
+    product_trade_assets: {
+        team: string;
+        season: string;
+    };
+    product_morning: {
+        team: string;
+        season: string;
+    };
+    product_draft: {
+        team: string;
+        season: string;
+    };
     product_debate: {
         a: string;
         b: string;
@@ -79,6 +100,10 @@ export type DirectOperations = {
     product_movers: {
         season: string;
         days: number;
+    };
+    product_compare: {
+        players: string;
+        season: string;
     };
 };
 export async function connectDirectData(options: PythonToolsOptions) {

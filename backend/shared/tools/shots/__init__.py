@@ -1,5 +1,6 @@
 from ... import store as _store
 from .._core import (
+
     MAX_ROWS,
     clamp_season,
     coerce_player_id,
@@ -18,6 +19,7 @@ from .filters import (
     _where_sql,
     _zone_case_sql,
 )
+from .chart import get_shot_chart
 from .search import (
     _empty_note,
     _ot_msg,

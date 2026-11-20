@@ -67,7 +67,7 @@ def binary_data(content, media_type):
     raw = content.encode() if isinstance(content, str) else content
     return {"encoding": "base64", "media_type": media_type, "body": base64.b64encode(raw).decode()}
 
-_DATASETS_TABLES = {'standings': 'silver_standings', 'leaders': 'silver_leaders_pts', 'injuries': 'silver_injuries', 'player_gamelogs': 'silver_player_gamelogs', 'team_games': 'silver_team_games', 'scoreboard': 'silver_scoreboard', 'shots': 'silver_shots', 'lineups': 'silver_lineups', 'on_off': 'silver_on_off', 'wowy': 'silver_wowy', 'four_factors': 'silver_four_factors', 'hustle': 'silver_hustle_player', 'combine': 'silver_combine', 'ratings': 'silver_team_ratings', 'playoffs': 'silver_playoffs', 'playoff_gamelogs': 'silver_playoff_gamelogs', 'draft': 'silver_hist_draft', 'raptor': 'silver_raptor_player', 'player_seasons': 'silver_hist_player_seasons'}
+_DATASETS_TABLES = {'standings': 'silver_standings', 'leaders': 'silver_leaders_pts', 'injuries': 'silver_injuries', 'player_gamelogs': 'silver_player_gamelogs', 'team_games': 'silver_team_games', 'scoreboard': 'silver_scoreboard', 'shots': 'silver_shots', 'lineups': 'silver_lineups', 'on_off': 'silver_on_off', 'wowy': 'silver_wowy', 'four_factors': 'silver_four_factors', 'hustle': 'silver_hustle_player', 'combine': 'silver_combine', 'ratings': 'silver_team_ratings', 'playoffs': 'silver_playoffs', 'playoff_gamelogs': 'silver_playoff_gamelogs', 'draft': 'silver_hist_draft', 'raptor': 'silver_raptor_player', 'player_seasons': 'silver_hist_player_seasons', 'transactions': 'silver_transactions', 'contracts': 'silver_contracts', 'preseason_projections': 'silver_preseason_projections'}
 
 _DATASETS_FRESHNESS_TTL_S = 300
 

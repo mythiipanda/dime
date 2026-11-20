@@ -219,6 +219,10 @@ def register() -> dict[str, Any]:
     except ImportError:
         from backend.shared.tools.priors import get_rapm_prior as _orig_get_rapm_prior
     try:
+        from shared.tools.league import get_impact_rank as _orig_get_impact_rank
+    except ImportError:
+        from backend.shared.tools.league import get_impact_rank as _orig_get_impact_rank
+    try:
         from shared.tools.gamelog import search_game_logs as _orig_search_game_logs
     except ImportError:
         from backend.shared.tools.gamelog import search_game_logs as _orig_search_game_logs
@@ -356,6 +360,16 @@ def register() -> dict[str, Any]:
         return finish_strict_rows(res, "get_rapm_prior", cols, "RAPM prior lookup failed",
                                   lambda r: _rapm_prior_rows(r, player), fixed_cols=True)
 
+    @tool("get_impact_rank", description=_orig_get_impact_rank.description)
+    def get_impact_rank(player: str = "", season: str | None = None) -> dict:
+        res = call_sync(_orig_get_impact_rank, "get_impact_rank", {"player": player, "season": season})
+        rows = res.get("rows") if res.get("ok") and isinstance(res.get("rows"), list) else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else ["player", "season", "metric", "value", "rank", "players", "qualifier", "source"]
+        if not res.get("ok"):
+            enrich_error("get_impact_rank", res)
+        return res
+
     @tool("search_game_logs", description=_orig_search_game_logs.description)
     def search_game_logs(
         player: str | None = None, league_wide: bool = False, team_wide: bool = False,
@@ -417,6 +431,7 @@ def register() -> dict[str, Any]:
         "get_splits": get_splits,
         "get_tracking_profile": get_tracking_profile,
         "get_rapm_prior": get_rapm_prior,
+        "get_impact_rank": get_impact_rank,
         "search_game_logs": search_game_logs,
         "get_career_arc": get_career_arc,
     }

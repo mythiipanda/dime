@@ -2,9 +2,13 @@ export const shellNavigation = [
   { id: "today", label: "Home" },
   { id: "chat", label: "Ask" },
   { id: "workflows", label: "Workflows" },
+  { id: "boards", label: "Boards" },
+  { id: "notebooks", label: "Notebooks" },
   { id: "briefs", label: "Library" },
   { id: "data", label: "Data" },
   { id: "trades", label: "Trades", group: "Tools" },
+  { id: "compare", label: "Compare", group: "Tools" },
+  { id: "draft", label: "Draft", group: "Tools" },
   { id: "matchups", label: "Matchups", group: "Tools" },
   { id: "awards", label: "Awards", group: "Tools" },
 ] as const;
@@ -20,5 +24,7 @@ export function shellUrl(href: string, tab: ShellTab, thread: string): URL {
   url.searchParams.set("tab", tab);
   url.searchParams.set("thread", thread);
   url.searchParams.delete("replay");
+  if (tab !== "boards") url.searchParams.delete("board");
+  if (tab !== "notebooks") url.searchParams.delete("nb");
   return url;
 }

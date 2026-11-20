@@ -5,7 +5,7 @@ import { join, basename } from "node:path";
 import { Type, type TSchema, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { validationDetails, validationDetail } from "./http-validation.js";
-import { createAnalyst, analystRequestSchema, backendRoot, newRunId, encodeEvent } from "./analyst.js";
+import { createAnalyst, analystRequestSchema, backendRoot, newRunId, encodeEvent, runTimeoutMs } from "./analyst.js";
 import { ProjectStore, WorkspaceStore } from "./catalog-stores.js";
 import { providerPolicy } from "./providers.js";
 import { objectValue } from "./python-tools.js";
@@ -19,7 +19,12 @@ const members = Type.Optional(Type.Union([Type.Array(Type.String(), { maxItems: 
 const workspaceUpdate = Type.Object({ name: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 256 }), Type.Null()])), add_thread_ids: members, remove_thread_ids: members, add_brief_ids: members, remove_brief_ids: members }, { additionalProperties: false });
 const branchCreate = Type.Object({ thread: text(80), client: text(80), parent_sequence: Type.Integer({ minimum: 1 }), branch_id: Type.Optional(Type.Union([text(64), Type.Null()])) }, { additionalProperties: false });
 const tradeSchema = Type.Object({ team_a: Type.Optional(Type.String()), team_b: Type.Optional(Type.String()), players_a: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), players_b: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), season: Type.Optional(Type.String()) }, { additionalProperties: false });
+const partnersSchema = Type.Object({ player: Type.Optional(Type.String()), season: Type.Optional(Type.String()), teams: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), max_packages: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }, { additionalProperties: false });
 const watchSchema = Type.Object({ entity_type: Type.String(), entity_id: Type.String(), season: Type.Optional(Type.String()) });
+const boardSeason = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}$" }));
+const boardMetric = Type.String({ minLength: 1, maxLength: 80 });
+const boardFill = Type.Object({ season: boardSeason, player_ids: Type.Array(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER }), { maxItems: 50 }), metric_ids: Type.Array(boardMetric, { maxItems: 30 }) }, { additionalProperties: false });
+const boardSeed = Type.Object({ season: boardSeason, metric_id: boardMetric, n: Type.Optional(Type.Integer({ minimum: 1, maximum: 25 })), min_gp: Type.Optional(Type.Union([Type.Integer({ minimum: 0 }), Type.Null()])), min_mpg: Type.Optional(Type.Union([Type.Number({ minimum: 0 }), Type.Null()])) }, { additionalProperties: false });
 const CORS_ALLOWED_METHODS = ["GET", "POST", "PATCH", "DELETE"];
 const CORS_ALLOWED_METHODS_HEADER = CORS_ALLOWED_METHODS.join(", ");
 export function parseBody<S extends TSchema>(schema: S, input: unknown): Static<S> {
@@ -124,6 +129,14 @@ export function createProductServer(options: {
     route("GET", /^\/api\/revision$/, async ({ res }) => json(res, options.manifest));
     route("GET", /^\/api\/models$/, async ({ res }) => json(res, policy.catalog()));
     route("GET", /^\/api\/health$/, async ({ res }) => json(res, { ok: true, providers: policy.catalog().available }));
+    route("GET", /^\/api\/boards\/metrics$/, async ({ res }) => json(res, await data.call("product_board_metrics", {})));
+    route("POST", /^\/api\/boards\/(fill|seed)$/, async ({ req, res, params }) => {
+        const operation = params[0] === "fill" ? "product_board_fill" : "product_board_seed";
+        const payload = parseBody(params[0] === "fill" ? boardFill : boardSeed, await body(req));
+        const result = await data.call(operation, { payload });
+        if (result.ok === false) throw new HttpError(result.status === 422 ? 422 : 503, result.error ?? "Boards warehouse unavailable");
+        json(res, result);
+    });
     route("GET", /^\/api\/healthz$/, async ({ res }) => { const result = await data.call("product_warehouse_health", {}); json(res, result, result.ok ? 200 : 503); });
     route("GET", /^\/api\/datasets\/freshness$/, async ({ res }) => json(res, await data.call("product_freshness", {})));
     route("GET", /^\/api\/home$/, async ({ res }) => json(res, await data.call("product_home", {})));
@@ -253,6 +266,24 @@ export function createProductServer(options: {
     });
     route("GET", /^\/api\/resolve$/, async ({ res, url }) => json(res, await data.call("product_resolve", { query: (url.searchParams.get("q") ?? "").slice(0, 80) })));
     route("POST", /^\/api\/trade\/check$/, async ({ req, res }) => { const input = parseBody(tradeSchema, await body(req)); const players = (value: string | string[] | undefined) => Array.isArray(value) ? value.map(s => s.trim()).filter(Boolean).join(", ") : value ?? ""; const result = await data.call("product_trade", { team_a: input.team_a ?? "", team_b: input.team_b ?? "", players_a: players(input.players_a), players_b: players(input.players_b), season: input.season ?? "2025-26" }); json(res, result, result.ok === false ? 422 : 200); });
+    route("GET", /^\/api\/trade\/assets$/, async ({ res, url }) => {
+        const result = await data.call("product_trade_assets", { team: (url.searchParams.get("team") ?? "").slice(0, 12), season: url.searchParams.get("season") ?? "2026-27" });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
+    route("POST", /^\/api\/trade\/partners$/, async ({ req, res }) => {
+        const input = parseBody(partnersSchema, await body(req));
+        const teams = (value: string | string[] | undefined) => Array.isArray(value) ? value.map(s => s.trim()).filter(Boolean).join(", ") : value ?? "";
+        const result = await data.call("product_trade_partners", { player: input.player ?? "", season: input.season ?? "2026-27", teams: teams(input.teams), max_packages: input.max_packages ?? 3 });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
+    route("GET", /^\/api\/morning$/, async ({ res, url }) => {
+        const result = await data.call("product_morning", { team: (url.searchParams.get("team") ?? "").slice(0, 12), season: url.searchParams.get("season") ?? "" });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
+    route("GET", /^\/api\/draft$/, async ({ res, url }) => {
+        const result = await data.call("product_draft", { team: (url.searchParams.get("team") ?? "").slice(0, 12), season: url.searchParams.get("season") ?? "" });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
     route("GET", /^\/api\/debate-card$/, async ({ res, url }) => {
         const a = (url.searchParams.get("a") ?? "").trim().slice(0, 80), b = (url.searchParams.get("b") ?? "").trim().slice(0, 80);
         if (!a || !b) {
@@ -296,6 +327,10 @@ export function createProductServer(options: {
     });
     route("GET", /^\/api\/movers$/, async ({ res, url }) => json(res, await data.call("product_movers", { season: url.searchParams.get("season") ?? "2025-26", days: integer(url, "days", 7, 1, 30) })));
     route("GET", /^\/api\/briefing$/, async ({ res, url }) => json(res, await data.call("product_briefing", { season: url.searchParams.get("season") ?? "2025-26" })));
+    route("GET", /^\/api\/compare$/, async ({ res, url }) => {
+        const result = await data.call("product_compare", { players: url.searchParams.get("players") ?? "", season: url.searchParams.get("season") ?? "2025-26" });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
     const chat: Handler = async ({ req, res, url }) => {
         const rawInput = req.method === "POST" ? await body(req) : { q: url.searchParams.get("q") ?? "", model: url.searchParams.get("model"), thread: url.searchParams.get("thread"), client: url.searchParams.get("client") ?? (url.searchParams.has("thread") ? req.headers["x-dime-client"] ?? null : null), diagnostics: queryBoolean(url, "diagnostics") };
         if (req.method === "GET" && !Value.Check(analystRequestSchema, rawInput))
@@ -316,13 +351,14 @@ export function createProductServer(options: {
         const run = newRunId(), controller = new AbortController();
         const abort = () => controller.abort();
         res.on("close", abort);
-        const timer = setTimeout(abort, positive(env.DIME_V2_RUN_TIMEOUT_S, 360) * 1000);
+        const timeoutMs = runTimeoutMs(env);
+        const timer = setTimeout(abort, timeoutMs);
         let heartbeat: ReturnType<typeof setTimeout> | undefined;
         const resetHeartbeat = () => { clearTimeout(heartbeat); heartbeat = setTimeout(() => { res.write(encodeEvent({ type: "ping", data: { ok: true } })); resetHeartbeat(); }, 15000); };
         resetHeartbeat();
         res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "x-dime-run-id": run });
         try {
-            for await (const event of analyst.stream(input, controller.signal, run)) {
+            for await (const event of analyst.stream(input, controller.signal, run, { runTimeoutMs: timeoutMs })) {
                 res.write(encodeEvent(event));
                 resetHeartbeat();
             }

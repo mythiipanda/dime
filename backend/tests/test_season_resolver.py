@@ -12,20 +12,41 @@ pytestmark = pytest.mark.skipif(
     reason=f"the warehouse is absent at {WAREHOUSE}")
 
 
-def test_the_current_season_is_the_newest_several_tables_can_answer_for() -> None:
+def test_last_completed_season_is_calendar_bounded() -> None:
     from shared import store
     from shared.tools._core import (
+        calendar_last_completed_season,
         last_completed_season,
         last_completed_season_cache_clear,
     )
 
     last_completed_season_cache_clear()
-    newest = max(
-        store.seasons_with_data(table)[-1]
-        for table in store._SEASON_TABLES
-        if store.seasons_with_data(table))
+    cal = calendar_last_completed_season()
+    covered = sorted(
+        {season for table in store._SEASON_TABLES
+         for season in store.seasons_with_data(table)})
+    finished = [season for season in covered if cal is None or season <= cal]
 
-    assert last_completed_season() == newest
+    assert last_completed_season() == (finished[-1] if finished else covered[-1])
+
+
+def test_an_in_progress_season_is_not_reported_as_completed() -> None:
+    from shared import store
+    from shared.tools._core import (
+        calendar_last_completed_season,
+        last_completed_season,
+        last_completed_season_cache_clear,
+    )
+
+    cal = calendar_last_completed_season()
+    covered = {
+        season for table in store._SEASON_TABLES
+        for season in store.seasons_with_data(table)}
+    if cal is None or not any(season > cal for season in covered):
+        pytest.skip("warehouse holds no in-progress season to bound against")
+
+    last_completed_season_cache_clear()
+    assert last_completed_season() == cal
 
 
 def test_the_current_season_is_not_the_one_table_that_lags_the_rest() -> None:
