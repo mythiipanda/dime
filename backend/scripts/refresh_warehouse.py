@@ -32,6 +32,7 @@ SEEDERS = [
     ("shots", "seed_shots_2025_26.py", [], False),
     ("repair_shot_names", "repair_shot_names.py", [], False),
     ("draft_capital", "seed_draft_capital.py", [], False),
+    ("free_agents", "seed_free_agents.py", [], True),
     ("four_factors_team", "build_team_four_factors.py", [], False),
 ]
 

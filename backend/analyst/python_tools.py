@@ -142,6 +142,7 @@ _TOOL_ORDER = (
     "get_splits",
     "get_recap",
     "get_scouting_report",
+    "get_free_agents",
 )
 
 _REGISTRARS = (

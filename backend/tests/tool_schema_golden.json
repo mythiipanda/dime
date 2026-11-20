@@ -19,7 +19,7 @@
     },
     "warehouse_schema": {
       "name": "warehouse_schema",
-      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
+      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_cap_room, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_free_agents, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
       "args_schema": {
         "description": "Read declared warehouse columns, source units and season encodings.",
         "properties": {
@@ -3450,6 +3450,26 @@
           "team_id"
         ],
         "title": "get_scouting_report",
+        "type": "object"
+      }
+    },
+    "get_free_agents": {
+      "name": "get_free_agents",
+      "description": "Free agency and cap planning: the upcoming free agent class by team or league-wide (UFA, player/team options, two-way), estimated cap holds, and each team's projected cap room and exceptions for the next cap season. Warehouse only; refresh with seed_free_agents.py. Hold and cap figures are CBA-formula estimates, marked ESTIMATED.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "fa_year": {
+            "default": "2027",
+            "title": "Fa Year",
+            "type": "string"
+          }
+        },
+        "title": "get_free_agents",
         "type": "object"
       }
     }

@@ -294,6 +294,7 @@ from .standings import (
     get_standings_deep,
     get_team_trajectory,
 )
+from .free_agents import get_free_agents
 from .news import get_news_feed
 from .trade_value import (
     PICK_VALUE_M,

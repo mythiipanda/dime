@@ -20,6 +20,7 @@ _SQL_TABLES = [
     "silver_hist_standings", "silver_hist_possessions",
     "silver_hist_shots", "silver_hist_lineups", "silver_salaries",
     "silver_hist_draft", "silver_hist_team_seasons", "silver_raptor_player",
+    "silver_free_agents", "silver_cap_room",
     "silver_raptor_team",
     "silver_hist_player_seasons", "silver_player_season", "silver_advanced",
     "silver_on_off", "silver_four_factors", "silver_four_factors_team",
