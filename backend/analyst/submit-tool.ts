@@ -3,6 +3,7 @@ import { Value } from "typebox/value";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { objectValue, sourceResult, sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 import { resolvePlayerCard } from "./player-card.js";
+import { resolveTeamCard } from "./team-card.js";
 
 export { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 
@@ -89,7 +90,9 @@ export function validateAnswerSubmission(
         return { text: block.text, anchors };
     });
     const artifacts = input.artifacts ? structuredClone(input.artifacts).map(artifact =>
-        artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource) : normalizeShotChart(artifact)
+        artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource)
+            : artifact.kind === "team_card" ? resolveTeamCard(artifact, getSource)
+            : normalizeShotChart(artifact)
     ) : undefined;
     return artifacts !== undefined ? { blocks, artifacts } : { blocks };
 }
@@ -101,7 +104,7 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
-        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, team_card). Load visual-artifacts for schemas. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const sources = getContextSources();

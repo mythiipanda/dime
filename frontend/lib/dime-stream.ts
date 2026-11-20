@@ -15,6 +15,7 @@ export type {
   ProvenanceOrigin,
   PlayerCardArtifactPayload,
   PlayerCardSectionPayload,
+  TeamCardArtifactPayload,
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   StreamFailure,

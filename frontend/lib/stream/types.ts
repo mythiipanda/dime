@@ -170,6 +170,20 @@ export interface MemoArtifactPayload {
   text: string;
 }
 
+export interface TeamCardArtifactPayload {
+  kind: "team_card";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  teamName: string;
+  sourceRef: string;
+  sourceRow: number;
+  nameColumn: string;
+  metrics: { column: string; label: string; value: number | null; unit?: string }[];
+  sections?: PlayerCardSectionPayload[];
+}
+
+
 export type DimeArtifact =
   | TableArtifactPayload
   | CompareArtifactPayload
@@ -177,7 +191,8 @@ export type DimeArtifact =
   | ShotChartArtifactPayload
   | ScatterArtifactPayload
   | PlayerCardArtifactPayload
-  | MemoArtifactPayload;
+  | MemoArtifactPayload
+  | TeamCardArtifactPayload;
 
 export interface ArtifactEvent {
   type: "artifact";

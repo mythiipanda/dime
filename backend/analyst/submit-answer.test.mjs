@@ -822,3 +822,69 @@ test("player card sections reject bad selectors, forged values and empty section
     [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }], provenance: { origin: "warehouse" } }],
   ]) assert.throws(() => validate(playerCardInput({ sections })));
 });
+
+function teamCardInput(overrides = {}) {
+  return { kind: "team_card", title: "Team snapshot", ref: "team-src", row: 0, nameColumn: "team_name",
+    metrics: [{ column: "wins", label: "W" }, { column: "losses", label: "L" }, { column: "net_rating", label: "Net Rtg" }], ...overrides };
+}
+
+function teamCardSource() {
+  const source = makeSourceRecord("team-src", { rows: [{ team_name: "Example City Club", wins: 42, losses: 22, net_rating: 4.1 }] });
+  source.response.structuredContent.declared_column_semantics = { net_rating: { unit: "points/100 possessions" } };
+  source.response.structuredContent.meta = { season: "2026-27" };
+  return source;
+}
+
+test("team cards resolve identity, metrics and sections with per-section provenance", () => {
+  const header = teamCardSource();
+  const cap = makeSourceRecord("cap-src", { rows: [{ total_salary: 187000000, apron_room: -12000000, cap_status: "Above first apron" }] });
+  cap.response.structuredContent.meta = { season: "2026-27", source: "bref_cap" };
+  const fourFactors = makeSourceRecord("4f-src", { rows: [{ efg_pct: 0.56, rank_efg: 4, tov_pct: 0.128 }] });
+  fourFactors.response.structuredContent.meta = { season: "2026-27", source: "nba_four_factors" };
+  const picks = makeSourceRecord("picks-src", { rows: [{ pick_summary: "Own 2027-2032" }] });
+  picks.response.structuredContent.meta = { season: "2026-27", source: "picks" };
+  const sources = new Map([header, cap, fourFactors, picks].map(s => [s.ref, s]));
+  const input = teamCardInput({
+    sections: [
+      { label: "Payroll", ref: "cap-src", row: 0,
+        metrics: [{ column: "total_salary", label: "Payroll" }, { column: "apron_room", label: "Apron room" }],
+        fields: [{ column: "cap_status", label: "Cap status" }] },
+      { label: "Four factors", ref: "4f-src", row: 0,
+        metrics: [{ column: "efg_pct", label: "eFG%" }, { column: "rank_efg", label: "eFG rank" }] },
+      { label: "Draft capital", ref: "picks-src", row: 0,
+        fields: [{ column: "pick_summary", label: "Picks" }] },
+    ],
+  });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  const card = result.artifacts[0];
+  assert.equal(card.kind, "team_card");
+  assert.equal(card.teamName, "Example City Club");
+  assert.equal(card.sourceRef, "team-src");
+  assert.deepEqual(card.metrics[2], { column: "net_rating", label: "Net Rtg", value: 4.1, unit: "points/100 possessions" });
+  assert.equal(card.provenance.season, "2026-27");
+  assert.equal(card.sections.length, 3);
+  const [capSection, fourFactorSection, pickSection] = card.sections;
+  assert.deepEqual(capSection.metrics, [{ column: "total_salary", label: "Payroll", value: 187000000 }, { column: "apron_room", label: "Apron room", value: -12000000 }]);
+  assert.deepEqual(capSection.fields, [{ column: "cap_status", label: "Cap status", value: "Above first apron" }]);
+  assert.equal(capSection.provenance.dataset, "bref_cap");
+  assert.equal(fourFactorSection.metrics[1].value, 4);
+  assert.equal(fourFactorSection.provenance.dataset, "nba_four_factors");
+  assert.equal(pickSection.fields[0].value, "Own 2027-2032");
+});
+
+test("team cards reject forged values, bad rows and invalid selectors", () => {
+  const source = teamCardSource();
+  const other = makeSourceRecord("other-src", { rows: [{ val: 5, note: "ok" }] });
+  const sources = new Map([[source.ref, source], [other.ref, other]]);
+  const validate = input => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  for (const overrides of [
+    { row: -1 }, { row: 1 }, { nameColumn: "missing" }, { nameColumn: "wins" }, { teamName: "Forged" },
+    { metrics: [] }, { metrics: [{ column: "wins", label: "W", value: 42 }] },
+    { metrics: [{ column: "team_name", label: "Name" }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0 }] },
+    { sections: [{ label: "S", ref: "missing-src", row: 0, metrics: [{ column: "val", label: "V" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "val", label: "F" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "note", label: "V" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V", unit: "%" }] }] },
+  ]) assert.throws(() => validate(teamCardInput(overrides)));
+});
