@@ -151,3 +151,17 @@ def test_sql_exec_zero_rows_and_long_sql_and_recovery_hint(warehouse, monkeypatc
     assert res_err["ok"] is False
     assert "recovery_hint" in res_err
     assert "warehouse_schema" in res_err["recovery_hint"]
+
+
+def test_sql_exec_binder_hint_names_column_and_candidates(warehouse):
+    res = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT team_abbreviation FROM silver_standings"}))
+    assert res["ok"] is False
+    hint = res["recovery_hint"]
+    assert "'team_abbreviation'" in hint
+    assert "silver_standings:" in hint
+
+    res_func = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT sum(TEAM) FROM silver_standings"}))
+    assert res_func["ok"] is False
+    assert "CAST" in res_func["recovery_hint"]
