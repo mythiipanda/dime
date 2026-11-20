@@ -104,9 +104,6 @@ def _refusal_hint(query: str, error: str) -> str:
 
 _TABLE_ERROR_RE = re.compile(r"(?:no such table|table with name)\s*[:=]?\s*[`\"]?([A-Za-z0-9_]+)", re.I)
 _COLUMN_ERROR_RE = re.compile(r"(?:does not have a column|no such column|column)\s*(?:named\s+|called\s+)?[`\"]?([A-Za-z0-9_]+)", re.I)
-||||||| 002e08dd
-_TABLE_ERROR_RE = re.compile(r"(?:no such table|table with name)\s*[:=]?\s*[`\"]?([A-Za-z0-9_]+)", re.I)
-_COLUMN_ERROR_RE = re.compile(r"(?:does not have a column|no such column|column)\s*(?:named\s+|called\s+)?[`\"]?([A-Za-z0-9_]+)", re.I)
 _TABLE_ERROR_RE = _re.compile(r"(?:no such table|table with name)\s*[:=]?\s*[`\"]?([A-Za-z0-9_]+)", _re.I)
 _COLUMN_ERROR_RE = _re.compile(r"(?:does not have a column|no such column|column)\s*(?:named\s+|called\s+)?[`\"]?([A-Za-z0-9_]+)", _re.I)
 def _error_suggestions(query: str, error: str) -> list[str]:
@@ -147,8 +144,6 @@ async def sql_exec(sql: str) -> dict[str, Any]:
     out = await rerun_sql(query)
     if not out.get("ok"):
         hint = _refusal_hint(query, str(out.get("error", "")))
-||||||| 002e08dd
-        hint = "Call warehouse_schema to verify exact table names, column names, and season encodings."
         hint = _binder_hint(query, out.get("error", ""))        matches = _error_suggestions(query, str(out.get("error", "")))
         if matches:
             hint += " Closest declared matches: " + ", ".join(matches) + "."
