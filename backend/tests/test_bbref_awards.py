@@ -947,6 +947,7 @@ def test_a_direct_season_write_without_a_winner_index_is_logged_as_unverified(
 
 def test_main_refuses_to_seed_when_the_winner_index_cannot_be_read(
         tmp_path, monkeypatch):
+    _scratch(tmp_path, monkeypatch)
     pages = {2024: "awards_2024.html"}
 
     def broken_router(pages_map):
