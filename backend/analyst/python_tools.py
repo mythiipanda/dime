@@ -146,6 +146,7 @@ _TOOL_ORDER = (
     "get_splits",
     "get_recap",
     "get_scouting_report",
+    "get_free_agents",
     "get_prospect",
     "get_roster_fit",
     "get_expectations",
