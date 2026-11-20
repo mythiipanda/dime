@@ -88,11 +88,13 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
   const dbPath=join(root,"analyst-ws-conv.sqlite");
   const sourcesDir=join(root,"analyst-ws-sources");
   const seenBridgeEnvs=[];
+  const seenHistories=[];
   const mockExec={
     async *stream(ctx){
-      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE,timeout:ctx.runTimeoutMs});
+      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE});
+      seenHistories.push(ctx.history);
       await writeFile(join(ctx.bridge.cwd,"turn-artifact.txt"),"persisted-data","utf8");
-      yield {type:"answer",text:"Turn complete"};
+      yield {type:"answer",text:"Turn complete",reasoning:"Turn reasoning"};
       yield {type:"closed"};
     }
   };
@@ -112,6 +114,7 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
   assert.equal(seenBridgeEnvs[0].ws,expectedWs);
   assert.equal(seenBridgeEnvs[1].cwd,expectedWs);
   assert.equal(seenBridgeEnvs[1].ws,expectedWs);
+  assert.equal(seenHistories[1].at(-1).reasoning,"Turn reasoning");
   assert(existsSync(join(expectedWs,"turn-artifact.txt")));
   assert.notEqual(seenBridgeEnvs[2].ws,expectedWs);
   assert.equal(seenBridgeEnvs[0].timeout,12345);

@@ -767,7 +767,12 @@ test("host bootstrap failure names the missing manifest variable on stderr", () 
   assert.match(stderr, /\n\s+at /);
 });
 
-async function contextsForHistory(compat) {
+const defaultHistory = [
+  { role: "user", content: "Who led the league in points?" },
+  { role: "assistant", content: "Luka Doncic at 33.5 PPG.", reasoning: "Checked league scoring leaders." },
+];
+
+async function contextsForHistory(compat, history = defaultHistory) {
   const cwd = await mkdtemp(join(tmpdir(), "dime-history-"));
   const agentDir = join(cwd, "agent");
   const bridgeCwd = join(cwd, "bridge-ws");
@@ -788,7 +793,7 @@ async function contextsForHistory(compat) {
   try {
     for await (const event of pi.stream({
       q: "And their defensive rating?",
-      history: [{ role: "user", content: "Who led the league in points?" }, { role: "assistant", content: "Luka Doncic at 33.5 PPG." }],
+      history,
       model: "fixture:fixture",
       cwd,
       agentDir,
@@ -802,15 +807,59 @@ async function contextsForHistory(compat) {
 
 test("history replays as assistant turns by default", async () => {
   const messages = await contextsForHistory(undefined);
-  assert.equal(messages.filter((m) => m.role === "assistant").length, 1);
+  const assistant = messages.find((m) => m.role === "assistant");
+  assert.ok(assistant);
+  assert.equal(assistant.content.some((block) => block.type === "thinking"), false);
 });
 
-test("history replays as one transcript when the model requires prior reasoning", async () => {
+test("history replays stored reasoning for models requiring it", async () => {
   const messages = await contextsForHistory({ requiresReasoningContentOnAssistantMessages: true });
-  assert.equal(messages.filter((m) => m.role === "assistant").length, 0);
-  const transcript = messages.find((m) => m.role === "user" && typeof m.content === "string" && m.content.includes("Analyst: Luka Doncic at 33.5 PPG."));
-  assert.ok(transcript);
-  assert.ok(transcript.content.includes("User: Who led the league in points?"));
+  const assistant = messages.find((m) => m.role === "assistant");
+  assert.ok(assistant);
+  const thinking = assistant.content.find((block) => block.type === "thinking");
+  assert.ok(thinking);
+  assert.equal(thinking.thinking, "Checked league scoring leaders.");
+  assert.equal(thinking.thinkingSignature, "reasoning_content");
+  assert.ok(assistant.content.some((block) => block.type === "text" && block.text === "Luka Doncic at 33.5 PPG."));
+});
+
+test("history supplies non-empty reasoning when a prior turn has none", async () => {
+  const messages = await contextsForHistory(
+    { requiresReasoningContentOnAssistantMessages: true },
+    [{ role: "user", content: "Who led the league in points?" }, { role: "assistant", content: "Luka Doncic at 33.5 PPG." }],
+  );
+  const assistant = messages.find((m) => m.role === "assistant");
+  assert.ok(assistant);
+  const thinking = assistant.content.find((block) => block.type === "thinking");
+  assert.ok(thinking);
+  assert.ok(thinking.thinking.trim().length > 0);
+  assert.equal(thinking.thinkingSignature, "reasoning_content");
+});
+
+test("answer events carry assistant reasoning", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-reasoning-"));
+  const agentDir = join(cwd, "agent");
+  const bridgeCwd = join(cwd, "bridge-ws");
+  await mkdir(agentDir, { recursive: true });
+  await mkdir(bridgeCwd, { recursive: true });
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "thinking", thinking: "Reasoning about the answer.", thinkingSignature: "reasoning_content" }, { type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } });
+    stream.end();
+    return stream;
+  });
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => ({ tools: [], results: new Map(), pid: 1001, close: async () => {} }),
+  });
+  const events = [];
+  try {
+    for await (const event of pi.stream({ q: "Explain the answer.", history: [], model: "fixture:fixture", cwd, agentDir, bridge: { python: "fake", cwd: bridgeCwd, env: {} } }))
+      events.push(event);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+  assert.equal(events.find((event) => event.type === "answer")?.reasoning, "Reasoning about the answer.");
 });
 
 test("pi execution stream ends after abort even when the run never settles", async () => {
