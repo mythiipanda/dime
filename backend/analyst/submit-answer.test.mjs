@@ -770,3 +770,42 @@ test("player cards use source units fallback and refuse non-finite or string met
     assert.throws(validate);
   }
 });
+
+test("priorSubmissions returns thread submissions in order and compactPriorSubmissions bounds them", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "prior-subs-"));
+  try {
+    const store = new ProductStore(join(dir, "conversations.sqlite3"), join(dir, "sources"));
+    const identity = { owner: "owner-a", thread: "thread-a" };
+    const source = makeSourceRecord("src-a", { rows: [{ v: 1 }] });
+    const submission1 = { blocks: [{ text: "First answer." }], artifacts: [{ kind: "table", title: "T1", columns: [{ key: "v", label: "V" }], rows: Array.from({ length: 30 }, (_, i) => ({ v: i })) }] };
+    const submission2 = { blocks: [{ text: "Second answer." }] };
+    store.saveSources("run-" + "a".repeat(32), [source], [source], submission1);
+    store.append(identity, "Q1", "A1", "run-" + "a".repeat(32));
+    store.saveSources("run-" + "b".repeat(32), [source], [source]);
+    store.append(identity, "Q2", "A2", "run-" + "b".repeat(32));
+    store.saveSources("run-" + "c".repeat(32), [source], [source], submission2);
+    store.append(identity, "Q3", "A3", "run-" + "c".repeat(32));
+
+    const priors = store.priorSubmissions(identity);
+    assert.equal(priors.length, 2);
+    assert.equal(priors[0].run_id, "run-" + "a".repeat(32));
+    assert.equal(priors[1].run_id, "run-" + "c".repeat(32));
+    assert.equal(priors[0].submission.blocks[0].text, "First answer.");
+    assert.deepEqual(store.priorSubmissions({ owner: "other", thread: "thread-a" }), []);
+
+    const { compactPriorSubmissions } = await import("./dist/pi-execution.js");
+    const compact = compactPriorSubmissions(priors);
+    assert.equal(compact.length, 2);
+    assert.equal(compact[0].run_id, "run-" + "c".repeat(32));
+    assert.equal(compact[1].run_id, "run-" + "a".repeat(32));
+    const table = compact[1].artifacts[0];
+    assert.equal(table.kind, "table");
+    assert.equal(table.rows.length, 25);
+    assert.equal(table.rows[24], "…6 more");
+    const longText = compactPriorSubmissions([{ run_id: "run-x", submission: { blocks: [{ text: "t".repeat(800) }] } }]);
+    assert.equal(longText[0].blocks[0].text.length, 501);
+    assert(longText[0].blocks[0].text.endsWith("…"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
