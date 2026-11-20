@@ -331,7 +331,6 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
-=======
 import argparse
 import datetime
 import hashlib
@@ -672,4 +671,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
->>>>>>> origin/dev

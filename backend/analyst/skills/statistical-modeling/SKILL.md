@@ -15,7 +15,6 @@ description: Fit, validate, and interpret NBA statistical estimates, including R
 
 - Fit the prior only on the specified reference cohort, then score the target cohort. Supply one row per eligible player with positive attempts and makes between zero and attempts, using the same shot population for both counts. `mu` comes from the same reference rows as the variance. For an attempt-weighted method of moments, run this helper:
 
-=======
 In closed-form matrix notation:
 $$\hat{\beta} = (X^T W X + \lambda I)^{-1} X^T W Y$$
 
@@ -103,7 +102,6 @@ The analyst agent has direct access to the `run_python` tool equipped with prelo
 - `math` and `statistics`: Standard library mathematical algorithms.
 
 ### Example: Fitting Bayesian Shrinkage Over Warehouse Rows
->>>>>>> origin/dev
 ```python
 def fit_beta_prior(makes, attempts):
     k = np.asarray(makes, dtype=float)
@@ -158,7 +156,6 @@ Compute the observed gap on original totals. Report the seed, cluster count, req
 - For lineup and on/off gaps, compare possession counts and note teammate, opponent, and game-state mix. A small sample or a different rotation assignment can reverse the apparent ranking. Before recommending a rotation change, distinguish a testable adjustment such as staggering creators from a claim that the raw split proves it would work.
 - For shot mix and trends, separate changes in opportunity share from conversion within each group. Describe the most material phase or inflection, not just the endpoints. A threshold or quadrant partitions the observed cohort; it isn't evidence of a natural cutoff.
 - State the most useful next check when it would alter the decision: a wider sample, a matched comparison, or sensitivity to a plausible filter or model choice. Don't add a model to a descriptive request merely to produce an interval.
-=======
 The output can then be directly cited in `submit_answer` and visualized in a `table` or `scatter` artifact.
 
 ---
@@ -173,4 +170,3 @@ Shots within a game are correlated, so resample the **game cluster**, not the sh
 4. Report `std(ddof=1)` as the standard error and `np.percentile(stats, [2.5, 97.5])` as the 95% CI.
 
 State the cluster unit, the seed, the generator, and `B` alongside the estimate so the number is reproducible.
->>>>>>> origin/dev

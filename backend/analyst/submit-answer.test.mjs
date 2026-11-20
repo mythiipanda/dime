@@ -843,7 +843,6 @@ test("validateAnswerSubmission preserves unknown artifact kinds and artifacts wi
   assert.deepEqual(validated.artifacts, [unknown, untyped]);
 });
 
-=======
 test("shot_chart zones carry optional label, makes and league-delta fields", () => {
   const validated = validateAnswerSubmission({
     blocks: [{ text: "Shot diet" }],
@@ -865,7 +864,6 @@ test("shot_chart zones carry optional label, makes and league-delta fields", () 
   assert.equal(zone.pct, 68.4);
 });
 
->>>>>>> origin/dev
 function playerCardInput(overrides = {}) {
   return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
     metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
@@ -1040,7 +1038,6 @@ test("team cards reject forged values, bad rows and invalid selectors", () => {
     { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V", unit: "%" }] }] },
   ]) assert.throws(() => validate(teamCardInput(overrides)));
 });
-=======
 test("player card sections resolve values and provenance from their own source rows", () => {
   const header = playerCardSource();
   const contract = makeSourceRecord("contract-src", { rows: [{ salary: 30000000, contract_type: "DVET-EXT" }] });
@@ -1092,7 +1089,6 @@ test("player card sections reject bad selectors, forged values and empty section
     [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }], provenance: { origin: "warehouse" } }],
   ]) assert.throws(() => validate(playerCardInput({ sections })));
 });
->>>>>>> origin/dev
 test("priorSubmissions returns thread submissions in order and compactPriorSubmissions bounds them", async () => {
   const dir = await mkdtemp(join(tmpdir(), "prior-subs-"));
   try {

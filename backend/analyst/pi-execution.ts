@@ -9,9 +9,7 @@ import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } fro
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import { createVerifyAnswerNumbersTool } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
-=======
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
->>>>>>> origin/dev
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
@@ -444,14 +442,12 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
                         tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), verifyTool, submitTool],
-=======
                         tools: [
                             ...wrapBridgeTools(bridge.tools, connected.results, emit, tracker),
                             countToolCall(priorSourceTool(start.sources ?? []), tracker),
                             countToolCall(submitTool, tracker),
                             countToolCall(createRunStatusTool(tracker), tracker),
                         ],
->>>>>>> origin/dev
                         onSkillLoad: () => {
                             tracker.toolCalls += 1;
                             emit({ type: "tool_call", name: "load_skill" });

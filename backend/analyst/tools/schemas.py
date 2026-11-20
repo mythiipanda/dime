@@ -249,6 +249,16 @@ PARAM_SCHEMA_DESCRIPTIONS = {
     "picks_b": "Comma-separated draft picks on side B.",
     "players_a": "Comma-separated player names outgoing on side A.",
     "players_b": "Comma-separated player names outgoing on side B.",
+    "since": "ISO date filter YYYY-MM-DD; blank = recent default.",
+    "draft_year": "Draft class year, e.g. '2027'. Default: {d}.",
+    "fa_year": "Free-agent year, e.g. '2027'. Default: {d}.",
+    "position": "Position filter, e.g. 'PG', 'SG', 'SF', 'PF', 'C'; blank = all.",
+    "url": "Public HTTP(S) URL to fetch.",
+    "max_results": "Maximum search results returned. Default: {d}.",
+    "timelimit": "Freshness filter, e.g. 'd' day, 'w' week, 'm' month, 'y' year; omit for no limit.",
+    "region": "Search region code, e.g. 'us-en'. Default: {d}.",
+    "safesearch": "'on', 'moderate', or 'off'. Default: {d}.",
+    "players": "Comma-separated player full names to compare.",
 }
 
 TOOL_PARAM_DESCRIPTIONS = {

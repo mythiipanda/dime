@@ -12,9 +12,7 @@ import type {
   PlayerCardArtifactPayload,
   PlayerCardSectionPayload,
   TeamCardArtifactPayload,
-=======
   PlayerCardSectionPayload,
->>>>>>> origin/dev
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   TableArtifactPayload,
@@ -328,7 +326,6 @@ function resolvePlayerCard(entry: Record<string, unknown>, title: string, proven
   }
   const sections = parseCardSections(entry.sections);
   if (sections === null) return null;
-=======
   let sections: PlayerCardArtifactPayload["sections"];
   if (entry.sections !== undefined) {
     if (!Array.isArray(entry.sections) || entry.sections.length === 0 || entry.sections.length > 6) return null;
@@ -369,7 +366,6 @@ function resolvePlayerCard(entry: Record<string, unknown>, title: string, proven
       sections.push(resolved);
     }
   }
->>>>>>> origin/dev
   return { kind: "player_card", title, playerName: entry.playerName,
     ...(typeof entry.team === "string" ? { team: entry.team } : {}),
     sourceRef: entry.sourceRef, sourceRow: entry.sourceRow, nameColumn: entry.nameColumn,
@@ -396,10 +392,8 @@ function resolveTeamCard(entry: Record<string, unknown>, title: string, provenan
     sourceRef: entry.sourceRef, sourceRow: entry.sourceRow, nameColumn: entry.nameColumn,
     metrics, ...(sections ? { sections } : {}),
     source: provenanceSource(provenance), provenance };
-=======
     metrics, ...(sections ? { sections } : {}),
     source: provenanceSource(provenance), provenance };
->>>>>>> origin/dev
 }
 
 function resolveMemo(

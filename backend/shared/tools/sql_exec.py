@@ -78,11 +78,11 @@ def _failure(query: str, message: str, recovery_hint: str | None = None) -> dict
         out["recovery_hint"] = recovery_hint
     return out
 
-_INTROSPECT_RE = re.compile(
+_INTROSPECT_RE = _re.compile(
     r"information_schema|warehouse_schema\s*\(|\bDESCRIBE\b|\bSHOW\b|\bEXPLAIN\b|\bPRAGMA\b",
-    re.I)
-_NON_SELECT_RE = re.compile(r"only SELECT/WITH queries are allowed", re.I)
-_UNKNOWN_TABLES_RE = re.compile(r"unknown or unavailable tables", re.I)
+    _re.I)
+_NON_SELECT_RE = _re.compile(r"only SELECT/WITH queries are allowed", _re.I)
+_UNKNOWN_TABLES_RE = _re.compile(r"unknown or unavailable tables", _re.I)
 _GENERIC_HINT = "Call warehouse_schema to verify exact table names, column names, and season encodings."
 
 
@@ -102,8 +102,6 @@ def _refusal_hint(query: str, error: str) -> str:
     return _GENERIC_HINT
 
 
-_TABLE_ERROR_RE = re.compile(r"(?:no such table|table with name)\s*[:=]?\s*[`\"]?([A-Za-z0-9_]+)", re.I)
-_COLUMN_ERROR_RE = re.compile(r"(?:does not have a column|no such column|column)\s*(?:named\s+|called\s+)?[`\"]?([A-Za-z0-9_]+)", re.I)
 _TABLE_ERROR_RE = _re.compile(r"(?:no such table|table with name)\s*[:=]?\s*[`\"]?([A-Za-z0-9_]+)", _re.I)
 _COLUMN_ERROR_RE = _re.compile(r"(?:does not have a column|no such column|column)\s*(?:named\s+|called\s+)?[`\"]?([A-Za-z0-9_]+)", _re.I)
 def _error_suggestions(query: str, error: str) -> list[str]:
@@ -143,8 +141,11 @@ async def sql_exec(sql: str) -> dict[str, Any]:
         )
     out = await rerun_sql(query)
     if not out.get("ok"):
-        hint = _refusal_hint(query, str(out.get("error", "")))
-        hint = _binder_hint(query, out.get("error", ""))        matches = _error_suggestions(query, str(out.get("error", "")))
+        err = str(out.get("error", ""))
+        hint = _refusal_hint(query, err)
+        if hint == _GENERIC_HINT:
+            hint = _binder_hint(query, err)
+        matches = _error_suggestions(query, err)
         if matches:
             hint += " Closest declared matches: " + ", ".join(matches) + "."
         return _failure(

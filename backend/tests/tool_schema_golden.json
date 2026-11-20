@@ -20,12 +20,7 @@
     },
     "warehouse_schema": {
       "name": "warehouse_schema",
-      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_draft_value_curve, silver_four_factors, silver_four_factors_team, silver_future_picks, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
-=======
-      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_cap_room, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_free_agents, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
-      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
-      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_draft_boards, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_prospect_stats, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
->>>>>>> origin/dev
+      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_cap_room, silver_clutch, silver_combine, silver_contracts, silver_draft_boards, silver_draft_value_curve, silver_four_factors, silver_four_factors_team, silver_free_agents, silver_future_picks, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_prospect_stats, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
       "args_schema": {
         "description": "Read declared warehouse columns, source units and season encodings.",
         "properties": {
@@ -479,11 +474,13 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -497,6 +494,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1306,7 +1304,7 @@
     },
     "get_contract_value": {
       "name": "get_contract_value",
-      "description": "Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual. Salaries come from the\ncurrent salary sheet; production comes from the requested season, or the\nlatest season with production rows when the requested one has none yet\n(meta.production_fallback says so).",
+      "description": "Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.",
       "args_schema": {
         "description": "Contract value residuals from production vs salary.",
         "properties": {
@@ -1449,6 +1447,7 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -2471,11 +2470,13 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -2489,15 +2490,18 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "playoffs": {
             "default": false,
+            "description": "true for playoff games only. Default: False.",
             "title": "Playoffs",
             "type": "boolean"
           },
           "opponent": {
             "default": "",
+            "description": "Opposing team's 3-letter abbreviation, e.g. 'NYK'. Default: ''.",
             "title": "Opponent",
             "type": "string"
           }
@@ -3929,6 +3933,7 @@
       "args_schema": {
         "properties": {
           "query": {
+            "description": "Free-text name or identifier to resolve.",
             "title": "Query",
             "type": "string"
           },
@@ -3983,7 +3988,6 @@
         "title": "web_fetch",
         "type": "object"
       }
-=======
     },
     "get_free_agents": {
       "name": "get_free_agents",
@@ -3992,6 +3996,7 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -4012,6 +4017,7 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
@@ -4037,15 +4043,18 @@
         "properties": {
           "team_id": {
             "default": null,
+            "description": "nba_api numeric team id (not the abbreviation). Default: None.",
             "title": "Team Id"
           },
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
           "season": {
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -4084,7 +4093,6 @@
         "title": "get_expectations",
         "type": "object"
       }
->>>>>>> origin/dev
     }
   },
   "internal": {

@@ -296,12 +296,10 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_scouting_report",
       "web_search",
       "web_fetch",
-=======
       "get_free_agents",
       "get_prospect",
       "get_roster_fit",
       "get_expectations",
->>>>>>> origin/dev
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -380,10 +378,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
     assert.equal(bridge.tools.length, 95);
-=======
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
->>>>>>> origin/dev
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1308,11 +1304,9 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_scouting_report: { team_id: 1610612747, season: "2024-25" },
       web_search: { query: " " },
       web_fetch: { url: "http://127.0.0.1/" }
-=======
       get_scouting_report: { team_id: 1610612747, season: "2024-25" },
       get_roster_fit: { team: "BOS", season: "2024-25" },
       get_expectations: { team: "BOS", season: "2024-25" }
->>>>>>> origin/dev
     };
     let wrapperInvocations = 0;
     let toolsExercised = 0;
@@ -1488,14 +1482,10 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
     const recon = await tools.load_skill({ name: "warehouse-reconciliation" });
     const lineup = await tools.load_skill({ name: "lineups-and-rotations" });
     const stats = await tools.load_skill({ name: "statistical-modeling" });
-=======
     const historical = await tools.load_skill({ name: "historical-grain-and-time" });
->>>>>>> origin/dev
     const missing = await tools.load_skill({ name: "nonexistent-skill-xyz" });
     return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, statsOk: stats.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
-=======
     return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, historicalOk: historical.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
->>>>>>> origin/dev
   `, []);
   try {
     await session.prompt("Load bundled skills inside codemode");
@@ -1504,18 +1494,14 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
     assert(session.systemPrompt.includes("warehouse-reconciliation"));
     assert(session.systemPrompt.includes("lineups-and-rotations"));
     assert(session.systemPrompt.includes('tools.load_skill({ name: "statistical-modeling" })'));
-=======
     assert(session.systemPrompt.includes("historical-grain-and-time"));
->>>>>>> origin/dev
     const toolTexts = session.messages.filter(m => m.role === "toolResult").flatMap(m => m.content).map(c => c.text ?? "").join("\n");
     assert(toolTexts.includes('"cbaOk":true'));
     assert(toolTexts.includes('"hasApron":true'));
     assert(toolTexts.includes('"reconOk":true'));
     assert(toolTexts.includes('"lineupOk":true'));
     assert(toolTexts.includes('"statsOk":true'));
-=======
     assert(toolTexts.includes('"historicalOk":true'));
->>>>>>> origin/dev
     assert(toolTexts.includes('"missingOk":false'));
   } finally {
     session.dispose();

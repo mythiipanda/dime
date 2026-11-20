@@ -276,7 +276,6 @@ test("a team_card with forged or malformed values is dropped with the artifact",
     assert.deepEqual(chunks, []);
   }
 });
-=======
 test("a player_card with sections resolves per-section rows, fields and provenance", () => {
   const chunks = reduceBackendEvent("custom_data", {
     tables: [],
@@ -341,7 +340,6 @@ test("a player_card section with forged or malformed values is dropped with the 
     assert.deepEqual(chunks, []);
   }
 });
->>>>>>> origin/dev
 test("a memo the agent submitted resolves with sections and citations", () => {
   const chunks = reduceBackendEvent("custom_data", {
     tables: [],

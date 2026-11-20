@@ -18,13 +18,8 @@ import {
 } from "../dist/submit-tool.js";
 import { ANALYST_TOOL_NAMES } from "../dist/python-tools.js";
 import { TOOL_PROMPT_GUIDELINES } from "../dist/tool-contract-metadata.js";
-=======
-=======
 import { sourceResult } from "../dist/python-tools.js";
-=======
->>>>>>> origin/dev
 import { countToolCall, createRunStatusTool } from "../dist/run-status.js";
->>>>>>> origin/dev
 
 function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
   const result = error !== undefined ? { rows, error } : { rows };

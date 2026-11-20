@@ -81,7 +81,6 @@ export function resolveProvenance(record: SourceRecord, data: Record<string, unk
     };
 }
 
-=======
 type SourceRow = { record: SourceRecord; row: Record<string, unknown>; data: Record<string, unknown> };
 
 function resolveSourceRow(ref: string, rowIndex: number, getSource: (ref: string) => SourceRecord | undefined, kind: string): SourceRow {
@@ -128,7 +127,6 @@ function resolveProvenance(record: SourceRecord, data: Record<string, unknown>) 
     };
 }
 
->>>>>>> origin/dev
 export function resolvePlayerCard(artifact: Record<string, unknown>, getSource: (ref: string) => SourceRecord | undefined): Record<string, unknown> {
     if (!Value.Check(playerCardSchema, artifact))
         throw new Error("Invalid player_card: provide title, ref, row, nameColumn and 1-6 metrics with column/label selectors, plus optional sections of {label, ref, row, metrics, fields}; do not provide values or units.");
