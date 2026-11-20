@@ -722,6 +722,7 @@
           },
           "since": {
             "default": "",
+            "description": "ISO date filter YYYY-MM-DD; blank = recent default. Default: ''.",
             "title": "Since",
             "type": "string"
           }
@@ -1453,6 +1454,7 @@
           },
           "draft_year": {
             "default": "",
+            "description": "Draft class year, e.g. '2027'. Default: .",
             "title": "Draft Year",
             "type": "string"
           }
@@ -3939,6 +3941,7 @@
           },
           "max_results": {
             "default": 5,
+            "description": "Maximum search results returned. Default: 5.",
             "title": "Max Results",
             "type": "integer"
           },
@@ -3952,15 +3955,18 @@
               }
             ],
             "default": null,
+            "description": "Freshness filter, e.g. 'd' day, 'w' week, 'm' month, 'y' year; omit for no limit. Default: None.",
             "title": "Timelimit"
           },
           "region": {
             "default": "us-en",
+            "description": "Search region code, e.g. 'us-en'. Default: us-en.",
             "title": "Region",
             "type": "string"
           },
           "safesearch": {
             "default": "moderate",
+            "description": "'on', 'moderate', or 'off'. Default: moderate.",
             "title": "Safesearch",
             "type": "string"
           }
@@ -3978,6 +3984,7 @@
       "args_schema": {
         "properties": {
           "url": {
+            "description": "Public HTTP(S) URL to fetch.",
             "title": "Url",
             "type": "string"
           }
@@ -4002,6 +4009,7 @@
           },
           "fa_year": {
             "default": "2027",
+            "description": "Free-agent year, e.g. '2027'. Default: 2027.",
             "title": "Fa Year",
             "type": "string"
           }
@@ -4023,11 +4031,13 @@
           },
           "draft_year": {
             "default": "2027",
+            "description": "Draft class year, e.g. '2027'. Default: 2027.",
             "title": "Draft Year",
             "type": "string"
           },
           "position": {
             "default": "",
+            "description": "Position filter, e.g. 'PG', 'SG', 'SF', 'PF', 'C'; blank = all. Default: ''.",
             "title": "Position",
             "type": "string"
           }
@@ -4751,6 +4761,7 @@
         "properties": {
           "players": {
             "default": "",
+            "description": "Comma-separated player full names to compare. Default: ''.",
             "title": "Players",
             "type": "string"
           },

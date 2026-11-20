@@ -55,6 +55,7 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_preseason_projections": ("seasonal", 400 * _DAY),
     "silver_combine": ("weekly", 7 * _DAY),
     "silver_playoffs": ("seasonal", 400 * _DAY),
+    "silver_bbref_awards": ("seasonal", 400 * _DAY),
     "silver_playoff_gamelogs": ("seasonal", 400 * _DAY),
     "silver_hist_gamelogs": ("static", None),
     "silver_hist_draft": ("static", None),
