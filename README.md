@@ -3,6 +3,8 @@
 Ask NBA questions in plain English. Dime plans the query, runs it
 against its own data warehouse, and shows its work.
 
+Website: [mythiipanda.github.io/dime-site](https://mythiipanda.github.io/dime-site/)
+
 Live demo: [dime-fawn.vercel.app](https://dime-fawn.vercel.app)
 
 <video src="assets/readme/dime-motion-demo.mp4" controls muted loop playsinline width="100%"></video>
