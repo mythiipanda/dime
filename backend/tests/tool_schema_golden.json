@@ -2959,6 +2959,38 @@
         "type": "object"
       }
     },
+    "get_opponent_scout": {
+      "name": "get_opponent_scout",
+      "description": "Opponent scouting dossier for game prep. Returns the opponent's recent form (last 10), four factors on offense and defense, shot-zone profile, top 5-man lineups, current injuries, and this season's head-to-head vs team. Each section carries its season and warehouse source. Warehouse only; sections degrade with a note when a table is not seeded for the season.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "opponent": {
+            "default": "",
+            "title": "Opponent",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_opponent_scout",
+        "type": "object"
+      }
+    },
     "get_rotation_check": {
       "name": "get_rotation_check",
       "description": "Rotation and closing-unit check from warehouse five-man units, minutes, and cached on/off. Warehouse-backed with live fallback.",
