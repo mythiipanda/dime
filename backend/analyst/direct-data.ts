@@ -66,6 +66,10 @@ export type DirectOperations = {
         team: string;
         season: string;
     };
+    product_morning: {
+        team: string;
+        season: string;
+    };
     product_debate: {
         a: string;
         b: string;
