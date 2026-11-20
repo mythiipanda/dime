@@ -21,6 +21,8 @@ and every tool reports its own sources, so cite them.
 | `get_impact_rank` | Where does a player rank by WS, VORP, BPM for a season? | Calibrating whether the player at the center is actually a star, and comparing the pieces on each side. |
 | `get_roster_fit` | Where is a team's roster thin (spacing, creation, rim, defense, depth) vs league and contender baselines? | "Does this trade fix their problem" or "what should they target" questions — it names the gap the player would fill. |
 | `get_expectations` | How is a team doing vs its preseason projections (wins, net rating)? | Framing motivation: an underperforming "contender" buys differently than an overperforming rebuilder. |
+| `get_free_agents` | Upcoming free-agent class by team or league-wide, cap holds, projected cap room and exceptions (estimates). | Offseason/team-building questions and "can they afford to keep/sign X" — cap room constrains what a team can actually do after a trade. |
+| `get_prospect` | A draft prospect's board placement, college production, pick-slot comps, combine measurables. | Valuing picks inside a package or answering "who could they get at #N" — a pick's worth is the prospect it becomes. |
 
 ## 2. Assembling the picture
 
