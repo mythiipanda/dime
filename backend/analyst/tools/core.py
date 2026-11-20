@@ -253,7 +253,7 @@ def register() -> dict[str, Any]:
             "ok": True, "tool": "get_dataset_freshness", "rows": rows, "columns": cols,
         })
 
-    @tool("run_python", description="Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations.")
+    @tool("run_python", description="Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations.")
     def run_python(code: str) -> dict:
         from shared.tools.shared import run_python as _orig_run_python
         res = call_sync(_orig_run_python, "run_python", {"code": code})
