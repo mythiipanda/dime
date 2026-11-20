@@ -1306,7 +1306,7 @@
     },
     "get_contract_value": {
       "name": "get_contract_value",
-      "description": "Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.",
+      "description": "Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual. Salaries come from the\ncurrent salary sheet; production comes from the requested season, or the\nlatest season with production rows when the requested one has none yet\n(meta.production_fallback says so).",
       "args_schema": {
         "description": "Contract value residuals from production vs salary.",
         "properties": {
@@ -1396,7 +1396,7 @@
     },
     "get_trade_value": {
       "name": "get_trade_value",
-      "description": "Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from 2025-26 production versus\n2026-27 salaries. Picks like \"2029 FRP\" or \"2030 FRP top-4 protected\".",
+      "description": "Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from the latest completed\nproduction season versus the current salary sheet. Picks like \"2029 FRP\"\nor \"2030 FRP top-4 protected\".",
       "args_schema": {
         "description": "Trade value grade: estimated production surplus value vs salary per side plus pick equity.",
         "properties": {

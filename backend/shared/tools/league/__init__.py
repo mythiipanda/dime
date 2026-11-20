@@ -15,6 +15,7 @@ from .._core import (
     TTL_SCOREBOARD_PAST,
     _warehouse_or_live,
     clamp_stat,
+    current_season,
     is_past_game_date,
     is_scope_game,
     last_completed_season,
