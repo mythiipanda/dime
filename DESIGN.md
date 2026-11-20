@@ -126,6 +126,9 @@ missing; zero is zero; an undeclared unit is labeled. The source-value popover
 shows the ref, zero-based row and columns without asserting semantic verification.
 Model-authored labels, scope and conclusions remain unassessed. Existing artifact
 kinds are still model-authored and are not made source-verified by this change.
+The catalog kinds are checked against typed schemas at the `submit_answer`
+boundary: a malformed artifact is rejected with field-level errors the agent can
+retry from, while unknown kinds pass through unchanged for forward compatibility.
 
 Compose Beautiful UI `Surface`, shared Radix/shadcn actions and source popovers.
 Use installed Recharts for trend axes, hover/keyboard inspection and responsive

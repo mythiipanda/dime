@@ -3,7 +3,10 @@ import { Value } from "typebox/value";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { objectValue, sourceResult, sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 import { resolvePlayerCard } from "./player-card.js";
+import { validateAnswerArtifact } from "./artifact-schemas.js";
+=======
 import { resolveTeamCard } from "./team-card.js";
+>>>>>>> origin/dev
 
 export { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 
@@ -64,6 +67,7 @@ function validateAnchor(
     }
 }
 
+=======
 function normalizeShotChart(artifact: Record<string, unknown>): Record<string, unknown> {
     if (artifact.kind !== "shot_chart" || !Array.isArray(artifact.zones) || artifact.zones.length === 0)
         return artifact;
@@ -113,6 +117,7 @@ function artifactRejectionReason(artifact: Record<string, unknown>): string | nu
     }
 }
 
+>>>>>>> origin/dev
 export function validateAnswerSubmission(
     input: unknown,
     getSource: (ref: string) => SourceRecord | undefined,
@@ -128,6 +133,9 @@ export function validateAnswerSubmission(
             validateAnchor(anchor, getSource, availableRefs);
         return { text: block.text, anchors };
     });
+    const artifacts = input.artifacts ? structuredClone(input.artifacts).map((artifact, index) =>
+        artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource) : validateAnswerArtifact(artifact, index)
+=======
     const artifacts = input.artifacts ? structuredClone(input.artifacts).flatMap(artifact => {
         const reason = artifactRejectionReason(artifact);
         if (reason) {
@@ -152,6 +160,7 @@ export function validateAnswerSubmission(
         artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource)
             : artifact.kind === "team_card" ? resolveTeamCard(artifact, getSource)
             : normalizeShotChart(artifact)
+>>>>>>> origin/dev
     ) : undefined;
 =======
 >>>>>>> origin/dev
@@ -185,7 +194,10 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. Validates selector traceability and artifact schemas, not semantic correctness.",
+=======
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, team_card). Load visual-artifacts for schemas. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",
+>>>>>>> origin/dev
         parameters: submitAnswerSchema,
 =======
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",

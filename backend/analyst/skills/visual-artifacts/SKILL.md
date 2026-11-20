@@ -24,6 +24,10 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 
 ## 2. Artifact Schema Specifications
 
+`submit_answer` validates these schemas and rejects a malformed known artifact with
+field-level errors; fix the artifact and resubmit. Kinds outside this catalog pass
+through but are not rendered.
+
 ### `player_card`
 
 Use for a compact player overview, not a ranking or a replacement for the prose.
