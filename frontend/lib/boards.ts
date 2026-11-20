@@ -1,3 +1,5 @@
+import type { DimeArtifact } from "./dime-stream";
+
 export type MetricCategory = "Scoring" | "Efficiency" | "Playmaking" | "Rebounding" | "Defense" | "Impact" | "Contract";
 export interface BoardMetric {
   id: string; label: string; category: MetricCategory;
@@ -23,6 +25,11 @@ export interface BoardRow { player_id: number; name: string; team: string }
 export interface Board {
   id: string; title: string; season: string; rows: BoardRow[]; columns: BoardColumn[];
   cells: BoardCells; created_at: string; updated_at: string; template_id?: string;
+  pins?: BoardPin[];
+}
+export interface BoardPin {
+  id: string; pinned_at: string; refreshed_at?: string;
+  artifact: DimeArtifact;
 }
 export interface BoardFill {
   ok: boolean; cells: BoardCells; players: Record<string, { name: string | null; team: string | null }>;
@@ -67,6 +74,16 @@ export function validBoard(value: unknown): value is Board {
       if (!nullableText(c.table) || !nullableText(c.column) || !season(c.season) || !nullableText(c.sql) || !Array.isArray(c.params) || !nullableText(c.source) || !nullableText(c.fetched_at) || !object(c.row_key)) return false;
       if (c.salary_vintage !== undefined && (!object(c.salary_vintage) || !season(c.salary_vintage.season) || !nullableText(c.salary_vintage.fetched_at))) return false;
       if (c.identity_resolution !== undefined && !object(c.identity_resolution)) return false;
+    }
+  }
+  if (value.pins !== undefined) {
+    if (!Array.isArray(value.pins) || value.pins.length > 60) return false;
+    const pinIds = new Set<string>();
+    for (const pin of value.pins) {
+      if (!object(pin) || !text(pin.id) || !pin.id || pinIds.has(pin.id) || !date(pin.pinned_at) ||
+          (pin.refreshed_at !== undefined && !date(pin.refreshed_at)) ||
+          !object(pin.artifact) || !text(pin.artifact.kind) || !text(pin.artifact.title)) return false;
+      pinIds.add(pin.id);
     }
   }
   return true;
@@ -141,6 +158,57 @@ export function boardCsv(board: Board, metrics: BoardMetric[]): string {
   const headers = ["Player", "Team", ...board.columns.flatMap((c) => [metrics.find((m) => m.id === c.metric_id)?.label || c.metric_id, `${c.metric_id} citation`])];
   const rows = board.rows.map((r) => [r.name, r.team, ...board.columns.flatMap((c) => { const cell = board.cells[r.player_id]?.[c.metric_id]; return [cell?.value ?? "", cell ? JSON.stringify({ ...cell.citation, ...(cell.reason ? { reason: cell.reason } : {}) }) : "Not filled"]; })]);
   return [headers, ...rows].map((row) => row.map(quote).join(",")).join("\r\n");
+}
+export function pinArtifact(board: Board, artifact: DimeArtifact): Board {
+  const pins = board.pins ?? [];
+  if (pins.length >= 60) return board;
+  return { ...board, pins: [...pins, { id: `pin-${globalThis.crypto.randomUUID()}`, pinned_at: new Date().toISOString(), artifact }] };
+}
+export function unpinArtifact(board: Board, pinId: string): Board {
+  return { ...board, pins: (board.pins ?? []).filter(pin => pin.id !== pinId) };
+}
+export function updatePin(board: Board, pinId: string, artifact: DimeArtifact): Board {
+  return { ...board, pins: (board.pins ?? []).map(pin => pin.id === pinId ? { ...pin, artifact, refreshed_at: new Date().toISOString() } : pin) };
+}
+export interface PinRequery { key: "header" | number; sql: string; row: number }
+interface PinCardShape { provenance?: { sql?: string }; sourceRow?: number; metrics?: { column: string; label: string; value: number | null }[]; sections?: { sourceRow?: number; provenance?: { sql?: string }; metrics?: { column: string; label: string; value: number | null }[]; fields?: { column: string; label: string; value: string | null }[] }[] }
+function pinCard(artifact: DimeArtifact): PinCardShape | null {
+  const kind = (artifact as { kind: string }).kind;
+  return kind === "player_card" || kind === "team_card" ? artifact as PinCardShape : null;
+}
+export function cardRequeries(artifact: DimeArtifact): PinRequery[] {
+  const card = pinCard(artifact);
+  if (!card) return [];
+  const queries: PinRequery[] = [];
+  if (typeof card.provenance?.sql === "string") queries.push({ key: "header", sql: card.provenance.sql, row: card.sourceRow ?? 0 });
+  card.sections?.forEach((section, index) => {
+    if (typeof section.provenance?.sql === "string") queries.push({ key: index, sql: section.provenance.sql, row: section.sourceRow ?? 0 });
+  });
+  return queries;
+}
+export function applyPinRerun(artifact: DimeArtifact, rows: Map<PinRequery["key"], Record<string, unknown> | undefined>): DimeArtifact {
+  const card = pinCard(artifact);
+  if (!card) return artifact;
+  const pick = (key: PinRequery["key"], column: string): unknown => {
+    const row = rows.get(key);
+    return row && Object.hasOwn(row, column) ? row[column] : undefined;
+  };
+  const number = (key: PinRequery["key"], column: string): { value: number | null } | undefined => {
+    const value = pick(key, column);
+    return value === undefined ? undefined : value === null || (typeof value === "number" && Number.isFinite(value)) ? { value } : undefined;
+  };
+  const text = (key: PinRequery["key"], column: string): { value: string | null } | undefined => {
+    const value = pick(key, column);
+    return value === undefined ? undefined : value === null || typeof value === "string" ? { value } : undefined;
+  };
+  return { ...artifact,
+    ...(card.metrics ? { metrics: card.metrics.map(metric => ({ ...metric, ...number("header", metric.column) })) } : {}),
+    ...(card.sections ? { sections: card.sections.map((section, index) => ({
+      ...section,
+      ...(section.metrics ? { metrics: section.metrics.map(metric => ({ ...metric, ...number(index, metric.column) })) } : {}),
+      ...(section.fields ? { fields: section.fields.map(item => ({ ...item, ...text(index, item.column) })) } : {}),
+    })) } : {}),
+  };
 }
 export function boardPrompt(board: Board, metrics: BoardMetric[]): string {
   return `Analyze my board "${board.title}" for ${board.season}.\nPlayers: ${board.rows.map((r) => `${r.name} (${r.team || "team unknown"}, player_id ${r.player_id})`).join("; ") || "None selected"}.\nMetrics: ${board.columns.map((c) => metrics.find((m) => m.id === c.metric_id)?.label || c.metric_id).join(", ") || "None selected"}.\nCompare trade-offs and identify the most promising targets. Source numbers from the warehouse with citations; state when data is missing. Salary, if requested, is the 2026-27 vintage.`;
