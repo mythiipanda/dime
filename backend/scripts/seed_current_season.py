@@ -1,6 +1,8 @@
 import argparse
 import os
 import sys
+import time
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +18,11 @@ SRC_PGL = "sportsdataverse:nba_stats_player_game_logs"
 SRC_PSS = "sportsdataverse:nba_stats_player_season_stats"
 SRC_STANDINGS = "nba_api"
 LEADER_CATS = ["PTS", "REB", "AST", "STL", "BLK", "DREB"]
+SRC_SHOTS = "sportsdataverse:nba_stats_shots"
+HISTORY_DIR = Path(__file__).resolve().parent.parent / "data" / "history"
+ONOFF_MIN_MINUTES = 300
+ONOFF_MAX_PLAYERS = 320
+LIVE_SLEEP_S = 1.5
 
 TEAM_GAME_SELECT = """
 SELECT
@@ -220,6 +227,100 @@ def load_leaders(season: str, dry_run: bool) -> int:
     return total
 
 
+def load_hist_shots(season: str, dry_run: bool) -> int:
+    y = end_year(season)
+    url = f"{SDV}/nba_stats_shots/shots_{y}.csv"
+    dest = HISTORY_DIR / f"shots_{y}.csv"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    req = urllib.request.Request(url, headers={"User-Agent": "dime-seed/1.0"})
+    with urllib.request.urlopen(req, timeout=300) as r, open(tmp, "wb") as f:
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
+    tmp.replace(dest)
+    df = pl.read_csv(dest)
+    if "season" not in df.columns:
+        df = df.with_columns(pl.lit(y).alias("season"))
+    return save("silver_hist_shots", df, SRC_SHOTS, season,
+                f"season:{season}", dry_run)
+
+
+def load_lineups(season: str, dry_run: bool) -> int:
+    from shared.sources import nba_stats
+    try:
+        from nba_api.stats.static import teams as _teams
+        all_teams = [(t["id"], t["abbreviation"]) for t in _teams.get_teams()]
+    except Exception:
+        all_teams = []
+    total = 0
+    for tid, abbrev in all_teams:
+        res = nba_stats.lineups(tid, season)
+        if not res.ok or res.frame.height == 0:
+            print(f"lineups {abbrev}: fetch failed")
+            time.sleep(LIVE_SLEEP_S)
+            continue
+        if dry_run:
+            print(f"silver_lineups {abbrev}: {res.frame.height} rows (dry-run)")
+            continue
+        n = store.save_frame("silver_lineups", res, entity=f"team:{tid}")
+        print(f"silver_lineups {abbrev}: {n} rows")
+        total += n
+        time.sleep(LIVE_SLEEP_S)
+    return total
+
+
+def load_on_off(season: str, dry_run: bool) -> int:
+    from shared.sources import pbpstats
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_leaders_pts" not in tables:
+            print("on/off pool: silver_leaders_pts missing")
+            return 0
+        players = con.execute(
+            "SELECT PLAYER_ID, PLAYER, TEAM_ID FROM silver_leaders_pts "
+            "WHERE _season = ? AND MIN >= ? ORDER BY MIN DESC LIMIT ?",
+            [season, ONOFF_MIN_MINUTES, ONOFF_MAX_PLAYERS]).fetchall()
+    finally:
+        con.close()
+    print(f"on/off pool: {len(players)} rotation players")
+    total = seeded = 0
+    for pid, name, tid in players:
+        if not tid:
+            continue
+        try:
+            res = pbpstats.on_off(int(pid), int(tid), season)
+            ok = res is not None and res.ok and res.frame.height > 0
+        except Exception:
+            ok = False
+        if not ok:
+            print(f"on/off {name}: fetch failed")
+            time.sleep(LIVE_SLEEP_S)
+            continue
+        seeded += 1
+        if dry_run:
+            continue
+        total += store.save_frame("silver_on_off", res,
+                                  entity=f"player:{pid}")
+        time.sleep(LIVE_SLEEP_S)
+    print(f"silver_on_off: {total} rows across {seeded} players")
+    return total
+
+
+def load_team_ratings(season: str, dry_run: bool) -> int:
+    from shared.sources import nba_stats
+    res = nba_stats.team_ratings(season)
+    if not res.ok or res.frame.height == 0:
+        print("team ratings fetch failed:", res.error)
+        return 0
+    if dry_run:
+        print(f"silver_team_ratings: {res.frame.height} rows (dry-run)")
+        return 0
+    n = store.save_frame("silver_team_ratings", res, replace_season=True)
+    print(f"silver_team_ratings: {n} rows")
+    return n
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scratch-db", default="")
@@ -245,9 +346,13 @@ def main(argv: list[str] | None = None) -> int:
         total += load_player_gamelogs(args.season, args.dry_run)
         total += build_team_games(args.season, args.dry_run)
         total += load_player_season(args.season, args.dry_run)
+        total += load_hist_shots(args.season, args.dry_run)
         if not args.skip_live:
             total += load_standings(args.season, args.dry_run)
             total += load_leaders(args.season, args.dry_run)
+            total += load_lineups(args.season, args.dry_run)
+            total += load_on_off(args.season, args.dry_run)
+            total += load_team_ratings(args.season, args.dry_run)
     finally:
         store.DB_PATH = old_db
         store.LOCK_PATH = old_lock

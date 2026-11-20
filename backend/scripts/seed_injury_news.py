@@ -182,6 +182,12 @@ def load_injuries(season: str, dry_run: bool) -> int:
         return 0
     n = store.save_frame("silver_injuries", res, replace_season=True)
     print(f"silver_injuries: {n} rows")
+    try:
+        from scripts.normalize_injuries import save as _norm_save
+        with store.connect() as _con:
+            _norm_save(_con)
+    except Exception as exc:
+        print("injury entries normalize failed:", exc)
     return n
 
 

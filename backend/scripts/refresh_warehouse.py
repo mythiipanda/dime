@@ -21,15 +21,19 @@ SEEDERS = [
     ("recent_market", "seed_recent_market.py", [], True),
     ("transactions", "seed_transactions.py", [], True),
     ("injuries_news", "seed_injury_news.py", ["--season"], True),
+    ("injury_entries", "normalize_injuries.py", [], True),
     ("tracking", "seed_tracking.py", [], True),
     ("playoffs", "seed_historical_playoffs.py", ["--season"], False),
     ("team_ratings", "seed_team_ratings.py", [], True),
     ("impact", "seed_bref_impact.py", [], True),
+    ("awards", "seed_bbref_awards.py", [], False),
     ("salaries", "seed_salaries.py", [], False),
-    ("stints", "seed_stints.py", [], True),
+    ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
     ("repair_shot_names", "repair_shot_names.py", [], False),
+    ("draft_capital", "seed_draft_capital.py", [], False),
+    ("four_factors_team", "build_team_four_factors.py", [], False),
 ]
 
 
@@ -113,8 +117,14 @@ def run_seeders(warehouse: Path, season: str, only: set[str] | None,
         if dry_run and supports_dry:
             cmd.append("--dry-run")
         print(f"=== seeder {name}: {' '.join(cmd)}", flush=True)
-        proc = subprocess.run(cmd, env=env, cwd=str(SCRIPTS_DIR.parent),
-                              capture_output=True, text=True, timeout=3600)
+        try:
+            proc = subprocess.run(cmd, env=env, cwd=str(SCRIPTS_DIR.parent),
+                                  capture_output=True, text=True,
+                                  timeout=3600)
+        except subprocess.TimeoutExpired:
+            print(f"seeder {name} timed out after 3600s")
+            failures.append(name)
+            continue
         tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-8:])
         print(tail)
         if proc.returncode != 0:
