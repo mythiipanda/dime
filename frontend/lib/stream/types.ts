@@ -121,7 +121,7 @@ export interface ShotChartArtifactPayload {
   title: string;
   source?: string;
   provenance?: DimeProvenance;
-  zones: { x: number; y: number; att: number; pct: number }[];
+  zones: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number }[];
   footnote?: string;
 }
 
@@ -147,6 +147,29 @@ export interface PlayerCardSectionPayload {
   provenance?: DimeProvenance;
 }
 
+||||||| e0b2e945
+export interface MemoAnchor {
+  ref: string;
+  row: number;
+  columns: string[];
+}
+
+export interface MemoSectionPayload {
+  heading: string;
+  body: string;
+  anchors?: MemoAnchor[];
+}
+
+export interface MemoArtifactPayload {
+  kind: "memo";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  subtitle?: string;
+  text: string;
+  sections?: MemoSectionPayload[];
+  footnote?: string;
+}
 export interface PlayerCardArtifactPayload {
   kind: "player_card";
   title: string;
@@ -173,14 +196,6 @@ export interface TeamCardArtifactPayload {
   nameColumn: string;
   metrics: { column: string; label: string; value: number | null; unit?: string }[];
   sections?: PlayerCardSectionPayload[];
-}
-
-export interface MemoArtifactPayload {
-  kind: "memo";
-  title: string;
-  source?: string;
-  provenance?: DimeProvenance;
-  text: string;
 }
 
 export type DimeArtifact =

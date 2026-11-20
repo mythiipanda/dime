@@ -11,6 +11,9 @@ export type {
   EvidenceGapNote,
   FailureEvent,
   FinalEvent,
+  MemoAnchor,
+  MemoArtifactPayload,
+  MemoSectionPayload,
   ProvenanceEvidence,
   ProvenanceOrigin,
   PlayerCardArtifactPayload,
@@ -49,5 +52,5 @@ export {
   undeclaredProvenance,
   verificationDisclosure,
 } from "./stream/provenance";
-export { asResolvedArtifacts, deriveArtifacts } from "./stream/artifacts";
+export { asResolvedArtifacts, deriveArtifacts, memoToMarkdown } from "./stream/artifacts";
 export { DimeStream, reduceBackendEvent, streamDimeChat } from "./stream/events";
