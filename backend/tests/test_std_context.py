@@ -42,6 +42,8 @@ def warehouse(tmp_path, monkeypatch):
         "INSERT INTO silver_player_season VALUES (1, 'Example Star', 'BOS', 27, 15, 36, 30.5, 8.1, 5.2, 1.1, .5, .48, .38, .9, .62, '2026-27')")
     con.execute(
         "INSERT INTO silver_player_season VALUES (1, 'Example Star', 'BOS', 26, 74, 35, 26.8, 7.9, 4.9, 1.0, .4, .47, .37, .88, .60, '2025-26')")
+    con.execute(
+        "INSERT INTO silver_player_season VALUES (2, 'Hurt Example', 'BOS', 28, 15, 33, 24.1, 6.5, 4.0, .9, .3, .46, .35, .85, .58, '2025-26')")
     con.close()
     store.warehouse_tables_cache_clear()
     store.warehouse_pool_clear()
@@ -105,3 +107,15 @@ def test_static_season_has_no_std_context(warehouse):
         {'team_id': 'BOS', 'season': '2025-26', 'period_scope': 'regular_season'})
     assert result['ok']
     assert 'season_to_date' not in result['meta']
+    result = player.get_season_averages.invoke({'player_id': 1, 'season': '2025-26'})
+    assert result['ok']
+    assert 'season_to_date' not in result['meta']
+
+
+def test_completed_season_low_gp_still_flagged(warehouse):
+    result = player.get_season_averages.invoke({'player_id': 2, 'season': '2025-26'})
+    assert result['ok']
+    std = result['meta']['season_to_date']
+    assert std['games_played'] == 15
+    assert std['small_sample'] is True
+    assert std['small_sample_reason'] == 'well under the league games-played baseline'

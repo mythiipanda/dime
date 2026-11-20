@@ -248,8 +248,7 @@ def _sample_tier(minutes: object) -> tuple[str, int]:
 def _std_context(team_id: object, season: str,
                  games: list[dict[str, Any]] | None) -> dict[str, Any] | None:
     pkg = _pkg()
-    if pkg.season_static(season):
-        return None
+    static = pkg.season_static(season)
     gp = len(games) if games else None
     prior = None
     prior_season = pkg.last_completed_season()
@@ -263,4 +262,7 @@ def _std_context(team_id: object, season: str,
                      "wins": wins,
                      "losses": len(prior_games) - wins,
                      "w_pct": round(wins / len(prior_games), 3)}
-    return pkg.season_to_date_meta(season, gp, prior)
+    meta = pkg.season_to_date_meta(season, gp, prior)
+    if static and not meta.get("small_sample"):
+        return None
+    return meta
