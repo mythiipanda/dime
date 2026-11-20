@@ -1865,9 +1865,9 @@
     },
     "get_playtype_profile": {
       "name": "get_playtype_profile",
-      "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile per play type on offense or defense. Warehouse-backed with live fallback.",
+      "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile per play type on offense or defense. If Synergy playtypes are absent, team offense returns warehouse possession start-type PPP proxies without live endpoints. Warehouse-backed with live fallback.",
       "args_schema": {
-        "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile.",
+        "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile; team offense falls back to warehouse possession start-type PPP proxies when Synergy is absent.",
         "properties": {
           "subject": {
             "description": "Player full name or 3-letter team abbreviation.",
