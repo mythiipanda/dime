@@ -107,6 +107,16 @@ UPSTREAM_SCHEMAS = {
 }
 
 
+
+
+def _without_descriptions(node):
+    if isinstance(node, dict):
+        return {k: _without_descriptions(v) for k, v in node.items() if k != "description"}
+    if isinstance(node, list):
+        return [_without_descriptions(v) for v in node]
+    return node
+
+
 class _FakeTool:
     def __init__(self, description: str, result=None, exc: Exception | None = None):
         self.description = description
@@ -400,7 +410,8 @@ def test_wrapper_input_schema_matches_the_shared_tool(monkeypatch):
     tools = _catalogue(monkeypatch, {})
 
     for name, upstream_schema in UPSTREAM_SCHEMAS.items():
-        assert tools[name].args_schema.model_json_schema() == upstream_schema, name
+        emitted = tools[name].args_schema.model_json_schema()
+        assert _without_descriptions(emitted) == _without_descriptions(upstream_schema), name
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
@@ -524,7 +535,8 @@ def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
     assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for name, upstream_schema in UPSTREAM_SCHEMAS.items():
-        assert tools[name].args_schema.model_json_schema() == upstream_schema, name
+        emitted = tools[name].args_schema.model_json_schema()
+        assert _without_descriptions(emitted) == _without_descriptions(upstream_schema), name
 
 
 def test_timeout_error_text_for_each_tool_kind():

@@ -6,6 +6,7 @@
       "args_schema": {
         "properties": {
           "sql": {
+            "description": "DuckDB SELECT query over the warehouse tables.",
             "title": "Sql",
             "type": "string"
           }
@@ -36,6 +37,7 @@
               }
             ],
             "default": null,
+            "description": "Comma-separated table names to describe; omit for all. Default: None.",
             "title": "Tables"
           }
         },
@@ -51,11 +53,13 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "top": {
             "default": 10,
+            "description": "Rows returned when no specific entity is requested. Default: 10.",
             "title": "Top",
             "type": "integer"
           },
@@ -69,6 +73,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -83,6 +88,7 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
@@ -96,6 +102,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -111,16 +118,19 @@
         "properties": {
           "a": {
             "default": "",
+            "description": "Home team 3-letter abbreviation, e.g. 'BOS'. Default: ''.",
             "title": "A",
             "type": "string"
           },
           "b": {
             "default": "",
+            "description": "Away team 3-letter abbreviation, e.g. 'LAL'. Default: ''.",
             "title": "B",
             "type": "string"
           },
           "game_date": {
             "default": "",
+            "description": "Date as MM/DD/YYYY; blank = latest available. Default: ''.",
             "title": "Game Date",
             "type": "string"
           },
@@ -134,15 +144,18 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "n_sims": {
             "default": 10000,
+            "description": "Monte Carlo simulations run. Default: 10000.",
             "title": "N Sims",
             "type": "integer"
           },
           "seed": {
             "default": 7,
+            "description": "RNG seed for reproducible simulation. Default: 7.",
             "title": "Seed",
             "type": "integer"
           }
@@ -170,6 +183,7 @@
               }
             ],
             "default": 2025,
+            "description": "Season year number (e.g. 2025 means the 2025-26 season). Default: 2025.",
             "title": "Season"
           },
           "limit": {
@@ -185,6 +199,7 @@
               }
             ],
             "default": 10,
+            "description": "Maximum rows returned. Default: 10.",
             "title": "Limit"
           },
           "min_events": {
@@ -200,6 +215,7 @@
               }
             ],
             "default": 100,
+            "description": "Minimum event-count floor. Default: 100.",
             "title": "Min Events"
           }
         },
@@ -222,6 +238,7 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric player id, e.g. 203081 (not the name).",
             "title": "Player Id"
           },
           "season": {
@@ -234,10 +251,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "k": {
             "default": 5,
+            "description": "Number of neighbors returned. Default: 5.",
             "title": "K",
             "type": "integer"
           }
@@ -264,6 +283,7 @@
                 "type": "integer"
               }
             ],
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
             "title": "Team"
           },
           "season": {
@@ -276,20 +296,24 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "min_possessions": {
             "default": 100,
+            "description": "Minimum possessions floor. Default: 100.",
             "title": "Min Possessions",
             "type": "integer"
           },
           "include_small": {
             "default": false,
+            "description": "true includes lineups below the sample floor. Default: False.",
             "title": "Include Small",
             "type": "boolean"
           },
           "limit": {
             "default": 10,
+            "description": "Maximum rows returned. Default: 10.",
             "title": "Limit",
             "type": "integer"
           }
@@ -308,10 +332,12 @@
         "description": "Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side.",
         "properties": {
           "team_a": {
+            "description": "First team's 3-letter abbreviation, e.g. 'BOS'.",
             "title": "Team A",
             "type": "string"
           },
           "team_b": {
+            "description": "Second team's 3-letter abbreviation.",
             "title": "Team B",
             "type": "string"
           },
@@ -325,10 +351,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "home_abbrev": {
             "default": "",
+            "description": "3-letter abbreviation of the home team; blank = neutral site. Default: ''.",
             "title": "Home Abbrev",
             "type": "string"
           }
@@ -356,6 +384,7 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric player id, e.g. 203081 (not the name).",
             "title": "Player Id"
           },
           "team_id": {
@@ -367,6 +396,7 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric team id (not the abbreviation).",
             "title": "Team Id"
           },
           "season": {
@@ -379,6 +409,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -405,6 +436,7 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric player id, e.g. 203081 (not the name).",
             "title": "Player Id"
           },
           "season": {
@@ -417,10 +449,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "min_attempts": {
             "default": 50,
+            "description": "Minimum volume floor on the ranked stat. Default: 50.",
             "title": "Min Attempts",
             "type": "integer"
           }
@@ -440,6 +474,7 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -453,6 +488,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -468,11 +504,13 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -486,10 +524,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "min_games": {
             "default": 5,
+            "description": "Minimum games-played floor. Default: 5.",
             "title": "Min Games",
             "type": "integer"
           }
@@ -506,6 +546,7 @@
         "properties": {
           "team": {
             "default": "league",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: 'league'.",
             "title": "Team",
             "type": "string"
           },
@@ -519,15 +560,18 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "blowout_margin": {
             "default": 20,
+            "description": "Point margin treated as a blowout and excluded. Default: 20.",
             "title": "Blowout Margin",
             "type": "number"
           },
           "min_games": {
             "default": 10,
+            "description": "Minimum games-played floor. Default: 10.",
             "title": "Min Games",
             "type": "integer"
           }
@@ -544,6 +588,7 @@
         "properties": {
           "scope": {
             "default": "player",
+            "description": "'player' or 'team'. Default: player.",
             "title": "Scope",
             "type": "string"
           },
@@ -557,6 +602,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -572,11 +618,13 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
@@ -590,6 +638,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -604,21 +653,46 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "limit": {
             "default": 15,
+            "description": "Maximum rows returned. Default: 15.",
             "title": "Limit",
             "type": "integer"
           }
         },
         "title": "get_news_feed",
+        "type": "object"
+      }
+    },
+    "get_team_daily_brief": {
+      "name": "get_team_daily_brief",
+      "description": "GM morning brief for one team: injuries, news, transactions, last result, standing, and upcoming schedule since a date. Each item is dated and cited to its warehouse table. Reads the warehouse only; never calls live endpoints.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "since": {
+            "default": "",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "get_team_daily_brief",
         "type": "object"
       }
     },
@@ -630,11 +704,13 @@
         "properties": {
           "view": {
             "default": "winner",
+            "description": "'winner' (winners only) or 'voting' (full ballot). Default: winner.",
             "title": "View",
             "type": "string"
           },
           "award": {
             "default": "mvp",
+            "description": "Award key, e.g. 'mvp', 'dpoy', 'roy'. Default: mvp.",
             "title": "Award",
             "type": "string"
           },
@@ -648,10 +724,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           }
@@ -668,6 +746,7 @@
         "properties": {
           "game_date": {
             "default": "",
+            "description": "Date as MM/DD/YYYY; blank = latest available. Default: ''.",
             "title": "Game Date",
             "type": "string"
           },
@@ -681,6 +760,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -704,6 +784,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -719,6 +800,7 @@
         "properties": {
           "team_abbrev": {
             "default": "",
+            "description": "3-letter team abbreviation, e.g. 'BOS'. Default: ''.",
             "title": "Team Abbrev",
             "type": "string"
           },
@@ -732,6 +814,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -747,6 +830,7 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -760,10 +844,12 @@
               }
             ],
             "default": null,
+            "description": "Last season to include as 'YYYY-YY'; omit for latest. Default: None.",
             "title": "Through Season"
           },
           "seasons_back": {
             "default": 5,
+            "description": "Seasons back from the latest to include. Default: 5.",
             "title": "Seasons Back",
             "type": "integer"
           }
@@ -788,20 +874,24 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
           "requested_metric": {
             "default": "",
+            "description": "Metric to rank by, e.g. 'net'; blank = all metrics. Default: ''.",
             "title": "Requested Metric",
             "type": "string"
           },
           "ranking_direction": {
             "default": "",
+            "description": "'desc' highest-first or 'asc' lowest-first. Default: .",
             "title": "Ranking Direction",
             "type": "string"
           }
@@ -818,21 +908,25 @@
         "properties": {
           "stat": {
             "default": "ppg",
+            "description": "Stat category, e.g. 'PTS' (categories are listed in the tool description). Default: 'ppg'.",
             "title": "Stat",
             "type": "string"
           },
           "min_value": {
             "default": 0,
+            "description": "Minimum stat-value floor. Default: 0.",
             "title": "Min Value",
             "type": "number"
           },
           "min_gp": {
             "default": 10,
+            "description": "Minimum games-played floor. Default: 10.",
             "title": "Min Gp",
             "type": "integer"
           },
           "limit": {
             "default": 15,
+            "description": "Maximum rows returned. Default: 15.",
             "title": "Limit",
             "type": "integer"
           },
@@ -846,6 +940,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -861,6 +956,7 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -874,6 +970,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -889,16 +986,19 @@
         "properties": {
           "stat_category": {
             "default": "PTS",
+            "description": "Stat category, e.g. 'PTS', 'REB', 'AST', 'STL', 'BLK'. Default: 'PTS'.",
             "title": "Stat Category",
             "type": "string"
           },
           "ranking_direction": {
             "default": "desc",
+            "description": "'desc' highest-first or 'asc' lowest-first. Default: desc.",
             "title": "Ranking Direction",
             "type": "string"
           },
           "min_attempts": {
             "default": 0,
+            "description": "Minimum volume floor on the ranked stat. Default: 0.",
             "title": "Min Attempts",
             "type": "integer"
           },
@@ -912,6 +1012,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -927,11 +1028,13 @@
         "properties": {
           "min_minutes": {
             "default": 100,
+            "description": "Minimum minutes floor. Default: 100.",
             "title": "Min Minutes",
             "type": "integer"
           },
           "limit": {
             "default": 10,
+            "description": "Maximum rows returned. Default: 10.",
             "title": "Limit",
             "type": "integer"
           },
@@ -945,10 +1048,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "playoffs": {
             "default": false,
+            "description": "true for playoff games only. Default: False.",
             "title": "Playoffs",
             "type": "boolean"
           }
@@ -973,6 +1078,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -988,6 +1094,7 @@
         "properties": {
           "stat_category": {
             "default": "AST",
+            "description": "Stat category, e.g. 'PTS', 'REB', 'AST', 'STL', 'BLK'. Default: 'AST'.",
             "title": "Stat Category",
             "type": "string"
           },
@@ -1001,6 +1108,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1016,11 +1124,13 @@
         "properties": {
           "stat_category": {
             "default": "PTS",
+            "description": "Stat category, e.g. 'PTS', 'REB', 'AST', 'STL', 'BLK'. Default: 'PTS'.",
             "title": "Stat Category",
             "type": "string"
           },
           "top": {
             "default": 3,
+            "description": "Rows returned when no specific entity is requested. Default: 3.",
             "title": "Top",
             "type": "integer"
           },
@@ -1034,6 +1144,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1057,6 +1168,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "opponent": {
@@ -1069,10 +1181,12 @@
               }
             ],
             "default": null,
+            "description": "Opposing team's 3-letter abbreviation, e.g. 'NYK'. Default: None.",
             "title": "Opponent"
           },
           "limit": {
             "default": 30,
+            "description": "Maximum rows returned. Default: 30.",
             "title": "Limit",
             "type": "integer"
           }
@@ -1089,6 +1203,7 @@
         "properties": {
           "season": {
             "default": "2025",
+            "description": "Season year number (e.g. 2025 means the 2025-26 season). Default: '2025'.",
             "title": "Season",
             "type": "string"
           }
@@ -1105,6 +1220,7 @@
         "properties": {
           "season": {
             "default": "2025",
+            "description": "Season year number (e.g. 2025 means the 2025-26 season). Default: '2025'.",
             "title": "Season",
             "type": "string"
           }
@@ -1121,11 +1237,13 @@
         "properties": {
           "max_age": {
             "default": 22,
+            "description": "Age ceiling in years. Default: 22.",
             "title": "Max Age",
             "type": "integer"
           },
           "min_minutes": {
             "default": 1000,
+            "description": "Minimum minutes floor. Default: 1000.",
             "title": "Min Minutes",
             "type": "integer"
           },
@@ -1139,6 +1257,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1162,20 +1281,24 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "min_gp": {
             "default": 20,
+            "description": "Minimum games-played floor. Default: 20.",
             "title": "Min Gp",
             "type": "integer"
           },
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           }
@@ -1192,21 +1315,25 @@
         "properties": {
           "team_a": {
             "default": "",
+            "description": "First team's 3-letter abbreviation, e.g. 'BOS'. Default: ''.",
             "title": "Team A",
             "type": "string"
           },
           "players_a": {
             "default": "",
+            "description": "Comma-separated player names outgoing on side A. Default: ''.",
             "title": "Players A",
             "type": "string"
           },
           "team_b": {
             "default": "",
+            "description": "Second team's 3-letter abbreviation. Default: ''.",
             "title": "Team B",
             "type": "string"
           },
           "players_b": {
             "default": "",
+            "description": "Comma-separated player names outgoing on side B. Default: ''.",
             "title": "Players B",
             "type": "string"
           },
@@ -1220,6 +1347,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1235,31 +1363,37 @@
         "properties": {
           "team_a": {
             "default": "",
+            "description": "First team's 3-letter abbreviation, e.g. 'BOS'. Default: ''.",
             "title": "Team A",
             "type": "string"
           },
           "players_a": {
             "default": "",
+            "description": "Comma-separated player names outgoing on side A. Default: ''.",
             "title": "Players A",
             "type": "string"
           },
           "team_b": {
             "default": "",
+            "description": "Second team's 3-letter abbreviation. Default: ''.",
             "title": "Team B",
             "type": "string"
           },
           "players_b": {
             "default": "",
+            "description": "Comma-separated player names outgoing on side B. Default: ''.",
             "title": "Players B",
             "type": "string"
           },
           "picks_a": {
             "default": "",
+            "description": "Comma-separated draft picks on side A, e.g. '2027 1st, 2029 2nd'. Default: ''.",
             "title": "Picks A",
             "type": "string"
           },
           "picks_b": {
             "default": "",
+            "description": "Comma-separated draft picks on side B. Default: ''.",
             "title": "Picks B",
             "type": "string"
           }
@@ -1275,6 +1409,7 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
@@ -1288,15 +1423,18 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "teams": {
             "default": "",
+            "description": "Comma-separated 3-letter team abbreviations; blank = all teams. Default: ''.",
             "title": "Teams",
             "type": "string"
           },
           "max_packages": {
             "default": 3,
+            "description": "Maximum trade packages returned. Default: 3.",
             "title": "Max Packages",
             "type": "integer"
           }
@@ -1313,11 +1451,13 @@
         "properties": {
           "scope": {
             "default": "player",
+            "description": "'player' or 'team'. Default: player.",
             "title": "Scope",
             "type": "string"
           },
           "entity": {
             "default": "",
+            "description": "Player full name or 3-letter team abbreviation. Default: ''.",
             "title": "Entity",
             "type": "string"
           },
@@ -1331,20 +1471,24 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "clutch_seconds": {
             "default": 300,
+            "description": "Seconds remaining defining clutch situations. Default: 300.",
             "title": "Clutch Seconds",
             "type": "integer"
           },
           "clutch_margin": {
             "default": 5,
+            "description": "Score margin in points defining clutch situations. Default: 5.",
             "title": "Clutch Margin",
             "type": "integer"
           },
           "season_type": {
             "default": "regular",
+            "description": "'regular' or 'playoffs'. Default: regular.",
             "title": "Season Type",
             "type": "string"
           }
@@ -1369,10 +1513,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "sims": {
             "default": 2000,
+            "description": "Monte Carlo simulations run. Default: 2000.",
             "title": "Sims",
             "type": "integer"
           }
@@ -1397,10 +1543,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "limit": {
             "default": 30,
+            "description": "Maximum rows returned. Default: 30.",
             "title": "Limit",
             "type": "integer"
           }
@@ -1425,10 +1573,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "n": {
             "default": 10,
+            "description": "Last-N games window for the riser check. Default: 10.",
             "title": "N",
             "type": "integer"
           }
@@ -1453,10 +1603,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "top": {
             "default": 5,
+            "description": "Rows returned when no specific entity is requested. Default: 5.",
             "title": "Top",
             "type": "integer"
           }
@@ -1483,16 +1635,19 @@
         "properties": {
           "mode": {
             "default": "streak",
+            "description": "'streak', 'versus', 'span', 'player_streak', or 'head2head'. Default: streak.",
             "title": "Mode",
             "type": "string"
           },
           "team_abbrev": {
             "default": "",
+            "description": "3-letter team abbreviation, e.g. 'BOS'. Default: ''.",
             "title": "Team Abbrev",
             "type": "string"
           },
           "opponent": {
             "default": "",
+            "description": "Opposing team's 3-letter abbreviation, e.g. 'NYK'. Default: ''.",
             "title": "Opponent",
             "type": "string"
           },
@@ -1506,10 +1661,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "window": {
             "default": 5,
+            "description": "Window length for the search mode. Default: 5.",
             "title": "Window",
             "type": "integer"
           }
@@ -1526,6 +1683,7 @@
         "properties": {
           "season": {
             "default": "2025",
+            "description": "Season year number (e.g. 2025 means the 2025-26 season). Default: '2025'.",
             "title": "Season",
             "type": "string"
           }
@@ -1550,10 +1708,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "days": {
             "default": 7,
+            "description": "Days back for the comparison snapshot. Default: 7.",
             "title": "Days",
             "type": "integer"
           }
@@ -1578,20 +1738,24 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "metric": {
             "default": "offense",
+            "description": "'offense' or 'defense'. Default: offense.",
             "title": "Metric",
             "type": "string"
           },
           "limit": {
             "default": 10,
+            "description": "Maximum rows returned. Default: 10.",
             "title": "Limit",
             "type": "integer"
           },
           "min_minutes": {
             "default": 1000,
+            "description": "Minimum minutes floor. Default: 1000.",
             "title": "Min Minutes",
             "type": "integer"
           }
@@ -1616,10 +1780,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "weeks": {
             "default": 4,
+            "description": "Weeks back for the comparison window. Default: 4.",
             "title": "Weeks",
             "type": "integer"
           }
@@ -1636,6 +1802,7 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -1649,6 +1816,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1664,6 +1832,7 @@
         "properties": {
           "stat": {
             "default": "points",
+            "description": "Stat category, e.g. 'PTS' (categories are listed in the tool description). Default: 'points'.",
             "title": "Stat",
             "type": "string"
           },
@@ -1677,10 +1846,12 @@
               }
             ],
             "default": null,
+            "description": "Minimum streak length to report; omit for no floor. Default: None.",
             "title": "Threshold"
           },
           "scope": {
             "default": "player",
+            "description": "'player' or 'team'. Default: player.",
             "title": "Scope",
             "type": "string"
           },
@@ -1694,15 +1865,18 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "mode": {
             "default": "longest",
+            "description": "'longest' all-time or 'active' currently running. Default: longest.",
             "title": "Mode",
             "type": "string"
           },
           "top": {
             "default": 10,
+            "description": "Rows returned when no specific entity is requested. Default: 10.",
             "title": "Top",
             "type": "integer"
           }
@@ -1713,21 +1887,24 @@
     },
     "get_playtype_profile": {
       "name": "get_playtype_profile",
-      "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile per play type on offense or defense. Warehouse-backed with live fallback.",
+      "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile per play type on offense or defense. If Synergy playtypes are absent, team offense returns warehouse possession start-type PPP proxies without live endpoints. Warehouse-backed with live fallback.",
       "args_schema": {
-        "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile.",
+        "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile; team offense falls back to warehouse possession start-type PPP proxies when Synergy is absent.",
         "properties": {
           "subject": {
+            "description": "Player full name or 3-letter team abbreviation.",
             "title": "Subject",
             "type": "string"
           },
           "kind": {
             "default": "player",
+            "description": "'player' or 'team'. Default: player.",
             "title": "Kind",
             "type": "string"
           },
           "side": {
             "default": "offense",
+            "description": "'offense' or 'defense'. Default: offense.",
             "title": "Side",
             "type": "string"
           },
@@ -1741,6 +1918,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1759,11 +1937,13 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           }
@@ -1779,10 +1959,12 @@
         "description": "Player matchup history vs one opponent team or opposing player's team.",
         "properties": {
           "player": {
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
             "title": "Player",
             "type": "string"
           },
           "opponent": {
+            "description": "Opposing team's 3-letter abbreviation, e.g. 'NYK'.",
             "title": "Opponent",
             "type": "string"
           },
@@ -1796,6 +1978,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1814,15 +1997,18 @@
         "description": "Lineup-vs-lineup matrix for a team matchup crossing qualifying 5-man units.",
         "properties": {
           "team_a": {
+            "description": "First team's 3-letter abbreviation, e.g. 'BOS'.",
             "title": "Team A",
             "type": "string"
           },
           "team_b": {
+            "description": "Second team's 3-letter abbreviation.",
             "title": "Team B",
             "type": "string"
           },
           "min_minutes": {
             "default": 10,
+            "description": "Minimum minutes floor. Default: 10.",
             "title": "Min Minutes",
             "type": "number"
           },
@@ -1836,6 +2022,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1855,21 +2042,25 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
           "start": {
             "default": "",
+            "description": "Start date filter YYYY-MM-DD; blank = unbounded. Default: ''.",
             "title": "Start",
             "type": "string"
           },
           "end": {
             "default": "",
+            "description": "End date filter YYYY-MM-DD; blank = unbounded. Default: ''.",
             "title": "End",
             "type": "string"
           },
           "txn_type": {
             "default": "",
+            "description": "Transaction type filter, e.g. 'trade', 'signing', 'waiver'. Default: ''.",
             "title": "Txn Type",
             "type": "string"
           }
@@ -1886,16 +2077,19 @@
         "properties": {
           "player_a": {
             "default": "",
+            "description": "First player's full name, e.g. 'Jayson Tatum'. Default: ''.",
             "title": "Player A",
             "type": "string"
           },
           "player_b": {
             "default": "",
+            "description": "Second player's full name. Default: ''.",
             "title": "Player B",
             "type": "string"
           },
           "player_ids": {
             "default": "",
+            "description": "Comma-separated nba_api player ids. Default: ''.",
             "title": "Player Ids",
             "type": "string"
           },
@@ -1909,6 +2103,7 @@
               }
             ],
             "default": 0,
+            "description": "nba_api numeric team id (not the abbreviation). Default: 0.",
             "title": "Team Id"
           },
           "season": {
@@ -1921,10 +2116,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "season_type": {
             "default": "regular-season",
+            "description": "'regular-season' or 'playoffs'. Default: regular-season.",
             "enum": [
               "regular-season",
               "playoffs"
@@ -1945,11 +2142,13 @@
         "properties": {
           "a": {
             "default": "",
+            "description": "First side of the comparison; see tool description. Default: ''.",
             "title": "A",
             "type": "string"
           },
           "b": {
             "default": "",
+            "description": "Second side of the comparison; see tool description. Default: ''.",
             "title": "B",
             "type": "string"
           },
@@ -1963,6 +2162,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -1978,11 +2178,13 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "season": {
             "default": "",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season",
             "type": "string"
           }
@@ -1998,10 +2200,12 @@
         "description": "Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup.",
         "properties": {
           "team_a": {
+            "description": "First team's 3-letter abbreviation, e.g. 'BOS'.",
             "title": "Team A",
             "type": "string"
           },
           "team_b": {
+            "description": "Second team's 3-letter abbreviation.",
             "title": "Team B",
             "type": "string"
           },
@@ -2015,6 +2219,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2033,16 +2238,19 @@
         "description": "A team's recent games (regular season or playoffs): date, matchup, W/L, team PTS, opp PTS, REB, AST, STL, BLK, TOV.",
         "properties": {
           "team": {
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
             "title": "Team",
             "type": "string"
           },
           "limit": {
             "default": 10,
+            "description": "Maximum rows returned. Default: 10.",
             "title": "Limit",
             "type": "integer"
           },
           "playoffs": {
             "default": false,
+            "description": "true for playoff games only. Default: False.",
             "title": "Playoffs",
             "type": "boolean"
           },
@@ -2056,6 +2264,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2073,6 +2282,7 @@
         "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs pooled league-average FG% with percentage-point deltas across court zones.",
         "properties": {
           "player": {
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
             "title": "Player",
             "type": "string"
           },
@@ -2086,10 +2296,12 @@
               }
             ],
             "default": 2025,
+            "description": "Season year number (e.g. 2025 means the 2025-26 season). Default: 2025.",
             "title": "Season"
           },
           "min_attempts": {
             "default": 50,
+            "description": "Minimum volume floor on the ranked stat. Default: 50.",
             "title": "Min Attempts",
             "type": "integer"
           }
@@ -2109,46 +2321,55 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
           "zones": {
             "default": "",
+            "description": "Comma-separated zones: rim, short_mid, long_mid, corner_3, atb_3; blank = all. Default: ''.",
             "title": "Zones",
             "type": "string"
           },
           "periods": {
             "default": "",
+            "description": "Comma-separated periods: 1-4, ot, 1h, 2h, 4th; blank = all. Default: ''.",
             "title": "Periods",
             "type": "string"
           },
           "three_only": {
             "default": false,
+            "description": "true to restrict to three-point attempts. Default: False.",
             "title": "Three Only",
             "type": "boolean"
           },
           "made": {
             "default": "any",
+            "description": "'any', 'made', or 'miss'. Default: any.",
             "title": "Made",
             "type": "string"
           },
           "late_clock": {
             "default": "",
+            "description": "Integer seconds-remaining filter, periods 4+ only. Default: ''.",
             "title": "Late Clock",
             "type": "string"
           },
           "exclude_heaves": {
             "default": true,
+            "description": "true excludes beyond-halfcourt heaves. Default: True.",
             "title": "Exclude Heaves",
             "type": "boolean"
           },
           "limit": {
             "default": 25,
+            "description": "Maximum rows returned. Default: 25.",
             "title": "Limit",
             "type": "integer"
           },
@@ -2162,15 +2383,18 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "group_by": {
             "default": "",
+            "description": "'' (no grouping), 'player', or 'team' leaderboard. Default: ''.",
             "title": "Group By",
             "type": "string"
           },
           "include_ot": {
             "default": "auto",
+            "description": "'auto' (default), 'yes', or 'no' for overtime inclusion. Default: 'auto'.",
             "title": "Include Ot",
             "type": "string"
           }
@@ -2187,6 +2411,7 @@
         "properties": {
           "game_id": {
             "default": "",
+            "description": "nba_api game id, e.g. '0042500401'. Default: ''.",
             "title": "Game Id",
             "type": "string"
           }
@@ -2203,6 +2428,7 @@
         "properties": {
           "game_id": {
             "default": "",
+            "description": "nba_api game id, e.g. '0042500401'. Default: ''.",
             "title": "Game Id",
             "type": "string"
           },
@@ -2216,6 +2442,7 @@
               }
             ],
             "default": null,
+            "description": "Period number (1-4, 5+ for overtime). Default: None.",
             "title": "Period"
           },
           "clock_range": {
@@ -2228,6 +2455,7 @@
               }
             ],
             "default": null,
+            "description": "Clock range within the period as 'MM:SS-MM:SS'. Default: None.",
             "title": "Clock Range"
           }
         },
@@ -2251,6 +2479,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2266,6 +2495,7 @@
         "properties": {
           "teams": {
             "default": "league",
+            "description": "Comma-separated 3-letter team abbreviations; blank = all teams. Default: 'league'.",
             "title": "Teams",
             "type": "string"
           },
@@ -2279,6 +2509,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2294,6 +2525,7 @@
         "properties": {
           "category": {
             "default": "pts",
+            "description": "Leaderboard category, e.g. 'pts', 'ast', 'reb'. Default: 'pts'.",
             "title": "Category",
             "type": "string"
           },
@@ -2310,6 +2542,7 @@
               }
             ],
             "default": 2015,
+            "description": "First season year, e.g. 2015. Default: 2015.",
             "title": "Start Season"
           },
           "end_season": {
@@ -2325,6 +2558,7 @@
               }
             ],
             "default": 2026,
+            "description": "Last season year, e.g. 2026. Default: 2026.",
             "title": "End Season"
           },
           "limit": {
@@ -2340,10 +2574,12 @@
               }
             ],
             "default": 10,
+            "description": "Maximum rows returned. Default: 10.",
             "title": "Limit"
           },
           "mode": {
             "default": "leaders",
+            "description": "'leaders' per-season boards or 'best' single-season records. Default: leaders.",
             "title": "Mode",
             "type": "string"
           }
@@ -2368,6 +2604,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2391,6 +2628,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2406,21 +2644,25 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           },
           "measure_type": {
             "default": "Drives",
+            "description": "Measure bundle; valid values are in the schema enum. Default: Drives.",
             "title": "Measure Type",
             "type": "string"
           }
@@ -2437,26 +2679,31 @@
         "properties": {
           "team": {
             "default": "league",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: 'league'.",
             "title": "Team",
             "type": "string"
           },
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           },
           "season_type": {
             "default": "all",
+            "description": "Game scope filter. Default: all.",
             "title": "Season Type",
             "type": "string"
           },
           "date": {
             "default": "",
+            "description": "Date as MM/DD/YYYY; blank = latest available. Default: ''.",
             "title": "Date",
             "type": "string"
           },
           "opponent": {
             "default": "",
+            "description": "Opposing team's 3-letter abbreviation, e.g. 'NYK'. Default: ''.",
             "title": "Opponent",
             "type": "string"
           }
@@ -2473,11 +2720,13 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "seasons": {
             "default": null,
+            "description": "Comma-separated season ids 'YYYY-YY'; omit for all available. Default: None.",
             "title": "Seasons"
           }
         },
@@ -2501,15 +2750,18 @@
               }
             ],
             "default": null,
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: None.",
             "title": "Player"
           },
           "league_wide": {
             "default": false,
+            "description": "true searches all teams, not one. Default: False.",
             "title": "League Wide",
             "type": "boolean"
           },
           "team_wide": {
             "default": false,
+            "description": "true returns team rows instead of player rows. Default: False.",
             "title": "Team Wide",
             "type": "boolean"
           },
@@ -2523,6 +2775,7 @@
               }
             ],
             "default": null,
+            "description": "Minimum points filter. Default: None.",
             "title": "Min Points"
           },
           "min_rebounds": {
@@ -2535,6 +2788,7 @@
               }
             ],
             "default": null,
+            "description": "Minimum rebounds filter. Default: None.",
             "title": "Min Rebounds"
           },
           "min_assists": {
@@ -2547,6 +2801,7 @@
               }
             ],
             "default": null,
+            "description": "Minimum assists filter. Default: None.",
             "title": "Min Assists"
           },
           "min_pra": {
@@ -2559,6 +2814,7 @@
               }
             ],
             "default": null,
+            "description": "Minimum points+rebounds+assists combined filter. Default: None.",
             "title": "Min Pra"
           },
           "max_points": {
@@ -2571,6 +2827,7 @@
               }
             ],
             "default": null,
+            "description": "Maximum points filter. Default: None.",
             "title": "Max Points"
           },
           "max_rebounds": {
@@ -2583,6 +2840,7 @@
               }
             ],
             "default": null,
+            "description": "Maximum rebounds filter. Default: None.",
             "title": "Max Rebounds"
           },
           "max_assists": {
@@ -2595,20 +2853,24 @@
               }
             ],
             "default": null,
+            "description": "Maximum assists filter. Default: None.",
             "title": "Max Assists"
           },
           "triple_double": {
             "default": false,
+            "description": "true requires a triple-double. Default: False.",
             "title": "Triple Double",
             "type": "boolean"
           },
           "double_double": {
             "default": false,
+            "description": "true requires a double-double. Default: False.",
             "title": "Double Double",
             "type": "boolean"
           },
           "best_game": {
             "default": false,
+            "description": "true returns each player's best game only. Default: False.",
             "title": "Best Game",
             "type": "boolean"
           },
@@ -2622,6 +2884,7 @@
               }
             ],
             "default": null,
+            "description": "Opposing team's 3-letter abbreviation, e.g. 'NYK'. Default: None.",
             "title": "Opponent"
           },
           "month": {
@@ -2637,6 +2900,7 @@
               }
             ],
             "default": null,
+            "description": "Month name (e.g. 'march') or number (1-12). Default: None.",
             "title": "Month"
           },
           "start_date": {
@@ -2649,6 +2913,7 @@
               }
             ],
             "default": null,
+            "description": "Start date filter ISO YYYY-MM-DD; omit for unbounded. Default: None.",
             "title": "Start Date"
           },
           "end_date": {
@@ -2661,6 +2926,7 @@
               }
             ],
             "default": null,
+            "description": "End date filter ISO YYYY-MM-DD; omit for unbounded. Default: None.",
             "title": "End Date"
           },
           "home_away": {
@@ -2673,10 +2939,12 @@
               }
             ],
             "default": null,
+            "description": "'home' or 'away' venue filter. Default: None.",
             "title": "Home Away"
           },
           "playoffs": {
             "default": false,
+            "description": "true for playoff games only. Default: False.",
             "title": "Playoffs",
             "type": "boolean"
           },
@@ -2690,10 +2958,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "limit": {
             "default": 50,
+            "description": "Maximum rows returned. Default: 50.",
             "title": "Limit",
             "type": "integer"
           }
@@ -2709,56 +2979,67 @@
         "description": "Query standard silver dataset tables or live upstream extracts.",
         "properties": {
           "name": {
+            "description": "Dataset or table name; warehouse_schema lists the catalog.",
             "title": "Name",
             "type": "string"
           },
           "season": {
             "default": "2026-27",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2026-27'.",
             "title": "Season",
             "type": "string"
           },
           "player_id": {
             "default": 0,
+            "description": "nba_api numeric player id, e.g. 203081 (not the name). Default: 0.",
             "title": "Player Id",
             "type": "integer"
           },
           "team_id": {
             "default": 0,
+            "description": "nba_api numeric team id (not the abbreviation). Default: 0.",
             "title": "Team Id",
             "type": "integer"
           },
           "game_id": {
             "default": "",
+            "description": "nba_api game id, e.g. '0042500401'. Default: ''.",
             "title": "Game Id",
             "type": "string"
           },
           "game_date": {
             "default": "",
+            "description": "Date as MM/DD/YYYY; blank = latest available. Default: ''.",
             "title": "Game Date",
             "type": "string"
           },
           "stat": {
             "default": "PTS",
+            "description": "Stat column to aggregate, e.g. 'PTS', 'AST'. Default: PTS.",
             "title": "Stat",
             "type": "string"
           },
           "ids": {
             "default": "",
+            "description": "Comma-separated nba_api player/team ids as integers. Default: ''.",
             "title": "Ids",
             "type": "string"
           },
           "player_a": {
             "default": "",
+            "description": "First player's full name, e.g. 'Jayson Tatum'. Default: ''.",
             "title": "Player A",
             "type": "string"
           },
           "player_b": {
             "default": "",
+            "description": "Second player's full name. Default: ''.",
             "title": "Player B",
             "type": "string"
           },
           "fmt": {
             "default": "json",
+            "description": "Result format, e.g. 'json'. Default: json.",
             "title": "Fmt",
             "type": "string"
           }
@@ -2787,11 +3068,13 @@
         "properties": {
           "player": {
             "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
             "title": "Player",
             "type": "string"
           },
           "player_id": {
             "default": 0,
+            "description": "nba_api numeric player id, e.g. 203081 (not the name). Default: 0.",
             "title": "Player Id",
             "type": "integer"
           }
@@ -2806,6 +3089,7 @@
       "args_schema": {
         "properties": {
           "code": {
+            "description": "Python source to execute with the warehouse bound.",
             "title": "Code",
             "type": "string"
           }
@@ -2824,16 +3108,19 @@
         "properties": {
           "a": {
             "default": "",
+            "description": "First side of the comparison; see tool description. Default: ''.",
             "title": "A",
             "type": "string"
           },
           "b": {
             "default": "",
+            "description": "Second side of the comparison; see tool description. Default: ''.",
             "title": "B",
             "type": "string"
           },
           "game_date": {
             "default": "",
+            "description": "Date as MM/DD/YYYY; blank = latest available. Default: ''.",
             "title": "Game Date",
             "type": "string"
           },
@@ -2847,6 +3134,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2860,11 +3148,13 @@
       "args_schema": {
         "properties": {
           "player": {
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
             "title": "Player",
             "type": "string"
           },
           "n": {
             "default": 15,
+            "description": "Last-N games window for the splits. Default: 15.",
             "title": "N",
             "type": "integer"
           },
@@ -2878,6 +3168,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2894,16 +3185,19 @@
       "args_schema": {
         "properties": {
           "player": {
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
             "title": "Player",
             "type": "string"
           },
           "stat": {
             "default": "PTS",
+            "description": "Stat category, e.g. 'PTS' (categories are listed in the tool description). Default: 'PTS'.",
             "title": "Stat",
             "type": "string"
           },
           "n": {
             "default": 10,
+            "description": "Window length in games. Default: 10.",
             "title": "N",
             "type": "integer"
           },
@@ -2917,6 +3211,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -2930,6 +3225,41 @@
     "get_scout_pack": {
       "name": "get_scout_pack",
       "description": "One-call next-opponent brief: record, net rating, top lineups, injuries. Warehouse-backed with live fallback.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
+            "title": "Team",
+            "type": "string"
+          },
+          "opponent": {
+            "default": "",
+            "description": "Opposing team's 3-letter abbreviation, e.g. 'NYK'. Default: ''.",
+            "title": "Opponent",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          }
+        },
+        "title": "get_scout_pack",
+        "type": "object"
+      }
+    },
+    "get_opponent_scout": {
+      "name": "get_opponent_scout",
+      "description": "Opponent scouting dossier for game prep. Returns the opponent's recent form (last 10), four factors on offense and defense, shot-zone profile, top 5-man lineups, current injuries, and this season's head-to-head vs team. Each section carries its season and warehouse source. Warehouse only; sections degrade with a note when a table is not seeded for the season.",
       "args_schema": {
         "properties": {
           "team": {
@@ -2955,7 +3285,7 @@
             "title": "Season"
           }
         },
-        "title": "get_scout_pack",
+        "title": "get_opponent_scout",
         "type": "object"
       }
     },
@@ -2974,6 +3304,7 @@
               }
             ],
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team"
           },
           "season": {
@@ -2986,15 +3317,18 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "min_possessions": {
             "default": 100,
+            "description": "Minimum possessions floor. Default: 100.",
             "title": "Min Possessions",
             "type": "integer"
           },
           "top_units": {
             "default": 5,
+            "description": "Maximum lineup units returned. Default: 5.",
             "title": "Top Units",
             "type": "integer"
           }
@@ -3010,6 +3344,7 @@
         "properties": {
           "team": {
             "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
             "title": "Team",
             "type": "string"
           },
@@ -3023,6 +3358,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3037,11 +3373,13 @@
         "properties": {
           "a": {
             "default": "",
+            "description": "First side of the comparison; see tool description. Default: ''.",
             "title": "A",
             "type": "string"
           },
           "b": {
             "default": "",
+            "description": "Second side of the comparison; see tool description. Default: ''.",
             "title": "B",
             "type": "string"
           },
@@ -3055,6 +3393,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3077,6 +3416,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3090,6 +3430,7 @@
       "args_schema": {
         "properties": {
           "game_date": {
+            "description": "Date as MM/DD/YYYY; blank = latest available.",
             "title": "Game Date",
             "type": "string"
           },
@@ -3103,6 +3444,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3119,6 +3461,7 @@
       "args_schema": {
         "properties": {
           "game_id": {
+            "description": "nba_api game id, e.g. '0042500401'.",
             "title": "Game Id",
             "type": "string"
           },
@@ -3132,6 +3475,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3148,6 +3492,7 @@
       "args_schema": {
         "properties": {
           "award": {
+            "description": "Award key, e.g. 'mvp', 'dpoy', 'roy'. Default: PydanticUndefined.",
             "title": "Award",
             "type": "string"
           },
@@ -3161,6 +3506,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3185,10 +3531,12 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric player id, e.g. 203081 (not the name).",
             "title": "Player Id"
           },
           "n": {
             "default": 10,
+            "description": "Window length in games. Default: 10.",
             "title": "N",
             "type": "integer"
           },
@@ -3202,6 +3550,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3226,6 +3575,7 @@
                 "type": "integer"
               }
             ],
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
             "title": "Player"
           },
           "season": {
@@ -3238,6 +3588,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3262,6 +3613,7 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric team id (not the abbreviation).",
             "title": "Team Id"
           },
           "season": {
@@ -3274,6 +3626,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3298,6 +3651,7 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric team id (not the abbreviation).",
             "title": "Team Id"
           },
           "season": {
@@ -3310,10 +3664,12 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           },
           "season_type": {
             "default": "regular-season",
+            "description": "'regular-season' or 'playoffs'. Default: regular-season.",
             "enum": [
               "regular-season",
               "playoffs"
@@ -3323,6 +3679,7 @@
           },
           "measure_type": {
             "default": "base",
+            "description": "Measure bundle; valid values are in the schema enum. Default: base.",
             "enum": [
               "base",
               "advanced",
@@ -3337,6 +3694,7 @@
           },
           "per_mode": {
             "default": "totals",
+            "description": "'totals' or 'pergame'. Default: totals.",
             "enum": [
               "totals",
               "pergame"
@@ -3366,6 +3724,7 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric player id, e.g. 203081 (not the name).",
             "title": "Player Id"
           },
           "season": {
@@ -3378,6 +3737,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3394,6 +3754,7 @@
       "args_schema": {
         "properties": {
           "game_id": {
+            "description": "nba_api game id, e.g. '0042500401'.",
             "title": "Game Id",
             "type": "string"
           },
@@ -3407,6 +3768,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3431,6 +3793,7 @@
                 "type": "integer"
               }
             ],
+            "description": "nba_api numeric team id (not the abbreviation).",
             "title": "Team Id"
           },
           "season": {
@@ -3443,6 +3806,7 @@
               }
             ],
             "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
           }
         },
@@ -3477,6 +3841,34 @@
         "title": "get_prospect",
         "type": "object"
       }
+    },
+    "get_expectations": {
+      "name": "get_expectations",
+      "description": "Actual or season-to-date record and net rating versus preseason expectations (projected win total, playoff/title odds) for one team, per season. Warehouse-backed: silver_preseason_projections plus standings/ratings tables. Pass a team id, abbreviation or name; optional season like '2025-26', else the most recent seasons.",
+      "args_schema": {
+        "properties": {
+          "team_id": {
+            "default": null,
+            "title": "Team Id"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": null,
+            "title": "Season"
+          },
+          "seasons": {
+            "default": 3,
+            "title": "Seasons",
+            "type": "integer"
+          }
+        },
+        "title": "get_expectations",
+        "type": "object"
+      }
     }
   },
   "internal": {
@@ -3498,6 +3890,7 @@
         "properties": {
           "payload": {
             "additionalProperties": true,
+            "description": "JSON object carrying the artifact's section data.",
             "title": "Payload",
             "type": "object"
           }
@@ -3517,6 +3910,7 @@
         "properties": {
           "payload": {
             "additionalProperties": true,
+            "description": "JSON object carrying the artifact's section data.",
             "title": "Payload",
             "type": "object"
           }
@@ -3535,18 +3929,22 @@
         "description": "Append an existing product chat row to the state database.",
         "properties": {
           "thread": {
+            "description": "Thread identifier for the message.",
             "title": "Thread",
             "type": "string"
           },
           "role": {
+            "description": "Message role, e.g. 'user' or 'assistant'.",
             "title": "Role",
             "type": "string"
           },
           "content": {
+            "description": "Message body text.",
             "title": "Content",
             "type": "string"
           },
           "owner": {
+            "description": "Owner key for the record.",
             "title": "Owner",
             "type": "string"
           }
@@ -3568,22 +3966,27 @@
         "description": "Append an existing product run row to the state database.",
         "properties": {
           "thread": {
+            "description": "Thread identifier for the message.",
             "title": "Thread",
             "type": "string"
           },
           "question": {
+            "description": "Question the run answered.",
             "title": "Question",
             "type": "string"
           },
           "answer": {
+            "description": "Final answer text to persist.",
             "title": "Answer",
             "type": "string"
           },
           "owner": {
+            "description": "Owner key for the record.",
             "title": "Owner",
             "type": "string"
           },
           "run_id": {
+            "description": "Run identifier to persist.",
             "title": "Run Id",
             "type": "string"
           }
@@ -3606,6 +4009,7 @@
         "description": "List existing product state threads for one owner.",
         "properties": {
           "owner": {
+            "description": "Owner key for the record.",
             "title": "Owner",
             "type": "string"
           }
@@ -3624,10 +4028,12 @@
         "description": "List existing product state runs for one owner and thread.",
         "properties": {
           "thread": {
+            "description": "Thread identifier for the message.",
             "title": "Thread",
             "type": "string"
           },
           "owner": {
+            "description": "Owner key for the record.",
             "title": "Owner",
             "type": "string"
           }
@@ -3667,56 +4073,67 @@
         "description": "Read or fetch a dataset using the existing Python season and source semantics.",
         "properties": {
           "name": {
+            "description": "Dataset or table name; warehouse_schema lists the catalog.",
             "title": "Name",
             "type": "string"
           },
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           },
           "player_id": {
             "default": 0,
+            "description": "nba_api numeric player id, e.g. 203081 (not the name). Default: 0.",
             "title": "Player Id",
             "type": "integer"
           },
           "team_id": {
             "default": 0,
+            "description": "nba_api numeric team id (not the abbreviation). Default: 0.",
             "title": "Team Id",
             "type": "integer"
           },
           "game_id": {
             "default": "",
+            "description": "nba_api game id, e.g. '0042500401'. Default: ''.",
             "title": "Game Id",
             "type": "string"
           },
           "game_date": {
             "default": "",
+            "description": "Date as MM/DD/YYYY; blank = latest available. Default: ''.",
             "title": "Game Date",
             "type": "string"
           },
           "stat": {
             "default": "PTS",
+            "description": "Stat category, e.g. 'PTS' (categories are listed in the tool description). Default: 'PTS'.",
             "title": "Stat",
             "type": "string"
           },
           "ids": {
             "default": "",
+            "description": "Comma-separated nba_api player/team ids as integers. Default: ''.",
             "title": "Ids",
             "type": "string"
           },
           "player_a": {
             "default": "",
+            "description": "First player's full name, e.g. 'Jayson Tatum'. Default: ''.",
             "title": "Player A",
             "type": "string"
           },
           "player_b": {
             "default": "",
+            "description": "Second player's full name. Default: ''.",
             "title": "Player B",
             "type": "string"
           },
           "fmt": {
             "default": "json",
+            "description": "Result format, e.g. 'json'. Default: json.",
             "title": "Fmt",
             "type": "string"
           }
@@ -3745,11 +4162,13 @@
         "description": "Read a bounded public warehouse table schema and sample.",
         "properties": {
           "table": {
+            "description": "Warehouse table name to inspect.",
             "title": "Table",
             "type": "string"
           },
           "season": {
             "default": "",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season",
             "type": "string"
           }
@@ -3778,6 +4197,7 @@
         "description": "Run the existing read-only SQL rerun operation.",
         "properties": {
           "sql": {
+            "description": "DuckDB SELECT query over the warehouse tables.",
             "title": "Sql",
             "type": "string"
           }
@@ -3796,6 +4216,7 @@
         "description": "Resolve NBA entities using the existing resolver.",
         "properties": {
           "query": {
+            "description": "Free-text name or identifier to resolve.",
             "title": "Query",
             "type": "string"
           }
@@ -3814,23 +4235,28 @@
         "description": "Check a trade using the existing Python domain implementation.",
         "properties": {
           "team_a": {
+            "description": "First team's 3-letter abbreviation, e.g. 'BOS'.",
             "title": "Team A",
             "type": "string"
           },
           "players_a": {
+            "description": "Comma-separated player names outgoing on side A.",
             "title": "Players A",
             "type": "string"
           },
           "team_b": {
+            "description": "Second team's 3-letter abbreviation.",
             "title": "Team B",
             "type": "string"
           },
           "players_b": {
+            "description": "Comma-separated player names outgoing on side B.",
             "title": "Players B",
             "type": "string"
           },
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           }
@@ -3852,21 +4278,25 @@
         "description": "Find salary-matching packages for a player via the existing domain implementation.",
         "properties": {
           "player": {
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
             "title": "Player",
             "type": "string"
           },
           "season": {
             "default": "2026-27",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2026-27'.",
             "title": "Season",
             "type": "string"
           },
           "teams": {
             "default": "",
+            "description": "Comma-separated 3-letter team abbreviations; blank = all teams. Default: ''.",
             "title": "Teams",
             "type": "string"
           },
           "max_packages": {
             "default": 3,
+            "description": "Maximum trade packages returned. Default: 3.",
             "title": "Max Packages",
             "type": "integer"
           }
@@ -3885,11 +4315,13 @@
         "description": "List one team's trade assets: roster salaries and owned draft picks.",
         "properties": {
           "team": {
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
             "title": "Team",
             "type": "string"
           },
           "season": {
             "default": "2026-27",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2026-27'.",
             "title": "Season",
             "type": "string"
           }
@@ -3908,11 +4340,13 @@
         "description": "Aggregate one team's morning page: last result, next game, opponent form, injuries, news, standings vs projection and cap status.",
         "properties": {
           "team": {
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
             "title": "Team",
             "type": "string"
           },
           "season": {
             "default": "",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season",
             "type": "string"
           }
@@ -3931,15 +4365,18 @@
         "description": "Build the current debate card with the domain season clamp.",
         "properties": {
           "a": {
+            "description": "First side of the comparison; see tool description.",
             "title": "A",
             "type": "string"
           },
           "b": {
+            "description": "Second side of the comparison; see tool description.",
             "title": "B",
             "type": "string"
           },
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           }
@@ -3960,6 +4397,7 @@
         "properties": {
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           }
@@ -3976,6 +4414,7 @@
         "properties": {
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           }
@@ -3991,15 +4430,18 @@
         "description": "Apply the current direct product watchlist addition.",
         "properties": {
           "entity_type": {
+            "description": "'player' or 'team'.",
             "title": "Entity Type",
             "type": "string"
           },
           "entity_id": {
+            "description": "Entity identifier as stored in the product store.",
             "title": "Entity Id",
             "type": "string"
           },
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           }
@@ -4019,10 +4461,12 @@
         "description": "Apply the current direct product watchlist removal.",
         "properties": {
           "entity_type": {
+            "description": "'player' or 'team'.",
             "title": "Entity Type",
             "type": "string"
           },
           "entity_id": {
+            "description": "Entity identifier as stored in the product store.",
             "title": "Entity Id",
             "type": "string"
           }
@@ -4043,11 +4487,13 @@
         "properties": {
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           },
           "days": {
             "default": 7,
+            "description": "Days back for the comparison snapshot. Default: 7.",
             "title": "Days",
             "type": "integer"
           }
@@ -4064,6 +4510,7 @@
         "properties": {
           "season": {
             "default": "2025-26",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2025-26'.",
             "title": "Season",
             "type": "string"
           }

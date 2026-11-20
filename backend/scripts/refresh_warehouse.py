@@ -203,6 +203,13 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("dry-run: row-count check skipped (seeders ran dry)")
 
+    from build_data_dictionary import write_dictionary
+    dictionary_path = write_dictionary(warehouse)
+    if warehouse.parent != LOCAL_WAREHOUSE.parent and LOCAL_WAREHOUSE.parent.is_dir():
+        local_dict = LOCAL_WAREHOUSE.parent / dictionary_path.name
+        shutil.copy2(dictionary_path, local_dict)
+        print(f"dictionary also staged at {local_dict}")
+
     if args.skip_publish:
         print("skip-publish: done, warehouse staged at", warehouse)
         return 0

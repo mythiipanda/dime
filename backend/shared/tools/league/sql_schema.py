@@ -290,6 +290,7 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]
         statement = _parse_one(sql, read="duckdb")
     except _ParseError as exc:
         raise ValueError("invalid SQL syntax") from exc
+    present_by_lower = {name.lower(): name for name in present}
     used = set()
     for scope in _traverse_scope(statement):
         for source in scope.sources.values():
@@ -298,9 +299,11 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]
             if (not isinstance(source, _sql_exp.Table) or source.db
                     or source.catalog or not source.name):
                 raise ValueError("unknown or unavailable tables")
-            used.add(source.name)
+            used.add(present_by_lower.get(source.name.lower(), source.name))
     if not used or not used.issubset(present):
-        raise ValueError("unknown or unavailable tables")
+        rejected = sorted(used - present) if used else sorted(set())
+        suffix = f": {', '.join(rejected)}" if rejected else ""
+        raise ValueError(f"unknown or unavailable tables{suffix}")
     return sql, sorted(used)
 
 

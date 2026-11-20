@@ -19,7 +19,7 @@ node analyst/dist/host.js chat "question" --model "reflection:beam-1"
 
 Reflection requires explicit activation and a key. Unsupported selections fail without a provider fallback. The adapter uses known SDK token metadata and adds no request output ceiling. Nvidia's unsupported request options produce a configuration failure.
 
-`python_tools.py` serves explicit data operations. Pi receives only `sql_exec` and `warehouse_schema`; `read_source` is registered locally in Node. Internal product mutations remain outside codemode. Python retains the NBA domain implementation, warehouse semantics and existing DuckDB state-table functions. Provider credentials are excluded from the MCP environment.
+`python_tools.py` serves explicit data operations. Pi receives only `sql_exec` and `warehouse_schema`; `read_source`, `submit_answer`, `run_status` and `load_skill` are registered locally in Node. Internal product mutations remain outside codemode. Python retains the NBA domain implementation, warehouse semantics and existing DuckDB state-table functions. Provider credentials are excluded from the MCP environment.
 
 Conversations, projects and workspaces retain their SQLite tables and disk defaults. Workspace tokens retain the existing SHA-256 identity binding and exact membership rules. Source files store new records and prior refs. Raw rows, failed results, units and provenance remain intact. Prior model context contains source metadata; scripts must call `read_source` to read prior rows. The public answer stays unassessed.
 
