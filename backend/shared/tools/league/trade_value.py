@@ -1,3 +1,4 @@
+import itertools as _it
 import re as _re
 from typing import Any
 import unicodedata as _ud
@@ -49,6 +50,19 @@ _TRADE_CHECK_UNMODELED = (
 
 
 def _trade_guard_vintage_error(con, season: str) -> str | None:
+    if season and "silver_salaries" in _warehouse_tables(con):
+        columns = {r[1] for r in con.execute(
+            "PRAGMA table_info(silver_salaries)").fetchall()}
+        if "SALARY_" + season.replace("-", "_") in columns:
+            return None
+        vintages = sorted(
+            c[len("SALARY_"):].replace("_", "-") for c in columns
+            if _re.fullmatch(r"SALARY_\d{4}_\d{2}", c))
+        if vintages:
+            label = vintages[0] if len(vintages) == 1 else (
+                f"{vintages[0]}..{vintages[-1]}")
+            return (f"salary data covers {label}, not {season}; "
+                    "trade math was not calculated")
     salary_season, salary_rows, _ = _salary_vintage(con)
     if not (salary_rows and salary_season and salary_season != season):
         return None
@@ -247,6 +261,112 @@ def get_trade_check(
                      "Confirm with a cap specialist."},
             "meta": {"source": source, "rules": "v1-simplified",
                      "salary_date": salary_date}}
+
+
+_TRADE_PARTNER_PACKAGE_MAX = 3
+
+_TRADE_PARTNER_DISCLAIMER = (
+    "Estimate only, rules simplified. Skips cash, prior trade exceptions, "
+    "taxpayer midlevel, frozen pick, Stepien, base-year, trade-kicker, "
+    "minimum-salary, and sign-and-trade rules. Confirm with a cap specialist.")
+
+
+def _partner_package_rows(team: str, roster: list[dict], incoming: int,
+                          allow_a: int, state: dict, room: int,
+                          limit: int) -> list[dict]:
+    paid = [p for p in roster
+            if isinstance(p.get("salary"), (int, float)) and p["salary"] > 0]
+    paid.sort(key=lambda p: int(p["salary"]))
+    over_apron1 = bool(state["over_apron1"])
+    over_apron2 = bool(state["over_apron2"])
+    max_size = 1 if over_apron2 else _TRADE_PARTNER_PACKAGE_MAX
+    fits: list[tuple[int, list[dict], int, str]] = []
+    for size in range(1, max_size + 1):
+        for combo in _it.combinations(paid, size):
+            total = sum(int(p["salary"]) for p in combo)
+            allow_b, rule_b = _allowed_incoming(total, over_apron1, room)
+            if total > allow_a or allow_b < incoming:
+                continue
+            fits.append((total, list(combo), size, rule_b))
+    fits.sort(key=lambda item: (item[2], item[0]))
+    return [{"team": team.upper(),
+             "players": ", ".join(str(p["player"]) for p in combo),
+             "package_salary": total, "incoming": incoming,
+             "match_rule": rule_b, "over_apron1": over_apron1,
+             "over_apron2": over_apron2, "legal": True}
+            for total, combo, _, rule_b in fits[:limit]]
+
+
+@tool(description='Find CBA-legal salary-matching trade packages for one player '
+      'across the league. Player name; season defaults to 2026-27; teams '
+      'optionally restricts partners (comma-separated abbreviations); '
+      'max_packages caps rows per team (default 3). Each row is a roster '
+      'package (up to 3 players) whose salary satisfies both sides\' matching '
+      'rules under the same simplified 2023 CBA as get_trade_check.')
+def get_trade_partners(player: str = "", season: str | None = None,
+                       teams: str = "", max_packages: int = 3) -> dict[str, Any]:
+    season = str(season or "").strip() or "2026-27"
+    if not str(player or "").strip():
+        return {"tool": "get_trade_partners", "ok": False,
+                "error": "player needed"}
+    try:
+        limit = max(1, min(int(max_packages or 3), 10))
+    except (TypeError, ValueError):
+        limit = 3
+    restrict = {t.strip().upper()
+                for t in str(teams or "").split(",") if t.strip()}
+
+    with _owned_connection(None, read_only=True) as con:
+        records = salary_records(con, salary_season=season,
+                                 include_fallback=True)
+        record = match_record(records, player)
+        if record is None:
+            hit = _locate_player_team(player, con, season)
+            if hit:
+                record = match_record(records, hit[0])
+        if record is None:
+            hints = _unknown_player_hints([player], con)
+            return {"tool": "get_trade_partners", "ok": False,
+                    "error": f"unknown player: {player}"
+                             + (". " + "; ".join(hints) if hints else "")}
+        if record.get("salary") is None:
+            return {"tool": "get_trade_partners", "ok": False,
+                    "error": f"no {season} salary for {record['PLAYER_NAME']}"}
+        name = str(record["PLAYER_NAME"])
+        team_a = str(record["TEAM"] or "").upper()
+        incoming = int(record["salary"])
+        pay_a, _ = _payroll(team_a, con, season)
+        state_a = _apron_state(pay_a)
+        room_a = max(0, CAP["cap"] - pay_a)
+        allow_a, rule_a = _allowed_incoming(
+            incoming, bool(state_a["over_apron1"]), room_a)
+        rows: list[dict] = []
+        no_fit: list[str] = []
+        partners = sorted({str(r["TEAM"]).upper() for r in records
+                           if r.get("TEAM")} - {team_a})
+        for team in partners:
+            if restrict and team not in restrict:
+                continue
+            pay_b, roster = _payroll(team, con, season)
+            state_b = _apron_state(pay_b)
+            room_b = max(0, CAP["cap"] - pay_b)
+            packages = _partner_package_rows(
+                team, roster, incoming, allow_a, state_b, room_b, limit)
+            if packages:
+                rows.extend(packages)
+            else:
+                no_fit.append(team)
+        source = _payroll_source(con)
+        salary_date = _salary_date(con)
+    return {"tool": "get_trade_partners", "ok": True,
+            "rows": rows,
+            "meta": {"source": source, "salary_date": salary_date,
+                     "season": season, "rules": "v1-simplified",
+                     "player": name, "player_team": team_a,
+                     "player_salary": incoming, "max_return_salary": allow_a,
+                     "match_rule_in": rule_a,
+                     "teams_without_fit": no_fit,
+                     "disclaimer": _TRADE_PARTNER_DISCLAIMER}}
 
 
 _TRADE_VALUE_WEIGHTS = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,

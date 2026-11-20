@@ -24,8 +24,8 @@ const server=createServer(async(req,res)=>{
   const chunk=delta=>res.write("data: "+JSON.stringify({id:"fixture",object:"chat.completion.chunk",created:1,model:"fixture",choices:[{index:0,delta,finish_reason:null}]})+"\n\n");
   if(!toolResult) {
     const code=scenario === "followup"
-      ? `let denied=false; try { await tools.read_source({ref:"unowned"}); } catch {denied=true;} const source=await tools.read_source({ref:${JSON.stringify(globalThis.priorRef)}}); return {denied,secretPresent:source.result.rows[1]._source.length === 14,pts:source.result.rows[0].PTS};`
-      : `let denied=false; try {await tools.watchlist_add({});} catch {denied=true;} const bad=await tools.sql_exec({sql:"SELECT missing FROM silver_leaders_pts"}); const source=await tools.sql_exec({sql:"SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS"}); return {denied,failed:bad.isError,ref:source.ref,pts:source.result.rows[0].PTS,unit:source.result.declared_column_semantics.PTS.unit};`;
+      ? `let denied=false; try { await tools.read_source({ref:"unowned"}); } catch {denied=true;} const source=await tools.read_source({ref:${JSON.stringify(globalThis.priorRef)}}); const carry=load("carry_marker"); return {denied,carryTeam:carry && carry.team,secretPresent:source.result.rows[1]._source.length === 14,pts:source.result.rows[0].PTS};`
+      : `let denied=false; try {await tools.watchlist_add({});} catch {denied=true;} const bad=await tools.sql_exec({sql:"SELECT missing FROM silver_leaders_pts"}); const source=await tools.sql_exec({sql:"SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS"}); store("carry_marker",{team:"carry-BOS-marker",season:"2025-26"}); return {denied,failed:bad.isError,ref:source.ref,pts:source.result.rows[0].PTS,unit:source.result.declared_column_semantics.PTS.unit};`;
     chunk({role:"assistant",tool_calls:[{index:0,id:"call-fixture",type:"function",function:{name:"codemode",arguments:JSON.stringify({code})}}]});
   } else chunk({role:"assistant",content:"Synthetic answer"});
   res.write("data: "+JSON.stringify({id:"fixture",object:"chat.completion.chunk",created:1,model:"fixture",choices:[{index:0,delta:{},finish_reason:toolResult?"stop":"tool_calls"}]})+"\n\ndata: [DONE]\n\n");
@@ -68,6 +68,8 @@ test("in-process Pi + QuickJS + Python MCP over local OpenAI SSE, source reuse a
     assert(!followup.some(e=>e.type === "source"));
     assert(!JSON.stringify(requests).includes("RAW_SECRET_ROW"));
     assert(JSON.stringify(requests).includes('secretPresent'));
+    assert(JSON.stringify(requests).includes('carry-BOS-marker'));
+    assert(existsSync(join(cwd,"codemode-store.json")));
     scenario="abort";
     const controller=new AbortController();
     const ready=new Promise(resolve=>{entered=resolve;});
@@ -88,11 +90,13 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
   const dbPath=join(root,"analyst-ws-conv.sqlite");
   const sourcesDir=join(root,"analyst-ws-sources");
   const seenBridgeEnvs=[];
+  const seenHistories=[];
   const mockExec={
     async *stream(ctx){
-      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE});
+      seenBridgeEnvs.push({cwd:ctx.bridge.cwd,ws:ctx.bridge.env.DIME_THREAD_WORKSPACE,timeout:ctx.runTimeoutMs});
+      seenHistories.push(ctx.history);
       await writeFile(join(ctx.bridge.cwd,"turn-artifact.txt"),"persisted-data","utf8");
-      yield {type:"answer",text:"Turn complete"};
+      yield {type:"answer",text:"Turn complete",reasoning:"Turn reasoning"};
       yield {type:"closed"};
     }
   };
@@ -104,7 +108,7 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
     saveChat:async()=>{},
     saveRun:async()=>{},
   });
-  for await(const _event of analyst.stream({q:"Turn 1",thread:"t-ws-1",client:"owner-a"})){}
+  for await(const _event of analyst.stream({q:"Turn 1",thread:"t-ws-1",client:"owner-a"},undefined,"run-budget-test",{runTimeoutMs:12345})){}
   for await(const _event of analyst.stream({q:"Turn 2",thread:"t-ws-1",client:"owner-a"})){}
   for await(const _event of analyst.stream({q:"Anonymous"})){}
   const expectedWs=threadWorkspacePath(privateDir,{owner:"owner-a",thread:"t-ws-1"});
@@ -112,8 +116,12 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
   assert.equal(seenBridgeEnvs[0].ws,expectedWs);
   assert.equal(seenBridgeEnvs[1].cwd,expectedWs);
   assert.equal(seenBridgeEnvs[1].ws,expectedWs);
+  assert.equal(seenHistories[1].at(-1).reasoning,"Turn reasoning");
   assert(existsSync(join(expectedWs,"turn-artifact.txt")));
   assert.notEqual(seenBridgeEnvs[2].ws,expectedWs);
+  assert.equal(seenBridgeEnvs[0].timeout,12345);
+  assert.equal(seenBridgeEnvs[1].timeout,undefined);
+  assert.equal(seenBridgeEnvs[2].timeout,undefined);
   assert(!existsSync(seenBridgeEnvs[2].ws));
   const entries=await readdir(privateDir);
   assert(!entries.some(name=>name.startsWith("pi-")));

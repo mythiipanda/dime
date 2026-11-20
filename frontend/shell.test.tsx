@@ -18,10 +18,10 @@ import { getClientId, getThreads } from "./lib/api";
 import { LibraryView } from "./components/shell/WorkspaceViews";
 
 test("navigation exposes only this port's destinations, with Tools grouped", () => {
-  assert.deepEqual(shellNavigation.map(item => item.label), ["Home", "Ask", "Workflows", "Boards", "Library", "Data", "Trades", "Matchups", "Awards"]);
-  assert.ok(shellNavigation.slice(6).every(item => "group" in item && item.group === "Tools"));
+  assert.deepEqual(shellNavigation.map(item => item.label), ["Home", "Ask", "Workflows", "Boards", "Notebooks", "Library", "Data", "Trades", "Compare", "Draft", "Matchups", "Awards"]);
+  assert.ok(shellNavigation.slice(7).every(item => "group" in item && item.group === "Tools"));
   for (const item of shellNavigation) assert.equal(parseShellTab(item.id), item.id);
-  for (const invalid of [null, "notebooks", "explore", "lineups", "props", "invalid"]) assert.equal(parseShellTab(invalid), "chat");
+  for (const invalid of [null, "explore", "lineups", "props", "invalid"]) assert.equal(parseShellTab(invalid), "chat");
   assert.equal(validThread("thread_01-abc"), true);
   for (const invalid of [null, "", "../foo", "a".repeat(81)]) assert.equal(validThread(invalid), false);
   const url = shellUrl("http://localhost/?replay=scouting&other=keep", "briefs", "thread-1");
@@ -137,7 +137,7 @@ test("shell reads URL/history, real threads, library, theme and sends the select
     await new Promise<void>((resolve, reject) => streamDimeChat("Question", { onUpdate() {}, onDone() { resolve(); }, onError(_snapshot, message) { reject(new Error(message)); } }, { thread: "real_thread", model: "gemini:flash" }));
     assert.equal((sent as unknown as { thread: string }).thread, "real_thread");
     assert.equal((sent as unknown as { client: string }).client, getClientId());
-    assert.doesNotMatch(host.textContent!, /Notebooks|Lineups|Props|Explore/);
+    assert.doesNotMatch(host.textContent!, /Lineups|Props|Explore/);
   } finally { await act(async () => root.unmount()); globalThis.fetch = previous; dom.window.close(); }
 });
 

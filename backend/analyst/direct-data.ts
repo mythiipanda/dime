@@ -56,6 +56,24 @@ export type DirectOperations = {
         players_b: string;
         season: string;
     };
+    product_trade_partners: {
+        player: string;
+        season: string;
+        teams: string;
+        max_packages: number;
+    };
+    product_trade_assets: {
+        team: string;
+        season: string;
+    };
+    product_morning: {
+        team: string;
+        season: string;
+    };
+    product_draft: {
+        team: string;
+        season: string;
+    };
     product_debate: {
         a: string;
         b: string;
@@ -82,6 +100,10 @@ export type DirectOperations = {
     product_movers: {
         season: string;
         days: number;
+    };
+    product_compare: {
+        players: string;
+        season: string;
     };
 };
 export async function connectDirectData(options: PythonToolsOptions) {

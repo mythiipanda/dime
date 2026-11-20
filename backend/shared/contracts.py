@@ -52,19 +52,34 @@ def contract_details(row: dict | None) -> dict:
 def salary_records(con, season: str | None = None, salary_season: str | None = None,
                    include_fallback: bool = False) -> list[dict]:
     tables = {r[0] for r in con.execute('SHOW TABLES').fetchall()}
+    order = ['silver_salaries', 'silver_cap_players', 'silver_contracts']
+    want = season or salary_season
+    if want and 'silver_contracts' in tables:
+        contract_cols = [r[1] for r in con.execute('PRAGMA table_info(silver_contracts)').fetchall()]
+        exact = ('_season' in contract_cols and con.execute(
+            'SELECT 1 FROM silver_contracts WHERE _season = ? LIMIT 1', [want]).fetchone())
+        latest_sheet = None
+        if 'silver_salaries' in tables:
+            salary_cols = [r[1] for r in con.execute('PRAGMA table_info(silver_salaries)').fetchall()]
+            if '_season' in salary_cols:
+                latest_sheet = con.execute('SELECT MAX(_season) FROM silver_salaries').fetchone()[0]
+        if exact and (latest_sheet is None or str(want) < str(latest_sheet)):
+            order = ['silver_contracts', 'silver_salaries', 'silver_cap_players']
     records = []
-    for table in ('silver_salaries', 'silver_cap_players'):
+    for table in order:
         if table not in tables:
             continue
         columns = [r[1] for r in con.execute(f'PRAGMA table_info({table})').fetchall()]
-        salary = resolve_salary_column(set(columns), salary_season or season) if table == 'silver_salaries' else 'salary'
+        salary = (resolve_salary_column(set(columns), salary_season or season)
+                  if table == 'silver_salaries' else ('salary' if table == 'silver_cap_players' else 'SALARY'))
         if not salary:
             continue
         where = ''
         params = []
-        if season and '_season' in columns:
+        season_filter = season or (salary_season if table == 'silver_contracts' else None)
+        if season_filter and '_season' in columns:
             where = ' WHERE _season = ?'
-            params = [season]
+            params = [season_filter]
         rows = [dict(zip(columns, values)) for values in con.execute(f'SELECT * FROM {table}{where}', params).fetchall()]
         if rows and not season and '_season' in columns:
             latest = max(str(r.get('_season') or '') for r in rows)
