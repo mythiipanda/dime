@@ -2179,6 +2179,49 @@
         "type": "object"
       }
     },
+    "get_shot_chart": {
+      "name": "get_shot_chart",
+      "description": "Half-court shot chart data from the warehouse silver shots table for one\nplayer or one team: per-region attempt counts, makes, FG% and the\nleague-average FG% delta for the same season, plus court-center\ncoordinates ready for the shot_chart artifact. Supply player or team\n(name or abbreviation). season is the _season label (e.g. \"2025-26\").\nplayoffs restricts to playoff games (regular season otherwise).\nopponent restricts to games vs that team (name or abbreviation).\nRegions split by shot zone and court side; each row carries x/y in\nfeet, att, makes, pct, league_pct and delta_pp. Always pair this tool\nwith the shot_chart artifact, passing these zones through with\nprovenance, and keep full names in the title.",
+      "args_schema": {
+        "description": "Half-court shot chart data for one player or team: per-region attempts, makes, FG% and league-average delta with court coordinates for the shot_chart artifact.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "playoffs": {
+            "default": false,
+            "title": "Playoffs",
+            "type": "boolean"
+          },
+          "opponent": {
+            "default": "",
+            "title": "Opponent",
+            "type": "string"
+          }
+        },
+        "title": "get_shot_chart",
+        "type": "object"
+      }
+    },
     "get_stint_timeline": {
       "name": "get_stint_timeline",
       "description": "Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings.",

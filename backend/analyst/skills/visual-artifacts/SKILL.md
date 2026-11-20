@@ -195,20 +195,21 @@ sections like a roster or pick list belong in `table`, not `fields`.
 ```
 
 ### `shot_chart`
+Call `get_shot_chart` (player or team, season, playoffs, opponent) to fill `zones`
+from `silver_shots`; pass its `x`/`y`/`att`/`pct` through and forward `makes`
+and `delta` (its `delta_pp`) when present. `makes` renders a `makes/att`
+caption; `delta` colors each region vs the league average.
 ```typescript
 {
   kind: "shot_chart",
-  title: "Shai Gilgeous-Alexander Spatial Shot Diet (2025-26)",
+  title: "Shai Gilgeous-Alexander Shot Diet vs League (2025-26)",
   zones: [
-    { x: 0, y: 0, att: 380, pct: 68.4 },
-    { x: 0, y: 10, att: 195, pct: 49.2 },
-    { x: -14, y: 14, att: 120, pct: 46.5 },
-    { x: 14, y: 14, att: 110, pct: 45.8 },
-    { x: -22, y: 5, att: 45, pct: 41.2 },
-    { x: 22, y: 5, att: 40, pct: 39.5 },
-    { x: 0, y: 25, att: 210, pct: 37.8 }
+    { x: 0, y: 4, att: 380, makes: 260, pct: 68.4, delta: 8.1, label: "rim-C" },
+    { x: -14, y: 14, att: 120, makes: 56, pct: 46.5, delta: 3.4, label: "long_mid-L" },
+    { x: 22, y: 5, att: 40, makes: 16, pct: 39.5, delta: -1.2, label: "corner_3-R" },
+    { x: 0, y: 25, att: 210, makes: 79, pct: 37.8, delta: 1.6, label: "atb_3-C" }
   ],
-  footnote: "Source: silver_shotchart. Field goal percentages vs volume."
+  footnote: "Source: silver_shots via get_shot_chart. Dot size is attempts; color is FG% vs league."
 }
 ```
 
