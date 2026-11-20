@@ -128,6 +128,7 @@ _TOOL_ORDER = (
     "get_matchup_splits",
     "get_regression_check",
     "get_scout_pack",
+    "get_opponent_scout",
     "get_rotation_check",
     "get_injury_impact",
     "get_matchup_brief",
