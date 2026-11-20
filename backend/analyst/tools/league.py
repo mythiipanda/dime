@@ -136,6 +136,7 @@ def register() -> dict[str, Any]:
         get_playoff_team_ratings as _orig_get_playoff_team_ratings,
         get_playoffs as _orig_get_playoffs,
         get_ratings as _orig_get_ratings,
+        get_roster_fit as _orig_get_roster_fit,
         get_standings as _orig_get_standings,
         get_standings_deep as _orig_get_standings_deep,
         get_win_prob as _orig_get_win_prob,
@@ -272,6 +273,14 @@ def register() -> dict[str, Any]:
             enrich_error("get_prospect", res)
         return sanitize_for_wire(res)
 
+    @tool("get_roster_fit", description=_orig_get_roster_fit.description)
+    def get_roster_fit(team_id=None, team: str = "", season=None) -> dict:
+        res = call_sync(_orig_get_roster_fit, "get_roster_fit", {
+            "team_id": team_id, "team": team, "season": season})
+        return finish_dict_list(res, "get_roster_fit",
+                                ["dimension", "team", "league_avg",
+                                 "contender_avg", "gap_vs_contenders"])
+
     @tool("get_expectations", description=_orig_get_expectations.description)
     def get_expectations(team_id=None, team: str = "", season=None,
                          seasons: int = 3) -> dict:
@@ -319,6 +328,7 @@ def register() -> dict[str, Any]:
         "get_injuries": get_injuries,
         "get_news_feed": get_news_feed,
         "get_prospect": get_prospect,
+        "get_roster_fit": get_roster_fit,
         "get_expectations": get_expectations,
         "get_draft_board": get_draft_board,
         "get_combine": get_combine,

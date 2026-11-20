@@ -3842,6 +3842,29 @@
         "type": "object"
       }
     },
+    "get_roster_fit": {
+      "name": "get_roster_fit",
+      "description": "Roster gap and fit profile for one team and season (default current): rotation shares by skill archetype (spacing, creation, rim protection, defense, bench depth) versus league and top-8 contender baselines, returning the biggest gaps. Reads silver_leaders_pts and standings; warehouse only.",
+      "args_schema": {
+        "properties": {
+          "team_id": {
+            "default": null,
+            "title": "Team Id"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_roster_fit",
+        "type": "object"
+      }
+    },
     "get_expectations": {
       "name": "get_expectations",
       "description": "Actual or season-to-date record and net rating versus preseason expectations (projected win total, playoff/title odds) for one team, per season. Warehouse-backed: silver_preseason_projections plus standings/ratings tables. Pass a team id, abbreviation or name; optional season like '2025-26', else the most recent seasons.",
