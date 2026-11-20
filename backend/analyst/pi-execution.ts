@@ -191,6 +191,7 @@ type AnalystDeps = {
     resolveRuntime?: typeof resolvedRuntime;
     connectTools?: (options: PythonToolsOptions) => ReturnType<typeof connectPythonTools>;
     abortGraceMs?: number;
+    budgetNudgeDelayMs?: number;
 };
 
 const PRIOR_SUBMISSION_ITEM_LIMIT = 24;
@@ -431,6 +432,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
     const resolveRuntime = deps.resolveRuntime ?? resolvedRuntime;
     const connectTools = deps.connectTools ?? connectPythonTools;
     const abortGraceMs = deps.abortGraceMs ?? ABORT_GRACE_MS;
+    const budgetNudgeDelayMs = deps.budgetNudgeDelayMs;
     return {
         async *stream(input: unknown, signal?: AbortSignal): AsyncGenerator<AnalystEvent> {
             const controller = new AbortController();
@@ -461,6 +463,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridgeCwd: string | undefined;
                 let bridgePid: number | undefined;
                 let modelApiKey: string | undefined;
+                let budgetNudge: ReturnType<typeof setTimeout> | undefined;
                 const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
@@ -557,6 +560,20 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         };
                         session.sessionManager.appendMessage(budgetContext);
                         session.agent.state.messages.push(budgetContext);
+                        const runTimeoutMs = start.runTimeoutMs;
+                        const nudgeAtMs = budgetNudgeDelayMs ?? Math.max(5000, Math.min(runTimeoutMs * 0.85, runTimeoutMs - 30000));
+                        const agent = session.agent;
+                        budgetNudge = setTimeout(() => {
+                            if (acceptedSubmission)
+                                return;
+                            const remaining = Math.max(0, Math.round((runTimeoutMs - (Date.now() - startedAt)) / 1000));
+                            agent.steer({
+                                role: "user",
+                                content: `Host run budget nearly exhausted (~${remaining}s remaining before abort). Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats no answer. Skip this only if submit_answer already ran.`,
+                                timestamp: Date.now()
+                            });
+                        }, nudgeAtMs);
+                        budgetNudge.unref();
                     }
                     kind = "model";
                     await session.prompt(start.q);
@@ -590,6 +607,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
                 }
                 finally {
+                    if (budgetNudge)
+                        clearTimeout(budgetNudge);
                     try {
                         if (session && bridgeCwd)
                             persistStoreSnapshot(bridgeCwd, codemodeStoreSnapshot(session.sessionManager.getBranch()));
