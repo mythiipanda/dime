@@ -51,7 +51,7 @@ def search_shots(
     include_ot: str = "auto",
 ) -> dict[str, Any]:
     pkg = _pkg()
-    season = pkg.clamp_season(pkg.resolve_season(season))
+    season = pkg.clamp_season(pkg.resolve_season(season, "silver_shots"))
     _shot_seasons = pkg._shots_seasons()
     if season not in _shot_seasons:
         if _shot_seasons:
@@ -115,7 +115,7 @@ def _run_search(
     periods_raw: str, late_raw: str,
 ) -> dict[str, Any]:
     pkg = _pkg()
-    season = pkg.resolve_season(season)
+    season = pkg.resolve_season(season, "silver_shots")
     _shot_seasons = pkg._shots_seasons()
     zone_expr = _zone_case_sql()
     heave = _heave_sql()
@@ -323,8 +323,8 @@ def _shot_meta(
         "clutch_safe": False, "score_aware": False,
         "data_note": (
             f"Warehouse silver_shots coverage is {', '.join(shot_seasons) or 'no season on hand'} "
-            f"(233,632 shots, regular season and playoffs). PLAYER_NAME is last-name-only "
-            f"(e.g. 'Gilgeous-Alexander'). TEAM_NAME/HTM/VTM columns are not populated in this table, "
+            f"({scanned:,} shots, regular season and playoffs). PLAYER_NAME carries full names; "
+            f"surname queries match on the last name. TEAM_NAME/HTM/VTM columns are not populated in this table, "
             f"so team abbreviations come from the nba_api static id->abbreviation mapping. GAME_DATE is not "
             f"populated in this table. Periods: {ot_msg}; use periods='ot' for overtime only, "
             f"include_ot=no for exactly the 4th quarter. There is no score-margin column, so late-game "
@@ -346,8 +346,8 @@ def _empty_note(folded, late_seconds, periods_raw) -> str:
             f"late_clock or widen periods (e.g. '2h', '4th', 'ot')."
         )
     return (
-        "No shots matched the combined filters. PLAYER_NAME is "
-        "last-name-only (e.g. 'Tatum'), teams resolve from "
-        "abbreviations or full names, and late_clock only applies "
+        "No shots matched the combined filters. PLAYER_NAME carries "
+        "full names and surname queries match on the last name; teams "
+        "resolve from abbreviations or full names, and late_clock only applies "
         "to periods 4+ (incl. overtime)."
     )

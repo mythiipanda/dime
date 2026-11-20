@@ -6,6 +6,9 @@ import type {
   CompareArtifactPayload,
   DimeArtifact,
   DimeProvenance,
+  MemoAnchor,
+  MemoArtifactPayload,
+  MemoSectionPayload,
   PlayerCardArtifactPayload,
   PlayerCardSectionPayload,
   ScatterArtifactPayload,
@@ -82,7 +85,7 @@ function resolveChart(
 
 function parseShotZone(
   line: unknown,
-): { x: number; y: number; att: number; pct: number } | null {
+): { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number } | null {
   if (typeof line !== "object" || line === null) return null;
   const z = line as Record<string, unknown>;
   const x = finiteNumber(z.x);
@@ -92,7 +95,13 @@ function parseShotZone(
   if (x === undefined || y === undefined || att === undefined || pct === undefined) {
     return null;
   }
-  return { x, y, att, pct };
+  const parsed: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number } = { x, y, att, pct };
+  if (typeof z.label === "string" && z.label) parsed.label = z.label;
+  const makes = finiteNumber(z.makes);
+  if (makes !== undefined) parsed.makes = makes;
+  const delta = finiteNumber(z.delta);
+  if (delta !== undefined) parsed.delta = delta;
+  return parsed;
 }
 
 function resolveShotChart(
@@ -100,7 +109,7 @@ function resolveShotChart(
   title: string,
   provenance: DimeProvenance | undefined,
 ): ShotChartArtifactPayload {
-  const zones: { x: number; y: number; att: number; pct: number }[] = [];
+  const zones: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number }[] = [];
   for (const line of Array.isArray(entry.zones) ? entry.zones : []) {
     const parsed = parseShotZone(line);
     if (parsed) zones.push(parsed);
@@ -314,6 +323,47 @@ function resolvePlayerCard(entry: Record<string, unknown>, title: string, proven
     source: provenanceSource(provenance), provenance };
 }
 
+function resolveMemo(
+  entry: Record<string, unknown>,
+  title: string,
+  provenance: DimeProvenance | undefined,
+): MemoArtifactPayload | null {
+  const sections: MemoSectionPayload[] = [];
+  for (const line of Array.isArray(entry.sections) ? entry.sections : []) {
+    if (typeof line !== "object" || line === null) continue;
+    const s = line as Record<string, unknown>;
+    const heading = typeof s.heading === "string" ? s.heading : "";
+    const body = typeof s.body === "string" ? s.body : "";
+    if (!heading || !body) continue;
+    const anchors: MemoAnchor[] = [];
+    for (const raw of Array.isArray(s.anchors) ? s.anchors : []) {
+      const a = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
+      const ref = a && typeof a.ref === "string" ? a.ref : "";
+      const row = a ? finiteNumber(a.row) : undefined;
+      const columns = a && Array.isArray(a.columns)
+        ? a.columns.filter((c): c is string => typeof c === "string" && c !== "")
+        : [];
+      if (ref && row !== undefined && row >= 0 && columns.length > 0) {
+        anchors.push({ ref, row, columns });
+      }
+    }
+    sections.push({ heading, body, ...(anchors.length > 0 ? { anchors } : {}) });
+  }
+  if (sections.length === 0) return null;
+  const subtitle = typeof entry.subtitle === "string" && entry.subtitle ? entry.subtitle : undefined;
+  const footnote = typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined;
+  return {
+    kind: "memo",
+    title,
+    text: sections.map(s => `${s.heading}\n${s.body}`).join("\n\n"),
+    sections,
+    source: provenanceSource(provenance),
+    provenance,
+    ...(subtitle ? { subtitle } : {}),
+    ...(footnote ? { footnote } : {}),
+  };
+}
+
 const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   chart: resolveChart,
   shot_chart: resolveShotChart,
@@ -321,7 +371,24 @@ const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   compare: resolveCompare,
   scatter: resolveScatter,
   player_card: resolvePlayerCard,
+  memo: resolveMemo,
 };
+
+export function memoToMarkdown(artifact: MemoArtifactPayload): string {
+  const lines: string[] = [`# ${artifact.title}`];
+  if (artifact.subtitle) lines.push(`\n_${artifact.subtitle}_`);
+  if (!artifact.sections?.length) lines.push("", artifact.text);
+  for (const section of artifact.sections ?? []) {
+    lines.push("", `## ${section.heading}`, "", section.body);
+    if (section.anchors?.length) {
+      const refs = [...new Set(section.anchors.map(a => `${a.ref} row ${a.row}`))];
+      lines.push("", `_Cited rows: ${refs.join(" · ")}_`);
+    }
+  }
+  if (artifact.footnote) lines.push("", `---`, "", artifact.footnote);
+  if (artifact.source) lines.push("", `Source: ${artifact.source}`);
+  return lines.join("\n") + "\n";
+}
 
 export function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
   if (!Array.isArray(raw)) return [];
