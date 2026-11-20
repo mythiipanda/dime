@@ -50,6 +50,36 @@ uncertain. A numeric string must be queried/cast as a number before selecting it
 ```
 
 `teamColumn` is optional. Only use it if the source row contains that text field.
+
+Optional `sections` extends the card into a multi-source snapshot — each section
+selects from its own `ref`/`row`, so contract, season line, impact, zones and
+injury status can each cite a different queried source. Identity stays on the
+header row only; a section never carries a name column. Per section the host
+resolves values, declared units and provenance (capability, dataset, season)
+from that source's result. `metrics` selects numbers (finite or null);
+`fields` selects text (e.g. status, contract type). Up to 6 sections, each with
+1-6 metrics and/or fields; a section with neither is rejected.
+
+```typescript
+{
+  kind: "player_card",
+  title: "Player snapshot",
+  ref: "ref-identity",
+  row: 0,
+  nameColumn: "player_name",
+  teamColumn: "team",
+  metrics: [{ column: "pts", label: "PTS" }, { column: "ts_pct", label: "TS%" }],
+  sections: [
+    { label: "Contract", ref: "ref-contract", row: 0,
+      fields: [{ column: "contract_type", label: "Deal" }],
+      metrics: [{ column: "salary", label: "Salary" }] },
+    { label: "Impact rank", ref: "ref-rapm", row: 0,
+      metrics: [{ column: "rapm", label: "RAPM" }, { column: "rank", label: "Rank" }] },
+    { label: "Availability", ref: "ref-injury", row: 0,
+      fields: [{ column: "status", label: "Status" }] }
+  ]
+}
+```
 Never output JSX, HTML, CSS, executable scripts, component imports or arbitrary
 OpenUI programs. Dime's allowlisted components render in the existing answer
 stream; choose only the components that make this question clearer, not every

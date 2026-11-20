@@ -14,6 +14,7 @@ export type {
   ProvenanceEvidence,
   ProvenanceOrigin,
   PlayerCardArtifactPayload,
+  PlayerCardSectionPayload,
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   StreamFailure,
