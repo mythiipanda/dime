@@ -65,6 +65,7 @@ _TOOL_ORDER = (
     "get_hustle",
     "get_injuries",
     "get_news_feed",
+    "get_team_daily_brief",
     "get_award_results",
     "get_briefing",
     "get_standings",

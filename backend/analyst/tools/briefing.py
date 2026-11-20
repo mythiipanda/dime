@@ -193,8 +193,51 @@ def _morning_briefing_rows(res: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _daily_brief_rows(res: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_rows = res.get("rows")
+    if isinstance(raw_rows, list):
+        return [r for r in raw_rows if isinstance(r, dict)]
+    if not isinstance(raw_rows, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for section, payload in raw_rows.items():
+        if not isinstance(payload, dict):
+            continue
+        if not payload.get("ok"):
+            rows.append({"section": section, "headline": None,
+                         "detail": payload.get("error"),
+                         "team": None, "player": None, "date": None,
+                         "source": None})
+            continue
+        for item in payload.get("rows") or []:
+            if not isinstance(item, dict):
+                continue
+            headline = (item.get("headline") or item.get("matchup")
+                        or item.get("player") or item.get("team")
+                        or item.get("type"))
+            detail_bits = [str(item.get(k)) for k in
+                           ("status", "comment", "detail", "record",
+                            "streak", "type", "pts", "wl", "season")
+                           if item.get(k) not in (None, "")]
+            rows.append({
+                "section": section,
+                "headline": headline,
+                "detail": " · ".join(detail_bits) or None,
+                "team": res.get("team"),
+                "player": item.get("player"),
+                "date": item.get("date") or item.get("published"),
+                "source": item.get("source") or
+                          (payload.get("meta") or {}).get("table"),
+            })
+    return rows
+
+
 def register() -> dict[str, Any]:
     from shared.tools.league import get_briefing as _orig_get_briefing
+    try:
+        from shared.tools.league import get_team_daily_brief as _orig_get_team_daily_brief
+    except ImportError:
+        from backend.shared.tools.league import get_team_daily_brief as _orig_get_team_daily_brief
     try:
         from shared.tools.today import (
             get_morning_briefing as _orig_get_morning_briefing,
@@ -232,8 +275,20 @@ def register() -> dict[str, Any]:
             _morning_briefing_rows, fixed_cols=True,
         )
 
+    @tool("get_team_daily_brief", description=_orig_get_team_daily_brief.description)
+    def get_team_daily_brief(team: str, since: str = "") -> dict:
+        cols = ["section", "headline", "detail", "team", "player", "date", "source"]
+        res = call_sync(_orig_get_team_daily_brief, "get_team_daily_brief",
+                        {"team": team, "since": since})
+        return finish_strict_rows(
+            res, "get_team_daily_brief", cols,
+            "Team daily brief lookup failed",
+            _daily_brief_rows, fixed_cols=True,
+        )
+
     return {
         "get_briefing": get_briefing,
         "get_today": get_today,
         "get_morning_briefing": get_morning_briefing,
+        "get_team_daily_brief": get_team_daily_brief,
     }
