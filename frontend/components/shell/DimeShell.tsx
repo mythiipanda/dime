@@ -114,7 +114,7 @@ export function DimeShell() {
         {tab === "today" && <HomeView onAsk={() => navigate("workflows")} />}
         {tab === "briefs" && <LibraryView onThread={pick} onBoard={openBoard} />}
         {tab === "data" && <DataView />}
-        {tab === "trades" && <div className="tools-view"><TradesView /></div>}
+        {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} /></div>}
         {tab === "matchups" && <div className="tools-view"><MatchupsView /></div>}
         {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
       </div>

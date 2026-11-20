@@ -10,6 +10,7 @@ import WarehouseView from "./components/dime/views/WarehouseView";
 import { PromptBar } from "./components/ds/PromptBar";
 import { ShotsExplorer } from "./components/shell/ShotsExplorer";
 import TradesView from "./components/dime/views/TradesView";
+import MorningPage from "./components/dime/views/MorningPage";
 import type { HomeSnapshot } from "./lib/warehouse";
 import { clearEnvelopeCache } from "./lib/api";
 
@@ -94,13 +95,58 @@ test("Shots explorer preserves zone data even if shot coordinates are unavailabl
 });
 
 test("Trades renders the backend's readable domain error on HTTP 422", async () => {
-  await mount(<TradesView />, async () => Response.json({ ok: false, error: "Salary data lists Luka with LAL, not DAL" }, { status: 422 }), async host => {
+  await mount(<TradesView />, async input => {
+    const url = String(input);
+    if (url.includes("/trade/assets")) {
+      const abbr = new URL(url).searchParams.get("team");
+      const players = abbr === "DAL" ? [{ name: "Luka Doncic", salary: 49.8 }] : [{ name: "Karl-Anthony Towns", salary: 57.1 }];
+      return Response.json({ ok: true, team: abbr, season: "2026-27", players, picks: [], meta: { source: "salary_records", season: "2026-27" } });
+    }
+    return Response.json({ ok: false, error: "Salary data lists Luka with LAL, not DAL" }, { status: 422 });
+  }, async host => {
     await act(async () => [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Luka"))!.click());
-    const button = [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Check with real cap rules"));
-    assert.ok(button);
-    await act(async () => button.click());
+    await act(async () => [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Towns"))!.click());
+    await act(async () => new Promise(resolve => setTimeout(resolve, 50)));
     assert.match(host.textContent!, /Salary data lists Luka with LAL, not DAL/);
     assert.doesNotMatch(host.textContent!, /Could not reach the backend/);
+  });
+});
+
+test("Morning page renders blocks with provenance and degrades missing tables", async () => {
+  const morning = {
+    ok: true, team: "NYK", season: "2025-26",
+    blocks: {
+      last_result: { ok: true, game: { date: "2026-04-12", home: "NYK", away: "CHA", home_pts: 110, away_pts: 96, result: "W", opponent: "CHA" }, provenance: { table: "silver_scoreboard", as_of: "2026-09-11T05:50:59Z" } },
+      next_game: { ok: true, game: { date: "2026-04-13T00:30Z", name: "Utah Jazz at New York Knicks", short_name: "UTAH @ NY", season_type: "Regular Season", opponent: "UTA" }, provenance: { table: "silver_schedule", as_of: "2026-09-10T05:37:42Z" } },
+      opponent: { ok: true, row: { team: "Utah Jazz", wins: 22, losses: 60, win_pct: 0.268, playoff_rank: 15, l10: "1-9", conference: "West" }, name: "Utah Jazz", provenance: { table: "silver_standings", as_of: "2026-09-07T20:26:48Z" } },
+      standings: { ok: true, row: { team: "New York Knicks", wins: 53, losses: 29, win_pct: 0.646, playoff_rank: 3, l10: "6-4", conference: "East" }, projection: { projected_wins: 44.5, projected_losses: 37.5, make_playoffs_pct: 0.92, win_title_pct: 0.03 }, pace_wins: 53.0, provenance: { table: "silver_standings + silver_preseason_projections", as_of: "2026-09-07T20:26:48Z" } },
+      injuries: { ok: true, rows: [], provenance: { table: "silver_injuries", as_of: null } },
+      news: { ok: false, rows: [], error: "silver_news not in warehouse", provenance: { table: "silver_news", as_of: null } },
+      cap: { ok: true, row: { team: "NYK", payroll: 201332759, room_under_apron2: 5537241, over_tax: true }, meta: { apron1: 178132000, apron2: 206870000 }, provenance: { table: "silver_salaries", as_of: "2026-09-07" } },
+    },
+  };
+  await mount(<MorningPage />, async input => {
+    const url = String(input);
+    if (url.includes("/morning")) return Response.json(morning);
+    return Response.json({ ok: true });
+  }, async host => {
+    assert.match(host.textContent!, /W\s*CHA 96 @ NYK 110/);
+    assert.match(host.textContent!, /Utah Jazz at New York Knicks/);
+    assert.match(host.textContent!, /22-60, West #15/);
+    assert.match(host.textContent!, /53 wins pace vs 44\.5 projected/);
+    assert.match(host.textContent!, /\$201\.3M/);
+    assert.match(host.textContent!, /silver_news not in warehouse/);
+    assert.match(host.textContent!, /silver_scoreboard · as of 2026-09-11/);
+    assert.match(host.textContent!, /salary|silver_salaries/);
+    assert.ok(host.querySelectorAll("button").length > 3);
+  });
+});
+
+test("Morning page shows the backend error without substituting data", async () => {
+  await mount(<MorningPage />, async () => Response.json({ ok: false, error: "warehouse unreachable" }, { status: 422 }), async host => {
+    assert.match(host.textContent!, /warehouse unreachable/);
+    assert.match(host.textContent!, /No sample data is substituted/);
+    assert.ok(host.querySelector('[role="alert"]'));
   });
 });
 
