@@ -23,6 +23,46 @@ export const generativeFixtures: DimeArtifact[] = [
   { kind: "table", title: "Illustrative shortlist", columns: [{ key: "player", label: "Player" }, { key: "points", label: "Points/game", numeric: true }, { key: "assists", label: "Assists/game", numeric: true }, { key: "impact", label: "Impact", numeric: true }], rows: [
     ["Alex Example", 24.6, 7.2, ""], ["Blake Example", 23.5, 5.8, 1.4], ["Casey Example", 18.2, 8.1, 0],
   ] },
+  { kind: "compare", title: "Illustrative head-to-head", aName: "Alex Example", bName: "Blake Example", rows: [
+    { label: "Points/game", a: 24.6, b: 23.5 }, { label: "Assists/game", a: 7.2, b: 5.8 }, { label: "True shooting", a: 61.2, b: 58.4 },
+  ] },
+  { kind: "scatter", title: "Illustrative usage vs efficiency", xLabel: "Usage rate", yLabel: "True shooting", xMid: 25, yMid: 58, points: [
+    { label: "Alex Example", x: 31.2, y: 61.2, highlight: true }, { label: "Blake Example", x: 27.8, y: 58.4 },
+    { label: "Casey Example", x: 22.1, y: 55.9 }, { label: "Drew Example", x: 19.4, y: 60.1 },
+  ], footnote: "Fictional values. Above-right is high usage and high efficiency." },
+  { kind: "shot_chart", title: "Illustrative shot profile", zones: [
+    { x: 0, y: 0, att: 120, makes: 79, pct: 65.8, label: "Rim", delta: 3.1 },
+    { x: -160, y: 60, att: 44, makes: 18, pct: 40.9, label: "Left mid", delta: -1.2 },
+    { x: 160, y: 60, att: 38, makes: 15, pct: 39.5, label: "Right mid", delta: -2.6 },
+    { x: -220, y: 230, att: 61, makes: 26, pct: 42.6, label: "Left three", delta: 4.4 },
+    { x: 220, y: 230, att: 57, makes: 20, pct: 35.1, label: "Right three", delta: -3.1 },
+    { x: 0, y: 300, att: 34, makes: 12, pct: 35.3, label: "Top three", delta: -2.0 },
+  ], footnote: "Fictional zone data. Color marks zone fg% vs league average." },
+  { kind: "team_card", title: "Illustrative team snapshot", teamName: "Fixture City", sourceRef: "design-team-fixture", sourceRow: 0, nameColumn: "team",
+    provenance: { origin: "undeclared", capability: "Design fixture · no live query", season: "Illustrative season", liveSources: [] },
+    metrics: [
+      { column: "wins", label: "Wins", value: 41, unit: "games" },
+      { column: "net_rtg", label: "Net rating", value: 2.4, unit: "per 100" },
+      { column: "pace", label: "Pace", value: 99.8, unit: "poss/48" },
+    ],
+    sections: [
+      { label: "Payroll", sourceRef: "design-cap-fixture", sourceRow: 0, metrics: [
+        { column: "payroll", label: "Payroll", value: 172, unit: "$M" },
+        { column: "apron_room", label: "Room below 1st apron", value: 6, unit: "$M" },
+      ], fields: [{ column: "apron", label: "Apron status", value: "below first apron" }],
+      provenance: { origin: "undeclared", capability: "Design fixture · no live query", season: "Illustrative season", liveSources: [] } },
+      { label: "Four factors", sourceRef: "design-4f-fixture", sourceRow: 0, metrics: [
+        { column: "efg", label: "eFG%", value: 55.1, unit: "%" },
+        { column: "tov", label: "TOV%", value: 13.2, unit: "%" },
+      ], provenance: { origin: "undeclared", capability: "Design fixture · no live query", season: "Illustrative season", liveSources: [] } },
+    ] },
+  { kind: "memo", title: "Illustrative scouting memo", subtitle: "Fixture City", text: "Fixture City outscores opponents behind rim pressure and corner shooting.",
+    provenance: { origin: "undeclared", capability: "Design fixture · no live query", season: "Illustrative season", liveSources: [] },
+    sections: [
+      { heading: "Offense", body: "65.8% at the rim on this sample; the left wing three is the second-best look.", anchors: [{ ref: "design-fixture", row: 0, columns: ["zone", "pct"] }] },
+      { heading: "Watchouts", body: "Midrange attempts are down but efficiency there lags both corners." },
+    ],
+    footnote: "Fictional memo. Section citations reference fixture rows only." },
 ];
 
 export const generativeEvents: [string, unknown][] = [
