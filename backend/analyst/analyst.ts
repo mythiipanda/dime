@@ -35,7 +35,7 @@ export type ProductEvent = {
     data: {
         node: "tools";
         name: string;
-        data: Record<string, never>;
+        data: { args?: unknown };
     };
 } | {
     type: "tool_result";
@@ -165,7 +165,7 @@ function mapExecutionEvent(event: AnalystEvent, state: RunState): ProductEvent |
             state.failed = true;
             return { type: "failure", data: { kind: event.kind, message: event.message } };
         case "tool_call":
-            return { type: "tool_call", data: { node: "tools", name: event.name, data: {} } };
+            return { type: "tool_call", data: { node: "tools", name: event.name, data: { args: event.args } } };
         case "tool_result":
             return {
                 type: "tool_result",
