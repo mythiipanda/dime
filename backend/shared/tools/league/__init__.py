@@ -118,6 +118,7 @@ from .clutch import (
     get_clutch_stats,
     get_situational_splits,
 )
+from .expectations import get_expectations
 from .draft_contracts import (
     _CONTRACT_WEIGHTS,
     _contract_fetched,
@@ -201,6 +202,7 @@ from .playoffs_sim import (
     get_playoffs,
     get_win_prob,
 )
+from .roster_fit import get_roster_fit
 from .ratings import (
     _RATINGS_KEEP,
     _RankingDirection,
@@ -218,6 +220,7 @@ from .ratings import (
     get_player_ratings,
     get_player_risers,
     get_playoff_team_ratings,
+    get_impact_rank,
     get_rapm,
     get_ratings,
     get_rest,
@@ -293,6 +296,10 @@ from .standings import (
     get_standings_deep,
     get_team_trajectory,
 )
+from .free_agents import get_free_agents
+from .daily_brief import get_team_daily_brief
+from .news import get_news_feed
+from .prospects import get_prospect
 from .trade_value import (
     PICK_VALUE_M,
     _TRADE_CHECK_UNMODELED,
@@ -342,5 +349,6 @@ from .trade_value import (
     _trade_value_sides,
     _trade_verdict_line,
     get_trade_check,
+    get_trade_partners,
     get_trade_value,
 )

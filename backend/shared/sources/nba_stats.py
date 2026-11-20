@@ -375,7 +375,8 @@ def _tracking_wait() -> None:
         _time.sleep(wait)
     _tracking_last = _time.monotonic()
 
-def pt_stats(scope: str, measure_type: str, season: str) -> FetchResult:
+def pt_stats(scope: str, measure_type: str, season: str,
+             season_type: str = "Regular Season") -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashPtStats
 
     def run() -> pl.DataFrame:
@@ -386,13 +387,15 @@ def pt_stats(scope: str, measure_type: str, season: str) -> FetchResult:
             player_or_team="Player" if scope == "player" else "Team",
             pt_measure_type=measure_type,
             season=season or None,
+            season_type_all_star=season_type,
             timeout=60,
         ))
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
 
-def pt_defend(defense_category: str, season: str) -> FetchResult:
+def pt_defend(defense_category: str, season: str,
+              season_type: str = "Regular Season") -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashPtDefend
 
     def run() -> pl.DataFrame:
@@ -400,19 +403,22 @@ def pt_defend(defense_category: str, season: str) -> FetchResult:
         frames = _frames(LeagueDashPtDefend(
             defense_category=defense_category,
             season=season or None,
+            season_type_all_star=season_type,
             timeout=60,
         ))
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
 
-def pt_shot(season: str) -> FetchResult:
+def pt_shot(season: str,
+            season_type: str = "Regular Season") -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashPlayerPtShot
 
     def run() -> pl.DataFrame:
         _tracking_wait()
         frames = _frames(LeagueDashPlayerPtShot(
             season=season or None,
+            season_type_all_star=season_type,
             timeout=60,
         ))
         return _pl(frames[0])

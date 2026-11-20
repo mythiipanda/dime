@@ -6,7 +6,15 @@ import type {
   CompareArtifactPayload,
   DimeArtifact,
   DimeProvenance,
+  MemoAnchor,
+  MemoArtifactPayload,
+  MemoSectionPayload,
   PlayerCardArtifactPayload,
+  PlayerCardSectionPayload,
+  TeamCardArtifactPayload,
+=======
+  PlayerCardSectionPayload,
+>>>>>>> origin/dev
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   TableArtifactPayload,
@@ -81,7 +89,7 @@ function resolveChart(
 
 function parseShotZone(
   line: unknown,
-): { x: number; y: number; att: number; pct: number } | null {
+): { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number } | null {
   if (typeof line !== "object" || line === null) return null;
   const z = line as Record<string, unknown>;
   const x = finiteNumber(z.x);
@@ -91,7 +99,13 @@ function parseShotZone(
   if (x === undefined || y === undefined || att === undefined || pct === undefined) {
     return null;
   }
-  return { x, y, att, pct };
+  const parsed: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number } = { x, y, att, pct };
+  if (typeof z.label === "string" && z.label) parsed.label = z.label;
+  const makes = finiteNumber(z.makes);
+  if (makes !== undefined) parsed.makes = makes;
+  const delta = finiteNumber(z.delta);
+  if (delta !== undefined) parsed.delta = delta;
+  return parsed;
 }
 
 function resolveShotChart(
@@ -99,7 +113,7 @@ function resolveShotChart(
   title: string,
   provenance: DimeProvenance | undefined,
 ): ShotChartArtifactPayload {
-  const zones: { x: number; y: number; att: number; pct: number }[] = [];
+  const zones: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number }[] = [];
   for (const line of Array.isArray(entry.zones) ? entry.zones : []) {
     const parsed = parseShotZone(line);
     if (parsed) zones.push(parsed);
@@ -250,26 +264,183 @@ type ArtifactResolver = (
   provenance: DimeProvenance | undefined,
 ) => DimeArtifact | null;
 
+type CardMetric = { column: string; label: string; value: number | null; unit?: string };
+
+function parseCardMetric(raw: unknown): CardMetric | null {
+  if (!raw || typeof raw !== "object") return null;
+  const metric = raw as Record<string, unknown>;
+  if (typeof metric.column !== "string" || !metric.column || typeof metric.label !== "string" || !metric.label ||
+      (metric.value !== null && finiteNumber(metric.value) === undefined)) return null;
+  return { column: metric.column, label: metric.label, value: metric.value as number | null,
+    ...(typeof metric.unit === "string" ? { unit: metric.unit } : {}) };
+}
+
+function parseCardSections(raw: unknown): PlayerCardSectionPayload[] | undefined | null {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 6) return null;
+  const sections: PlayerCardSectionPayload[] = [];
+  for (const rawSection of raw) {
+    if (!rawSection || typeof rawSection !== "object") return null;
+    const section = rawSection as Record<string, unknown>;
+    if (typeof section.label !== "string" || !section.label ||
+        typeof section.sourceRef !== "string" || !section.sourceRef ||
+        typeof section.sourceRow !== "number" || !Number.isInteger(section.sourceRow) || section.sourceRow < 0 ||
+        (section.metrics === undefined && section.fields === undefined)) return null;
+    const resolved: PlayerCardSectionPayload = { label: section.label, sourceRef: section.sourceRef, sourceRow: section.sourceRow };
+    if (section.metrics !== undefined) {
+      if (!Array.isArray(section.metrics) || section.metrics.length === 0 || section.metrics.length > 6) return null;
+      resolved.metrics = [];
+      for (const rawMetric of section.metrics) {
+        const metric = parseCardMetric(rawMetric);
+        if (!metric) return null;
+        resolved.metrics.push(metric);
+      }
+    }
+    if (section.fields !== undefined) {
+      if (!Array.isArray(section.fields) || section.fields.length === 0 || section.fields.length > 6) return null;
+      resolved.fields = [];
+      for (const rawField of section.fields) {
+        if (!rawField || typeof rawField !== "object") return null;
+        const item = rawField as Record<string, unknown>;
+        if (typeof item.column !== "string" || !item.column || typeof item.label !== "string" || !item.label ||
+            (item.value !== null && typeof item.value !== "string")) return null;
+        resolved.fields.push({ column: item.column, label: item.label, value: item.value as string | null });
+      }
+    }
+    if (typeof section.provenance === "object" && section.provenance !== null)
+      resolved.provenance = section.provenance as DimeProvenance;
+    sections.push(resolved);
+  }
+  return sections;
+}
+
 function resolvePlayerCard(entry: Record<string, unknown>, title: string, provenance: DimeProvenance | undefined): PlayerCardArtifactPayload | null {
   if (typeof entry.playerName !== "string" || !entry.playerName.trim() ||
       typeof entry.sourceRef !== "string" || !entry.sourceRef ||
       typeof entry.sourceRow !== "number" || !Number.isInteger(entry.sourceRow) || entry.sourceRow < 0 ||
       typeof entry.nameColumn !== "string" || !entry.nameColumn ||
       !Array.isArray(entry.metrics) || entry.metrics.length === 0 || entry.metrics.length > 6) return null;
-  const metrics: PlayerCardArtifactPayload["metrics"] = [];
+  const metrics: CardMetric[] = [];
   for (const raw of entry.metrics) {
-    if (!raw || typeof raw !== "object") return null;
-    const metric = raw as Record<string, unknown>;
-    if (typeof metric.column !== "string" || !metric.column || typeof metric.label !== "string" || !metric.label ||
-        (metric.value !== null && finiteNumber(metric.value) === undefined)) return null;
-    metrics.push({ column: metric.column, label: metric.label, value: metric.value as number | null,
-      ...(typeof metric.unit === "string" ? { unit: metric.unit } : {}) });
+    const metric = parseCardMetric(raw);
+    if (!metric) return null;
+    metrics.push(metric);
   }
+  const sections = parseCardSections(entry.sections);
+  if (sections === null) return null;
+=======
+  let sections: PlayerCardArtifactPayload["sections"];
+  if (entry.sections !== undefined) {
+    if (!Array.isArray(entry.sections) || entry.sections.length === 0 || entry.sections.length > 6) return null;
+    sections = [];
+    for (const rawSection of entry.sections) {
+      if (!rawSection || typeof rawSection !== "object") return null;
+      const section = rawSection as Record<string, unknown>;
+      if (typeof section.label !== "string" || !section.label ||
+          typeof section.sourceRef !== "string" || !section.sourceRef ||
+          typeof section.sourceRow !== "number" || !Number.isInteger(section.sourceRow) || section.sourceRow < 0 ||
+          (section.metrics === undefined && section.fields === undefined)) return null;
+      const resolved: PlayerCardSectionPayload = { label: section.label, sourceRef: section.sourceRef, sourceRow: section.sourceRow };
+      if (section.metrics !== undefined) {
+        if (!Array.isArray(section.metrics) || section.metrics.length === 0 || section.metrics.length > 6) return null;
+        resolved.metrics = [];
+        for (const rawMetric of section.metrics) {
+          if (!rawMetric || typeof rawMetric !== "object") return null;
+          const metric = rawMetric as Record<string, unknown>;
+          if (typeof metric.column !== "string" || !metric.column || typeof metric.label !== "string" || !metric.label ||
+              (metric.value !== null && finiteNumber(metric.value) === undefined)) return null;
+          resolved.metrics.push({ column: metric.column, label: metric.label, value: metric.value as number | null,
+            ...(typeof metric.unit === "string" ? { unit: metric.unit } : {}) });
+        }
+      }
+      if (section.fields !== undefined) {
+        if (!Array.isArray(section.fields) || section.fields.length === 0 || section.fields.length > 6) return null;
+        resolved.fields = [];
+        for (const rawField of section.fields) {
+          if (!rawField || typeof rawField !== "object") return null;
+          const item = rawField as Record<string, unknown>;
+          if (typeof item.column !== "string" || !item.column || typeof item.label !== "string" || !item.label ||
+              (item.value !== null && typeof item.value !== "string")) return null;
+          resolved.fields.push({ column: item.column, label: item.label, value: item.value as string | null });
+        }
+      }
+      if (typeof section.provenance === "object" && section.provenance !== null)
+        resolved.provenance = section.provenance as DimeProvenance;
+      sections.push(resolved);
+    }
+  }
+>>>>>>> origin/dev
   return { kind: "player_card", title, playerName: entry.playerName,
     ...(typeof entry.team === "string" ? { team: entry.team } : {}),
     sourceRef: entry.sourceRef, sourceRow: entry.sourceRow, nameColumn: entry.nameColumn,
     ...(typeof entry.teamColumn === "string" ? { teamColumn: entry.teamColumn } : {}),
-    metrics, source: provenanceSource(provenance), provenance };
+    metrics, ...(sections ? { sections } : {}),
+    source: provenanceSource(provenance), provenance };
+}
+
+function resolveTeamCard(entry: Record<string, unknown>, title: string, provenance: DimeProvenance | undefined): TeamCardArtifactPayload | null {
+  if (typeof entry.teamName !== "string" || !entry.teamName.trim() ||
+      typeof entry.sourceRef !== "string" || !entry.sourceRef ||
+      typeof entry.sourceRow !== "number" || !Number.isInteger(entry.sourceRow) || entry.sourceRow < 0 ||
+      typeof entry.nameColumn !== "string" || !entry.nameColumn ||
+      !Array.isArray(entry.metrics) || entry.metrics.length === 0 || entry.metrics.length > 6) return null;
+  const metrics: CardMetric[] = [];
+  for (const raw of entry.metrics) {
+    const metric = parseCardMetric(raw);
+    if (!metric) return null;
+    metrics.push(metric);
+  }
+  const sections = parseCardSections(entry.sections);
+  if (sections === null) return null;
+  return { kind: "team_card", title, teamName: entry.teamName,
+    sourceRef: entry.sourceRef, sourceRow: entry.sourceRow, nameColumn: entry.nameColumn,
+    metrics, ...(sections ? { sections } : {}),
+    source: provenanceSource(provenance), provenance };
+=======
+    metrics, ...(sections ? { sections } : {}),
+    source: provenanceSource(provenance), provenance };
+>>>>>>> origin/dev
+}
+
+function resolveMemo(
+  entry: Record<string, unknown>,
+  title: string,
+  provenance: DimeProvenance | undefined,
+): MemoArtifactPayload | null {
+  const sections: MemoSectionPayload[] = [];
+  for (const line of Array.isArray(entry.sections) ? entry.sections : []) {
+    if (typeof line !== "object" || line === null) continue;
+    const s = line as Record<string, unknown>;
+    const heading = typeof s.heading === "string" ? s.heading : "";
+    const body = typeof s.body === "string" ? s.body : "";
+    if (!heading || !body) continue;
+    const anchors: MemoAnchor[] = [];
+    for (const raw of Array.isArray(s.anchors) ? s.anchors : []) {
+      const a = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : null;
+      const ref = a && typeof a.ref === "string" ? a.ref : "";
+      const row = a ? finiteNumber(a.row) : undefined;
+      const columns = a && Array.isArray(a.columns)
+        ? a.columns.filter((c): c is string => typeof c === "string" && c !== "")
+        : [];
+      if (ref && row !== undefined && row >= 0 && columns.length > 0) {
+        anchors.push({ ref, row, columns });
+      }
+    }
+    sections.push({ heading, body, ...(anchors.length > 0 ? { anchors } : {}) });
+  }
+  if (sections.length === 0) return null;
+  const subtitle = typeof entry.subtitle === "string" && entry.subtitle ? entry.subtitle : undefined;
+  const footnote = typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined;
+  return {
+    kind: "memo",
+    title,
+    text: sections.map(s => `${s.heading}\n${s.body}`).join("\n\n"),
+    sections,
+    source: provenanceSource(provenance),
+    provenance,
+    ...(subtitle ? { subtitle } : {}),
+    ...(footnote ? { footnote } : {}),
+  };
 }
 
 const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
@@ -279,7 +450,24 @@ const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   compare: resolveCompare,
   scatter: resolveScatter,
   player_card: resolvePlayerCard,
-};
+  team_card: resolveTeamCard,
+  memo: resolveMemo,};
+
+export function memoToMarkdown(artifact: MemoArtifactPayload): string {
+  const lines: string[] = [`# ${artifact.title}`];
+  if (artifact.subtitle) lines.push(`\n_${artifact.subtitle}_`);
+  if (!artifact.sections?.length) lines.push("", artifact.text);
+  for (const section of artifact.sections ?? []) {
+    lines.push("", `## ${section.heading}`, "", section.body);
+    if (section.anchors?.length) {
+      const refs = [...new Set(section.anchors.map(a => `${a.ref} row ${a.row}`))];
+      lines.push("", `_Cited rows: ${refs.join(" · ")}_`);
+    }
+  }
+  if (artifact.footnote) lines.push("", `---`, "", artifact.footnote);
+  if (artifact.source) lines.push("", `Source: ${artifact.source}`);
+  return lines.join("\n") + "\n";
+}
 
 export function asResolvedArtifacts(raw: unknown): DimeArtifact[] {
   if (!Array.isArray(raw)) return [];

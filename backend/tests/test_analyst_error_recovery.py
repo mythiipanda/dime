@@ -81,6 +81,100 @@ def test_unknown_entity_error_includes_entity_recovery_hint(monkeypatch):
     assert "get_standings" in res["next_actions"]
 
 
+def test_sql_column_error_attaches_schema_hint(monkeypatch):
+    import shared.tools.sql_exec
+    from shared.tools import league as league_mod
+
+    sql_mod = sys.modules["shared.tools.sql_exec"]
+
+    class _ColErr:
+        description = "sql"
+
+        async def ainvoke(self, args):
+            return {
+                "tool": "sql_exec",
+                "ok": False,
+                "error": 'Binder Error: Referenced column "TS_PCT" not found in FROM clause!',
+            }
+
+    monkeypatch.setattr(sql_mod, "sql_exec", _ColErr())
+    monkeypatch.setattr(
+        league_mod,
+        "_get_warehouse_schema",
+        lambda: (
+            ["silver_player_season", "silver_hist_player_seasons"],
+            {
+                "silver_player_season": {"PLAYER": {}, "PPG": {}},
+                "silver_hist_player_seasons": {"ts_pct": {}, "pts": {}},
+            },
+        ),
+    )
+    tools = python_tools.catalogue()
+    res = asyncio.run(
+        tools["sql_exec"].ainvoke({"sql": "SELECT TS_PCT FROM silver_player_season WHERE _season='2025-26'"})
+    )
+    assert res["ok"] is False
+    hint = res["schema_hint"]
+    assert hint["missing_column"] == "TS_PCT"
+    assert hint["tables_with_column"] == ["silver_hist_player_seasons.ts_pct"]
+    assert "silver_player_season" in hint["referenced_tables"]
+    assert hint["referenced_tables"]["silver_player_season"] == ["PLAYER", "PPG"]
+
+
+def test_sql_unknown_table_error_lists_declared_tables(monkeypatch):
+    import shared.tools.sql_exec
+    from shared.tools import league as league_mod
+
+    sql_mod = sys.modules["shared.tools.sql_exec"]
+
+    class _TableErr:
+        description = "sql"
+
+        async def ainvoke(self, args):
+            return {
+                "tool": "sql_exec",
+                "ok": False,
+                "error": "unknown or unavailable tables: silver_player_seasons",
+            }
+
+    monkeypatch.setattr(sql_mod, "sql_exec", _TableErr())
+    monkeypatch.setattr(
+        league_mod,
+        "_get_warehouse_schema",
+        lambda: (
+            ["silver_player_season", "silver_hist_player_seasons"],
+            {
+                "silver_player_season": {"PLAYER": {}},
+                "silver_hist_player_seasons": {"ts_pct": {}},
+            },
+        ),
+    )
+    tools = python_tools.catalogue()
+    res = asyncio.run(tools["sql_exec"].ainvoke({"sql": "SELECT * FROM silver_player_seasons"}))
+    assert res["ok"] is False
+    hint = res["schema_hint"]
+    assert hint["unknown_tables"] == ["silver_player_seasons"]
+    assert hint.get("similar_tables") or hint.get("declared_tables")
+
+
+def test_sql_timeout_error_has_no_schema_hint(monkeypatch):
+    import shared.tools.sql_exec
+
+    sql_mod = sys.modules["shared.tools.sql_exec"]
+
+    class _TimeoutErr:
+        description = "sql"
+
+        async def ainvoke(self, args):
+            return {"tool": "sql_exec", "ok": False, "error": "query exceeded 30s"}
+
+    monkeypatch.setattr(sql_mod, "sql_exec", _TimeoutErr())
+    tools = python_tools.catalogue()
+    res = asyncio.run(tools["sql_exec"].ainvoke({"sql": "SELECT * FROM silver_standings"}))
+    assert res["ok"] is False
+    assert "schema_hint" not in res
+
+
 def test_ok_result_does_not_add_error_recovery_keys(monkeypatch):
     from shared.tools import league as league_mod
 

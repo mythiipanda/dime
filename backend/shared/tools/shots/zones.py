@@ -344,7 +344,9 @@ def disambiguate_last_name(
     key = (raw or "").strip().lower()
     hits: dict[int, str] = {}
     for name, pid in pairs:
-        if str(name or "").strip().lower() != key:
+        text = str(name or "").strip().lower()
+        surname = text.rsplit(" ", 1)[-1] if text else ""
+        if text != key and surname != key:
             continue
         try:
             pid_int = int(pid)

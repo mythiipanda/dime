@@ -18,6 +18,9 @@ import {
 } from "../dist/submit-tool.js";
 import { ANALYST_TOOL_NAMES } from "../dist/python-tools.js";
 import { TOOL_PROMPT_GUIDELINES } from "../dist/tool-contract-metadata.js";
+=======
+import { countToolCall, createRunStatusTool } from "../dist/run-status.js";
+>>>>>>> origin/dev
 
 function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
   const result = error !== undefined ? { rows, error } : { rows };
@@ -31,6 +34,16 @@ function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
       isError,
     },
   };
+}
+
+function messageText(value) {
+  if (typeof value === "string")
+    return value;
+  if (Array.isArray(value))
+    return value.map(messageText).join("\n");
+  if (value && typeof value === "object")
+    return Object.values(value).map(messageText).join("\n");
+  return "";
 }
 
 function makeFixtureRuntime(agentDir, streamHandler, compat) {
@@ -403,6 +416,258 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
   }
 });
 
+test("run_status reports elapsed budget and counters", async () => {
+  const tracker = {
+    startedAt: Date.now() - 1000,
+    budgetMs: 5000,
+    toolCalls: 7,
+    sourceCount: () => 3,
+    submitted: true,
+  };
+  const tool = createRunStatusTool(tracker);
+  const result = await tool.execute("call-status", {}, undefined, undefined, undefined);
+  const status = result.structuredContent;
+  assert.equal(status.ok, true);
+  assert.equal(status.tool_calls, 7);
+  assert.equal(status.source_count, 3);
+  assert.equal(status.submitted, true);
+  assert.equal(status.budget_ms, 5000);
+  assert.ok(status.elapsed_ms >= 1000);
+  assert.equal(status.elapsed_ms + status.budget_remaining_ms, status.budget_ms);
+
+  const unbudgeted = createRunStatusTool({ startedAt: Date.now(), toolCalls: 0, sourceCount: () => 0, submitted: false });
+  const unbudgetedResult = await unbudgeted.execute("call-status-2", {}, undefined, undefined, undefined);
+  assert.equal(unbudgetedResult.structuredContent.budget_ms, undefined);
+  assert.equal(unbudgetedResult.structuredContent.budget_remaining_ms, undefined);
+
+  const counted = countToolCall(createRunStatusTool(tracker), tracker);
+  await counted.execute("call-status-3", {}, undefined, undefined, undefined);
+  assert.equal(tracker.toolCalls, 8);
+});
+
+test("run_status is exposed to codemode with host budget and checkpointed submission", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-run-status-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    turn++;
+    seenContexts.push(structuredClone(context));
+    const content = turn === 1
+      ? [{ type: "toolCall", id: "call-run-status", name: "codemode", arguments: { code: `
+          await tools.submit_answer({ blocks: [{ text: "Checkpoint partial." }] });
+          const source = await tools.sql_exec({ sql: "SELECT 1" });
+          const prior = await tools.read_source({ ref: "prior-1" });
+          const status = await tools.run_status({});
+          return { sourceRef: source.ref, priorRef: prior.ref, status };
+        ` } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn === 1 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: turn === 1 ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [{
+      name: "sql_exec",
+      label: "sql_exec",
+      description: "Run SQL",
+      parameters: Type.Object({ sql: Type.String(), params: Type.Optional(Type.Record(Type.String(), Type.Unknown())) }),
+      async execute(callId) {
+        const ref = "src-run-status";
+        const payload = { rows: [{ val: 1 }] };
+        const record = { ref, callId, tool: "sql_exec", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: false } };
+        resultsMap.set(ref, record);
+        return { content: [], details: undefined, structuredContent: { ref, tool: "sql_exec", result: payload, isError: false }, isError: false };
+      },
+    }],
+    results: resultsMap,
+    pid: 1003,
+    close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Checkpoint a large analysis",
+      history: [],
+      model: "fixture:fixture",
+      runTimeoutMs: 12345,
+      sources: [makeSourceRecord("prior-1", { rows: [{ player: "Jokic", pts: 29.6 }] })],
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    }))
+      events.push(event);
+    assert.equal(events.find((event) => event.type === "answer")?.text, "Checkpoint partial.");
+    const transcript = seenContexts.map((context) => context.messages.map((message) => messageText(message.content)).join("\n")).join("\n");
+    assert.match(transcript, /"?ok"?\s*:\s*true/);
+    assert.match(transcript, /tool_calls"?\s*:\s*4/);
+    assert.match(transcript, /source_count"?\s*:\s*2/);
+    assert.match(transcript, /submitted"?\s*:\s*true/);
+    assert.match(transcript, /budget_ms"?\s*:\s*12345/);
+    assert.match(transcript, /budget_remaining_ms"?\s*:\s*\d+/);
+    assert.match(
+      seenContexts[0].messages.map((message) => messageText(message.content)).join("\n"),
+      /Host run budget: 12s \(12345ms total\)/
+    );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("no host budget context is injected when runTimeoutMs is unset", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-no-budget-ctx-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    seenContexts.push(structuredClone(context));
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [{ type: "text", text: "Done." }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => ({ tools: [], results: new Map(), pid: 1006, close: async () => {} }),
+  });
+
+  try {
+    for await (const event of pi.stream({
+      q: "Quick question",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) void event;
+    const transcript = seenContexts[0].messages.map((message) => messageText(message.content)).join("\n");
+    assert(!transcript.includes("Host run budget:"));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("repeated identical tool errors carry a data-limitation hint", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-repeat-error-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    turn++;
+    seenContexts.push(structuredClone(context));
+    const content = turn <= 2
+      ? [{ type: "toolCall", id: `call-repeat-error-${turn}`, name: "codemode", arguments: { code: turn === 1
+          ? `return await tools.get_trade_check({ give: ["Brown"], get: ["George"] });`
+          : `return await tools.get_trade_check({ give: ["Brown"], get: ["George", "pick"] });` } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn <= 2 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason, message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  let execCount = 0;
+  const mockBridge = {
+    tools: [{
+      name: "get_trade_check",
+      label: "get_trade_check",
+      description: "Check a trade",
+      parameters: Type.Object({ give: Type.Array(Type.String()), get: Type.Array(Type.String()) }),
+      async execute(callId) {
+        execCount++;
+        const ref = `src-trade-${execCount}`;
+        const payload = { ok: false, error: "salary data lists Jaylen Brown with PHI, not BOS; trade math was not calculated" };
+        const record = { ref, callId, tool: "get_trade_check", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: true } };
+        resultsMap.set(ref, record);
+        return { content: [{ type: "text", text: JSON.stringify(payload) }], details: undefined, structuredContent: { ref, tool: "get_trade_check", result: payload, isError: true }, isError: true };
+      },
+    }],
+    results: resultsMap,
+    pid: 1005,
+    close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    for await (const event of pi.stream({
+      q: "Retry a failing trade check",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) void event;
+    assert.equal(execCount, 2);
+    const transcript = seenContexts.map((context) => context.messages.map((message) => messageText(message.content)).join("\n")).join("\n");
+    assert.match(transcript, /repeated_error"?\s*:\s*"Same error as 1 earlier get_trade_check call/);
+    assert.match(transcript, /recovery_hint"?\s*:\s*"Treat as a data limitation/);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("submit_answer accepts and reports omitted parts", async () => {
+  const accepted = [];
+  const tool = createSubmitAnswerTool(() => [], (submission) => accepted.push(submission));
+  const result = await tool.execute("call-omit", {
+    blocks: [{ text: "Partial verified answer." }],
+    omitted: ["Trade candidates for Jaylen Brown", "Playoff shooting struggles"],
+  });
+  assert.equal(accepted.length, 1);
+  assert.deepEqual(accepted[0].omitted, ["Trade candidates for Jaylen Brown", "Playoff shooting struggles"]);
+  assert.match(result.content[0].text, /2 omitted part\(s\) recorded/);
+
+  const full = validateAnswerSubmission({ blocks: [{ text: "Complete." }] }, () => undefined);
+  assert.equal(full.omitted, undefined);
+});
+
 test("submit_answer and validateAnswerSubmission provide available columns and available refs hints", async () => {
   const src1 = makeSourceRecord("src-1", {
     rows: [{ player: "Jokic", pts: 29.6, trb: 12.7 }],
@@ -461,6 +726,85 @@ test("submit_answer and validateAnswerSubmission provide available columns and a
   );
 });
 
+test("accepted submit_answer is emitted when the run aborts before prompt returns", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-submit-abort-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+  let markEntered;
+  const entered = new Promise((resolve) => { markEntered = resolve; });
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const content = turn === 1
+      ? [{ type: "toolCall", id: "call-submit-abort", name: "codemode", arguments: { code: `
+          await tools.submit_answer({ blocks: [{ text: "Checkpoint answer." }] });
+          return await tools.wait_for_cancel({});
+        ` } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn === 1 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason, message: msg });
+    stream.end();
+    return stream;
+  });
+  const mockBridge = {
+    tools: [{
+      name: "wait_for_cancel",
+      label: "wait_for_cancel",
+      description: "Wait until cancelled",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      async execute(_callId, _args, signal) {
+        markEntered();
+        await new Promise((resolve, reject) => {
+          const fail = () => reject(new Error("fixture cancelled"));
+          if (signal?.aborted) fail();
+          else signal?.addEventListener("abort", fail, { once: true });
+        });
+      },
+    }],
+    results: new Map(),
+    pid: 1004,
+    close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+    abortGraceMs: 20,
+  });
+  const abort = new AbortController();
+  const events = [];
+  try {
+    const consuming = (async () => {
+      for await (const event of pi.stream({
+        q: "Submit then hang",
+        history: [],
+        model: "fixture:fixture",
+        cwd,
+        agentDir,
+        bridge: { python: "fake", cwd, env: {} },
+      }, abort.signal)) events.push(event);
+    })();
+    await entered;
+    abort.abort();
+    await consuming;
+    const answer = events.find((event) => event.type === "answer");
+    assert.equal(answer?.text, "Checkpoint answer.");
+    assert.equal(answer?.submission?.blocks?.[0]?.text, "Checkpoint answer.");
+    assert(!events.some((event) => event.type === "failure"));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("host bootstrap failure names the missing manifest variable on stderr", () => {
   const printed = [];
   reportBootstrapFailure(
@@ -473,7 +817,12 @@ test("host bootstrap failure names the missing manifest variable on stderr", () 
   assert.match(stderr, /\n\s+at /);
 });
 
-async function contextsForHistory(compat) {
+const defaultHistory = [
+  { role: "user", content: "Who led the league in points?" },
+  { role: "assistant", content: "Luka Doncic at 33.5 PPG.", reasoning: "Checked league scoring leaders." },
+];
+
+async function contextsForHistory(compat, history = defaultHistory) {
   const cwd = await mkdtemp(join(tmpdir(), "dime-history-"));
   const agentDir = join(cwd, "agent");
   const bridgeCwd = join(cwd, "bridge-ws");
@@ -494,7 +843,7 @@ async function contextsForHistory(compat) {
   try {
     for await (const event of pi.stream({
       q: "And their defensive rating?",
-      history: [{ role: "user", content: "Who led the league in points?" }, { role: "assistant", content: "Luka Doncic at 33.5 PPG." }],
+      history,
       model: "fixture:fixture",
       cwd,
       agentDir,
@@ -508,15 +857,59 @@ async function contextsForHistory(compat) {
 
 test("history replays as assistant turns by default", async () => {
   const messages = await contextsForHistory(undefined);
-  assert.equal(messages.filter((m) => m.role === "assistant").length, 1);
+  const assistant = messages.find((m) => m.role === "assistant");
+  assert.ok(assistant);
+  assert.equal(assistant.content.some((block) => block.type === "thinking"), false);
 });
 
-test("history replays as one transcript when the model requires prior reasoning", async () => {
+test("history replays stored reasoning for models requiring it", async () => {
   const messages = await contextsForHistory({ requiresReasoningContentOnAssistantMessages: true });
-  assert.equal(messages.filter((m) => m.role === "assistant").length, 0);
-  const transcript = messages.find((m) => m.role === "user" && typeof m.content === "string" && m.content.includes("Analyst: Luka Doncic at 33.5 PPG."));
-  assert.ok(transcript);
-  assert.ok(transcript.content.includes("User: Who led the league in points?"));
+  const assistant = messages.find((m) => m.role === "assistant");
+  assert.ok(assistant);
+  const thinking = assistant.content.find((block) => block.type === "thinking");
+  assert.ok(thinking);
+  assert.equal(thinking.thinking, "Checked league scoring leaders.");
+  assert.equal(thinking.thinkingSignature, "reasoning_content");
+  assert.ok(assistant.content.some((block) => block.type === "text" && block.text === "Luka Doncic at 33.5 PPG."));
+});
+
+test("history supplies non-empty reasoning when a prior turn has none", async () => {
+  const messages = await contextsForHistory(
+    { requiresReasoningContentOnAssistantMessages: true },
+    [{ role: "user", content: "Who led the league in points?" }, { role: "assistant", content: "Luka Doncic at 33.5 PPG." }],
+  );
+  const assistant = messages.find((m) => m.role === "assistant");
+  assert.ok(assistant);
+  const thinking = assistant.content.find((block) => block.type === "thinking");
+  assert.ok(thinking);
+  assert.ok(thinking.thinking.trim().length > 0);
+  assert.equal(thinking.thinkingSignature, "reasoning_content");
+});
+
+test("answer events carry assistant reasoning", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-reasoning-"));
+  const agentDir = join(cwd, "agent");
+  const bridgeCwd = join(cwd, "bridge-ws");
+  await mkdir(agentDir, { recursive: true });
+  await mkdir(bridgeCwd, { recursive: true });
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "thinking", thinking: "Reasoning about the answer.", thinkingSignature: "reasoning_content" }, { type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } });
+    stream.end();
+    return stream;
+  });
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => ({ tools: [], results: new Map(), pid: 1001, close: async () => {} }),
+  });
+  const events = [];
+  try {
+    for await (const event of pi.stream({ q: "Explain the answer.", history: [], model: "fixture:fixture", cwd, agentDir, bridge: { python: "fake", cwd: bridgeCwd, env: {} } }))
+      events.push(event);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+  assert.equal(events.find((event) => event.type === "answer")?.reasoning, "Reasoning about the answer.");
 });
 
 test("pi execution stream ends after abort even when the run never settles", async () => {
