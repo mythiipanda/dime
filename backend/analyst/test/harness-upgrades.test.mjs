@@ -16,17 +16,25 @@ import {
   createSubmitAnswerTool,
   validateAnswerSubmission,
 } from "../dist/submit-tool.js";
+import { sourceResult } from "../dist/python-tools.js";
+=======
 import { countToolCall, createRunStatusTool } from "../dist/run-status.js";
+>>>>>>> origin/dev
 
 function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
   const result = error !== undefined ? { rows, error } : { rows };
+  return makePayloadSourceRecord(ref, result, { isError });
+}
+
+function makePayloadSourceRecord(ref, payload, { tool = "sql_exec", args, isError = false } = {}) {
   return {
     ref,
     callId: "call-" + ref,
-    tool: "sql_exec",
+    tool,
+    ...(args ? { args } : {}),
     response: {
-      content: [{ type: "text", text: JSON.stringify(result) }],
-      structuredContent: result,
+      content: [{ type: "text", text: JSON.stringify(payload) }],
+      structuredContent: payload,
       isError,
     },
   };
@@ -112,6 +120,162 @@ test("listWorkspaceArtifacts respects depth, extensions, ignores, sorting, and c
     assert.equal(capped[39].path, "file-39.tsv");
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("sourceResult returns a compact evidence card for SQL-like source records", () => {
+  const sql = "SELECT PLAYER, PTS FROM silver_leaders_pts WHERE _season = '2025-26'";
+  const payload = {
+    tool: "sql_exec",
+    ok: true,
+    rows: [
+      { PLAYER: "Alpha", PTS: 31.2, SECRET: "RAW_SECRET_ROW" },
+      { PLAYER: "Beta", PTS: 28.4, SECRET: "RAW_SECRET_ROW" },
+    ],
+    columns: ["PLAYER", "PTS", "SECRET"],
+    row_count: 2,
+    sql,
+    meta: {
+      source: "warehouse",
+      season: "2025-26",
+      tables: ["silver_leaders_pts"],
+      empty_observation: false,
+      profile: { returned_rows: 2 },
+    },
+    declared_column_semantics: { PTS: { unit: "total_points" } },
+    season_semantics: {
+      tables: ["silver_leaders_pts"],
+      season_columns: [{ table: "silver_leaders_pts", column: "_season", encoding: "label", row_grain: "season" }],
+      resolved_labels: [{ season: "2025-26", season_label: "2025-26" }],
+      ambiguities: [{ table: "silver_leaders_pts", column: "_season" }],
+    },
+  };
+  const record = makePayloadSourceRecord("sql-card", payload, { args: { sql } });
+  const output = sourceResult(record);
+  assert.equal(output.isError, false);
+  const evidence = output.structuredContent.evidence;
+  assert.equal(evidence.ref, "sql-card");
+  assert.equal(evidence.tool, "sql_exec");
+  assert.equal(evidence.ok, true);
+  assert.equal(evidence.is_error, false);
+  assert.equal(evidence.row_count, 2);
+  assert.deepEqual(evidence.columns, ["PLAYER", "PTS", "SECRET"]);
+  assert.equal(evidence.query.sql, sql);
+  assert.deepEqual(evidence.query.tables, ["silver_leaders_pts"]);
+  assert.equal(evidence.season.season, "2025-26");
+  assert.equal(evidence.season.semantics.season_columns[0].encoding, "label");
+  assert.equal(evidence.units.PTS, "total_points");
+  assert.equal(evidence.provenance.source, "warehouse");
+  assert.ok(evidence.caveats.some((item) => item.includes("ambiguities")));
+  assert.equal(evidence.rows, undefined);
+  assert.equal(JSON.stringify(evidence).includes("RAW_SECRET_ROW"), false);
+  assert.equal(output.structuredContent.result.rows[0].SECRET, "RAW_SECRET_ROW");
+});
+
+test("sourceResult returns a compact evidence card for domain-tool source records", () => {
+  const payload = {
+    tool: "get_rapm",
+    ok: true,
+    rows: [{ player: "Beta", rapm: 4.1 }],
+    columns: ["player", "rapm"],
+    season: "2024-25",
+    season_label: "2024-25",
+    meta: { source: "warehouse:silver_rapm", season: 2025, season_label: "2024-25", limit: 1, estimated: false },
+  };
+  const record = makePayloadSourceRecord("domain-card", payload, {
+    tool: "get_rapm",
+    args: { player: "Beta", season: "2024-25" },
+  });
+  const evidence = sourceResult(record).structuredContent.evidence;
+  assert.equal(evidence.row_count, 1);
+  assert.deepEqual(evidence.columns, ["player", "rapm"]);
+  assert.deepEqual(evidence.query.filters, { player: "Beta", season: "2024-25" });
+  assert.equal(evidence.season.season_label, "2024-25");
+  assert.equal(evidence.provenance.source, "warehouse:silver_rapm");
+  assert.equal(evidence.rows, undefined);
+  assert.equal(JSON.stringify(evidence).includes("rapm\":4.1"), false);
+});
+
+test("createPiExecution injects prior source evidence cards without full rows", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-prior-cards-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    seenContexts.push(structuredClone(context));
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [{ type: "text", text: "Done." }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const source = makePayloadSourceRecord("prior-card", {
+    tool: "get_rapm",
+    ok: true,
+    rows: [{ player: "Gamma", rapm: 3.8, SECRET: "RAW_SECRET_ROW" }],
+    columns: ["player", "rapm", "SECRET"],
+    meta: { source: "warehouse:silver_rapm", season: 2025, season_label: "2024-25" },
+  }, {
+    tool: "get_rapm",
+    args: { player: "Gamma", season: "2024-25" },
+  });
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({
+      runtime,
+      model: runtime.getModel("fixture", "fixture"),
+    }),
+    connectTools: async () => ({
+      tools: [],
+      results: new Map(),
+      pid: 1003,
+      close: async () => {},
+    }),
+  });
+
+  try {
+    for await (const _event of pi.stream({
+      q: "Follow up",
+      history: [],
+      model: "fixture:fixture",
+      sources: [source],
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+    }
+    const userTexts = seenContexts[0].messages
+      .filter((m) => m.role === "user")
+      .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)));
+    const injected = userTexts.find((t) => t.startsWith("Prior source evidence cards."));
+    assert.ok(injected, "Prior source evidence card message should be injected");
+    const cards = JSON.parse(injected.slice("Prior source evidence cards. Use tools.read_source({ref}) inside codemode and return only filtered results; cards omit full rows:\n".length));
+    assert.equal(cards.length, 1);
+    assert.equal(cards[0].ref, "prior-card");
+    assert.equal(cards[0].row_count, 1);
+    assert.deepEqual(cards[0].query.filters, { player: "Gamma", season: "2024-25" });
+    assert.equal(cards[0].season.season_label, "2024-25");
+    assert.equal(cards[0].rows, undefined);
+    assert.equal(injected.includes("RAW_SECRET_ROW"), false);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
   }
 });
 

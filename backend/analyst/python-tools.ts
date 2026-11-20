@@ -163,16 +163,384 @@ function makeToolLiterals<const T extends readonly string[]>(names: T): ToolLite
 export const sourceRecordSchema = Type.Object({
     ref: Type.String(), callId: Type.String(),
     tool: Type.Union(makeToolLiterals(ANALYST_TOOL_NAMES)),
+    args: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
     response: Type.Object({
         content: Type.Array(Type.Unknown()),
         structuredContent: Type.Optional(Type.Unknown()), isError: Type.Optional(Type.Boolean())
     }, { additionalProperties: true }),
 }, { additionalProperties: false });
 export type SourceRecord = Static<typeof sourceRecordSchema>;
-export const sourceOutputSchema = Type.Object({ ref: Type.String(), tool: Type.String(), result: Type.Unknown(), isError: Type.Boolean() }, { additionalProperties: false });
+export const sourceOutputSchema = Type.Object({ ref: Type.String(), tool: Type.String(), result: Type.Unknown(), evidence: Type.Optional(Type.Record(Type.String(), Type.Unknown())), isError: Type.Boolean() }, { additionalProperties: false });
 const objectSchema = Type.Record(Type.String(), Type.Unknown());
 export function objectValue(value: unknown) {
     return Value.Check(objectSchema, value) ? value : undefined;
+}
+function clipText(value: string, limit = 240) {
+    return value.length <= limit ? value : value.slice(0, limit - 1) + "…";
+}
+function finiteNumber(value: unknown) {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+function stringList(value: unknown, limit: number): string[] | undefined {
+    if (!Array.isArray(value) || !value.every(item => typeof item === "string"))
+        return undefined;
+    return value.slice(0, limit) as string[];
+}
+function compactJsonValue(value: unknown, depth = 0, state?: { truncated: boolean }): JsonValue | undefined {
+    if (value === null || typeof value === "boolean")
+        return value;
+    if (typeof value === "number")
+        return Number.isFinite(value) ? value : undefined;
+    if (typeof value === "string") {
+        if (value.length <= 160)
+            return value;
+        if (state)
+            state.truncated = true;
+        return clipText(value, 160);
+    }
+    if (depth >= 2) {
+        if (state)
+            state.truncated = true;
+        return undefined;
+    }
+    if (Array.isArray(value)) {
+        if (value.length > 12 && state)
+            state.truncated = true;
+        return value.slice(0, 12).map(item => compactJsonValue(item, depth + 1, state)).filter((item): item is JsonValue => item !== undefined);
+    }
+    const object = objectValue(value);
+    if (!object)
+        return undefined;
+    const entries = Object.entries(object);
+    if (entries.length > 12 && state)
+        state.truncated = true;
+    const out: Record<string, JsonValue> = {};
+    for (const [key, item] of entries.slice(0, 12)) {
+        const compact = compactJsonValue(item, depth + 1, state);
+        if (compact !== undefined)
+            out[key] = compact;
+    }
+    return out;
+}
+function columnNames(value: unknown): string[] | undefined {
+    const strings = stringList(value, Number.MAX_SAFE_INTEGER);
+    if (strings)
+        return strings;
+    const object = objectValue(value);
+    return object ? Object.keys(object) : undefined;
+}
+function evidenceColumns(data: Record<string, unknown> | undefined, state: { truncated: boolean }): Record<string, JsonValue> {
+    if (!data)
+        return {};
+    const declared = Array.isArray(data.columns) ? data.columns : undefined;
+    let columns: string[] | undefined;
+    let total: number | undefined;
+    if (declared && declared.every(item => typeof item === "string")) {
+        total = declared.length;
+        columns = declared.slice(0, 40) as string[];
+    }
+    else {
+        const rows = Array.isArray(data.rows) ? data.rows : [];
+        const first = rows.map(objectValue).find(item => item !== undefined);
+        if (!first)
+            return {};
+        const keys = Object.keys(first);
+        total = keys.length;
+        columns = keys.slice(0, 40);
+    }
+    const out: Record<string, JsonValue> = { columns };
+    if (total !== undefined && total > columns.length) {
+        out.columns_total = total;
+        out.columns_omitted = total - columns.length;
+    }
+    if (total !== undefined && total > 40)
+        state.truncated = true;
+    return out;
+}
+function scalarFields(data: Record<string, unknown> | undefined, state: { truncated: boolean }) {
+    if (!data)
+        return undefined;
+    const skip = new Set(["ok", "tool", "rows", "columns", "row_count", "meta", "declared_column_semantics", "season_semantics", "tables", "catalog_scope", "lineup_variant_policy", "error", "summary", "recovery_hint", "next_actions", "sql"]);
+    const out: Record<string, JsonValue> = {};
+    for (const [key, value] of Object.entries(data)) {
+        if (skip.has(key) || Object.keys(out).length >= 12)
+            continue;
+        if (typeof value === "string") {
+            out[key] = clipText(value, 120);
+            if (value.length > 120)
+                state.truncated = true;
+        }
+        else if (typeof value === "number" && Number.isFinite(value))
+            out[key] = value;
+        else if (typeof value === "boolean")
+            out[key] = value;
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+function filterFields(args: Record<string, unknown>, state: { truncated: boolean }) {
+    const out: Record<string, JsonValue> = {};
+    for (const [key, value] of Object.entries(args)) {
+        if (key === "sql" || key === "code" || Object.keys(out).length >= 16)
+            continue;
+        const compact = compactJsonValue(value, 0, state);
+        if (compact !== undefined)
+            out[key] = compact;
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+function queryEvidence(record: SourceRecord, data: Record<string, unknown> | undefined, meta: Record<string, unknown> | undefined, state: { truncated: boolean }): Record<string, JsonValue> | undefined {
+    const out: Record<string, JsonValue> = {};
+    const sql = typeof record.args?.sql === "string" ? record.args.sql : typeof data?.sql === "string" ? data.sql : typeof meta?.sql === "string" ? meta.sql : undefined;
+    if (sql) {
+        out.sql = clipText(sql, 500);
+        if (sql.length > 500) {
+            out.sql_chars = sql.length;
+            out.sql_truncated = true;
+            state.truncated = true;
+        }
+    }
+    const tables = stringList(meta?.tables, 12);
+    if (tables)
+        out.tables = tables;
+    const filters = record.args ? filterFields(record.args, state) : undefined;
+    if (filters) {
+        out.filters = filters;
+        if (state.truncated)
+            out.filters_truncated = true;
+    }
+    if (typeof record.args?.code === "string")
+        out.code_chars = record.args.code.length;
+    return Object.keys(out).length ? out : undefined;
+}
+function pickSeasonValue(...values: unknown[]) {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim())
+            return clipText(value.trim(), 120);
+        if (typeof value === "number" && Number.isFinite(value))
+            return value;
+    }
+    return undefined;
+}
+function compactSeasonSemantics(semantics: Record<string, unknown>, state: { truncated: boolean }): Record<string, JsonValue> | undefined {
+    const out: Record<string, JsonValue> = {};
+    const tables = stringList(semantics.tables, 12);
+    if (tables)
+        out.tables = tables;
+    const attribution = objectValue(semantics.query_attribution);
+    if (attribution) {
+        const mode = pickSeasonValue(attribution.mode);
+        const reason = typeof attribution.reason === "string" ? clipText(attribution.reason, 160) : undefined;
+        const lineage = typeof attribution.lineage_proven === "boolean" ? attribution.lineage_proven : undefined;
+        if (mode !== undefined || reason !== undefined || lineage !== undefined)
+            out.query_attribution = { ...(mode !== undefined ? { mode } : {}), ...(reason ? { reason } : {}), ...(lineage !== undefined ? { lineage_proven: lineage } : {}) };
+    }
+    const seasonColumns = Array.isArray(semantics.season_columns) ? semantics.season_columns : [];
+    const columns = seasonColumns.slice(0, 8).map(objectValue).filter((item): item is Record<string, unknown> => item !== undefined).map(item => {
+        const compact: Record<string, JsonValue> = {};
+        for (const key of ["table", "column", "encoding", "row_grain", "attribution_supported"] as const) {
+            const value = item[key];
+            if (typeof value === "string")
+                compact[key] = clipText(value, 120);
+            else if (typeof value === "boolean")
+                compact[key] = value;
+        }
+        return compact;
+    }).filter(item => Object.keys(item).length);
+    if (columns.length) {
+        out.season_columns = columns;
+        if (seasonColumns.length > columns.length) {
+            out.season_columns_total = seasonColumns.length;
+            out.season_columns_omitted = seasonColumns.length - columns.length;
+            state.truncated = true;
+        }
+    }
+    for (const key of ["resolved_labels", "ambiguities", "contradictions"] as const) {
+        const items = Array.isArray(semantics[key]) ? semantics[key] : [];
+        if (!items.length)
+            continue;
+        const limit = key === "resolved_labels" ? 5 : 3;
+        const compact = items.slice(0, limit).map(item => compactJsonValue(item, 0, state)).filter((item): item is JsonValue => item !== undefined);
+        out[key] = compact;
+        out[`${key}_count`] = items.length;
+        if (items.length > limit) {
+            out[`${key}_omitted`] = items.length - limit;
+            state.truncated = true;
+        }
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+function seasonEvidence(data: Record<string, unknown> | undefined, meta: Record<string, unknown> | undefined, state: { truncated: boolean }): Record<string, JsonValue> | undefined {
+    if (!data)
+        return undefined;
+    const out: Record<string, JsonValue> = {};
+    const season = pickSeasonValue(data.season, meta?.season);
+    const seasonLabel = pickSeasonValue(data.season_label, meta?.season_label);
+    const requestedSeason = pickSeasonValue(data.requested_season, meta?.requested_season);
+    const seasonType = pickSeasonValue(data.season_type, meta?.season_type);
+    if (season !== undefined)
+        out.season = season;
+    if (seasonLabel !== undefined)
+        out.season_label = seasonLabel;
+    if (requestedSeason !== undefined)
+        out.requested_season = requestedSeason;
+    if (seasonType !== undefined)
+        out.season_type = seasonType;
+    const semantics = objectValue(data.season_semantics);
+    const compactSemantics = semantics ? compactSeasonSemantics(semantics, state) : undefined;
+    if (compactSemantics)
+        out.semantics = compactSemantics;
+    return Object.keys(out).length ? out : undefined;
+}
+function unitEvidence(data: Record<string, unknown> | undefined, state: { truncated: boolean }): { units: Record<string, string>; units_total?: number; units_omitted?: number } | undefined {
+    const semantics = objectValue(data?.declared_column_semantics);
+    if (!semantics)
+        return undefined;
+    const entries = Object.entries(semantics);
+    const units: Record<string, string> = {};
+    for (const [column, value] of entries.slice(0, 24)) {
+        const item = objectValue(value);
+        const unit = typeof item?.unit === "string" && item.unit.trim() ? clipText(item.unit.trim(), 80) : undefined;
+        if (unit)
+            units[column] = unit;
+    }
+    if (!Object.keys(units).length)
+        return undefined;
+    if (entries.length > 24)
+        state.truncated = true;
+    return { units, ...(entries.length > 24 ? { units_total: entries.length, units_omitted: entries.length - 24 } : {}) };
+}
+function schemaEvidence(data: Record<string, unknown> | undefined, state: { truncated: boolean }): Record<string, JsonValue> | undefined {
+    const tables = objectValue(data?.tables);
+    if (!tables)
+        return undefined;
+    const entries = Object.entries(tables);
+    const compactTables = entries.slice(0, 12).map(([name, columns]) => {
+        const names = columnNames(columns);
+        const out: Record<string, JsonValue> = { name };
+        if (names) {
+            out.columns = names.slice(0, 8);
+            out.column_count = names.length;
+            if (names.length > 8) {
+                out.columns_omitted = names.length - 8;
+                state.truncated = true;
+            }
+        }
+        return out;
+    });
+    return { table_count: entries.length, tables: compactTables, ...(entries.length > 12 ? { tables_total: entries.length, tables_omitted: entries.length - 12 } : {}) };
+}
+const PROVENANCE_KEYS = ["source", "dataset", "season", "season_label", "requested_season", "season_type", "freshness", "last_fetch", "data_through", "cached", "estimated", "limit", "row_cap", "timeout_s", "ms", "empty_observation", "warning", "warnings", "note", "model", "version", "as_of", "generated_at", "catalog_scope", "negative_claim_scope"];
+function provenanceEvidence(data: Record<string, unknown> | undefined, meta: Record<string, unknown> | undefined, state: { truncated: boolean }) {
+    if (!data)
+        return undefined;
+    const out: Record<string, JsonValue> = {};
+    for (const key of PROVENANCE_KEYS) {
+        const value = compactJsonValue(data[key] ?? meta?.[key], 0, state);
+        if (value !== undefined)
+            out[key] = value;
+    }
+    return Object.keys(out).length ? out : undefined;
+}
+function errorEvidence(result: unknown, data: Record<string, unknown> | undefined, meta: Record<string, unknown> | undefined, isError: boolean, state: { truncated: boolean }) {
+    if (!isError)
+        return undefined;
+    const error = typeof result === "string" ? result : typeof data?.error === "string" ? data.error : typeof meta?.error === "string" ? meta.error : undefined;
+    if (!error)
+        return undefined;
+    if (error.length > 240)
+        state.truncated = true;
+    return clipText(error, 240);
+}
+function caveatEvidence(data: Record<string, unknown> | undefined, meta: Record<string, unknown> | undefined, isError: boolean, truncated: boolean) {
+    const caveats: string[] = [];
+    if (truncated)
+        caveats.push("Evidence card clipped long strings, arrays, or objects; use read_source for the full result.");
+    if (meta?.empty_observation === true)
+        caveats.push("Empty result is an observed zero-row result.");
+    if (meta?.capped === true || data?.capped === true || meta?.truncated === true || data?.truncated === true)
+        caveats.push("Result was capped or truncated by the tool.");
+    for (const key of ["warning", "note"] as const) {
+        const value = meta?.[key];
+        if (typeof value === "string" && value.trim())
+            caveats.push(clipText(value.trim(), 180));
+    }
+    const warnings = stringList(meta?.warnings, 3);
+    for (const warning of warnings ?? [])
+        caveats.push(clipText(warning, 180));
+    if (typeof data?.lineup_variant_policy === "string" && data.lineup_variant_policy.trim())
+        caveats.push(clipText(data.lineup_variant_policy.trim(), 240));
+    const semantics = objectValue(data?.season_semantics);
+    if (Array.isArray(semantics?.ambiguities) && semantics.ambiguities.length)
+        caveats.push("Season semantics include ambiguities; verify labels before comparing seasons.");
+    if (Array.isArray(semantics?.contradictions) && semantics.contradictions.length)
+        caveats.push("Season semantics include contradictions; inspect the source before relying on season scope.");
+    if (isError && !caveats.length)
+        caveats.push("Source result is an error; inspect read_source before retrying.");
+    return caveats.length ? caveats : undefined;
+}
+function sourcePayload(record: SourceRecord) {
+    const response = record.response;
+    const text = response.content.map(objectValue).filter(item => item?.type === "text").map(item => item?.text).join("\n");
+    let result: unknown = response.structuredContent;
+    if (result === undefined) {
+        try {
+            result = JSON.parse(text);
+        }
+        catch {
+            result = text;
+        }
+    }
+    const isError = response.isError === true || objectValue(result)?.ok === false;
+    return { result, isError };
+}
+function buildEvidenceCard(record: SourceRecord, result: unknown, isError: boolean) {
+    const state = { truncated: false };
+    const data = objectValue(result);
+    const meta = objectValue(data?.meta);
+    const rowCount = finiteNumber(data?.row_count) ?? (Array.isArray(data?.rows) ? data.rows.length : undefined) ?? finiteNumber(meta?.profile && objectValue(meta.profile)?.returned_rows) ?? finiteNumber(meta?.rows);
+    const card: Record<string, JsonValue> = {
+        ref: record.ref, tool: record.tool,
+        ok: typeof data?.ok === "boolean" ? data.ok : !isError,
+        is_error: isError
+    };
+    if (rowCount !== undefined)
+        card.row_count = rowCount;
+    Object.assign(card, evidenceColumns(data, state));
+    const fields = scalarFields(data, state);
+    if (fields)
+        card.fields = fields;
+    const query = queryEvidence(record, data, meta, state);
+    if (query)
+        card.query = query;
+    const season = seasonEvidence(data, meta, state);
+    if (season)
+        card.season = season;
+    const schema = schemaEvidence(data, state);
+    if (schema)
+        card.schema = schema;
+    const units = unitEvidence(data, state);
+    if (units) {
+        card.units = units.units;
+        if (units.units_total !== undefined) {
+            card.column_units_total = units.units_total;
+            if (units.units_omitted !== undefined)
+                card.column_units_omitted = units.units_omitted;
+        }
+    }
+    const provenance = provenanceEvidence(data, meta, state);
+    if (provenance)
+        card.provenance = provenance;
+    const error = errorEvidence(result, data, meta, isError, state);
+    if (error !== undefined)
+        card.error = error;
+    const caveats = caveatEvidence(data, meta, isError, state.truncated);
+    if (caveats)
+        card.caveats = caveats;
+    return card;
+}
+export function sourceEvidenceCard(record: SourceRecord): Record<string, JsonValue> {
+    const { result, isError } = sourcePayload(record);
+    return buildEvidenceCard(record, result, isError);
 }
 function jsonValue(value: unknown): JsonValue {
     if (value === null || typeof value === "string" || typeof value === "boolean")
@@ -187,23 +555,12 @@ function jsonValue(value: unknown): JsonValue {
     throw new TypeError("Tool returned a non-JSON value");
 }
 export function sourceResult(record: SourceRecord) {
-    const response = record.response;
-    const text = response.content.map(objectValue).filter(item => item?.type === "text").map(item => item?.text).join("\n");
-    let result: unknown = response.structuredContent;
-    if (result === undefined) {
-        try {
-            result = JSON.parse(text);
-        }
-        catch {
-            result = text;
-        }
-    }
-    const isError = response.isError === true || objectValue(result)?.ok === false;
+    const { result, isError } = sourcePayload(record);
     const content: {
         type: "text";
         text: string;
     }[] = isError ? [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result) }] : [];
-    return { content, details: undefined, structuredContent: { ref: record.ref, tool: record.tool, result: jsonValue(result), isError }, isError };
+    return { content, details: undefined, structuredContent: { ref: record.ref, tool: record.tool, result: jsonValue(result), evidence: buildEvidenceCard(record, result, isError), isError }, isError };
 }
 export type PythonToolsOptions = {
     python: string;
@@ -238,11 +595,12 @@ export async function connectPythonTools({ python, cwd, env }: PythonToolsOption
             return defineTool({
                 name, label: name,
                 ...(namespace ? { namespace } : {}),
-                description: tool.description + " Returns {ref, tool, result, isError}. Filter result before returning from codemode; retain ref.",
+                description: tool.description + " Returns {ref, tool, result, evidence, isError}. evidence is a compact source card; result keeps full rows. Filter result before returning from codemode; retain ref.",
                 parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema), outputSchema: sourceOutputSchema,
                 async execute(callId, args, signal) {
                     const response: CallToolResult = await client.callTool(name, args, { signal });
-                    const record: SourceRecord = { ref: randomUUID(), callId, tool: name, response };
+                    const recordArgs = objectValue(args);
+                    const record: SourceRecord = { ref: randomUUID(), callId, tool: name, ...(recordArgs ? { args: recordArgs } : {}), response };
                     results.set(record.ref, record);
                     return sourceResult(record);
                 }
