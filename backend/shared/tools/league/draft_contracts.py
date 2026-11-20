@@ -242,8 +242,6 @@ def _contract_rows(fitted: list[dict], player_arg: str, team_scope: str):
     return _contract_over_under(fitted, 10), None
 
 
-@tool(description="Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual. Salaries come from the\ncurrent salary sheet; production comes from the requested season, or the\nlatest season with production rows when the requested one has none yet\n(meta.production_fallback says so).")
-=======
 def _contract_score(row: tuple, use_w: dict) -> float | None:
     gp = row[2] or 0
     if gp <= 0:
@@ -317,7 +315,6 @@ def _contract_low_sample(player_arg: str, prod: list, cap: list,
 
 
 @tool(description="Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.")
->>>>>>> origin/dev
 def get_contract_value(season: str | None = None, min_gp: int = 20,
                        team: str = "", player: str = "") -> dict[str, Any]:
     pkg = _pkg()
@@ -374,7 +371,6 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
                                          team_scope)
         player_below_floor = rows is not None and any(
             int(r.get("GP") or 0) < min_gp for r in rows)
-=======
     player_arg = str(player or "").strip()
     rows, row_error = _contract_rows(fitted, player_arg, team_scope)
     estimate_meta = None
@@ -384,7 +380,6 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
             slope, intercept)
         if est_row is not None:
             rows = [est_row]
->>>>>>> origin/dev
     if rows is None:
         return {"tool": "get_contract_value", "ok": False, "error": row_error}
     for row in rows:
@@ -408,9 +403,7 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
                      "team_scope": team_scope or None,
                      **({"requested_season": requested_season,
                          "production_fallback": season_fallback}
-                        if season_fallback else {})}}
-=======
-                     "team_scope": team_scope or None}
+                        if season_fallback else {})}
     if estimate_meta:
         meta["production_season"] = estimate_meta["production_season"]
         meta["estimate"] = estimate_meta
@@ -424,7 +417,6 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
                if estimate_meta.get('last_qualified_season') else ""))
     return {"tool": "get_contract_value", "ok": True, "rows": rows,
             "meta": meta}
->>>>>>> origin/dev
 
 
 @tool(description='Star-probability classifier from college production (honest proxy).')

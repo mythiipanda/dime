@@ -6,12 +6,9 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import { createVerifyAnswerNumbersTool } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
-=======
-import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
->>>>>>> origin/dev
+import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
@@ -148,12 +145,11 @@ const turnSchema = Type.Object({
     reasoning: Type.Optional(Type.String())
 });
 export const analystContextSchema = Type.Object({
-    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(), runTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
     sources: Type.Optional(Type.Array(sourceRecordSchema)),
     submissions: Type.Optional(Type.Array(Type.Object({ run_id: Type.String(), submission: submitAnswerSchema }, { additionalProperties: false }), { maxItems: 8 })),
     cwd: Type.String(), agentDir: Type.String(),
-    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(), runTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
-    sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),    bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
+    bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
 });
 export type AnalystContext = Static<typeof analystContextSchema>;
 export type AnalystEvent = {
@@ -443,15 +439,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
-                        tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), verifyTool, submitTool],
-=======
                         tools: [
                             ...wrapBridgeTools(bridge.tools, connected.results, emit, tracker),
                             countToolCall(priorSourceTool(start.sources ?? []), tracker),
+                            verifyTool,
                             countToolCall(submitTool, tracker),
                             countToolCall(createRunStatusTool(tracker), tracker),
                         ],
->>>>>>> origin/dev
                         onSkillLoad: () => {
                             tracker.toolCalls += 1;
                             emit({ type: "tool_call", name: "load_skill" });
@@ -486,9 +480,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         session.sessionManager.appendMessage(submissionsContext);
                         session.agent.state.messages.push(submissionsContext);
                     }
-                    const restoredStore = readStoredSnapshot(start.bridge.cwd);
-                    if (restoredStore)
-                        session.sessionManager.appendCustomEntry(CODEMODE_STORE_ENTRY_TYPE, { set: restoredStore, delete: [] });                    const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);
+                    const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);
                     if (workspaceFiles.length > 0) {
                         const workspaceContext: Message = {
                             role: "user",

@@ -11,7 +11,7 @@ export interface MemoPdfLine {
 export function memoPdfLines(artifact: MemoArtifactPayload): MemoPdfLine[] {
   const lines: MemoPdfLine[] = [{ text: artifact.title, style: "title" }];
   if (artifact.subtitle) lines.push({ text: artifact.subtitle, style: "subtitle" });
-  for (const section of artifact.sections) {
+  for (const section of artifact.sections ?? []) {
     lines.push({ text: section.heading, style: "heading" });
     lines.push({ text: section.body, style: "body" });
     if (section.anchors?.length) {

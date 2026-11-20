@@ -56,7 +56,6 @@ Warehouse coverage lags the calendar: production and game tables (`silver_leader
 - **"Current" questions**: pass the current NBA season to contract, trade and roster tools. They pair current salary/roster data with the latest production season and report both in `meta` (`production_season` vs `salary_season`). Stat-only tools that have no rows for the current season fall back to the latest season with data and set `meta.season_fallback` / `meta.requested_season` — always quote the season each figure actually covers.
 - **Team attribution is season-dependent**: a player who changed teams has one team in past-season production rows and another in the current salary sheet (for example a star traded in the offseason). Resolve "who is on team X" against the season the question is about before answering.
 - **Stale premise handling**: when a tool reports that a player's team differs from the question's premise (trade guard errors name the season and the listed team), say the premise is stale, then answer for the player's current team or re-run with the historical season the user meant. Do not force the question's teams through.
-=======
 
 ## 5. Call Economy: Fewer Turns, Faster Answers
 
@@ -66,4 +65,3 @@ Every codemode turn costs model latency, so spend calls deliberately:
 - `get_warehouse_freshness` and `get_dataset_freshness` report overlapping coverage; one freshness check per run is enough unless you specifically need Data Engine ingestion timestamps.
 - When `sql_exec` fails, read the error's candidate bindings and `schema_hint` (the referenced tables' real columns, and which tables actually contain a missing column) and correct the query on the next call; call `warehouse_schema` again only when no hint was returned.
 - Prefer one comprehensive `run_python` script (loops and intermediate variables inside Python) over many small one-row probe calls, and batch independent `sql_exec`/`run_python` calls with `Promise.all` inside codemode.
->>>>>>> origin/dev

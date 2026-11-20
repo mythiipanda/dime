@@ -152,12 +152,10 @@ _TOOL_ORDER = (
     "get_scouting_report",
     "web_search",
     "web_fetch",
-=======
     "get_free_agents",
     "get_prospect",
     "get_roster_fit",
     "get_expectations",
->>>>>>> origin/dev
 )
 
 _REGISTRARS = (

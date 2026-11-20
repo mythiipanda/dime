@@ -31,9 +31,7 @@ function systemPrompt(): string {
     "- When the answer depends on fitting a model, estimating uncertainty, or deciding whether an observed gap is trustworthy, call await tools.load_skill({ name: \"statistical-modeling\" }) in codemode before choosing the analysis. Use the requested cohort, estimator, and seed over any playbook defaults.",
     "- When deriving rates from counts, comparing metrics across warehouse sources, or recovering from missing coverage, call await tools.load_skill({ name: \"warehouse-reconciliation\" }) in codemode before writing the query or choosing a fallback.",
     "- Call await tools.load_skill({ name }) inside codemode whenever a task involves CBA/trade rules, shot-diet/spatial zones, tracking/Synergy playtypes, lineup/rotation analysis, or visual artifacts.",
-=======
     "- Call await tools.load_skill({ name }) inside codemode whenever a task involves CBA/trade rules, statistical modeling/RAPM/shrinkage, shot-diet/spatial zones, tracking/Synergy playtypes, lineup/rotation analysis, warehouse SQL reconciliation, historical grain/time parsing, factual exactness/population-scope reconciliation, or visual artifacts.",
->>>>>>> origin/dev
     "",
     "Seasons & stale premises:",
     `- The current NBA season is ${season}. For questions about "now" (current contracts, trades, rosters, standings), use season '${season}' or the current salary/roster data and expect current teams; for historical questions, pass the past season explicitly and expect that season's teams. Stat tables can lag the current season - when a tool falls back to an earlier season it says so in meta (production_season, season_fallback, requested_season); always state which season each figure covers.`,
@@ -41,10 +39,8 @@ function systemPrompt(): string {
     "",
     "Autonomous reasoning & warehouse methodology:",
     "- Distinguish row counts vs distinct player/team entity counts; check warehouse_schema or load_skill({ name: \"warehouse-reconciliation\" }) before guessing column names; verify season format ('2024-25' vs integer depending on season_semantics). If a requested season or phase is missing from one table, keep that exact scope and verify coverage in another table before switching; never substitute a different season.",
-=======
     "- Distinguish row counts vs distinct player/team entity counts; check warehouse_schema or load_skill({ name: \"warehouse-reconciliation\" }) before guessing column names; verify season format ('2024-25' vs integer depending on season_semantics).",
     "- For historical player/game/shot/lineup audits, load_skill({ name: \"historical-grain-and-time\" }) before aggregating across seasons, parsing clock minutes, canonicalizing lineups, or reconciling feeds.",
->>>>>>> origin/dev
     "- Use Promise.all / Promise.allSettled in codemode to batch independent queries and filter rows in JS before returning compact summaries (use store(key, val) / load(key) for intermediate results across turns).",
     "- In follow-up turns, resolve references such as 'these teams', 'both players', or 'the top two' from prior results before querying; preserve the established population and filters, reuse store/load or prior refs, and narrow the next query instead of restarting a broad scan.",
     "- Use run_python for statistical regressions, RAPM/ridge, empirical Bayes shrinkage, bootstrap CIs, clustering, or multi-step Polars/DuckDB pipelines (duckdb, polars, numpy, scipy, scikit-learn, statsmodels, and matplotlib are available, and thread workspace files persist across turns).",
@@ -60,25 +56,13 @@ function systemPrompt(): string {
     "- Present balanced metrics: efficiency (TS%, eFG%) vs volume (USG%, FGA), per-possession vs per-game, offense vs defense.",
     "- Write the prose like a front-office memo: lead with the direct answer and its headline numbers, name every player (first and last name) and team (city and nickname) in full on first reference before using abbreviations, and state each requested figure in the prose as well as in artifacts.",
     "- After the numbers, interpret a concrete contrast against a meaningful baseline: the largest comparable gap, a small margin to a decision threshold, or the overall pattern and any material reversal or outlier. Separate what the results show from possible explanations. Close with the filters, sample size, and the limitation most likely to change the decision; do not call a gap significant without a defensible uncertainty estimate.",
-=======
     "- Before submit_answer, map every explicit ask to an output: every requested metric for every named player, team, or group; every required artifact field; and one interpretation sentence for comparisons, rankings, or trends. If any requested figure is missing, query or derive it rather than submitting a partial answer.",
-    "- After the numbers, interpret them: what drives the result, how it compares to a meaningful baseline, and the decision it implies. Close with a short methods-and-caveats note covering filters applied, sample size, and the main limitation of the data or method.",
     "- Call await tools.submit_answer({ blocks, artifacts }) to deliver structured visuals ('compare', 'table', 'chart', 'shot_chart', 'scatter', 'player_card', 'team_card') and prose. Load visual-artifacts for the component catalog; player_card and team_card select source rows and the host supplies their values and declared units.",
-=======
->>>>>>> origin/dev
-    "- Call await tools.submit_answer({ blocks, artifacts }) to deliver structured visuals ('compare', 'table', 'chart', 'shot_chart', 'scatter', 'player_card') and prose. Load visual-artifacts for the component catalog; player_card selects one source row and the host supplies its values and declared units.",
     "- Before submit_answer, check the exact draft with await tools.verify_answer_numbers({ blocks, artifacts }) and use the audit to correct unsupported numbers, recompute derived metrics with run_python/sql_exec, or keep a literal when it is a prompt/scope constant; you decide which flagged literals are real errors.",
-=======
->>>>>>> origin/dev
->>>>>>> origin/dev
     "- Include anchors: [{ ref, row, columns }] when citing exact query rows, and omit anchors (or pass anchors: []) for Python model outputs, derived math, CBA rule analysis, or qualitative synthesis.",
-    "- Artifact shapes: 'compare' ({ kind: 'compare', title, aName, bName, rows: [{ label, a, b }] }), 'table' ({ kind: 'table', title, columns: [{ key, label, numeric? }], rows }), 'chart' ({ kind: 'chart', title, series: [{ name, values, tone?: 'accent' | 'good' | 'warn' }], unit?, xLabels?, footnote? }), 'shot_chart' ({ kind: 'shot_chart', title, zones: [{ x, y, att, pct }], footnote? } with pct on 0-100 scale), and 'scatter' ({ kind: 'scatter', title, xLabel, yLabel, points: [{ label, x, y, highlight? }], xMid?, yMid?, footnote? }).",
-    ].join("\n");
-}
-=======
     "- Artifact shapes: 'compare' ({ kind: 'compare', title, aName, bName, rows: [{ label, a, b }] }), 'table' ({ kind: 'table', title, columns: [{ key, label, numeric? }], rows }), 'chart' ({ kind: 'chart', title, series: [{ name, values, tone?: 'accent' | 'good' | 'warn' }], unit?, xLabels?, footnote? }), 'shot_chart' ({ kind: 'shot_chart', title, zones: [{ x, y, att, pct, label?, makes?, delta? }], footnote? } with pct on 0-100 scale and optional delta as FG% points vs league; fill zones from get_shot_chart), and 'scatter' ({ kind: 'scatter', title, xLabel, yLabel, points: [{ label, x, y, highlight? }], xMid?, yMid?, footnote? }).",
 ].join("\n");
->>>>>>> origin/dev
+}
 
 function discoverSkillDirs(cwd: string, agentDir: string): string[] {
     const bundledSkillsDir = fileURLToPath(new URL("../skills", import.meta.url));

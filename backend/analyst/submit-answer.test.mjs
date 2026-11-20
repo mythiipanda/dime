@@ -836,14 +836,6 @@ test("validateAnswerSubmission rejects malformed typed artifacts with actionable
   );
 });
 
-test("validateAnswerSubmission preserves unknown artifact kinds and artifacts without a kind", () => {
-  const unknown = { kind: "future_viz", title: "Future", spec: { anything: [1, 2, 3] } };
-  const untyped = { title: "No kind", data: "opaque" };
-  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [unknown, untyped] }, () => undefined);
-  assert.deepEqual(validated.artifacts, [unknown, untyped]);
-});
-
-=======
 test("shot_chart zones carry optional label, makes and league-delta fields", () => {
   const validated = validateAnswerSubmission({
     blocks: [{ text: "Shot diet" }],
@@ -865,7 +857,6 @@ test("shot_chart zones carry optional label, makes and league-delta fields", () 
   assert.equal(zone.pct, 68.4);
 });
 
->>>>>>> origin/dev
 function playerCardInput(overrides = {}) {
   return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
     metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
@@ -1040,7 +1031,6 @@ test("team cards reject forged values, bad rows and invalid selectors", () => {
     { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V", unit: "%" }] }] },
   ]) assert.throws(() => validate(teamCardInput(overrides)));
 });
-=======
 test("player card sections resolve values and provenance from their own source rows", () => {
   const header = playerCardSource();
   const contract = makeSourceRecord("contract-src", { rows: [{ salary: 30000000, contract_type: "DVET-EXT" }] });
@@ -1092,7 +1082,6 @@ test("player card sections reject bad selectors, forged values and empty section
     [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }], provenance: { origin: "warehouse" } }],
   ]) assert.throws(() => validate(playerCardInput({ sections })));
 });
->>>>>>> origin/dev
 test("priorSubmissions returns thread submissions in order and compactPriorSubmissions bounds them", async () => {
   const dir = await mkdtemp(join(tmpdir(), "prior-subs-"));
   try {
@@ -1161,7 +1150,6 @@ test("memo artifacts reject anchors to unknown refs, bad rows and missing column
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
 });
-});
 
 test("unknown and empty artifact kinds are dropped with a warning the agent sees", async () => {
   const source = makeSourceRecord("src-1", { rows: [{ stat: "reb", value: 10 }] });
@@ -1176,7 +1164,7 @@ test("unknown and empty artifact kinds are dropped with a warning the agent sees
       { kind: "pie", title: "Playstyle pie" },
       { kind: "chart", title: "Empty trend" },
       { kind: "memo", title: "No sections", sections: [] },
-      { kind: "table", title: "Rebounds", columns: [{ key: "stat", label: "Stat" }], rows: [["reb", 10]] },
+      { kind: "table", title: "Rebounds", columns: [{ key: "stat", label: "Stat" }, { key: "value", label: "Value" }], rows: [["reb", 10]] },
     ],
   };
   const result = await tool.execute("call-2", submission);
@@ -1192,7 +1180,7 @@ test("unknown and empty artifact kinds are dropped with a warning the agent sees
 test("validateAnswerSubmission drops rejected artifacts but keeps valid ones", () => {
   const warnings = [];
   const validated = validateAnswerSubmission(
-    { blocks: [{ text: "x" }], artifacts: [{ kind: "mystery", title: "?" }, { kind: "scatter", title: "ok", points: [{ label: "p", x: 1, y: 2 }] }] },
+    { blocks: [{ text: "x" }], artifacts: [{ kind: "mystery", title: "?" }, { kind: "scatter", title: "ok", xLabel: "USG", yLabel: "TS", points: [{ label: "p", x: 1, y: 2 }] }] },
     () => undefined,
     undefined,
     warnings,
