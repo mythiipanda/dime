@@ -4,7 +4,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
 def _tables() -> set:
     from shared import store
 
@@ -14,7 +13,6 @@ def _tables() -> set:
     finally:
         con.close()
 
-
 def test_season_label_mapping():
     from scripts.seed_rapm_priors import PRIOR_SEASONS, season_label
 
@@ -22,7 +20,6 @@ def test_season_label_mapping():
     assert season_label(2025) == "2024-25"
     assert set(PRIOR_SEASONS) == {2022, 2023, 2024, 2025}
     assert "2025-26" not in PRIOR_SEASONS.values()
-
 
 def test_season_label_rejects_live_season():
     import pytest
@@ -32,7 +29,6 @@ def test_season_label_rejects_live_season():
     with pytest.raises(ValueError):
         season_label(2026)
 
-
 def test_clamp_prior_seasons():
     from shared.tools.priors import clamp_prior_seasons
 
@@ -41,7 +37,6 @@ def test_clamp_prior_seasons():
     assert clamp_prior_seasons("2024") == [2024]
     assert clamp_prior_seasons(["garbage"]) == []
 
-
 def test_blend_weighted_mean():
     from shared.tools.priors import blend_estimate
 
@@ -49,13 +44,11 @@ def test_blend_weighted_mean():
                          [{"rapm": 4.0, "possessions": 1000}])
     assert out == {"estimate": 3.0, "total_possessions": 2000}
 
-
 def test_blend_empty_is_none():
     from shared.tools.priors import blend_estimate
 
     assert blend_estimate(None, []) is None
     assert blend_estimate({"rapm": None, "possessions": 0}, []) is None
-
 
 def test_compute_ranks_efficient_side_first():
     import polars as pl
@@ -73,7 +66,6 @@ def test_compute_ranks_efficient_side_first():
     by_id = {r["player_id"]: r["rapm"] for r in frame.to_dicts()}
     assert by_id["a"] > by_id["f"]
 
-
 def test_silver_rapm_holds_current_season():
     from shared import store
 
@@ -84,7 +76,6 @@ def test_silver_rapm_holds_current_season():
         return
     assert int(n) > 100
 
-
 def test_get_rapm_prior_missing_player_is_honest():
     from shared.tools.priors import get_rapm_prior
 
@@ -92,12 +83,10 @@ def test_get_rapm_prior_missing_player_is_honest():
     assert res["ok"] is False
     assert res.get("error")
 
-
 def test_get_rapm_prior_registered():
     from shared import tools
 
     assert "get_rapm_prior" in tools.TOOL_NAMES
-
 
 def test_get_rapm_prior_single_identity_no_blend():
     tables = _tables()

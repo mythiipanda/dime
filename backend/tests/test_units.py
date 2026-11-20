@@ -1,5 +1,6 @@
 
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -7,31 +8,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import tools
 from shared.providers import resolve_model_id
 
-
 def test_clamp_stat_rejects_injection():
     import pytest
 
     with pytest.raises(ValueError):
         tools.clamp_stat('PTS"; DROP TABLE x; --')
 
-
 def test_resolve_model_defaults_mistral():
     from shared.providers import _default_provider
 
     assert resolve_model_id(None) == _default_provider()
 
-
 def test_resolve_model_clamps_unknown_openrouter():
     name, _ = resolve_model_id("openrouter:not-a-model:free")
     assert name == "openrouter"
-
 
 def test_resolve_model_inception(monkeypatch):
     from shared.config import settings
     monkeypatch.setattr(settings, "dime_enable_inception", True)
     monkeypatch.setattr(settings, "inception_api_key", "test-key")
     assert resolve_model_id("inception:mercury-2.5") == ("inception", "mercury-2.5")
-
 
 def test_clamp_season_rejects_garbage():
     import pytest
@@ -44,30 +40,25 @@ def test_clamp_season_rejects_garbage():
         with pytest.raises(InvalidSeasonError):
             clamp_season(bad)
 
-
 def test_resolve_model_rejects_bare_names():
     from shared.providers import _default_provider
 
     assert resolve_model_id("LeBron James") == _default_provider()
 
-
 def test_registry_unique_names():
-    names = [t.name for t in tools.v1_tools]
+    names = [t.name for t in tools.WAREHOUSE_TOOLS]
     assert len(names) == len(set(names))
     assert len(names) >= 20
-
 
 def test_resolve_entity_exact_team_excludes_weak_player_match():
     res = tools.resolve_entity.invoke({"query": "Los Angeles Lakers"})
     assert res["rows"]["teams"][0]["abbreviation"] == "LAL"
     assert res["rows"]["players"] == []
 
-
 def test_resolve_entity_static():
     res = tools.resolve_entity.invoke({"query": "LeBron James"})
     ids = [p.get("id") for p in res["rows"]["players"]]
     assert 2544 in ids
-
 
 def test_sample_tier_thresholds():
     from shared.tools._core import sample_tier
@@ -79,7 +70,6 @@ def test_sample_tier_thresholds():
     assert sample_tier(49.9)[0] == "small"
     assert sample_tier(None) == ("small", 0)
     assert sample_tier("bad") == ("small", 0)
-
 
 def test_zone_diet_sums_three_zones():
     from shared.tools.player import zone_diet
@@ -94,7 +84,6 @@ def test_zone_diet_sums_three_zones():
     assert zone_diet([]) == {"rim_share": None, "three_share": None}
     assert zone_diet([{"zone": "Mid-Range", "SHARE": 1.0}]) == {
         "rim_share": None, "three_share": None}
-
 
 def test_portability_fit_branches():
     from shared.tools.player import portability_fit
@@ -118,7 +107,6 @@ def test_portability_fit_branches():
     neutral = portability_fit({"name": "A"}, {"name": "B"})
     assert neutral == {"fit": "neutral", "note": "No clear usage or on off tilt."}
 
-
 def test_apron_matching_rules():
     from shared.tools.league import CAP, _allowed_incoming, _apron_state
 
@@ -126,10 +114,24 @@ def test_apron_matching_rules():
         20_000_000, "100% (above the first apron)")
     assert _allowed_incoming(20_000_000, False) == (
         25_250_000, "125% plus $250k (below the first apron)")
+    assert _allowed_incoming(20_000_000, False, 13_330_652) == (
+        33_580_652, "cap room plus outgoing salary plus $250k (under the cap)")
+    assert _allowed_incoming(20_000_000, False, 1_000_000) == (
+        25_250_000, "125% plus $250k (below the first apron)")
     over = _apron_state(CAP["apron2"] + 1)
     assert over["over_apron1"] and over["over_apron2"]
     under = _apron_state(0)
     assert not under["over_apron1"] and not under["over_apron2"]
+
+
+def test_outgoing_needed_inverts_matching():
+    from shared.tools.league import _allowed_incoming, _outgoing_needed
+
+    assert _outgoing_needed(19_512_195, True) == 19_512_195
+    need = _outgoing_needed(34_206_898, False)
+    assert _allowed_incoming(need, False)[0] >= 34_206_898
+    assert _allowed_incoming(need - 1, False)[0] < 34_206_898
+    assert _outgoing_needed(10_000_000, False, 13_000_000) == 0
 
 
 def test_pair_history_slim_both_on():
@@ -145,7 +147,6 @@ def test_pair_history_slim_both_on():
     assert pair_history({"ok": True, "rows": []})["both_on_net"] is None
     assert pair_history({"ok": False, "error": "never shared"})["both_on_net"] is None
 
-
 def _splits_fixture():
     return [
         {"GAME_DATE": "Jan 1, 2026", "MATCHUP": "HOU vs. MIN",
@@ -159,7 +160,6 @@ def _splits_fixture():
          "FTM": 0, "FTA": 0, "PLUS_MINUS": -5},
     ]
 
-
 def test_splits_aggregate_math():
     from shared.tools.splits import aggregate, ts_of
 
@@ -171,7 +171,6 @@ def test_splits_aggregate_math():
     assert aggregate([])["gp"] == 0
     assert ts_of([]) is None
 
-
 def test_splits_rest_days():
     from shared.tools.splits import rest_days
 
@@ -182,7 +181,6 @@ def test_splits_rest_days():
     assert buckets[1][1] == "0"
     assert rows[0] not in [b[0] for b in buckets]
 
-
 def test_splits_defense_rank():
     from shared.tools.splits import defense_rank
 
@@ -190,7 +188,6 @@ def test_splits_defense_rank():
             {"TEAM_ID": 2, "DEF_RATING": 108.0},
             {"TEAM_ID": 3, "DEF_RATING": 112.0}]
     assert defense_rank(rows) == {2: 1, 3: 2, 1: 3}
-
 
 def test_splits_verdict_branches():
     from shared.tools.splits import verdict_for
@@ -205,7 +202,6 @@ def test_splits_verdict_branches():
     v, note = verdict_for(-5.0, 0.0, -4.0, 0.0, 10, 2.0)
     assert v == "likely regresses"
     assert "rebound" in note
-
 
 def test_splits_unknown_player():
     from shared.tools.splits import get_matchup_splits, get_regression_check
@@ -225,7 +221,6 @@ def test_splits_unknown_player():
     with pytest.raises(ValueError):
         clamp_stat("xyz")
 
-
 def _warehouse_has_durant():
     from shared import store
 
@@ -241,7 +236,6 @@ def _warehouse_has_durant():
         return n and n > 0
     finally:
         con.close()
-
 
 def test_splits_matchup_smoke():
     try:
@@ -259,7 +253,6 @@ def test_splits_matchup_smoke():
     assert res["ok"] is True
     assert len(res["rows"]["splits"]) > 0
     assert all("low_sample" in s for s in res["rows"]["splits"])
-
 
 def test_splits_regression_smoke():
     try:
@@ -282,6 +275,71 @@ def test_splits_regression_smoke():
     assert res["rows"]["career"]["available"] is True
     assert res["rows"]["career"]["per_game"] > 0
 
+def test_splits_driver_ranking_uses_fraction_ts_delta(monkeypatch):
+    from shared.tools import _core, splits
+
+    def _row(day, pts, minutes):
+        return {"GAME_DATE": f"Jan {day}, 2026", "MATCHUP": "LAL vs. UTA",
+                "PTS": pts, "FGA": 20, "FTA": 0, "MIN": minutes}
+
+    def _run(rows):
+        monkeypatch.setattr(_core, "last_completed_season",
+                            lambda: "2025-26")
+        monkeypatch.setattr(splits, "_load_gamelogs",
+                            lambda player, season: (2544, list(rows), {}))
+        monkeypatch.setattr(splits, "_defense_lookup",
+                            lambda season: (None, "synthetic"))
+        monkeypatch.setattr(splits, "_career_baseline",
+                            lambda pid, stat: {"available": False})
+        monkeypatch.setattr(splits, "_resolve_name",
+                            lambda pid, fallback: fallback)
+        return splits.get_regression_check.invoke(
+            {"player": "Synthetic Player", "stat": "PTS", "n": 5,
+             "season": "2025-26"})
+
+    rows = ([_row(d, 20, 20) for d in (1, 2, 3, 4, 5)]
+            + [_row(d, 21, 30) for d in (10, 11, 12, 13, 14)])
+    before = [dict(r) for r in rows]
+    res = _run(rows)
+    assert rows == before
+    assert res["ok"] is True
+    assert res["rows"]["player"] == "Synthetic Player"
+    assert res["rows"]["verdict"] == "sustainable"
+    drivers = res["rows"]["drivers"]
+    drivers_all = res["rows"]["drivers_all"]
+    assert [d["factor"] for d in drivers] == [
+        "minutes", "true_shooting", "shot_volume"]
+    assert [d["factor"] for d in drivers_all] == [
+        "true_shooting", "minutes", "shot_volume", "opponent_defense"]
+    ts_all = next(d for d in drivers_all if d["factor"] == "true_shooting")
+    ts_top = next(d for d in drivers if d["factor"] == "true_shooting")
+    assert ts_all == ts_top
+    assert ts_all["delta"] == 1.3
+    assert ts_all["unit"] == "pct"
+    assert ts_all["window"] == 52.5
+    assert ts_all["baseline"] == 51.2
+
+    control = ([_row(d, 8, 20) for d in (1, 2, 3, 4, 5)]
+               + [_row(d, 16, 30) for d in (10, 11, 12, 13, 14)])
+    res = _run(control)
+    assert res["rows"]["drivers"][0]["factor"] == "true_shooting"
+    assert res["rows"]["verdict"] == "likely regresses"
+
+    negative = ([_row(d, 16, 20) for d in (1, 2, 3, 4, 5)]
+                + [_row(d, 8, 30) for d in (10, 11, 12, 13, 14)])
+    res = _run(negative)
+    assert res["rows"]["drivers"][0]["factor"] == "true_shooting"
+    ts_neg = next(d for d in res["rows"]["drivers_all"]
+                  if d["factor"] == "true_shooting")
+    assert ts_neg["delta"] == -10.0
+
+    zero = ([_row(d, 20, 20) for d in (1, 2, 3, 4, 5)]
+            + [_row(d, 20, 30) for d in (10, 11, 12, 13, 14)])
+    res = _run(zero)
+    assert res["rows"]["drivers"][0]["factor"] == "minutes"
+    ts_zero = next(d for d in res["rows"]["drivers_all"]
+                   if d["factor"] == "true_shooting")
+    assert ts_zero["delta"] == 0.0
 
 def _warehouse_has_hist_durant():
     from shared import store
@@ -298,7 +356,6 @@ def _warehouse_has_hist_durant():
         return n and n > 0
     finally:
         con.close()
-
 
 def test_splits_career_baseline_hits_seeded_warehouse():
     try:
@@ -318,7 +375,6 @@ def test_splits_career_baseline_hits_seeded_warehouse():
     res = _career_baseline(99999999, "PTS")
     assert res["available"] is False
 
-
 def test_splits_sort_null_dates_last():
     from shared.tools.splits import _sort_by_date
 
@@ -332,7 +388,6 @@ def test_splits_sort_null_dates_last():
     asc = _sort_by_date(rows, desc=False)
     assert [r["PTS"] for r in asc] == [2, 3, 1]
 
-
 def test_trade_value_unknown_player():
     from shared.tools.league import get_trade_value
 
@@ -342,13 +397,11 @@ def test_trade_value_unknown_player():
     assert res["ok"] is False
     assert "Not A Realplayer" in res["error"]
 
-
 def test_trade_value_empty_teams():
     from shared.tools.league import get_trade_value
 
     res = get_trade_value.invoke({})
     assert res["ok"] is False
-
 
 def test_trade_value_reaves_porter():
     from shared.tools.league import get_trade_value
@@ -378,12 +431,10 @@ def test_trade_value_reaves_porter():
     picks = res["rows"]["team_a"]["picks"]
     assert picks and picks[0]["est_value_m"] > 0
 
-
 def test_registry_has_trade_value():
     from shared import tools as _tools
 
     assert "get_trade_value" in _tools.TOOL_NAMES
-
 
 def test_compare_metrics_adjudicates():
     from shared.tools.player import compare_metrics
@@ -399,7 +450,6 @@ def test_compare_metrics_adjudicates():
     leaders = {m["leader"] for m in rows["metrics"]}
     assert leaders <= {"a", "b", "tie", "na"}
 
-
 def test_text_to_sql_allowlist_covers_current_analysis_tables():
     from shared.tools.league import _SQL_TABLES
 
@@ -407,7 +457,6 @@ def test_text_to_sql_allowlist_covers_current_analysis_tables():
         "silver_advanced", "silver_player_season", "silver_on_off",
         "silver_four_factors", "silver_four_factors_team", "silver_cap_players",
     } <= set(_SQL_TABLES)
-
 
 def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
     from shared.tools import player
@@ -446,6 +495,7 @@ def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
         "Every verdict-eligible metric favors Nikola Jokic")
     assert "2021-22 vintage" in out["rows"]["verdict"]
 
+@pytest.mark.canonical_warehouse
 def test_resolve_entity_uses_warehouse_canonical_id_for_exact_suffix_name():
     res = tools.resolve_entity.invoke({"query": "Tim Hardaway Jr."})
     player = res["rows"]["players"][0]

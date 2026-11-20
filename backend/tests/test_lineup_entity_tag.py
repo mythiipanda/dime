@@ -19,7 +19,6 @@ CLE_STARTERS = "CLE starters A"
 CLE_BENCH = "CLE bench B"
 OTHER_UNIT = "OTHER team unit"
 
-
 def _seed(dbpath):
     fetched = datetime.now(timezone.utc).isoformat()
     con = duckdb.connect(str(dbpath))
@@ -64,7 +63,6 @@ def _seed(dbpath):
         )
     finally:
         con.close()
-
 
 def test_lineup_entity_tag_serves_backfill_rows(monkeypatch, tmp_path):
     dbpath = tmp_path / "scratch.duckdb"

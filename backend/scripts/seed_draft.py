@@ -11,10 +11,8 @@ from shared.sources.base import FetchMeta, FetchResult
 
 BASE = "https://github.com/sportsdataverse/sportsdataverse-data/releases/download/nba_stats_draft"
 
-
 def label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[2:]}"
-
 
 def main() -> None:
     print("Fetching draft data 1997..2024...")
@@ -42,7 +40,6 @@ def main() -> None:
         )
         total += store.save_frame("silver_hist_draft", res, entity="draft", replace_season=True)
     print(f"silver_hist_draft loaded: {total} rows across {len(dfs)} draft classes")
-
 
 if __name__ == "__main__":
     main()

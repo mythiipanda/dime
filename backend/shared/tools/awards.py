@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import clamp_season, last_completed_season, resolve_season
+from ._core import clamp_season, resolve_season
 from .award_results import normalize_award
 
 MIP_MSG = ("MIP needs prior-season per-player stats; silver_hist_gamelogs "
@@ -45,7 +45,6 @@ FEATURE_LABELS = {
 
 _ROUND3 = {"ts_pct", "team_win_pct"}
 
-
 STANDINGS_FIELDS = ("team_id", "wins", "losses", "opp_points_pg")
 
 STANDINGS_SOURCES: tuple[dict[str, str], ...] = (
@@ -57,10 +56,8 @@ STANDINGS_SOURCES: tuple[dict[str, str], ...] = (
      "opp_points_pg": "opp_points_pg"},
 )
 
-
 class StandingsUnavailable(Exception):
     pass
-
 
 def _standings_for(season: str) -> dict[str, str]:
     con = store.connect(read_only=True)
@@ -86,7 +83,6 @@ def _standings_for(season: str) -> dict[str, str]:
     finally:
         con.close()
 
-
 def _finite(value: object) -> float | None:
     try:
         number = float(value)
@@ -94,17 +90,14 @@ def _finite(value: object) -> float | None:
         return None
     return number if math.isfinite(number) else None
 
-
 def _population_spread(values: list[float]) -> float:
     if len(values) < 2:
         return 0.0
     mean = math.fsum(values) / len(values)
     return math.sqrt(math.fsum((v - mean) ** 2 for v in values) / len(values))
 
-
 def _round_val(key: str, value: object) -> float:
     return round(float(value or 0), 3) if key in _ROUND3 else round(float(value or 0), 1)
-
 
 def _formula(spec: dict[str, Any]) -> str:
     out = ""
@@ -115,7 +108,6 @@ def _formula(spec: dict[str, Any]) -> str:
         else:
             out += f" - {tag}" if sign < 0 else f" + {tag}"
     return out
-
 
 def _qualification(spec: dict[str, Any]) -> str:
     qual = spec.get("qualification", {})
@@ -130,7 +122,6 @@ def _qualification(spec: dict[str, Any]) -> str:
         parts.append(f"MPG<={qual['max_mpg']}")
     return ", ".join(parts)
 
-
 def _missing_table() -> str | None:
     try:
         con = store.connect()
@@ -144,7 +135,6 @@ def _missing_table() -> str | None:
         if table not in tables:
             return table
     return None
-
 
 def _pool(season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
@@ -175,13 +165,8 @@ def _pool(season: str) -> list[dict[str, Any]]:
         [season],
     )
 
-
-@tool
+@tool(description='Award race top 5 for MVP/DPOY/ROY/6MOY.\n\nThe formula is computed from warehouse stats only and listed in meta.')
 def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
-    """Award race top 5 for MVP/DPOY/ROY/6MOY.
-
-    The formula is computed from warehouse stats only and listed in meta.
-    """
     canon = normalize_award(award)
     if canon is None or canon not in PROJECTION_SPECS:
         valid = ", ".join(sorted(PROJECTION_SPECS))
@@ -215,6 +200,57 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
                 "error": f"no rows for season {season}"}
     qual = spec.get("qualification", {})
     comps = spec["components"]
+    eligible, unscored = _eligible_pool(pool, qual, comps)
+    if not eligible:
+        error = f"no qualified candidates for {canon} in season {season}"
+        if unscored:
+            gaps = ", ".join(f"{FEATURE_LABELS.get(feat, feat)} ({count} players)"
+                             for feat, count in sorted(unscored.items()))
+            error += f"; the warehouse holds no value for {gaps}"
+        return {"tool": "get_award_race", "ok": False, "rows": {},
+                "meta": {"award": canon, "season": season}, "error": error}
+    candidates, means, bests, signs = _ranked_candidates(eligible, comps)
+    meta: dict[str, Any] = {
+        "award": canon, "season": season, "formula": _formula(spec),
+        "qualification": _qualification(spec),
+        "standings_coverage": standings["coverage"],
+        "qualified_pool": len(eligible),
+        "components": [{"feature": feat, "weight": weight,
+                        "direction": "higher-is-better" if sign > 0 else "lower-is-better"}
+                       for feat, weight, sign in comps],
+        "source": "warehouse (nba_api)",
+        "method": ("weighted sum of within-qualified-pool population z-scores; "
+                   "higher composite score ranks first"),
+        "method_kind": "derived",
+        "score_unit": "weighted_z_score",
+        "score_definition": ("dimensionless model score; not points, probability, "
+                             "vote share, or an official award result"),
+        "results_tool": "get_award_results",
+        "advanced_metrics": "EPM/LEBRON/DARKO/RAPTOR not in warehouse; not fabricated",
+    }
+    if spec.get("proxy_caveat"):
+        meta["proxy_caveat"] = spec["proxy_caveat"]
+    notes: list[str] = []
+    if len(eligible) == 1:
+        meta["single_candidate_pool"] = True
+        notes.append(f"only one player qualifies for {canon} in {season}, so "
+                     "there is no comparison pool: every z-score is zero and "
+                     "the score ranks nothing")
+    from ._core import season_static as _season_static
+    if _season_static(season):
+
+        meta["season_complete"] = True
+        notes.append(f"{season} is complete. These are formula-based "
+                     f"statistical candidates from final stats; the "
+                     f"dataset does not record the actual award "
+                     f"outcome, so present them as model picks, not "
+                     f"a live race or official result.")
+    if notes:
+        meta["note"] = " ".join(notes)
+    return {"tool": "get_award_race", "ok": True,
+            "rows": {"candidates": candidates}, "meta": meta}
+
+def _eligible_pool(pool: list[dict[str, Any]], qual: dict[str, Any], comps: list[tuple[str, float, int]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     eligible = []
     unscored: dict[str, int] = {}
     for row in pool:
@@ -238,14 +274,9 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
         except (TypeError, ValueError):
             continue
         eligible.append(row)
-    if not eligible:
-        error = f"no qualified candidates for {canon} in season {season}"
-        if unscored:
-            gaps = ", ".join(f"{FEATURE_LABELS.get(feat, feat)} ({count} players)"
-                             for feat, count in sorted(unscored.items()))
-            error += f"; the warehouse holds no value for {gaps}"
-        return {"tool": "get_award_race", "ok": False, "rows": {},
-                "meta": {"award": canon, "season": season}, "error": error}
+    return eligible, unscored
+
+def _ranked_candidates(eligible: list[dict[str, Any]], comps: list[tuple[str, float, int]]) -> tuple[list[dict[str, Any]], dict[str, float], dict[str, float], dict[str, int]]:
     means, stds, bests = {}, {}, {}
     signs = {feat: sign for feat, _, sign in comps}
     for feat, _, _ in comps:
@@ -268,80 +299,35 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
     scored.sort(key=lambda t: t[0], reverse=True)
     candidates = []
     for rank, (total, row, contribs) in enumerate(scored[:5], 1):
-        drivers = [{"stat": FEATURE_LABELS.get(feat, feat),
-                    "value": _round_val(feat, row[feat]),
-                    "z": round(z, 2)} for _, feat, z in contribs[:3]]
-        leader = next((f for _, f, _ in contribs[:3]
-                       if float(row[f]) == bests[f]), None)
-        if leader is not None:
-            case_for = (f"leads the pool in {FEATURE_LABELS.get(leader, leader)} "
-                        f"at {_round_val(leader, row[leader])}")
-        else:
+        candidates.append(_candidate_row(rank, total, row, contribs, bests, signs, means))
+    return candidates, means, bests, signs
 
-
-
-
-            top_feat, top_z = max(
-                contribs, key=lambda t: signs[t[1]] * t[2])[1:3]
-            case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
-                        f"at {_round_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
-
-
-
-
-        weak_feat, weak_dz = min(
-            ((feat, signs[feat] * z) for _, feat, z in contribs),
-            key=lambda t: t[1])
-        weak_label = FEATURE_LABELS.get(weak_feat, weak_feat)
-        weak_val = _round_val(weak_feat, row[weak_feat])
-        weak_avg = _round_val(weak_feat, means[weak_feat])
-        if weak_dz >= 0 or weak_val == weak_avg:
-
-
-            case_against = (f"no clear weakness - closest to the pool "
-                            f"average in {weak_label} ({weak_val})")
-        else:
-            case_against = (f"weakest edge is {weak_label} "
-                            f"({weak_val} vs pool avg {weak_avg})")
-        candidates.append({"rank": rank, "player": row["player"], "team": row["team"],
-                           "score": round(total, 2), "drivers": drivers,
-                           "case_for": case_for, "case_against": case_against})
-    meta: dict[str, Any] = {
-        "award": canon, "season": season, "formula": _formula(spec),
-        "qualification": _qualification(spec),
-        "standings_coverage": standings["coverage"],
-        "qualified_pool": len(eligible),
-        "components": [{"feature": feat, "weight": weight,
-                        "direction": "higher-is-better" if sign > 0 else "lower-is-better"}
-                       for feat, weight, sign in comps],
-        "source": "warehouse (nba_api)",
-        "method": ("weighted sum of within-qualified-pool population z-scores; "
-                   "higher composite score ranks first"),
-        "score_unit": "weighted_z_score",
-        "score_definition": ("dimensionless model score; not points, probability, "
-                             "vote share, or an official award result"),
-        "results_tool": "get_award_results",
-        "advanced_metrics": "EPM/LEBRON/DARKO/RAPTOR not in warehouse; not fabricated",
-    }
-    if spec.get("proxy_caveat"):
-        meta["proxy_caveat"] = spec["proxy_caveat"]
-    notes: list[str] = []
-    if len(eligible) == 1:
-        meta["single_candidate_pool"] = True
-        notes.append(f"only one player qualifies for {canon} in {season}, so "
-                     "there is no comparison pool: every z-score is zero and "
-                     "the score ranks nothing")
-    from ._core import season_static as _season_static
-    if _season_static(season):
-
-
-        meta["season_complete"] = True
-        notes.append(f"{season} is complete. These are formula-based "
-                     f"statistical candidates from final stats; the "
-                     f"dataset does not record the actual award "
-                     f"outcome, so present them as model picks, not "
-                     f"a live race or official result.")
-    if notes:
-        meta["note"] = " ".join(notes)
-    return {"tool": "get_award_race", "ok": True,
-            "rows": {"candidates": candidates}, "meta": meta}
+def _candidate_row(rank: int, total: float, row: dict[str, Any], contribs: list[tuple[float, str, float]], bests: dict[str, float], signs: dict[str, int], means: dict[str, float]) -> dict[str, Any]:
+    drivers = [{"stat": FEATURE_LABELS.get(feat, feat),
+                "value": _round_val(feat, row[feat]),
+                "z": round(z, 2)} for _, feat, z in contribs[:3]]
+    leader = next((f for _, f, _ in contribs[:3]
+                   if float(row[f]) == bests[f]), None)
+    if leader is not None:
+        case_for = (f"leads the pool in {FEATURE_LABELS.get(leader, leader)} "
+                    f"at {_round_val(leader, row[leader])}")
+    else:
+        top_feat, top_z = max(
+            contribs, key=lambda t: signs[t[1]] * t[2])[1:3]
+        case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
+                    f"at {_round_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
+    weak_feat, weak_dz = min(
+        ((feat, signs[feat] * z) for _, feat, z in contribs),
+        key=lambda t: t[1])
+    weak_label = FEATURE_LABELS.get(weak_feat, weak_feat)
+    weak_val = _round_val(weak_feat, row[weak_feat])
+    weak_avg = _round_val(weak_feat, means[weak_feat])
+    if weak_dz >= 0 or weak_val == weak_avg:
+        case_against = (f"no clear weakness - closest to the pool "
+                        f"average in {weak_label} ({weak_val})")
+    else:
+        case_against = (f"weakest edge is {weak_label} "
+                        f"({weak_val} vs pool avg {weak_avg})")
+    return {"rank": rank, "player": row["player"], "team": row["team"],
+            "score": round(total, 2), "drivers": drivers,
+            "case_for": case_for, "case_against": case_against}

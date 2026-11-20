@@ -11,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import query as q
 from shared import store
 
-
 @pytest.fixture()
 def tiny_warehouse(tmp_path, monkeypatch):
     db = tmp_path / "warehouse.duckdb"
@@ -34,7 +33,6 @@ def tiny_warehouse(tmp_path, monkeypatch):
     con.close()
     monkeypatch.setattr(store, "DB_PATH", db)
     return db
-
 
 def test_select_works(tiny_warehouse):
     out = q.query_warehouse(
@@ -81,6 +79,8 @@ def test_operators_do_not_bypass_function_allowlist(tiny_warehouse, function, ex
     assert "blocked: function not allowed:" in out["error"]
 
 
+=======
+>>>>>>> origin/dev
 def test_with_cte_works(tiny_warehouse):
     out = q.query_warehouse(
         "WITH okc AS (SELECT * FROM silver_standings "
@@ -90,7 +90,6 @@ def test_with_cte_works(tiny_warehouse):
     assert out["ok"] is True, out.get("error")
     assert out["rows"] == [{"TeamCity": "Oklahoma City", "WINS": 68}]
 
-
 def test_multi_cte_works(tiny_warehouse):
     out = q.query_warehouse(
         "WITH a AS (SELECT * FROM silver_standings), "
@@ -99,7 +98,6 @@ def test_multi_cte_works(tiny_warehouse):
     )
     assert out["ok"] is True, out.get("error")
     assert out["rows"] == [{"n": 2}]
-
 
 @pytest.mark.parametrize("sql", [
     "INSERT INTO silver_standings VALUES ('X', 1, 1, '2025-26')",
@@ -133,7 +131,6 @@ def test_writes_blocked(tiny_warehouse, sql):
     check = q.query_warehouse("SELECT COUNT(*) AS n FROM silver_standings")
     assert check["rows"] == [{"n": 2}]
 
-
 def test_readonly_connection_cannot_write(tiny_warehouse):
     con = store.connect(read_only=True)
     try:
@@ -142,7 +139,6 @@ def test_readonly_connection_cannot_write(tiny_warehouse):
     finally:
         con.close()
 
-
 def test_multi_statement_blocked(tiny_warehouse):
     out = q.query_warehouse("SELECT 1; SELECT 2")
     assert out["ok"] is False
@@ -150,7 +146,6 @@ def test_multi_statement_blocked(tiny_warehouse):
     out = q.query_warehouse("SELECT 1; -- DROP TABLE silver_standings")
     assert out["ok"] is False
     assert "multiple statements" in out["error"]
-
 
 @pytest.mark.parametrize("sql", [
     "EXPLAIN SELECT 1",
@@ -163,7 +158,6 @@ def test_non_select_blocked(tiny_warehouse, sql):
     assert out["ok"] is False
     assert "blocked" in out["error"]
 
-
 def test_row_cap_triggers(tiny_warehouse):
     out = q.query_warehouse("SELECT n FROM silver_team_games ORDER BY n", max_rows=500)
     assert out["ok"] is True
@@ -172,13 +166,11 @@ def test_row_cap_triggers(tiny_warehouse):
     assert out["meta"]["returned"] == 500
     assert out["meta"]["row_cap"] == 500
 
-
 def test_row_cap_respected_when_small(tiny_warehouse):
     out = q.query_warehouse("SELECT n FROM silver_team_games ORDER BY n", max_rows=10)
     assert out["ok"] is True
     assert len(out["rows"]) == 10
     assert out["truncated"] is True
-
 
 def test_no_truncation_flag_when_complete(tiny_warehouse):
     out = q.query_warehouse("SELECT n FROM silver_team_games WHERE n < 5")
@@ -186,13 +178,11 @@ def test_no_truncation_flag_when_complete(tiny_warehouse):
     assert out["truncated"] is False
     assert len(out["rows"]) == 5
 
-
 def test_unknown_table_blocked(tiny_warehouse):
     out = q.query_warehouse("SELECT * FROM nope_table")
     assert out["ok"] is False
     assert "unknown table" in out["error"]
     assert "nope_table" in out["error"]
-
 
 def test_filesystem_access_blocked(tiny_warehouse):
     for sql in [
@@ -204,7 +194,6 @@ def test_filesystem_access_blocked(tiny_warehouse):
         out = q.query_warehouse(sql)
         assert out["ok"] is False, sql
         assert "blocked" in out["error"], (sql, out["error"])
-
 
 def test_literals_and_comments_not_flagged(tiny_warehouse):
     out = q.query_warehouse("SELECT 'copy this drop table' AS note")
@@ -220,23 +209,19 @@ def test_literals_and_comments_not_flagged(tiny_warehouse):
     )
     assert out["ok"] is True, out.get("error")
 
-
 def test_syntax_error_is_honest(tiny_warehouse):
     out = q.query_warehouse("SELECT FROM WHERE")
     assert out["ok"] is False
     assert out["error"].startswith("syntax error"), out["error"]
-
 
 def test_missing_column_error_is_honest(tiny_warehouse):
     out = q.query_warehouse("SELECT nope_col FROM silver_standings")
     assert out["ok"] is False
     assert "syntax error" in out["error"]
 
-
 def test_empty_sql_rejected(tiny_warehouse):
     assert q.query_warehouse("")["ok"] is False
     assert q.query_warehouse("   ")["ok"] is False
-
 
 def test_timeout_is_honest(tiny_warehouse, monkeypatch):
     def _hang(con, sql, timeout_s, max_rows):
@@ -246,7 +231,6 @@ def test_timeout_is_honest(tiny_warehouse, monkeypatch):
     out = q.query_warehouse("SELECT * FROM silver_team_games", timeout_s=30)
     assert out["ok"] is False
     assert "timed out after 30s" in out["error"]
-
 
 def test_run_with_timeout_aborts_hung_query():
     class _HangingCon:
@@ -261,7 +245,6 @@ def test_run_with_timeout_aborts_hung_query():
     with pytest.raises(TimeoutError):
         q._run_with_timeout(_HangingCon(), "SELECT 1", 0.05, 500)
 
-
 def test_run_with_timeout_returns_rows():
     con = duckdb.connect(":memory:")
     try:
@@ -272,7 +255,6 @@ def test_run_with_timeout_returns_rows():
         assert truncated is False
     finally:
         con.close()
-
 
 def test_tool_wrapper(tiny_warehouse):
     from shared.tools.query import query_warehouse_tool
@@ -287,12 +269,10 @@ def test_tool_wrapper(tiny_warehouse):
     assert bad["ok"] is False
     assert "blocked" in bad["error"]
 
-
 def test_tool_registered():
     from shared.tools._core import tool_label
 
     assert tool_label("query_warehouse", desk=True) == "Warehouse query"
-
 
 def test_read_csv_auto_bypass_closed(tiny_warehouse):
     for sql in [
@@ -320,7 +300,6 @@ def test_read_csv_auto_bypass_closed(tiny_warehouse):
         assert out["ok"] is False, sql
         assert "blocked" in out["error"], (sql, out["error"])
 
-
 def test_legit_window_and_cte_still_pass(tiny_warehouse):
     out = q.query_warehouse(
         "WITH ranked AS (SELECT TeamCity, WINS, "
@@ -339,7 +318,6 @@ def test_legit_window_and_cte_still_pass(tiny_warehouse):
     assert out["ok"] is True, out.get("error")
     assert out["rows"][0]["city"] == "OKLAHOMA CITY"
 
-
 def test_union_of_selects_passes(tiny_warehouse):
     out = q.query_warehouse(
         "SELECT TeamCity FROM silver_standings WHERE WINS > 65 "
@@ -349,14 +327,12 @@ def test_union_of_selects_passes(tiny_warehouse):
     assert {r["TeamCity"] for r in out["rows"]} == {
         "Oklahoma City", "Boston"}
 
-
 def test_cte_name_does_not_launder_same_named_table(tiny_warehouse):
     out = q.query_warehouse(
         "WITH bronze_raw AS (SELECT * FROM bronze_raw) SELECT * FROM bronze_raw"
     )
     assert out["ok"] is False
     assert "blocked" in out["error"], out["error"]
-
 
 def test_schema_qualified_ref_ignores_cte_cover(tiny_warehouse):
     out = q.query_warehouse(
@@ -365,14 +341,12 @@ def test_schema_qualified_ref_ignores_cte_cover(tiny_warehouse):
     assert out["ok"] is False
     assert "blocked" in out["error"], out["error"]
 
-
 def test_cte_shadowing_allowlisted_table_rejected(tiny_warehouse):
     out = q.query_warehouse(
         "WITH silver_standings AS (SELECT 1 AS x) SELECT * FROM silver_standings"
     )
     assert out["ok"] is False
     assert "blocked" in out["error"], out["error"]
-
 
 def test_forward_cte_ref_does_not_launder_table(tiny_warehouse):
     out = q.query_warehouse(
@@ -382,11 +356,9 @@ def test_forward_cte_ref_does_not_launder_table(tiny_warehouse):
     assert out["ok"] is False
     assert "blocked" in out["error"], out["error"]
 
-
 def test_schema_qualified_allowlisted_table_passes(tiny_warehouse):
     out = q.query_warehouse("SELECT TeamCity FROM main.silver_standings")
     assert out["ok"] is True, out.get("error")
-
 
 def test_from_position_function_calls_blocked(tiny_warehouse):
     for sql in [
@@ -408,5 +380,84 @@ def test_from_position_function_calls_blocked(tiny_warehouse):
     assert out["ok"] is True, out.get("error")
     out = q.query_warehouse(
         "SELECT * FROM silver_standings, "
-        "LATERAL (SELECT WINS FROM silver_standings) t")
+        "LATERAL (SELECT WINS AS wins_lateral FROM silver_standings) t")
     assert out["ok"] is True, out.get("error")
+
+@pytest.fixture()
+def memory_warehouse(monkeypatch):
+    con = duckdb.connect(":memory:")
+    calls: list[str] = []
+    try:
+        con.execute(
+            "CREATE TABLE silver_standings "
+            "(TEAM TEXT, WINS INTEGER, _season TEXT)")
+        con.execute(
+            "INSERT INTO silver_standings VALUES "
+            "('OKC', 68, '2025-26'), ('BOS', 64, '2025-26')")
+
+        class SharedConnection:
+            def __init__(self, real):
+                self._real = real
+
+            @property
+            def description(self):
+                return self._real.description
+
+            def execute(self, *args, **kwargs):
+                if args:
+                    calls.append(str(args[0]))
+                return self._real.execute(*args, **kwargs)
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(store, "connect",
+                            lambda **_kw: SharedConnection(con))
+        yield con, calls
+    finally:
+        con.close()
+
+@pytest.mark.parametrize("sql,duplicate", [
+    ("SELECT 1 AS n, 2 AS n FROM silver_standings", "n"),
+    ("SELECT WINS AS n, TEAM AS n FROM silver_standings", "n"),
+    ("SELECT COUNT(*), COUNT(*) FROM silver_standings", "count_star()"),
+    ("SELECT a.WINS, b.WINS FROM silver_standings a "
+     "JOIN silver_standings b ON a.TEAM = b.TEAM", "WINS"),
+])
+def test_query_warehouse_rejects_duplicate_output_names(
+        memory_warehouse, sql, duplicate):
+    _con, calls = memory_warehouse
+    out = q.query_warehouse(sql)
+    assert out["ok"] is False
+    assert set(out) == {"tool", "ok", "error"}
+    assert "duplicate output column name" in out["error"]
+    assert duplicate in out["error"]
+    assert "unique alias" in out["error"]
+    assert "rows" not in out
+    assert calls.count(sql) == 1
+
+def test_query_warehouse_unique_aliases_preserve_values(memory_warehouse):
+    _con, calls = memory_warehouse
+    sql = ("SELECT WINS AS wins, TEAM AS team, WINS + 1 AS wins_plus "
+           "FROM silver_standings ORDER BY TEAM")
+    out = q.query_warehouse(sql)
+    assert out["ok"] is True, out.get("error")
+    assert out["columns"] == ["wins", "team", "wins_plus"]
+    assert out["rows"] == [
+        {"wins": 64, "team": "BOS", "wins_plus": 65},
+        {"wins": 68, "team": "OKC", "wins_plus": 69},
+    ]
+    assert out["truncated"] is False
+    assert out["meta"]["returned"] == 2
+    assert out["meta"]["row_cap"] == 500
+    assert calls.count(sql) == 1
+
+def test_query_warehouse_names_differing_only_by_case_are_distinct(
+        memory_warehouse):
+    _con, calls = memory_warehouse
+    sql = "SELECT 1 AS N, 2 AS n, 3 AS Wins FROM silver_standings"
+    out = q.query_warehouse(sql)
+    assert out["ok"] is True, out.get("error")
+    assert out["columns"] == ["N", "n", "Wins"]
+    assert out["rows"][0] == {"N": 1, "n": 2, "Wins": 3}
+    assert calls.count(sql) == 1

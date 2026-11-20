@@ -7,10 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import store
 from shared.sources import nba_stats
 
-
 def _save(res):
     return store.save_frame("silver_hustle_team", res, entity="season:2025-26")
-
 
 def main() -> None:
     res = nba_stats.hustle("team", "2025-26")
@@ -36,7 +34,6 @@ def main() -> None:
     print(f"silver_hustle_team 2025-26: {count} rows")
     if count != 30:
         raise SystemExit(1)
-
 
 if __name__ == "__main__":
     main()

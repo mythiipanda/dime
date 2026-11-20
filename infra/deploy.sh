@@ -60,7 +60,7 @@ if [ -z "$APP_EXISTS" ]; then
     --env-vars MISTRAL_API_KEY=secretref:mistral-key \
       OPENROUTER_API_KEY=secretref:openrouter-key \
       MISTRAL_MODEL=ministral-8b-2512 \
-      OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free \
+      OPENROUTER_MODEL=nvidia/nemotron-3-ultra-550b-a55b:free \
       CORS_ALLOWED_ORIGINS="http://localhost:3000,https://dime-fawn.vercel.app,http://127.0.0.1:3000" \
     -o none
 else

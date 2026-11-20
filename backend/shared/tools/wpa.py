@@ -12,10 +12,8 @@ MIN_YEAR, MAX_YEAR = 2021, 2025
 MIN_EVENTS_DEFAULT = 100
 _PLAYER_NAMES: dict[int, str] | None = None
 
-
 def season_label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[-2:]}"
-
 
 def clamp_season_year(value: object, fallback: int = MAX_YEAR) -> tuple[int | None, str | None]:
     try:
@@ -28,32 +26,27 @@ def clamp_season_year(value: object, fallback: int = MAX_YEAR) -> tuple[int | No
         return MIN_YEAR, f"season {year} clamped to {MIN_YEAR}"
     return year, None
 
-
 def clamp_limit(value: object) -> int:
     try:
-        return max(1, min(25, int(value)))  # type: ignore[arg-type]
+        return max(1, min(25, int(value)))
     except (TypeError, ValueError):
         return 10
 
-
 def clamp_min_events(value: object) -> int:
     try:
-        return max(1, int(value))  # type: ignore[arg-type]
+        return max(1, int(value))
     except (TypeError, ValueError):
         return MIN_EVENTS_DEFAULT
-
 
 COLUMNS = ("game_id, action_number, clock, period, team_tricode,"
            " person_id, player_name, location, score_home, score_away,"
            " action_type")
-
 
 def _parse_score(raw: object) -> int | None:
     try:
         return int(str(raw))
     except (TypeError, ValueError):
         return None
-
 
 def _display_name(person_id: object, fallback: str) -> str:
     global _PLAYER_NAMES
@@ -72,7 +65,6 @@ def _display_name(person_id: object, fallback: str) -> str:
         except (ImportError, KeyError, TypeError, ValueError):
             _PLAYER_NAMES = {}
     return _PLAYER_NAMES.get(pid) or fallback
-
 
 def _credit(players: dict[str, dict[str, Any]], gid: str,
             evt: tuple, home: str, delta: float) -> None:
@@ -108,7 +100,6 @@ def _credit(players: dict[str, dict[str, Any]], gid: str,
     if tri:
         entry["teams"][tri] += 1
 
-
 def _score_game(gid: str, grows: list[tuple],
                 players: dict[str, dict[str, Any]]) -> None:
     votes: Counter = Counter()
@@ -143,7 +134,6 @@ def _score_game(gid: str, grows: list[tuple],
         before = after
         _credit(players, gid, evt, home, delta)
 
-
 def score_events(rows: list) -> dict[str, dict[str, Any]]:
     players: dict[str, dict[str, Any]] = {}
     game = None
@@ -166,16 +156,10 @@ def score_events(rows: list) -> dict[str, dict[str, Any]]:
         _score_game(str(game), grows, players)
     return players
 
-
-@tool
+@tool(description='WPA-by-play leaderboard for one season. Season is an end-year clamped to 2021..2025.\n\nDeltas come from the fitted win-probability model before and after\neach play, credited to the acting player. Documented estimates.')
 def get_wpa_leaders(season: Union[int, str, None] = 2025,
                      limit: Union[int, str, None] = 10,
                      min_events: Union[int, str, None] = MIN_EVENTS_DEFAULT) -> dict[str, Any]:
-    """WPA-by-play leaderboard for one season. Season is an end-year clamped to 2021..2025.
-
-    Deltas come from the fitted win-probability model before and after
-    each play, credited to the acting player. Documented estimates.
-    """
     season = resolve_season(season)
     warnings: list[str] = []
     year, season_warning = clamp_season_year(season)
@@ -189,7 +173,7 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
                 "error": f"no WPA coverage for season {season}; "
                          f"play-by-play covers end-years {MIN_YEAR}..{MAX_YEAR}"}
     try:
-        raw_limit = int(limit)  # type: ignore[arg-type]
+        raw_limit = int(limit)
         limit_ok = True
     except (TypeError, ValueError):
         raw_limit, limit_ok = 10, False
@@ -199,7 +183,7 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
     if limit_ok and limit != raw_limit:
         warnings.append(f"limit {raw_limit} clamped to {limit}")
     try:
-        raw_floor = int(min_events)  # type: ignore[arg-type]
+        raw_floor = int(min_events)
         floor_ok = True
     except (TypeError, ValueError):
         raw_floor, floor_ok = MIN_EVENTS_DEFAULT, False

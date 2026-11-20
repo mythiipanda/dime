@@ -1,0 +1,544 @@
+{
+  "meta": {
+    "coverage": {
+      "regular_season_only": true,
+      "teams_scanned": 30
+    },
+    "mode": "longest",
+    "scope": "team",
+    "season": "2025-26",
+    "source": "warehouse",
+    "stat": "wins"
+  },
+  "ok": true,
+  "rows": {
+    "count": 10,
+    "streaks": [
+      {
+        "active": false,
+        "end_date": "2025-12-10",
+        "holder": "OKC",
+        "holder_id": "OKC",
+        "span": [
+          {
+            "date": "2025-11-07",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-09",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-11",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-12",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-15",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-17",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-19",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-21",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-23",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-26",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-28",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-30",
+            "value": "W"
+          },
+          {
+            "date": "2025-12-02",
+            "value": "W"
+          },
+          {
+            "date": "2025-12-05",
+            "value": "W"
+          },
+          {
+            "date": "2025-12-07",
+            "value": "W"
+          },
+          {
+            "date": "2025-12-10",
+            "value": "W"
+          }
+        ],
+        "start_date": "2025-11-07",
+        "streak": 16
+      },
+      {
+        "active": false,
+        "end_date": "2025-11-24",
+        "holder": "DET",
+        "holder_id": "DET",
+        "span": [
+          {
+            "date": "2025-10-29",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-01",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-03",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-05",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-07",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-09",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-10",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-12",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-14",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-17",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-18",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-22",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-24",
+            "value": "W"
+          }
+        ],
+        "start_date": "2025-10-29",
+        "streak": 13
+      },
+      {
+        "active": true,
+        "end_date": "2026-04-12",
+        "holder": "DEN",
+        "holder_id": "DEN",
+        "span": [
+          {
+            "date": "2026-03-20",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-22",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-24",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-25",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-27",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-29",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-01",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-04",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-06",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-08",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-10",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-12",
+            "value": "W"
+          }
+        ],
+        "start_date": "2026-03-20",
+        "streak": 12
+      },
+      {
+        "active": false,
+        "end_date": "2026-04-02",
+        "holder": "SAS",
+        "holder_id": "SAS",
+        "span": [
+          {
+            "date": "2026-03-14",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-16",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-17",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-19",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-21",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-23",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-25",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-28",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-30",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-01",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-02",
+            "value": "W"
+          }
+        ],
+        "start_date": "2026-03-14",
+        "streak": 11
+      },
+      {
+        "active": false,
+        "end_date": "2026-03-18",
+        "holder": "ATL",
+        "holder_id": "ATL",
+        "span": [
+          {
+            "date": "2026-02-22",
+            "value": "W"
+          },
+          {
+            "date": "2026-02-24",
+            "value": "W"
+          },
+          {
+            "date": "2026-02-26",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-01",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-04",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-07",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-10",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-12",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-14",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-16",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-18",
+            "value": "W"
+          }
+        ],
+        "start_date": "2026-02-22",
+        "streak": 11
+      },
+      {
+        "active": false,
+        "end_date": "2026-03-21",
+        "holder": "LAL",
+        "holder_id": "LAL",
+        "span": [
+          {
+            "date": "2026-03-06",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-08",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-10",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-12",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-14",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-16",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-18",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-19",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-21",
+            "value": "W"
+          }
+        ],
+        "start_date": "2026-03-06",
+        "streak": 9
+      },
+      {
+        "active": false,
+        "end_date": "2026-02-07",
+        "holder": "CHA",
+        "holder_id": "CHA",
+        "span": [
+          {
+            "date": "2026-01-22",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-24",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-26",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-28",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-29",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-31",
+            "value": "W"
+          },
+          {
+            "date": "2026-02-02",
+            "value": "W"
+          },
+          {
+            "date": "2026-02-05",
+            "value": "W"
+          },
+          {
+            "date": "2026-02-07",
+            "value": "W"
+          }
+        ],
+        "start_date": "2026-01-22",
+        "streak": 9
+      },
+      {
+        "active": false,
+        "end_date": "2025-11-26",
+        "holder": "TOR",
+        "holder_id": "TOR",
+        "span": [
+          {
+            "date": "2025-11-11",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-13",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-15",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-17",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-19",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-21",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-23",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-24",
+            "value": "W"
+          },
+          {
+            "date": "2025-11-26",
+            "value": "W"
+          }
+        ],
+        "start_date": "2025-11-11",
+        "streak": 9
+      },
+      {
+        "active": false,
+        "end_date": "2026-04-09",
+        "holder": "HOU",
+        "holder_id": "HOU",
+        "span": [
+          {
+            "date": "2026-03-27",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-29",
+            "value": "W"
+          },
+          {
+            "date": "2026-03-31",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-01",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-03",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-05",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-07",
+            "value": "W"
+          },
+          {
+            "date": "2026-04-09",
+            "value": "W"
+          }
+        ],
+        "start_date": "2026-03-27",
+        "streak": 8
+      },
+      {
+        "active": false,
+        "end_date": "2026-02-04",
+        "holder": "NYK",
+        "holder_id": "NYK",
+        "span": [
+          {
+            "date": "2026-01-21",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-24",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-27",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-28",
+            "value": "W"
+          },
+          {
+            "date": "2026-01-30",
+            "value": "W"
+          },
+          {
+            "date": "2026-02-01",
+            "value": "W"
+          },
+          {
+            "date": "2026-02-03",
+            "value": "W"
+          },
+          {
+            "date": "2026-02-04",
+            "value": "W"
+          }
+        ],
+        "start_date": "2026-01-21",
+        "streak": 8
+      }
+    ]
+  },
+  "tool": "get_streaks"
+}

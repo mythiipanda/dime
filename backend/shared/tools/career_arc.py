@@ -1,17 +1,16 @@
+from langchain_core.tools import tool
 from typing import Any
 
 from .. import store
 
 END_MIN = 2015
 END_MAX = 2026
-CURRENT_SEASON = "2025-26"
-CURRENT_END_YEAR = 2026
-
+CURRENT_SEASON = "2026-27"
+CURRENT_END_YEAR = 2027
 
 def to_label(end_year: int) -> str:
     y = int(end_year)
     return f"{y - 1}-{str(y)[-2:]}"
-
 
 def to_end_year(season: object) -> int | None:
     s = str(season or "").strip()
@@ -21,13 +20,11 @@ def to_end_year(season: object) -> int | None:
         return 2000 + int(s[5:])
     return None
 
-
 def _tables() -> set[str]:
     try:
         return set(store.tables())
     except Exception:
         return set()
-
 
 def _num(value: object) -> float | None:
     try:
@@ -36,7 +33,6 @@ def _num(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
 
 def _rows(sql: str, params: list) -> list[dict[str, Any]]:
     try:
@@ -54,7 +50,6 @@ def _rows(sql: str, params: list) -> list[dict[str, Any]]:
         except Exception:
             pass
 
-
 def raptor_end_year() -> int | None:
     if "silver_raptor_player" not in _tables():
         return None
@@ -63,7 +58,6 @@ def raptor_end_year() -> int | None:
         return None
     v = _num(rows[0].get("m"))
     return int(v) if v is not None else None
-
 
 def _columns(table: str) -> set[str]:
     try:
@@ -78,7 +72,6 @@ def _columns(table: str) -> set[str]:
                 pass
     except Exception:
         return set()
-
 
 def raptor_map(name: str = "", pid: int = 0) -> dict[int, float]:
     if "silver_raptor_player" not in _tables():
@@ -107,7 +100,6 @@ def raptor_map(name: str = "", pid: int = 0) -> dict[int, float]:
             out[int(y)] = float(v)
     return out
 
-
 def _hist_rows(pid: int, name: str = "") -> list[dict[str, Any]]:
     if "silver_hist_player_seasons" not in _tables():
         return []
@@ -132,7 +124,6 @@ def _hist_rows(pid: int, name: str = "") -> list[dict[str, Any]]:
         )
     return []
 
-
 def _per_game(total: object, gp: object, nd: int = 1) -> float | None:
     t = _num(total)
     g = _num(gp)
@@ -140,16 +131,26 @@ def _per_game(total: object, gp: object, nd: int = 1) -> float | None:
         return None
     return round(t / g, nd)
 
+def _current_season_info() -> tuple[str, int]:
+    if "silver_leaders_pts" in _tables():
+        rows = _rows("SELECT MAX(_season) AS m FROM silver_leaders_pts", [])
+        if rows and rows[0].get("m"):
+            s = str(rows[0]["m"])
+            ey = to_end_year(s)
+            if ey:
+                return s, ey
+    return CURRENT_SEASON, CURRENT_END_YEAR
 
 def current_row(pid: int) -> dict[str, Any] | None:
     if "silver_leaders_pts" not in _tables():
         return None
+    cur_season, cur_end_year = _current_season_info()
     rows = _rows(
         "SELECT PLAYER_ID, PLAYER, TEAM, GP, MIN, PTS, REB, AST, STL, BLK, "
         "FG_PCT, FG3_PCT, FT_PCT FROM silver_leaders_pts "
         "WHERE _season = ? AND CAST(PLAYER_ID AS VARCHAR) = "
         "CAST(? AS VARCHAR) LIMIT 1",
-        [CURRENT_SEASON, str(pid)],
+        [cur_season, str(pid)],
     )
     if not rows:
         return None
@@ -162,7 +163,7 @@ def current_row(pid: int) -> dict[str, Any] | None:
         a = _rows(
             "SELECT TS_PCT FROM silver_advanced WHERE _season = ? AND "
             "CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR) LIMIT 1",
-            [CURRENT_SEASON, str(pid)],
+            [cur_season, str(pid)],
         )
         if a:
             v = _num(a[0].get("TS_PCT"))
@@ -172,7 +173,7 @@ def current_row(pid: int) -> dict[str, Any] | None:
         "player_id": r.get("PLAYER_ID"),
         "player_name": r.get("PLAYER"),
         "team_abbreviation": r.get("TEAM"),
-        "season": CURRENT_END_YEAR,
+        "season": cur_end_year,
         "gp": int(gp),
         "min": _per_game(r.get("MIN"), gp),
         "pts": _per_game(r.get("PTS"), gp),
@@ -185,7 +186,6 @@ def current_row(pid: int) -> dict[str, Any] | None:
         "ft_pct": _num(r.get("FT_PCT")),
         "ts_pct": ts,
     }
-
 
 def arc_for_id(pid: int) -> list[dict[str, Any]]:
     try:
@@ -233,10 +233,11 @@ def arc_for_id(pid: int) -> list[dict[str, Any]]:
         })
     cur = current_row(ident)
     if cur is not None:
-        rv = rap.get(CURRENT_END_YEAR)
+        cur_season, cur_end_year = _current_season_info()
+        rv = rap.get(cur_end_year)
         cur_out: dict[str, Any] = {
-            "end_year": CURRENT_END_YEAR,
-            "season": CURRENT_SEASON,
+            "end_year": cur_end_year,
+            "season": cur_season,
             "source": "current",
             "player_name": cur.get("player_name"),
             "team_abbreviation": cur.get("team_abbreviation"),
@@ -251,30 +252,6 @@ def arc_for_id(pid: int) -> list[dict[str, Any]]:
     return out
 
 
-def arc_for_name(name: str) -> list[dict[str, Any]]:
-    label = str(name or "").strip()
-    if not label:
-        return []
-    hist = _hist_rows(0, label)
-    if hist:
-        try:
-            return arc_for_id(int(hist[0].get("player_id")))
-        except (TypeError, ValueError):
-            pass
-    if "silver_leaders_pts" in _tables():
-        lead = _rows(
-            "SELECT PLAYER_ID FROM silver_leaders_pts WHERE "
-            "LOWER(PLAYER) = LOWER(?) LIMIT 1",
-            [label],
-        )
-        if lead:
-            try:
-                return arc_for_id(int(lead[0].get("PLAYER_ID")))
-            except (TypeError, ValueError):
-                return []
-    return []
-
-
 def line_for_season(pid: int, season: object) -> dict[str, Any] | None:
     year = to_end_year(season)
     if year is None:
@@ -283,3 +260,71 @@ def line_for_season(pid: int, season: object) -> dict[str, Any] | None:
         if int(row["end_year"]) == year:
             return row
     return None
+
+
+@tool(description="Career trajectory and year-over-year statistical arc for an NBA player.\n\nCombines multi-season box score history with RAPTOR and current season metrics.\nReturns a chronological list of seasons with stats, efficiency, and honest coverage gaps.")
+def get_career_arc(player: str = "", player_id: int = 0) -> dict[str, Any]:
+    name = str(player or "").strip()
+    ident = 0
+    if player_id:
+        try:
+            ident = int(player_id)
+        except (TypeError, ValueError):
+            ident = 0
+
+    if not ident and name:
+        con = store.connect(read_only=True)
+        try:
+            if "silver_hist_player_seasons" in _tables():
+                res = con.execute(
+                    "SELECT player_id FROM silver_hist_player_seasons WHERE LOWER(player_name) = LOWER(?) LIMIT 1",
+                    [name]
+                ).fetchall()
+                if res and res[0][0]:
+                    ident = int(res[0][0])
+            if not ident and "silver_leaders_pts" in _tables():
+                res = con.execute(
+                    "SELECT PLAYER_ID FROM silver_leaders_pts WHERE LOWER(PLAYER) = LOWER(?) LIMIT 1",
+                    [name]
+                ).fetchall()
+                if res and res[0][0]:
+                    ident = int(res[0][0])
+            if not ident and "silver_hist_player_seasons" in _tables():
+                res = con.execute(
+                    "SELECT player_id FROM silver_hist_player_seasons WHERE LOWER(player_name) LIKE LOWER(?) LIMIT 1",
+                    [f"%{name}%"]
+                ).fetchall()
+                if res and res[0][0]:
+                    ident = int(res[0][0])
+        except Exception:
+            pass
+        finally:
+            try:
+                con.close()
+            except Exception:
+                pass
+
+    if not ident:
+        return {
+            "ok": False,
+            "tool": "get_career_arc",
+            "rows": [],
+            "columns": ["season", "pts", "reb", "ast", "min", "ts_pct", "raptor"],
+            "error": f"Player '{name or player_id}' not found in career history",
+        }
+
+    rows = arc_for_id(ident)
+    cols = [
+        "season", "end_year", "player_name", "team_abbreviation", "gp", "min",
+        "pts", "reb", "ast", "stl", "blk", "fg_pct", "fg3_pct", "ft_pct",
+        "ts_pct", "raptor", "raptor_gap", "source"
+    ]
+    p_name = rows[0].get("player_name", name) if rows else name
+    return {
+        "ok": True,
+        "tool": "get_career_arc",
+        "player_id": ident,
+        "player_name": p_name,
+        "rows": rows,
+        "columns": cols,
+    }

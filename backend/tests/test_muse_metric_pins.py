@@ -3,7 +3,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.tools import get_young_player_usage
 
-
 def test_young_usage_current_qualified_board():
     out = get_young_player_usage.invoke({})
     assert out["ok"] is True

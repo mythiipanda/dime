@@ -7,7 +7,6 @@ def _isolated_store(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "STATE_LOCK_PATH", tmp_path / ".state.lock")
     return store
 
-
 def test_save_and_list_run_id_round_trip(monkeypatch, tmp_path):
     store = _isolated_store(monkeypatch, tmp_path)
     store.save_run("thread", "q", "a", [], [], owner="owner", run_id="run-abc123")
@@ -15,13 +14,11 @@ def test_save_and_list_run_id_round_trip(monkeypatch, tmp_path):
     assert len(runs) == 1
     assert runs[0]["id"] == "run-abc123"
 
-
 def test_run_without_id_omits_id_field(monkeypatch, tmp_path):
     store = _isolated_store(monkeypatch, tmp_path)
     store.save_run("thread", "q", "a", [], [], owner="owner")
     runs = store.list_runs("thread", "owner")
     assert "id" not in runs[0]
-
 
 def test_migration_adds_run_id_to_old_schema(monkeypatch, tmp_path):
     store = _isolated_store(monkeypatch, tmp_path)

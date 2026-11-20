@@ -1,0 +1,304 @@
+{
+  "meta": {
+    "coverage": {
+      "players_scanned": 556
+    },
+    "mode": "longest",
+    "scope": "player",
+    "season": "2025-26",
+    "source": "warehouse",
+    "stat": "ast",
+    "threshold": 10.0
+  },
+  "ok": true,
+  "rows": {
+    "count": 10,
+    "streaks": [
+      {
+        "active": false,
+        "end_date": "2026-04-01",
+        "holder": "Scottie Barnes",
+        "holder_id": 1630567,
+        "span": [
+          {
+            "date": "2026-03-23",
+            "value": 10.0
+          },
+          {
+            "date": "2026-03-25",
+            "value": 12.0
+          },
+          {
+            "date": "2026-03-27",
+            "value": 12.0
+          },
+          {
+            "date": "2026-03-29",
+            "value": 15.0
+          },
+          {
+            "date": "2026-03-31",
+            "value": 12.0
+          },
+          {
+            "date": "2026-04-01",
+            "value": 10.0
+          }
+        ],
+        "start_date": "2026-03-23",
+        "streak": 6
+      },
+      {
+        "active": false,
+        "end_date": "2026-03-30",
+        "holder": "Josh Giddey",
+        "holder_id": 1630581,
+        "span": [
+          {
+            "date": "2026-03-19",
+            "value": 19.0
+          },
+          {
+            "date": "2026-03-23",
+            "value": 13.0
+          },
+          {
+            "date": "2026-03-25",
+            "value": 12.0
+          },
+          {
+            "date": "2026-03-27",
+            "value": 11.0
+          },
+          {
+            "date": "2026-03-28",
+            "value": 10.0
+          },
+          {
+            "date": "2026-03-30",
+            "value": 10.0
+          }
+        ],
+        "start_date": "2026-03-19",
+        "streak": 6
+      },
+      {
+        "active": false,
+        "end_date": "2025-11-22",
+        "holder": "Cade Cunningham",
+        "holder_id": 1630595,
+        "span": [
+          {
+            "date": "2025-11-05",
+            "value": 10.0
+          },
+          {
+            "date": "2025-11-07",
+            "value": 10.0
+          },
+          {
+            "date": "2025-11-09",
+            "value": 11.0
+          },
+          {
+            "date": "2025-11-10",
+            "value": 11.0
+          },
+          {
+            "date": "2025-11-18",
+            "value": 10.0
+          },
+          {
+            "date": "2025-11-22",
+            "value": 10.0
+          }
+        ],
+        "start_date": "2025-11-05",
+        "streak": 6
+      },
+      {
+        "active": false,
+        "end_date": "2026-03-17",
+        "holder": "Nikola Joki\u0107",
+        "holder_id": 203999,
+        "span": [
+          {
+            "date": "2026-03-09",
+            "value": 13.0
+          },
+          {
+            "date": "2026-03-11",
+            "value": 13.0
+          },
+          {
+            "date": "2026-03-12",
+            "value": 12.0
+          },
+          {
+            "date": "2026-03-14",
+            "value": 14.0
+          },
+          {
+            "date": "2026-03-17",
+            "value": 14.0
+          }
+        ],
+        "start_date": "2026-03-09",
+        "streak": 5
+      },
+      {
+        "active": false,
+        "end_date": "2026-02-20",
+        "holder": "LeBron James",
+        "holder_id": 2544,
+        "span": [
+          {
+            "date": "2026-02-05",
+            "value": 10.0
+          },
+          {
+            "date": "2026-02-07",
+            "value": 10.0
+          },
+          {
+            "date": "2026-02-09",
+            "value": 10.0
+          },
+          {
+            "date": "2026-02-12",
+            "value": 12.0
+          },
+          {
+            "date": "2026-02-20",
+            "value": 11.0
+          }
+        ],
+        "start_date": "2026-02-05",
+        "streak": 5
+      },
+      {
+        "active": true,
+        "end_date": "2026-03-29",
+        "holder": "Andrew Nembhard",
+        "holder_id": 1629614,
+        "span": [
+          {
+            "date": "2026-03-23",
+            "value": 14.0
+          },
+          {
+            "date": "2026-03-25",
+            "value": 19.0
+          },
+          {
+            "date": "2026-03-27",
+            "value": 10.0
+          },
+          {
+            "date": "2026-03-29",
+            "value": 10.0
+          }
+        ],
+        "start_date": "2026-03-23",
+        "streak": 4
+      },
+      {
+        "active": false,
+        "end_date": "2025-12-14",
+        "holder": "Jalen Johnson",
+        "holder_id": 1630552,
+        "span": [
+          {
+            "date": "2025-12-05",
+            "value": 16.0
+          },
+          {
+            "date": "2025-12-06",
+            "value": 12.0
+          },
+          {
+            "date": "2025-12-12",
+            "value": 12.0
+          },
+          {
+            "date": "2025-12-14",
+            "value": 12.0
+          }
+        ],
+        "start_date": "2025-12-05",
+        "streak": 4
+      },
+      {
+        "active": false,
+        "end_date": "2025-11-12",
+        "holder": "Stephon Castle",
+        "holder_id": 1642264,
+        "span": [
+          {
+            "date": "2025-11-07",
+            "value": 13.0
+          },
+          {
+            "date": "2025-11-08",
+            "value": 13.0
+          },
+          {
+            "date": "2025-11-10",
+            "value": 11.0
+          },
+          {
+            "date": "2025-11-12",
+            "value": 10.0
+          }
+        ],
+        "start_date": "2025-11-07",
+        "streak": 4
+      },
+      {
+        "active": false,
+        "end_date": "2026-04-09",
+        "holder": "Jalen Brunson",
+        "holder_id": 1628973,
+        "span": [
+          {
+            "date": "2026-04-03",
+            "value": 10.0
+          },
+          {
+            "date": "2026-04-06",
+            "value": 13.0
+          },
+          {
+            "date": "2026-04-09",
+            "value": 10.0
+          }
+        ],
+        "start_date": "2026-04-03",
+        "streak": 3
+      },
+      {
+        "active": false,
+        "end_date": "2026-03-18",
+        "holder": "T.J. McConnell",
+        "holder_id": 204456,
+        "span": [
+          {
+            "date": "2026-03-15",
+            "value": 11.0
+          },
+          {
+            "date": "2026-03-17",
+            "value": 10.0
+          },
+          {
+            "date": "2026-03-18",
+            "value": 10.0
+          }
+        ],
+        "start_date": "2026-03-15",
+        "streak": 3
+      }
+    ]
+  },
+  "tool": "get_streaks"
+}

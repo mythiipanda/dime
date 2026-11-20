@@ -15,7 +15,6 @@ BACKOFF_AFTER_CONSEC_FAILS = 5
 BACKOFF_SLEEP = 120
 ABORT_AFTER_TOTAL_FAILS = 60
 
-
 def main() -> None:
     args = argparse.ArgumentParser()
     args.add_argument("--limit", type=int, default=0,
@@ -72,7 +71,6 @@ def main() -> None:
             print(f"  aborting: {fails} total failures", flush=True)
             break
     print(f"on_off league seed: {done} new players, {fails} failures", flush=True)
-
 
 if __name__ == "__main__":
     main()

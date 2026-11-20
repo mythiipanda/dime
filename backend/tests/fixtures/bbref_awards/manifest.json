@@ -1,0 +1,234 @@
+{
+ "awards_1977.html": {
+  "award_sections": [
+   "all_mvp",
+   "all_roy",
+   "all_leading_all_nba",
+   "all_leading_all_defense",
+   "all_leading_all_rookie",
+   "all_coy"
+  ],
+  "fixture_bytes": 91870,
+  "kept_rule": "page <h1> plus every <div id=\"all_*\"> award block, verbatim, in document order",
+  "original_bytes": 250882,
+  "original_sha256": "c0ed8c26835b76c80802f561b1f803b51ae35da48d0f0ebd99a200d7e2a50e5b",
+  "page_heading": "1976-77 NBA Awards Voting",
+  "recorded_at": "2026-10-04T07:45:00Z",
+  "season": "1976-77",
+  "url": "https://www.basketball-reference.com/awards/awards_1977.html"
+ },
+ "awards_1981.html": {
+  "award_sections": [
+   "all_mvp",
+   "all_roy",
+   "all_leading_all_nba",
+   "all_leading_all_defense",
+   "all_leading_all_rookie",
+   "all_coy"
+  ],
+  "fixture_bytes": 159202,
+  "kept_rule": "page <h1> plus every <div id=\"all_*\"> award block, verbatim, in document order",
+  "original_bytes": 277346,
+  "original_sha256": "f0e24fc67dbd6b458db7a26e02aee89604d32fa199a03aaa9a4ca3b21895582d",
+  "page_heading": "1980-81 NBA Awards Voting",
+  "recorded_at": "2026-10-04T14:54:00Z",
+  "season": "1980-81",
+  "url": "https://www.basketball-reference.com/awards/awards_1981.html"
+ },
+ "awards_1998.html": {
+  "award_sections": [
+   "all_mvp",
+   "all_roy",
+   "all_dpoy",
+   "all_smoy",
+   "all_mip",
+   "all_leading_all_nba",
+   "all_leading_all_defense",
+   "all_leading_all_rookie",
+   "all_coy"
+  ],
+  "fixture_bytes": 261571,
+  "kept_rule": "page <h1> plus every <div id=\"all_*\"> award block, verbatim, in document order",
+  "original_bytes": 426366,
+  "original_sha256": "8a4e02ac77fd1325f9a60de6f29d77482cba63d3664f343b120d14efe78f8661",
+  "page_heading": "1997-98 NBA Awards Voting",
+  "recorded_at": "2026-10-04T07:45:00Z",
+  "season": "1997-98",
+  "url": "https://www.basketball-reference.com/awards/awards_1998.html"
+ },
+ "awards_2004.html": {
+  "award_sections": [
+   "all_mvp",
+   "all_roy",
+   "all_dpoy",
+   "all_smoy",
+   "all_mip",
+   "all_leading_all_nba",
+   "all_leading_all_defense",
+   "all_leading_all_rookie",
+   "all_coy"
+  ],
+  "fixture_bytes": 327105,
+  "kept_rule": "page <h1> plus every <div id=\"all_*\"> award block, verbatim, in document order",
+  "original_bytes": 446593,
+  "original_sha256": "e3bab851c81354fff17a7b9a41d8f7c963874f6df14c546263843c1b44e45d6c",
+  "page_heading": "2003-04 NBA Awards Voting",
+  "recorded_at": "2026-10-04T14:54:00Z",
+  "season": "2003-04",
+  "url": "https://www.basketball-reference.com/awards/awards_2004.html"
+ },
+ "awards_2015.html": {
+  "award_sections": [
+   "all_mvp",
+   "all_roy",
+   "all_dpoy",
+   "all_smoy",
+   "all_mip",
+   "all_leading_all_nba",
+   "all_leading_all_defense",
+   "all_leading_all_rookie",
+   "all_coy"
+  ],
+  "fixture_bytes": 303439,
+  "kept_rule": "page <h1> plus every <div id=\"all_*\"> award block, verbatim, in document order",
+  "original_bytes": 468434,
+  "original_sha256": "7c3fa11b91180d3b997ea23416fbc05b20a711afb9b3a5e63b234d3f3a5145bc",
+  "page_heading": "2014-15 NBA Awards Voting",
+  "recorded_at": "2026-10-04T07:45:00Z",
+  "season": "2014-15",
+  "url": "https://www.basketball-reference.com/awards/awards_2015.html"
+ },
+ "awards_2024.html": {
+  "award_sections": [
+   "all_mvp",
+   "all_roy",
+   "all_dpoy",
+   "all_smoy",
+   "all_mip",
+   "all_clutch_poy",
+   "all_leading_all_nba",
+   "all_leading_all_defense",
+   "all_leading_all_rookie",
+   "all_coy"
+  ],
+  "fixture_bytes": 242405,
+  "kept_rule": "page <h1> plus every <div id=\"all_*\"> award block, verbatim, in document order",
+  "original_bytes": 406829,
+  "original_sha256": "0ecefca1dd68921de3c310ce3db6f07e411d952c19433632eb959985f194c4fa",
+  "page_heading": "2023-24 NBA Awards Voting",
+  "recorded_at": "2026-10-04T07:45:00Z",
+  "season": "2023-24",
+  "url": "https://www.basketball-reference.com/awards/awards_2024.html"
+ },
+ "awards_2026.html": {
+  "award_sections": [
+   "all_mvp",
+   "all_roy",
+   "all_dpoy",
+   "all_smoy",
+   "all_mip",
+   "all_clutch_poy",
+   "all_leading_all_nba",
+   "all_leading_all_defense",
+   "all_leading_all_rookie",
+   "all_coy"
+  ],
+  "fixture_bytes": 224109,
+  "kept_rule": "page <h1> plus every <div id=\"all_*\"> award block, verbatim, in document order",
+  "original_bytes": 388176,
+  "original_sha256": "ca5e9129d39aa4e8cb18987884890d894e829fe0b93d61bfbe66f38cf707c9ce",
+  "page_heading": "2025-26 NBA Awards Voting",
+  "recorded_at": "2026-10-04T07:45:00Z",
+  "season": "2025-26",
+  "url": "https://www.basketball-reference.com/awards/awards_2026.html"
+ },
+ "awards_index.html": {
+  "award_sections": [],
+  "fixture_bytes": 136348,
+  "kept_rule": "whole response",
+  "original_bytes": 136348,
+  "original_sha256": "bc5573d2e894ecab69acdd05e89713712b7a83d3d7211c2461603f4cedef1795",
+  "page_heading": null,
+  "recorded_at": "2026-10-04T07:45:00Z",
+  "season": null,
+  "url": "https://www.basketball-reference.com/awards/"
+ },
+ "winners_coy.html": {
+  "award_sections": [
+   "coyNBA"
+  ],
+  "fixture_bytes": 43968,
+  "kept_rule": "page <h1> plus the <table id=\"coyNBA\"> published-winners table, verbatim",
+  "original_bytes": 221041,
+  "original_sha256": "bf330def68d5a9623740a42343ba6e00f72be23c7d2a3d0425eff55b86684698",
+  "page_heading": "NBA &amp; ABA Coach of the Year Award Winners",
+  "recorded_at": "2026-10-04T14:59:00Z",
+  "season": null,
+  "url": "https://www.basketball-reference.com/awards/coy.html"
+ },
+ "winners_dpoy.html": {
+  "award_sections": [
+   "dpoy_NBA"
+  ],
+  "fixture_bytes": 53955,
+  "kept_rule": "page <h1> plus the <table id=\"dpoy_NBA\"> published-winners table, verbatim",
+  "original_bytes": 215608,
+  "original_sha256": "6fd46fac0eec5b50d7b38a8400734fff05c81d6bbb12f30e9b570e6f91aaf3ec",
+  "page_heading": "NBA Defensive Player of the Year (Hakeem Olajuwon Trophy) Award Winners",
+  "recorded_at": "2026-10-04T14:59:00Z",
+  "season": null,
+  "url": "https://www.basketball-reference.com/awards/dpoy.html"
+ },
+ "winners_mip.html": {
+  "award_sections": [
+   "mip_NBA"
+  ],
+  "fixture_bytes": 50498,
+  "kept_rule": "page <h1> plus the <table id=\"mip_NBA\"> published-winners table, verbatim",
+  "original_bytes": 215844,
+  "original_sha256": "0d7d339362d756b3b3c6ceb2fe955d0ff550046b6664c3c3133888063eac636d",
+  "page_heading": "NBA Most Improved Player (George Mikan Trophy) Award Winners",
+  "recorded_at": "2026-10-04T14:59:00Z",
+  "season": null,
+  "url": "https://www.basketball-reference.com/awards/mip.html"
+ },
+ "winners_mvp.html": {
+  "award_sections": [
+   "mvp_NBA"
+  ],
+  "fixture_bytes": 84571,
+  "kept_rule": "page <h1> plus the <table id=\"mvp_NBA\"> published-winners table, verbatim",
+  "original_bytes": 267544,
+  "original_sha256": "74626876ed01b2a2e48323bb5d05b5c7500e13acd9e288cb0f3105bd0dccdba7",
+  "page_heading": "NBA MVP &amp; ABA Most Valuable Player Award Winners",
+  "recorded_at": "2026-10-04T14:59:00Z",
+  "season": null,
+  "url": "https://www.basketball-reference.com/awards/mvp.html"
+ },
+ "winners_roy.html": {
+  "award_sections": [
+   "roy_NBA"
+  ],
+  "fixture_bytes": 97361,
+  "kept_rule": "page <h1> plus the <table id=\"roy_NBA\"> published-winners table, verbatim",
+  "original_bytes": 267072,
+  "original_sha256": "b41d6a3f76f1ca4708aa5c3a1f72e00ab4bf9423668fad7f2ee7859d58c4c058",
+  "page_heading": "NBA &amp; ABA Rookie of the Year (Wilt Chamberlain Trophy) Award Winners",
+  "recorded_at": "2026-10-04T14:59:00Z",
+  "season": null,
+  "url": "https://www.basketball-reference.com/awards/roy.html"
+ },
+ "winners_smoy.html": {
+  "award_sections": [
+   "smoy_NBA"
+  ],
+  "fixture_bytes": 53847,
+  "kept_rule": "page <h1> plus the <table id=\"smoy_NBA\"> published-winners table, verbatim",
+  "original_bytes": 218093,
+  "original_sha256": "a3c49b9e87deacc4e4f95901fc82b306a596dd5f9b17cb2c0b9dbfc023d2c489",
+  "page_heading": "NBA Sixth Man of the Year (John Havlicek Trophy) Award Winners",
+  "recorded_at": "2026-10-04T14:59:00Z",
+  "season": null,
+  "url": "https://www.basketball-reference.com/awards/smoy.html"
+ }
+}

@@ -14,7 +14,6 @@ HEADERS = {
     "Origin": "https://www.nba.com",
 }
 
-
 def _get_json(url: str) -> dict:
     import httpx
 
@@ -22,17 +21,14 @@ def _get_json(url: str) -> dict:
     r.raise_for_status()
     return r.json()
 
-
 def _iso_of(game_date: str) -> str:
     m, d, y = game_date.split("/")
     return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
-
 
 def _season_for_mdy(game_date: str) -> str:
     m, _, y = game_date.split("/")
     y = int(y)
     return f"{y}-{str(y + 1)[2:]}" if int(m) >= 10 else f"{y - 1}-{str(y)[2:]}"
-
 
 def _season_for_game_id(game_id: str) -> str:
     try:
@@ -42,17 +38,14 @@ def _season_for_game_id(game_id: str) -> str:
     except (ValueError, IndexError):
         return ""
 
-
 def _game_rows(payload: dict) -> list[dict]:
     days = payload.get("leagueSchedule", {}).get("gameDates", [])
     return [g for d in days for g in d.get("games", [])]
-
 
 def _matchup(g: dict) -> tuple[str, str, str]:
     away = g.get("awayTeam", {}).get("teamTricode", "")
     home = g.get("homeTeam", {}).get("teamTricode", "")
     return away, home, f"{away} @ {home}"
-
 
 def scoreboard(game_date: str) -> FetchResult:
     def run() -> pl.DataFrame:
@@ -73,7 +66,6 @@ def scoreboard(game_date: str) -> FetchResult:
 
     return safe(SOURCE, _season_for_mdy(game_date), run)
 
-
 def boxscore(game_id: str) -> FetchResult:
     def run() -> pl.DataFrame:
         game = _get_json(BOXSCORE_URL.format(gid=game_id)).get("game", {})
@@ -92,7 +84,6 @@ def boxscore(game_id: str) -> FetchResult:
         return pl.DataFrame(rows) if rows else pl.DataFrame()
 
     return safe(SOURCE, _season_for_game_id(str(game_id)), run)
-
 
 def schedule(team_abbrev: str, season: str) -> FetchResult:
     def run() -> pl.DataFrame:

@@ -8,7 +8,6 @@ from shared import store
 
 FAIL = 0
 
-
 def check(name: str, cond: bool, detail: str = "") -> None:
     global FAIL
     if cond:
@@ -16,7 +15,6 @@ def check(name: str, cond: bool, detail: str = "") -> None:
     else:
         FAIL += 1
         print(f"FAIL {name} :: {detail[:160]}")
-
 
 def main() -> None:
     con = store.connect()
@@ -44,7 +42,6 @@ def main() -> None:
         con.close()
     print(f"\nhygiene: {'clean' if not FAIL else f'{FAIL} failures'}")
     sys.exit(1 if FAIL else 0)
-
 
 if __name__ == "__main__":
     main()

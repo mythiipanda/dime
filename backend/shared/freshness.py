@@ -6,7 +6,6 @@ _DATE_FORMATS = ("%b %d, %Y", "%Y-%m-%d")
 _MIN_COVERAGE = "1990-01-01"
 _MAX_COVERAGE = "2100-01-01"
 
-
 def _column_type(con, table, name):
     try:
         info = con.execute('PRAGMA table_info("%s")' % table).fetchall()
@@ -16,7 +15,6 @@ def _column_type(con, table, name):
         if row[1] == name:
             return str(row[2]).upper()
     return None
-
 
 def table_data_through(con, table, cols):
     date_col = next((c for c in DATA_DATE_COLUMNS if c in cols), None)

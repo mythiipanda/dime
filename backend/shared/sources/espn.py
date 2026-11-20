@@ -7,7 +7,6 @@ SOURCE = "espn"
 
 _espn_ids: dict[str, int] | None = None
 
-
 def espn_team_id(abbrev: str) -> int | None:
     global _espn_ids
     if _espn_ids is None:
@@ -19,7 +18,6 @@ def espn_team_id(abbrev: str) -> int | None:
         }
     return _espn_ids.get(abbrev)
 
-
 def nba_to_espn_team(nba_team_id: int) -> int | None:
     from nba_api.stats.static import teams
 
@@ -27,7 +25,6 @@ def nba_to_espn_team(nba_team_id: int) -> int | None:
     if not found:
         return None
     return espn_team_id(found.get("abbreviation", ""))
-
 
 def _pl(obj: object) -> pl.DataFrame:
     if isinstance(obj, pl.DataFrame):
@@ -41,7 +38,6 @@ def _pl(obj: object) -> pl.DataFrame:
         pass
     return pl.DataFrame()
 
-
 def scoreboard(date_yyyymmdd: str, season: str) -> FetchResult:
     from sportsdataverse.nba import espn_nba_scoreboard
 
@@ -50,7 +46,6 @@ def scoreboard(date_yyyymmdd: str, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def standings(season_year: int, season: str) -> FetchResult:
     from sportsdataverse.nba import espn_nba_standings
 
@@ -58,7 +53,6 @@ def standings(season_year: int, season: str) -> FetchResult:
         return _pl(espn_nba_standings(season=season_year))
 
     return safe(SOURCE, season, run)
-
 
 def team_roster(team_id: int, season: str) -> FetchResult:
     from sportsdataverse.nba import espn_nba_team_roster
@@ -71,7 +65,6 @@ def team_roster(team_id: int, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def team_schedule(team_id: int, season_year: int, season: str) -> FetchResult:
     from sportsdataverse.nba import espn_nba_team_schedule
 
@@ -83,7 +76,6 @@ def team_schedule(team_id: int, season_year: int, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def player_gamelog(athlete_id: int, season: str) -> FetchResult:
     from sportsdataverse.nba import espn_nba_player_gamelog
 
@@ -91,7 +83,6 @@ def player_gamelog(athlete_id: int, season: str) -> FetchResult:
         return _pl(espn_nba_player_gamelog(athlete_id=athlete_id))
 
     return safe(SOURCE, season, run)
-
 
 def injuries(season: str) -> FetchResult:
     from sportsdataverse.nba import espn_nba_injuries

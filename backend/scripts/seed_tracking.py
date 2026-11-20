@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import argparse
 import os
 import sys
@@ -19,14 +18,13 @@ FAIL_ROWS = -1
 MAX_ATTEMPTS = 3
 BACKOFF_S = 2.0
 
-
 @dataclass
 class Unit:
     kind: str
     season: str
     scope: str
     label: str
-
+    season_type: str = "Regular Season"
 
 def unit_table(unit: Unit) -> str:
     if unit.kind == "pt_stats":
@@ -35,34 +33,40 @@ def unit_table(unit: Unit) -> str:
         return PT_DEFEND_TABLE
     return PT_SHOT_TABLE
 
-
 def unit_entity(unit: Unit) -> str:
     if unit.kind == "pt_stats":
-        return f"ptstats:{unit.scope}:{unit.label}"
-    if unit.kind == "pt_defend":
-        return f"ptdefend:{unit.label}"
-    return "ptshot:overall"
+        base = f"ptstats:{unit.scope}:{unit.label}"
+    elif unit.kind == "pt_defend":
+        base = f"ptdefend:{unit.label}"
+    else:
+        base = "ptshot:overall"
+    if unit.season_type != "Regular Season":
+        base += ":" + unit.season_type.lower().replace(" ", "_")
+    return base
 
-
-def planned_units(seasons: list[str]) -> list[Unit]:
+def planned_units(seasons: list[str],
+                  season_types: tuple[str, ...] = ("Regular Season",)
+                  ) -> list[Unit]:
     units: list[Unit] = []
     for season in seasons:
-        for scope in nba_stats.PT_SCOPES:
-            for measure in nba_stats.PT_MEASURE_TYPES:
-                units.append(Unit("pt_stats", season, scope, measure))
-        for category in nba_stats.PT_DEFEND_CATEGORIES:
-            units.append(Unit("pt_defend", season, "", category))
-        units.append(Unit("pt_shot", season, "", "overall"))
+        for season_type in season_types:
+            for scope in nba_stats.PT_SCOPES:
+                for measure in nba_stats.PT_MEASURE_TYPES:
+                    units.append(Unit("pt_stats", season, scope, measure,
+                                      season_type))
+            for category in nba_stats.PT_DEFEND_CATEGORIES:
+                units.append(Unit("pt_defend", season, "", category,
+                                  season_type))
+            units.append(Unit("pt_shot", season, "", "overall", season_type))
     return units
-
 
 def fetch(unit: Unit):
     if unit.kind == "pt_stats":
-        return nba_stats.pt_stats(unit.scope, unit.label, unit.season)
+        return nba_stats.pt_stats(unit.scope, unit.label, unit.season,
+                                  unit.season_type)
     if unit.kind == "pt_defend":
-        return nba_stats.pt_defend(unit.label, unit.season)
-    return nba_stats.pt_shot(unit.season)
-
+        return nba_stats.pt_defend(unit.label, unit.season, unit.season_type)
+    return nba_stats.pt_shot(unit.season, unit.season_type)
 
 def unit_complete(table: str, season: str, entity: str) -> bool:
     try:
@@ -88,7 +92,6 @@ def unit_complete(table: str, season: str, entity: str) -> bool:
             pass
     return row is not None and row[0] is not None and int(row[0]) >= 0
 
-
 def record_failure(table: str, season: str, entity: str) -> None:
     from datetime import datetime, timezone
 
@@ -111,7 +114,6 @@ def record_failure(table: str, season: str, entity: str) -> None:
                 raise
     finally:
         con.close()
-
 
 def run_unit(unit: Unit) -> bool:
     table = unit_table(unit)
@@ -137,7 +139,6 @@ def run_unit(unit: Unit) -> bool:
     print(f"failed {table} {unit.season} {entity}: {last}", flush=True)
     return False
 
-
 def resolve_target(scratch_db: str) -> Path | None:
     raw = scratch_db or os.environ.get("DIME_WAREHOUSE", "")
     if not raw:
@@ -149,7 +150,6 @@ def resolve_target(scratch_db: str) -> Path | None:
         print("refusing: target is the canonical warehouse")
         return None
     return target
-
 
 def table_count(table: str) -> int:
     try:
@@ -169,10 +169,10 @@ def table_count(table: str) -> int:
         except Exception:
             pass
 
-
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seasons", default="2024-25,2025-26")
+    ap.add_argument("--season-types", default="Regular Season")
     ap.add_argument("--scratch-db", default="")
     ap.add_argument("--limit-units", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
@@ -189,10 +189,11 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         store.DB_PATH, store.LOCK_PATH = prior_db_path, prior_lock_path
 
-
 def _run(args, target) -> int:
     seasons = [s.strip() for s in str(args.seasons).split(",") if s.strip()]
-    units = planned_units(seasons)
+    season_types = tuple(
+        t.strip() for t in str(args.season_types).split(",") if t.strip())
+    units = planned_units(seasons, season_types)
     if args.limit_units and args.limit_units > 0:
         units = units[:args.limit_units]
     if args.dry_run:
@@ -217,7 +218,6 @@ def _run(args, target) -> int:
         print(f"{table}: {table_count(table)} rows")
     print(f"done units={done} failed={failed}")
     return 1 if failed else 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

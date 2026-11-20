@@ -7,7 +7,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared.tools import TOOL_NAMES
 from shared.tools.cards import build_cards, describe, rank_tools
 
-
 def test_every_tool_has_card_with_purpose():
     cards = build_cards()
     by_name = {c["name"]: c for c in cards}
@@ -19,22 +18,18 @@ def test_every_tool_has_card_with_purpose():
         assert card["triggers"], name
         assert card["cost"] in ("cheap", "medium", "heavy"), name
 
-
 def test_rank_is_deterministic():
     q = "Compare LeBron James and Kevin Durant side by side"
     assert rank_tools(q) == rank_tools(q)
     assert rank_tools(q, k=3) == rank_tools(q, k=3)
 
-
 def test_compare_question_ranks_get_compare():
     q = "Compare LeBron James and Kevin Durant side by side this season"
     assert "get_compare" in rank_tools(q, k=3)
 
-
 def test_wpa_question_ranks_get_wpa_leaders():
     q = "Who are the WPA leaders this season by win probability added"
     assert "get_wpa_leaders" in rank_tools(q, k=3)
-
 
 def test_zone_question_ranks_zone_tools():
     q = ("How do player shot zone efficiency deltas compare to the league "
@@ -43,11 +38,9 @@ def test_zone_question_ranks_zone_tools():
     assert "get_team_shot_zones" in top5
     assert "get_zone_deltas" in top5
 
-
 def test_leaders_question_ranks_get_leaders():
     q = "Who are the league scoring leaders in points per game"
     assert "get_leaders" in rank_tools(q, k=3)
-
 
 def test_k_cap_respected():
     q = "Who are the league scoring leaders in points per game"
@@ -55,12 +48,10 @@ def test_k_cap_respected():
     assert len(rank_tools(q, k=1)) == 1
     assert len(rank_tools(q, k=200)) == len(TOOL_NAMES)
 
-
 def test_gibberish_still_returns_k_names():
     out = rank_tools("qxkz wubwub zzz", k=8)
     assert len(out) == 8
     assert out == sorted(out)
-
 
 def test_cost_rule():
     by_name = {c["name"]: c for c in build_cards()}
@@ -72,7 +63,6 @@ def test_cost_rule():
     assert by_name["get_compare"]["cost"] == "cheap"
     assert by_name["resolve_entity"]["cost"] == "cheap"
 
-
 def test_family_follows_desk():
     by_name = {c["name"]: c for c in build_cards()}
     assert by_name["get_award_race"]["family"] == "awards"
@@ -82,7 +72,6 @@ def test_family_follows_desk():
     assert by_name["get_wpa_leaders"]["family"] == "wpa"
     assert by_name["get_team_shot_zones"]["family"] == "zone"
     assert by_name["get_matchup_preview"]["family"] == "preview"
-
 
 def test_describe_format():
     line = describe(["get_compare"])

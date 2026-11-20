@@ -8,7 +8,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import store
 from shared.sources import espn, nba_stats
 
-
 def main() -> None:
     args = argparse.ArgumentParser()
     args.add_argument("--season", default="2025-26")
@@ -32,7 +31,6 @@ def main() -> None:
     print("injuries:", res.ok, res.frame.height)
 
     print("seeded rows:", total)
-
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,23 @@
+{
+  "backend/.env.example": 10,
+  "backend/analyst/frontend_fixture.mjs": 1,
+  "backend/analyst/http-assets/docs.html": 1,
+  "backend/analyst/http-assets/redoc.html": 2,
+  "backend/analyst/pi-execution.ts": 1,
+  "backend/analyst/providers.ts": 1,
+  "backend/analyst/python-tools.ts": 1,
+  "backend/analyst/runtime.test.mjs": 94,
+  "backend/analyst/submit-answer.test.mjs": 15,
+  "backend/tests/fixtures/bbref_awards/awards_1977.html": 1,
+  "backend/tests/fixtures/bbref_awards/awards_1981.html": 53,
+  "backend/tests/fixtures/bbref_awards/awards_1998.html": 4,
+  "backend/tests/fixtures/bbref_awards/awards_2004.html": 65,
+  "backend/tests/fixtures/bbref_awards/awards_2015.html": 4,
+  "backend/tests/fixtures/bbref_awards/awards_2024.html": 5,
+  "backend/tests/fixtures/bbref_awards/awards_2026.html": 5,
+  "backend/tests/fixtures/bbref_awards/awards_index.html": 66,
+  "frontend/components/dime/ArtifactScatter.tsx": 7,
+  "frontend/lib/api.ts": 1,
+  "frontend/lib/dime-stream.test.ts": 2,
+  "frontend/lib/evidence.test.ts": 12
+}

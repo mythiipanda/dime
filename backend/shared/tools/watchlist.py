@@ -5,12 +5,10 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import last_completed_season, resolve_season
-
+from ._core import resolve_season
 
 def _norm_type(entity_type: object) -> str:
     return str(entity_type or "").strip().lower()
-
 
 def _norm_player(entity_id: object) -> tuple[str, int | None]:
     from ._core import coerce_player_id
@@ -32,7 +30,6 @@ def _norm_player(entity_id: object) -> tuple[str, int | None]:
         pass
     return raw, pid
 
-
 def _norm_team(entity_id: object) -> tuple[str, int | None]:
     from ._core import coerce_team_id
 
@@ -53,13 +50,11 @@ def _norm_team(entity_id: object) -> tuple[str, int | None]:
         pass
     return raw.upper(), tid
 
-
 def _ensure_table(con: Any) -> None:
     con.execute(
         """CREATE TABLE IF NOT EXISTS watchlists(
         entity_type VARCHAR, entity_id VARCHAR, added_at VARCHAR)"""
     )
-
 
 def _normalize(entity_type: str, entity_id: object) -> tuple[str, str]:
     if entity_type == "player":
@@ -67,7 +62,6 @@ def _normalize(entity_type: str, entity_id: object) -> tuple[str, str]:
         return entity_type, name
     abbrev, _ = _norm_team(entity_id)
     return entity_type, abbrev
-
 
 def _player_snapshot(name: str, season: str) -> dict[str, Any]:
     season = resolve_season(season)
@@ -94,7 +88,6 @@ def _player_snapshot(name: str, season: str) -> dict[str, Any]:
         "found": True, "player": row[0], "team": team, "gp": gp,
         "ppg": per(pts), "rpg": per(reb), "apg": per(ast),
     }
-
 
 def _team_snapshot(abbrev: str, season: str) -> dict[str, Any]:
     season = resolve_season(season)
@@ -135,10 +128,8 @@ def _team_snapshot(abbrev: str, season: str) -> dict[str, Any]:
         "record": f"{wins}-{losses}" if wins is not None else None,
     }
 
-
-@tool
+@tool(description='Follow a player (full name) or team (abbrev). Idempotent.')
 def add_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
-    """Follow a player (full name) or team (abbrev). Idempotent."""
     etype = _norm_type(entity_type)
     if etype not in ("player", "team"):
         return {"tool": "add_watchlist_item", "ok": False,
@@ -173,10 +164,8 @@ def add_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
                      "added_at": now, "added": True},
             "meta": {"source": "watchlists"}}
 
-
-@tool
+@tool(description='Unfollow a player or team. Removing a missing entry is a no-op.')
 def remove_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
-    """Unfollow a player or team. Removing a missing entry is a no-op."""
     etype = _norm_type(entity_type)
     if etype not in ("player", "team"):
         return {"tool": "remove_watchlist_item", "ok": False,
@@ -209,14 +198,8 @@ def remove_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
                      "removed": bool(removed)},
             "meta": {"source": "watchlists"}}
 
-
-@tool
+@tool(description='List followed entities with their latest snapshot.\n\nPlayers carry per-game PTS/REB/AST from silver_leaders_pts.\nTeams carry W/L from silver_standings.')
 def get_watchlist(season: str | None = None) -> dict[str, Any]:
-    """List followed entities with their latest snapshot.
-
-    Players carry per-game PTS/REB/AST from silver_leaders_pts.
-    Teams carry W/L from silver_standings.
-    """
     season = resolve_season(season)
     season = str(season or "").strip() or resolve_season(None)
     con = store.state_connect()

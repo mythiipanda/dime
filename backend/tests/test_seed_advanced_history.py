@@ -18,7 +18,6 @@ from shared.sources.base import FetchMeta, FetchResult
 ROWS = 4
 PRELOADED = "2025-26"
 
-
 def _frame() -> pl.DataFrame:
     return pl.DataFrame({
         "PLAYER_ID": [201939, 1628988, 1627846, 2544],
@@ -37,12 +36,10 @@ def _frame() -> pl.DataFrame:
         "FG_PCT": [0.481, 0.455, 0.44, 0.42],
     })
 
-
 def _result(frame: pl.DataFrame, season: str, ok: bool = True,
             error: str = "") -> FetchResult:
     return FetchResult(frame=frame, meta=FetchMeta(source=seed.SOURCE, season=season),
                        ok=ok, error=error)
-
 
 def _transport(calls: list[str] | None = None):
     def fetch(season: str) -> FetchResult:
@@ -51,14 +48,12 @@ def _transport(calls: list[str] | None = None):
         return _result(_frame(), season)
     return fetch
 
-
 def _scratch(tmp_path, monkeypatch) -> Path:
     path = tmp_path / "warehouse.duckdb"
     duckdb.connect(str(path)).close()
     monkeypatch.setattr(store, "DB_PATH", path)
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
     return path
-
 
 def _query(path: Path, sql: str) -> list[tuple]:
     con = duckdb.connect(str(path), read_only=True)
@@ -67,14 +62,11 @@ def _query(path: Path, sql: str) -> list[tuple]:
     finally:
         con.close()
 
-
 def _columns(path: Path, table: str) -> set[str]:
     return {r[1] for r in _query(path, f"PRAGMA table_info({table})")}
 
-
 def _seasons(path: Path, table: str) -> set[str]:
     return {r[0] for r in _query(path, f"SELECT DISTINCT _season FROM {table}")}
-
 
 def _award_inputs(path: Path, seasons: list[str], preloaded: str) -> None:
     con = duckdb.connect(str(path))
@@ -87,7 +79,6 @@ def _award_inputs(path: Path, seasons: list[str], preloaded: str) -> None:
                     [(1, s) for s in seasons])
     con.execute(f"INSERT INTO {seed.TABLE} VALUES (1, ?)", [preloaded])
     con.close()
-
 
 def test_writes_every_fetched_column_with_provenance(tmp_path, monkeypatch):
     path = _scratch(tmp_path, monkeypatch)
@@ -116,7 +107,6 @@ def test_writes_every_fetched_column_with_provenance(tmp_path, monkeypatch):
         (seed.TABLE, "2024-25", seed.ENTITY, seed.SOURCE, ROWS),
     ]
 
-
 def test_a_season_missing_a_column_keeps_the_table_shape(tmp_path, monkeypatch):
     path = _scratch(tmp_path, monkeypatch)
     thin = _frame().drop("FG_PCT")
@@ -132,7 +122,6 @@ def test_a_season_missing_a_column_keeps_the_table_shape(tmp_path, monkeypatch):
         path,
         f"SELECT _season, FG_PCT IS NULL FROM {seed.TABLE}"
         " GROUP BY 1, 2 ORDER BY 1") == [("2023-24", True), ("2024-25", False)]
-
 
 def test_second_run_changes_nothing_and_refetches_nothing(tmp_path, monkeypatch):
     path = _scratch(tmp_path, monkeypatch)
@@ -150,7 +139,6 @@ def test_second_run_changes_nothing_and_refetches_nothing(tmp_path, monkeypatch)
     assert calls == seasons
     assert _query(path, f"SELECT * FROM {seed.TABLE} ORDER BY _season, PLAYER_ID") == before
     assert _query(path, "SELECT COUNT(*) FROM fetch_log") == [(2,)]
-
 
 def test_empty_fetch_names_the_season_and_writes_nothing(tmp_path, monkeypatch):
     path = _scratch(tmp_path, monkeypatch)
@@ -171,7 +159,6 @@ def test_empty_fetch_names_the_season_and_writes_nothing(tmp_path, monkeypatch):
     assert _seasons(path, seed.TABLE) == {"2024-25"}
     assert _query(path, "SELECT DISTINCT season FROM fetch_log") == [("2024-25",)]
 
-
 def test_fetch_missing_a_consumed_column_fails_loudly(tmp_path, monkeypatch):
     path = _scratch(tmp_path, monkeypatch)
     frame = _frame().drop("AGE")
@@ -180,7 +167,6 @@ def test_fetch_missing_a_consumed_column_fails_loudly(tmp_path, monkeypatch):
         seed.run(["2024-25"], fetch=lambda s: _result(frame, s), delay_s=0)
 
     assert {r[0] for r in _query(path, "SHOW TABLES")} == {"fetch_log"}
-
 
 def test_rerun_resumes_after_the_failed_season(tmp_path, monkeypatch):
     path = _scratch(tmp_path, monkeypatch)
@@ -207,7 +193,6 @@ def test_rerun_resumes_after_the_failed_season(tmp_path, monkeypatch):
         path, f"SELECT _season, COUNT(*) FROM {seed.TABLE} GROUP BY 1 ORDER BY 1"
     ) == [(s, ROWS) for s in sorted(wanted)]
 
-
 def test_every_award_input_season_ends_up_in_silver_advanced(tmp_path, monkeypatch):
     path = _scratch(tmp_path, monkeypatch)
     targets = seed.season_slugs()
@@ -221,7 +206,6 @@ def test_every_award_input_season_ends_up_in_silver_advanced(tmp_path, monkeypat
     assert needed <= _seasons(path, seed.TABLE)
     assert report["skipped"] == [PRELOADED]
     assert sorted(report["loaded"]) == sorted(targets)
-
 
 def test_season_range_is_a_closed_interval():
     assert seed.season_slugs() == [

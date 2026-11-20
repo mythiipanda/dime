@@ -9,7 +9,6 @@ import polars as pl
 
 from shared import store
 
-
 def starters(df: pl.DataFrame) -> set:
     early = df.sort(["period", "possession_number"]).head(3)
     out: set = set()
@@ -21,7 +20,6 @@ def starters(df: pl.DataFrame) -> set:
             if r.get(k):
                 out.add(str(r[k]))
     return out
-
 
 def flag_game(df: pl.DataFrame) -> pl.DataFrame:
     df = df.sort(["period", "possession_number"])
@@ -70,7 +68,6 @@ def flag_game(df: pl.DataFrame) -> pl.DataFrame:
         flags.append(1 if garbage else 0)
     return df.with_columns(pl.Series("garbage", flags))
 
-
 def main() -> None:
     args = argparse.ArgumentParser()
     args.add_argument("--seasons", default="2022,2023,2024,2025,2026")
@@ -111,7 +108,6 @@ def main() -> None:
         print(f"possessions: {total}, flagged: {flagged}")
     finally:
         con.close()
-
 
 if __name__ == "__main__":
     main()

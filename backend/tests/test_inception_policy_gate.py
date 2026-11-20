@@ -1,12 +1,12 @@
 from shared.config import settings
 from shared import providers
 
-
 def _keys(monkeypatch):
     monkeypatch.setattr(settings,"openrouter_api_key","free")
     monkeypatch.setattr(settings,"mistral_api_key","free")
     monkeypatch.setattr(settings,"inception_api_key","retained")
-
+    monkeypatch.setattr(settings,"cerebras_api_key","")
+    monkeypatch.setattr(settings,"dime_enable_groq",False)
 
 def test_retained_key_is_inert_by_default(monkeypatch):
     _keys(monkeypatch); monkeypatch.setattr(settings,"dime_enable_inception",False)
@@ -14,12 +14,12 @@ def test_retained_key_is_inert_by_default(monkeypatch):
     assert providers.get_llm("inception") is None
     assert "inception" not in providers.models_catalog()["available"]
 
-
 def test_explicit_policy_reactivates_inception(monkeypatch):
     _keys(monkeypatch); monkeypatch.setattr(settings,"dime_enable_inception",True)
     seen=[]
     monkeypatch.setattr(providers,"ChatOpenAI",lambda **kw: seen.append(kw) or object())
-    assert providers.fallback_order("inception")[0] == "gemini"
+    assert providers.fallback_order("inception")[0] == "openrouter"
+    assert providers.fallback_order("inception")[-1] == "inception"
     assert providers.resolve_model_id("inception:any") == (
         "inception", settings.inception_model)
     assert providers.get_llm("inception") is not None
@@ -27,7 +27,6 @@ def test_explicit_policy_reactivates_inception(monkeypatch):
     catalog=providers.models_catalog()
     assert catalog["available"]["inception"] is True
     assert any(m["engine"]=="inception" for m in catalog["models"])
-
 
 def test_flag_without_key_cannot_activate(monkeypatch):
     monkeypatch.setattr(settings,"dime_enable_inception",True)

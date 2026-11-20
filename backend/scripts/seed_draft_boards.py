@@ -13,7 +13,6 @@ from shared.sources import tankathon as _tk
 BRONZE = "bronze_draft_boards"
 SILVER = "silver_draft_boards"
 
-
 def _canon(frame: pl.DataFrame) -> pl.DataFrame:
     exprs = []
     for c, dt in frame.schema.items():
@@ -28,11 +27,9 @@ def _canon(frame: pl.DataFrame) -> pl.DataFrame:
             exprs.append(pl.col(c).cast(pl.String))
     return frame.select(exprs)
 
-
 def _save(table: str, frame: pl.DataFrame, season: str, board: str) -> int:
     return store.write_unit(table, _canon(frame), season, _tk.SOURCE, board,
                             "_season = ? AND _entity = ?", [season, board])
-
 
 def main() -> int:
     total = 0
@@ -57,7 +54,6 @@ def main() -> int:
         time.sleep(2)
     print(f"done: {total} silver rows", flush=True)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

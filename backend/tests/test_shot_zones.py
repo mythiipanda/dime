@@ -10,11 +10,9 @@ from shared.tools.zone import (ZONE_KEYS, aggregate_zones, build_rows,
                             get_team_shot_zones, league_baselines,
                             season_year, zone_of, _zone_leaders)
 
-
 def _shot(team_id, x, y, value, made, abbr="TST"):
     return {"team_id": team_id, "team_abbr": abbr, "x": x, "y": y,
             "shot_value": value, "made": made}
-
 
 @pytest.mark.parametrize("x,y,value,expected", [
     (0, 50, 2, "rim"),
@@ -26,19 +24,15 @@ def _shot(team_id, x, y, value, made, abbr="TST"):
 def test_zone_of_maps_coords_to_zone(x, y, value, expected):
     assert zone_of(x, y, value) == expected
 
-
 def test_zone_of_boundary_8ft_is_short_mid():
     assert zone_of(0, 80, 2) == "short_mid"
-
 
 def test_zone_of_bad_coords_never_crashes():
     assert zone_of(None, None, 2) == "long_mid"
 
-
 def test_season_year_maps_label_to_warehouse_int():
     assert season_year("2025-26") == 2026
     assert season_year("2021-22") == 2022
-
 
 def test_aggregate_zone_math():
     shots = [
@@ -54,11 +48,9 @@ def test_aggregate_zone_math():
     assert t["zones"]["atb_3"] == {"fga": 2, "fgm": 1, "three_made": 1}
     assert t["zones"]["long_mid"] == {"fga": 0, "fgm": 0, "three_made": 0}
 
-
 def test_aggregate_skips_shots_without_team():
     agg = aggregate_zones([{"team_id": None, "x": 0, "y": 50}])
     assert agg == {}
-
 
 def test_league_baselines_pool_shots_not_averages():
     a = aggregate_zones([_shot(1, 0, 50, 2, True), _shot(1, 0, 50, 2, True),
@@ -70,7 +62,6 @@ def test_league_baselines_pool_shots_not_averages():
     assert base["rim"]["efg"] == 0.4
     assert base["rim"]["share"] == round(10 / 11, 4)
     assert base["atb_3"]["efg"] == 0.0
-
 
 def test_build_rows_delta_arithmetic():
     shots = [
@@ -94,18 +85,15 @@ def test_build_rows_delta_arithmetic():
     assert bbb["atb_3_efg"] == 1.5
     assert bbb["atb_3_share_delta_pp"] == 50.0
 
-
 def test_tool_rejects_season_with_no_rows():
     out = get_team_shot_zones.invoke({"teams": "league", "season": "2030-31"})
     assert out["ok"] is False
     assert "not in this dataset" in out["error"]
 
-
 def test_tool_rejects_unmatched_teams():
     out = get_team_shot_zones.invoke({"teams": "Not A Real Team", "season": "2025-26"})
     assert out["ok"] is False
     assert "no shot rows matched" in out["error"]
-
 
 def test_tool_single_team_carries_league_baseline_row():
     out = get_team_shot_zones.invoke({"teams": "BOS", "season": "2025-26"})
@@ -121,13 +109,11 @@ def test_tool_single_team_carries_league_baseline_row():
     assert "data_note" in out["meta"]
     assert "2009-10 through 2025-26" in out["meta"]["data_note"]
 
-
 def test_tool_mixes_known_and_unknown_teams():
     out = get_team_shot_zones.invoke({"teams": "BOS, Not A Real Team", "season": "2025-26"})
     assert out["ok"] is True
     assert out["meta"]["unknown_teams"] == ["Not A Real Team"]
     assert [r["team"] for r in out["rows"][1:]] == ["BOS"]
-
 
 def _leader_rows():
     shots = ([_shot(1, 0, 50, 2, True, "AAA")]
@@ -137,13 +123,11 @@ def _leader_rows():
     rows = build_rows(agg, league_baselines(agg))
     return rows
 
-
 def test_zone_leader_is_max_delta_not_first_row():
     leaders = _zone_leaders(_leader_rows()[1:])
     assert leaders["rim"]["team"] == "ZZZ"
     assert leaders["rim"]["share_delta_pp"] == max(
         r["rim_share_delta_pp"] for r in _leader_rows()[1:])
-
 
 def _tie_rows():
     rows = []
@@ -159,16 +143,13 @@ def _tie_rows():
         rows.append(row)
     return rows
 
-
 def test_zone_leader_tie_breaks_on_higher_share():
     assert _zone_leaders(_tie_rows())["rim"]["team"] == "ZZZ"
-
 
 def test_zone_leader_full_tie_keeps_first_team():
     rows = _tie_rows()
     rows[1]["rim_share"] = 0.60
     assert _zone_leaders(rows)["rim"]["team"] == "AAA"
-
 
 def test_tool_league_output_marks_rim_leader_nop():
     out = get_team_shot_zones.invoke({"teams": "league", "season": "2025-26"})

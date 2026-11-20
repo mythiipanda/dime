@@ -11,10 +11,8 @@ from shared.tools.league import FRESHNESS_RULES, _freshness_row
 NOW = datetime(2026, 9, 10, 15, 30, tzinfo=timezone.utc)
 SEASON_NOW = datetime(2026, 1, 15, 15, 30, tzinfo=timezone.utc)
 
-
 def _iso(dt):
     return dt.isoformat()
-
 
 def test_daily_table_fresh_in_season():
     row = _freshness_row("silver_scoreboard", 26, _iso(SEASON_NOW - timedelta(hours=2)),
@@ -23,13 +21,11 @@ def test_daily_table_fresh_in_season():
     assert row["expected"] == "daily in season"
     assert row["age_hours"] == 2.0
 
-
 def test_daily_table_stale_in_season():
     row = _freshness_row("silver_scoreboard", 26, _iso(SEASON_NOW - timedelta(days=3)),
                          SEASON_NOW)
     assert row["stale"] is True
     assert row["age_hours"] == 72.0
-
 
 def test_daily_table_relaxes_to_weekly_offseason():
     row = _freshness_row("silver_scoreboard", 26, _iso(NOW - timedelta(days=3)), NOW)
@@ -38,13 +34,11 @@ def test_daily_table_relaxes_to_weekly_offseason():
     old = _freshness_row("silver_scoreboard", 26, _iso(NOW - timedelta(days=10)), NOW)
     assert old["stale"] is True
 
-
 def test_weekly_table_boundary():
     fresh = _freshness_row("silver_salaries", 461, _iso(NOW - timedelta(days=6)), NOW)
     assert fresh["stale"] is False
     old = _freshness_row("silver_salaries", 461, _iso(NOW - timedelta(days=8)), NOW)
     assert old["stale"] is True
-
 
 def test_static_table_never_stale():
     row = _freshness_row("silver_hist_possessions", 1379694,
@@ -53,26 +47,22 @@ def test_static_table_never_stale():
     assert row["expected"] == "static"
     assert row["age_hours"] == 21600.0
 
-
 def test_unknown_timestamp_stays_unknown():
     row = _freshness_row("silver_scoreboard", 26, None, NOW)
     assert row["last_fetch"] == "unknown"
     assert row["stale"] is None
     assert row["age_hours"] is None
 
-
 def test_malformed_timestamp_stays_unknown():
     row = _freshness_row("silver_scoreboard", 26, "not-a-timestamp", NOW)
     assert row["last_fetch"] == "unknown"
     assert row["stale"] is None
-
 
 def test_table_outside_registry_gets_unknown_rule():
     row = _freshness_row("silver_brand_new", 10, _iso(NOW - timedelta(hours=1)), NOW)
     assert row["expected"] == "unknown"
     assert row["stale"] is None
     assert row["age_hours"] == 1.0
-
 
 def test_registry_covers_every_silver_table_in_warehouse():
     import duckdb
@@ -85,7 +75,6 @@ def test_registry_covers_every_silver_table_in_warehouse():
     finally:
         con.close()
     assert tables <= set(FRESHNESS_RULES), tables - set(FRESHNESS_RULES)
-
 
 def test_tool_wired_and_reads_warehouse():
     out = get_warehouse_freshness.invoke({})

@@ -8,12 +8,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store  # noqa: E402
-from shared.sources import nba_stats  # noqa: E402
-from shared.sources.base import FetchMeta, FetchResult  # noqa: E402
-from shared.tools import team as team_mod  # noqa: E402
-from shared.tools.prediction import get_game_prediction  # noqa: E402
-from v2.adapters import AdapterError, call_capability  # noqa: E402
+from shared import coverage, store
+from shared.sources import nba_stats
+from shared.sources.base import FetchMeta, FetchResult
+from shared.tools import team as team_mod
+from shared.tools.prediction import get_game_prediction
 
 STORED_RATINGS_TABLE = "silver_team_ratings"
 HIST_RATINGS_TABLE = "silver_hist_gamelogs"
@@ -67,7 +66,6 @@ _HIST_ROWS = [
      40, 79, 0.506, 11, 27, 0.407, 20, 22, 0.909,
      7, 34, 41, 27, 7, 4, 12, 18, 118, "playoffs", "2024-25"),
 ]
-
 
 def _seed(path: Path) -> None:
     con = duckdb.connect(str(path))
@@ -123,11 +121,16 @@ def _seed(path: Path) -> None:
     finally:
         con.close()
 
-
 @pytest.fixture()
 def brief_db(tmp_path, monkeypatch):
     path = tmp_path / "brief.duckdb"
     _seed(path)
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store._tables_cache.clear()
+    store._pool_evict_all()
+    store.warehouse_identity_cache_clear()
+    coverage.coverage_cache_clear()
 
     def fake_connect(read_only=None):
         if read_only is None:
@@ -135,8 +138,11 @@ def brief_db(tmp_path, monkeypatch):
         return duckdb.connect(str(path), read_only=read_only)
 
     monkeypatch.setattr(store, "connect", fake_connect)
-    return path
-
+    yield path
+    store._tables_cache.clear()
+    store._pool_evict_all()
+    store.warehouse_identity_cache_clear()
+    coverage.coverage_cache_clear()
 
 def _drop_season_from(table, season):
     con = store.connect(read_only=False)
@@ -145,13 +151,15 @@ def _drop_season_from(table, season):
     finally:
         con.close()
 
-
 def _forbid_live_ratings(monkeypatch):
     def forbidden(season):
         raise AssertionError(f"live ratings fetch for {season}")
 
     monkeypatch.setattr(nba_stats, "team_ratings", forbidden)
 
+def _call_brief(a, b, season):
+    return asyncio.run(team_mod.get_matchup_brief.ainvoke(
+        {"a": a, "b": b, "season": season}))
 
 class _StubTool:
     def __init__(self, payload):
@@ -160,15 +168,11 @@ class _StubTool:
     async def ainvoke(self, arguments):
         return self._payload
 
-
 def test_brief_for_2024_25_composes_every_section(brief_db):
-    env = call_capability(
-        "matchup_brief",
-        {"a": "BOS", "b": "NYK", "season": "2024-25"},
-    )
-    rows = env.rows
-    assert env.capability == "matchup_brief"
-    assert env.season == "2024-25"
+    out = _call_brief("BOS", "NYK", "2024-25")
+    assert out["ok"] is True
+    rows = out["rows"]
+    assert out["meta"]["season"] == "2024-25"
     assert rows["teams"] == ["BOS", "NYK"]
     assert rows["ratings"]["BOS"]["NET_RATING"] == 9.3
     assert rows["ratings"]["NYK"]["NET_RATING"] == 4.2
@@ -181,32 +185,23 @@ def test_brief_for_2024_25_composes_every_section(brief_db):
     assert summary["series"] is None
     assert rows["prediction"]["win_prob"]["BOS"] > 0.5
     assert rows["prediction"]["ratings_source"] == "silver_team_ratings"
-    assert env.qualification
-    assert env.coverage
-
 
 def test_brief_carries_unknown_injuries_instead_of_refusing(brief_db):
-    env = call_capability(
-        "matchup_brief",
-        {"a": "BOS", "b": "NYK", "season": "2024-25"},
-    )
+    out = _call_brief("BOS", "NYK", "2024-25")
+    assert out["ok"] is True
     for abbr in ("BOS", "NYK"):
-        section = env.rows["injuries"][abbr]
+        section = out["rows"]["injuries"][abbr]
         assert section["availability_known"] is False
         assert section["impact"] == "unknown"
         assert section["out"] == []
 
-
 def test_brief_season_series_excludes_playoff_rows_from_history(brief_db):
-    env = call_capability(
-        "matchup_brief",
-        {"a": "BOS", "b": "NYK", "season": "2024-25"},
-    )
-    games = env.rows["season_series"]["games"]
+    out = _call_brief("BOS", "NYK", "2024-25")
+    assert out["ok"] is True
+    games = out["rows"]["season_series"]["games"]
     assert [game["phase"] for game in games] == [
         "regular season", "regular season"]
     assert all(game["game_id"].startswith("0022") for game in games)
-
 
 def test_brief_derived_ratings_when_season_absent_from_team_ratings(
     brief_db,
@@ -224,7 +219,6 @@ def test_brief_derived_ratings_when_season_absent_from_team_ratings(
     assert out["inputs"]["home"]["record"] == "3-0"
     assert out["inputs"]["away"]["record"] == "1-2"
 
-
 def test_prediction_fails_loud_when_no_ratings_source_has_the_season(
     brief_db,
 ):
@@ -233,42 +227,32 @@ def test_prediction_fails_loud_when_no_ratings_source_has_the_season(
     assert out["ok"] is False
     assert "ratings" in out["error"]
 
-
 def test_brief_without_a_stored_season_shares_one_derived_provenance(
     brief_db, monkeypatch,
 ):
     _drop_season_from(STORED_RATINGS_TABLE, "2024-25")
     _forbid_live_ratings(monkeypatch)
 
-    env = call_capability(
-        "matchup_brief",
-        {"a": "BOS", "b": "NYK", "season": "2024-25"},
-    )
+    out = _call_brief("BOS", "NYK", "2024-25")
+    assert out["ok"] is True
 
-    assert env.rows["ratings_provenance"] == {
+    assert out["rows"]["ratings_provenance"] == {
         "kind": "derived", "source": HIST_RATINGS_TABLE}
-    assert env.rows["prediction"]["ratings_source"] == HIST_RATINGS_TABLE
+    assert out["rows"]["prediction"]["ratings_source"] == HIST_RATINGS_TABLE
     simulation = get_game_prediction.invoke(
         {"a": "BOS", "b": "NYK", "season": "2024-25", "n_sims": 2000})
-    assert env.rows["ratings"]["BOS"]["NET_RATING"] == pytest.approx(
+    assert out["rows"]["ratings"]["BOS"]["NET_RATING"] == pytest.approx(
         simulation["inputs"]["home"]["net_rating"], abs=0.1)
-    assert env.rows["ratings"]["BOS"]["NET_RATING"] != pytest.approx(9.3, abs=0.01)
-    assert "derived" in env.source
-    assert "warehouse" not in env.source
-
+    assert out["rows"]["ratings"]["BOS"]["NET_RATING"] != pytest.approx(9.3, abs=0.01)
 
 def test_brief_keeps_stored_ratings_when_the_season_is_stored(brief_db):
-    env = call_capability(
-        "matchup_brief",
-        {"a": "BOS", "b": "NYK", "season": "2024-25"},
-    )
+    out = _call_brief("BOS", "NYK", "2024-25")
+    assert out["ok"] is True
 
-    assert env.rows["ratings_provenance"] == {
+    assert out["rows"]["ratings_provenance"] == {
         "kind": "stored", "source": STORED_RATINGS_TABLE}
-    assert env.rows["prediction"]["ratings_source"] == STORED_RATINGS_TABLE
-    assert env.rows["ratings"]["BOS"]["NET_RATING"] == 9.3
-    assert "warehouse" in env.source
-
+    assert out["rows"]["prediction"]["ratings_source"] == STORED_RATINGS_TABLE
+    assert out["rows"]["ratings"]["BOS"]["NET_RATING"] == 9.3
 
 def test_brief_fails_loud_when_no_ratings_source_has_the_season(
     brief_db, monkeypatch,
@@ -280,19 +264,12 @@ def test_brief_fails_loud_when_no_ratings_source_has_the_season(
             meta=FetchMeta(source=nba_stats.SOURCE, season=season),
             ok=False, error="upstream returned nothing"))
 
-    out = asyncio.run(team_mod.get_matchup_brief.ainvoke(
-        {"a": "BOS", "b": "NYK", "season": "2009-10"}))
+    out = _call_brief("BOS", "NYK", "2009-10")
 
     assert out["ok"] is False
     assert "rows" not in out
     for named in ("2009-10", STORED_RATINGS_TABLE, HIST_RATINGS_TABLE):
         assert named in out["error"], named
-    with pytest.raises(AdapterError):
-        call_capability(
-            "matchup_brief",
-            {"a": "BOS", "b": "NYK", "season": "2009-10"},
-        )
-
 
 def test_brief_fails_when_card_and_simulation_disagree_on_provenance(
     brief_db, monkeypatch,
@@ -310,27 +287,18 @@ def test_brief_fails_when_card_and_simulation_disagree_on_provenance(
         "shared.tools.prediction.get_game_prediction",
         _StubTool(disagreeing))
 
-    out = asyncio.run(team_mod.get_matchup_brief.ainvoke(
-        {"a": "BOS", "b": "NYK", "season": "2024-25"}))
+    out = _call_brief("BOS", "NYK", "2024-25")
 
     assert out["ok"] is False
     assert "rows" not in out
     for named in (STORED_RATINGS_TABLE, HIST_RATINGS_TABLE):
         assert named in out["error"], named
 
-
 def test_brief_rejects_wrong_subject_end_to_end(brief_db):
-    with pytest.raises(AdapterError):
-        call_capability(
-            "matchup_brief",
-            {"a": "BOS", "b": "ZZZ", "season": "2024-25"},
-        )
-    with pytest.raises(AdapterError):
-        call_capability(
-            "matchup_brief",
-            {"a": "BOS", "b": "BOS", "season": "2024-25"},
-        )
-
+    bad = _call_brief("BOS", "ZZZ", "2024-25")
+    assert bad["ok"] is False
+    same = _call_brief("BOS", "BOS", "2024-25")
+    assert same["ok"] is False
 
 def test_playoff_rows_in_history_never_become_a_series_record(brief_db):
     con = store.connect(read_only=True)
@@ -361,13 +329,11 @@ def test_playoff_rows_in_history_never_become_a_series_record(brief_db):
         HIST_RATINGS_TABLE)
     assert out["meta"]["coverage"]["playoffs"]["source"] is None
 
-
 def test_season_series_fails_loud_for_a_pairing_that_never_met(brief_db):
     out = team_mod.get_season_series.invoke(
         {"team_a": "BOS", "team_b": "MIA", "season": "2024-25"})
     assert out["ok"] is False
     assert "do not report a 0-0 record" in out["error"].lower()
-
 
 def test_splits_read_history_when_team_games_lacks_the_season(brief_db):
     out = team_mod.get_team_splits.invoke(
@@ -383,7 +349,6 @@ def test_splits_read_history_when_team_games_lacks_the_season(brief_db):
     assert splits["FEB"]["GP"] == 1
     assert splits["last10"]["W"] == 3
     assert splits["home"]["PPG"] == 132.0
-
 
 def test_splits_keeps_the_stored_slice_when_it_has_the_season(brief_db):
     out = team_mod.get_team_splits.invoke(

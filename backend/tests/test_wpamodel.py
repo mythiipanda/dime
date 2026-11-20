@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.tools.wpamodel import (  # noqa: E402
+from shared.tools.wpamodel import (
     fit_logistic,
     parse_clock,
     seconds_remaining,
@@ -15,19 +15,16 @@ from shared.tools.wpamodel import (  # noqa: E402
     win_probability_from_scores,
 )
 
-
 def test_tipoff_probability():
     p = win_probability(0, 2880.0)
     assert p == pytest.approx(0.5398, abs=0.005)
     assert 0.45 < p < 0.62
     assert win_probability_from_scores("0", "0", "PT12M00.00S", 1) == p
 
-
 def test_monotonic_in_lead():
     for sec in (60.0, 600.0, 2880.0):
         ps = [win_probability(lead, sec) for lead in range(-30, 31)]
         assert all(b > a for a, b in zip(ps, ps[1:]))
-
 
 def test_trailing_team_time():
     early = win_probability(-8, 2880.0)
@@ -35,11 +32,9 @@ def test_trailing_team_time():
     late = win_probability(-8, 60.0)
     assert early > mid > late
 
-
 def test_leading_team_time():
     assert win_probability(8, 2880.0) < win_probability(8, 1200.0)
     assert win_probability(8, 60.0) > win_probability(8, 1200.0)
-
 
 def test_clock_parsing():
     assert parse_clock("PT12M00.00S") == 720.0
@@ -55,7 +50,6 @@ def test_clock_parsing():
     assert win_probability_from_scores("", "", "PT12M00.00S", 1) is None
     assert win_probability_from_scores("99", "101", "PT00M10.00S", 5) < 0.5
 
-
 def test_determinism():
     rows = [(lead, sec, 1 if lead > 0 else 0)
             for lead in range(-12, 13) for sec in (120.0, 900.0, 2400.0)]
@@ -63,7 +57,6 @@ def test_determinism():
     b0, b1 = fit_logistic(rows)
     assert b1 > 0
     assert win_probability(5, 300.0) == win_probability(5, 300.0)
-
 
 _FEATURE_SQL = """
 WITH d AS (
@@ -88,7 +81,6 @@ SELECT
   CASE WHEN g.fh > g.fa THEN 1 ELSE 0 END AS y
 FROM f JOIN g USING (game_id) WHERE f.h IS NOT NULL
 """
-
 
 def test_holdout_calibration():
     from shared import store

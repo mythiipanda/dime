@@ -10,16 +10,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import httpx
 
 from shared import store
+from shared.sources.salaries import TEAM_ABBR
 
 URL = "https://raw.githubusercontent.com/coder-data/NBA-Stats-Salaries-2024-2025/main/NBA%20Salaries%202024-2025.csv"
-
 
 def _fold(name: str) -> str:
     return "".join(
         c for c in unicodedata.normalize("NFKD", str(name or ""))
         if not unicodedata.combining(c)
     ).strip().upper()
-
 
 def load_mapping() -> dict[str, str]:
     r = httpx.get(URL, timeout=60, follow_redirects=True)
@@ -43,8 +42,27 @@ def load_mapping() -> dict[str, str]:
             continue
         if name == "Player":
             continue
-        mapping[_fold(name)] = tm
+        mapping[_fold(name)] = TEAM_ABBR.get(tm, tm)
     return mapping
+
+def apply_team_patch(con, mapping: dict[str, str]) -> tuple[int, int]:
+    rows = con.execute(
+        "SELECT PLAYER_NAME, TEAM FROM silver_salaries").fetchall()
+    matched = 0
+    overridden = 0
+    for name, team in rows:
+        key = _fold(name)
+        want = mapping.get(key)
+        if want is None:
+            continue
+        matched += 1
+        if want != (team or "").strip():
+            con.execute(
+                "UPDATE silver_salaries SET TEAM = ? WHERE PLAYER_NAME = ?",
+                [want, name],
+            )
+            overridden += 1
+    return matched, overridden
 
 
 def main() -> None:
@@ -57,23 +75,8 @@ def main() -> None:
         if "silver_salaries" not in tables:
             print("silver_salaries missing")
             return
-        rows = con.execute(
-            "SELECT PLAYER_NAME, TEAM FROM silver_salaries").fetchall()
-        matched = 0
-        overridden = 0
         with store.write_guard():
-            for name, team in rows:
-                key = _fold(name)
-                want = mapping.get(key)
-                if want is None:
-                    continue
-                matched += 1
-                if not (team or "").strip():
-                    con.execute(
-                        "UPDATE silver_salaries SET TEAM = ? WHERE PLAYER_NAME = ?",
-                        [want, name],
-                    )
-                    overridden += 1
+            matched, overridden = apply_team_patch(con, mapping)
             con.execute(
                 "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
                 ["silver_salaries", "", "team-patch", "csv-teams",
@@ -82,7 +85,6 @@ def main() -> None:
         print(f"csv_players={len(mapping)} matched={matched} overridden={overridden}")
     finally:
         con.close()
-
 
 if __name__ == "__main__":
     main()

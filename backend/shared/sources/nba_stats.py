@@ -7,21 +7,17 @@ from .base import FetchResult, safe
 
 SOURCE = "nba_api"
 
-
 def _pl(df: Any) -> pl.DataFrame:
     try:
         return pl.from_pandas(df)
     except Exception:
         return pl.DataFrame()
 
-
 def _frames(endpoint: Any) -> list[Any]:
     return endpoint.get_data_frames()
 
-
 def _t() -> int:
     return settings.default_timeout_seconds
-
 
 def career_totals(player_id: int) -> FetchResult:
     from nba_api.stats.endpoints import PlayerCareerStats
@@ -32,7 +28,6 @@ def career_totals(player_id: int) -> FetchResult:
 
     return safe(SOURCE, "career", run)
 
-
 def player_gamelog(player_id: int, season: str) -> FetchResult:
     from nba_api.stats.endpoints import PlayerGameLog
 
@@ -41,7 +36,6 @@ def player_gamelog(player_id: int, season: str) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
-
 
 def player_playoff_gamelog(player_id: int, season: str) -> FetchResult:
     from nba_api.stats.endpoints import PlayerGameLog
@@ -53,7 +47,6 @@ def player_playoff_gamelog(player_id: int, season: str) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
-
 
 def team_gamelog(team_id: int, season: str) -> FetchResult:
     from nba_api.stats.endpoints import TeamGameLog
@@ -72,6 +65,85 @@ def team_gamelog(team_id: int, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
+PLAYTYPE_TYPES = (
+    "Transition", "Isolation", "PRBallHandler", "PRRollman", "Postup",
+    "Spotup", "Handoff", "Cut", "OffScreen", "OffRebound", "Misc",
+)
+
+PLAYTYPE_SCHEMA = {
+    "subject_kind": pl.String,
+    "subject_id": pl.Int64,
+    "subject_name": pl.String,
+    "team_id": pl.Int64,
+    "team_abbreviation": pl.String,
+    "side": pl.String,
+    "play_type": pl.String,
+    "percentile": pl.Float64,
+    "gp": pl.Int64,
+    "poss_pct": pl.Float64,
+    "ppp": pl.Float64,
+    "fg_pct": pl.Float64,
+    "efg_pct": pl.Float64,
+    "poss": pl.Int64,
+    "pts": pl.Int64,
+    "fgm": pl.Int64,
+    "fga": pl.Int64,
+}
+
+
+def normalize_playtype_frame(df: Any, subject_kind: str,
+                             side: str) -> pl.DataFrame:
+    if getattr(df, "height", 0) == 0:
+        return pl.DataFrame(schema=PLAYTYPE_SCHEMA)
+    id_col = "PLAYER_ID" if subject_kind == "player" else "TEAM_ID"
+    name_col = "PLAYER_NAME" if subject_kind == "player" else "TEAM_NAME"
+    frame = df.with_columns([
+        pl.lit(subject_kind).alias("subject_kind"),
+        pl.col(id_col).cast(pl.Int64).alias("subject_id"),
+        pl.col(name_col).cast(pl.String).alias("subject_name"),
+        pl.col("TEAM_ID").cast(pl.Int64).alias("team_id"),
+        pl.col("TEAM_ABBREVIATION").cast(pl.String).alias(
+            "team_abbreviation"),
+        pl.lit(side).alias("side"),
+        pl.col("PLAY_TYPE").cast(pl.String).alias("play_type"),
+        pl.col("PERCENTILE").cast(pl.Float64).alias("percentile"),
+        pl.col("GP").cast(pl.Int64).alias("gp"),
+        pl.col("POSS_PCT").cast(pl.Float64).alias("poss_pct"),
+        pl.col("PPP").cast(pl.Float64).alias("ppp"),
+        pl.col("FG_PCT").cast(pl.Float64).alias("fg_pct"),
+        pl.col("EFG_PCT").cast(pl.Float64).alias("efg_pct"),
+        pl.col("POSS").cast(pl.Int64).alias("poss"),
+        pl.col("PTS").cast(pl.Int64).alias("pts"),
+        pl.col("FGM").cast(pl.Int64).alias("fgm"),
+        pl.col("FGA").cast(pl.Int64).alias("fga"),
+    ])
+    return frame.select(list(PLAYTYPE_SCHEMA))
+
+
+def synergy_playtypes(season: str, player_or_team: str,
+                      type_grouping: str) -> FetchResult:
+    from nba_api.stats.endpoints import SynergyPlayTypes
+
+    kind = "player" if player_or_team == "P" else "team"
+    side = "offense" if type_grouping == "offensive" else "defense"
+
+    def run() -> pl.DataFrame:
+        import time as _time
+
+        frames = []
+        for play_type in PLAYTYPE_TYPES:
+            ep = SynergyPlayTypes(
+                season=season,
+                player_or_team_abbreviation=player_or_team,
+                type_grouping_nullable=type_grouping,
+                play_type_nullable=play_type,
+                timeout=_t())
+            frames.append(normalize_playtype_frame(
+                _pl(ep.get_data_frames()[0]), kind, side))
+            _time.sleep(0.6)
+        return pl.concat(frames)
+
+    return safe(SOURCE, season, run)
 
 def standings(season: str) -> FetchResult:
     from nba_api.stats.endpoints import LeagueStandings
@@ -81,7 +153,6 @@ def standings(season: str) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
-
 
 def playoff_results(season: str) -> FetchResult:
     from nba_api.stats.endpoints import LeagueGameFinder
@@ -93,7 +164,6 @@ def playoff_results(season: str) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
-
 
 def leaders(stat_category: str, season: str) -> FetchResult:
     from nba_api.stats.endpoints import LeagueLeaders
@@ -110,7 +180,6 @@ def leaders(stat_category: str, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def player_advanced(season: str) -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashPlayerStats
 
@@ -126,7 +195,6 @@ def player_advanced(season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def boxscore_traditional(game_id: str, season: str) -> FetchResult:
     from nba_api.stats.endpoints import BoxScoreTraditionalV3
 
@@ -138,7 +206,6 @@ def boxscore_traditional(game_id: str, season: str) -> FetchResult:
         return frame.rename(existing) if existing else frame
 
     return safe(SOURCE, season, run)
-
 
 def scoreboard(game_date: str, season: str) -> FetchResult:
     from nba_api.stats.endpoints import ScoreboardV2
@@ -171,7 +238,6 @@ def scoreboard(game_date: str, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run, accept_empty=True)
 
-
 def shot_chart(player_id: int, season: str, team_id: int = 0) -> FetchResult:
     from nba_api.stats.endpoints import ShotChartDetail
 
@@ -185,7 +251,6 @@ def shot_chart(player_id: int, season: str, team_id: int = 0) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
-
 
 def lineups(team_id: int, season: str) -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashLineups
@@ -203,7 +268,6 @@ def lineups(team_id: int, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def hustle(scope: str, season: str) -> FetchResult:
     from nba_api.stats.endpoints import (
         LeagueHustleStatsPlayer,
@@ -220,7 +284,6 @@ def hustle(scope: str, season: str) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
-
 
 def combine(season: str) -> FetchResult:
     from nba_api.stats.endpoints import (
@@ -240,7 +303,6 @@ def combine(season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def team_roster(team_id: int, season: str) -> FetchResult:
     from nba_api.stats.endpoints import CommonTeamRoster
 
@@ -252,14 +314,12 @@ def team_roster(team_id: int, season: str) -> FetchResult:
         if frame.height == 0:
             from . import espn as _espn
 
-            year = int(season.split("-")[0]) + 1 if season else 2026
             espn_res = _espn.team_roster(team_id, season)
             if espn_res.ok:
                 return espn_res.frame
         return frame
 
     return safe(SOURCE, season, run)
-
 
 def team_ratings(season: str) -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashTeamStats
@@ -272,7 +332,6 @@ def team_ratings(season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
-
 def clutch(scope: str, season: str) -> FetchResult:
     if scope == "team":
         from nba_api.stats.endpoints import LeagueDashTeamClutch as Clutch
@@ -284,7 +343,6 @@ def clutch(scope: str, season: str) -> FetchResult:
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
-
 
 PT_MEASURE_TYPES = (
     "CatchShoot",
@@ -308,7 +366,6 @@ PT_DEFEND_CATEGORIES = ("Overall",)
 _TRACKING_GAP_S = 1.5
 _tracking_last = 0.0
 
-
 def _tracking_wait() -> None:
     import time as _time
 
@@ -318,8 +375,8 @@ def _tracking_wait() -> None:
         _time.sleep(wait)
     _tracking_last = _time.monotonic()
 
-
-def pt_stats(scope: str, measure_type: str, season: str) -> FetchResult:
+def pt_stats(scope: str, measure_type: str, season: str,
+             season_type: str = "Regular Season") -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashPtStats
 
     def run() -> pl.DataFrame:
@@ -330,14 +387,15 @@ def pt_stats(scope: str, measure_type: str, season: str) -> FetchResult:
             player_or_team="Player" if scope == "player" else "Team",
             pt_measure_type=measure_type,
             season=season or None,
+            season_type_all_star=season_type,
             timeout=60,
         ))
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
 
-
-def pt_defend(defense_category: str, season: str) -> FetchResult:
+def pt_defend(defense_category: str, season: str,
+              season_type: str = "Regular Season") -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashPtDefend
 
     def run() -> pl.DataFrame:
@@ -345,20 +403,22 @@ def pt_defend(defense_category: str, season: str) -> FetchResult:
         frames = _frames(LeagueDashPtDefend(
             defense_category=defense_category,
             season=season or None,
+            season_type_all_star=season_type,
             timeout=60,
         ))
         return _pl(frames[0])
 
     return safe(SOURCE, season, run)
 
-
-def pt_shot(season: str) -> FetchResult:
+def pt_shot(season: str,
+            season_type: str = "Regular Season") -> FetchResult:
     from nba_api.stats.endpoints import LeagueDashPlayerPtShot
 
     def run() -> pl.DataFrame:
         _tracking_wait()
         frames = _frames(LeagueDashPlayerPtShot(
             season=season or None,
+            season_type_all_star=season_type,
             timeout=60,
         ))
         return _pl(frames[0])

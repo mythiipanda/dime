@@ -8,17 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import backfill
 from shared.tools._core import completed_season_for_date
 
-
 def test_default_backfill_range_covers_last_completed_season():
     frontier = completed_season_for_date(dt.date.today())
     assert frontier is not None
     assert frontier in backfill.parse_seasons(backfill.default_seasons())
 
-
 def test_default_end_derives_from_completed_season():
     assert backfill.default_seasons().endswith(
         completed_season_for_date(dt.date.today()))
-
 
 def test_missing_core_module_falls_back_loudly(monkeypatch, caplog):
     import logging
@@ -27,7 +24,6 @@ def test_missing_core_module_falls_back_loudly(monkeypatch, caplog):
         assert backfill.default_seasons() == f"{backfill.FIRST_SEASON}:2025-26"
     assert any("default_seasons" in r.message and "2025-26" in r.message
                for r in caplog.records)
-
 
 def test_unexpected_import_failure_propagates(monkeypatch):
     import builtins

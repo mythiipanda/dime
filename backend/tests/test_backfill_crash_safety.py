@@ -8,7 +8,6 @@ import pytest
 
 from shared import store
 
-
 @pytest.fixture
 def scratch(monkeypatch, tmp_path):
     db = tmp_path / "crash.duckdb"
@@ -16,10 +15,8 @@ def scratch(monkeypatch, tmp_path):
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
     return db
 
-
 def _unit(game_id, pts):
     return pl.DataFrame([{"GAME_ID": game_id, "PTS": pts}])
-
 
 def _rows(table, game_id):
     con = store.connect(read_only=True)
@@ -33,14 +30,12 @@ def _rows(table, game_id):
     finally:
         con.close()
 
-
 def _write(game_id, pts, **kw):
     return store.write_unit(
         "silver_crash", _unit(game_id, pts), season="2024-25", source="t",
         entity=game_id, delete_where="GAME_ID = ?", delete_params=[game_id],
         **kw,
     )
-
 
 def test_crash_after_delete_keeps_old_data_no_false_watermark(scratch):
     _write("G1", 10)
@@ -52,14 +47,12 @@ def test_crash_after_delete_keeps_old_data_no_false_watermark(scratch):
 
     assert store.last_fetch("silver_crash", "2024-25", "G1")
 
-
 def test_crash_after_insert_leaves_no_watermark(scratch):
     with pytest.raises(RuntimeError, match="simulated crash"):
         _write("G2", 5, _fault="after_insert")
     assert _rows("silver_crash", "G2") == []
 
     assert not store.last_fetch("silver_crash", "2024-25", "G2")
-
 
 def test_rerun_after_crash_completes_cleanly(scratch):
     with pytest.raises(RuntimeError, match="simulated crash"):
@@ -71,7 +64,6 @@ def test_rerun_after_crash_completes_cleanly(scratch):
 
     _write("G3", 7)
     assert _rows("silver_crash", "G3") == [(7,)]
-
 
 def test_save_frame_is_atomic(scratch):
     from shared.sources.base import FetchResult, FetchMeta

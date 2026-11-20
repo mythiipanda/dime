@@ -19,7 +19,6 @@ ALPHAS = [500, 1000, 2000, 4000]
 MIN_POSS = 500
 MIN_ROWS = 100
 
-
 def season_label(end_year: int) -> str:
     if int(end_year) == 2026:
         raise ValueError("end-year 2026 (2025-26) is the live season, never a prior")
@@ -27,7 +26,6 @@ def season_label(end_year: int) -> str:
         return PRIOR_SEASONS[int(end_year)]
     except KeyError:
         raise ValueError(f"prior end-year must be one of {sorted(PRIOR_SEASONS)}")
-
 
 def build_matrix(stints: pl.DataFrame):
     players = sorted({str(v) for c in OFF + DEF
@@ -55,12 +53,10 @@ def build_matrix(stints: pl.DataFrame):
     counts = np.bincount(np.array(cols, dtype=int), minlength=len(players))
     return X, y, players, counts
 
-
 def fit_ridge(X, y):
     model = RidgeCV(alphas=ALPHAS)
     model.fit(X, y)
     return model.coef_, model.alpha_
-
 
 def compute_season_rapm(stints: pl.DataFrame, season: str,
                         min_poss: int = MIN_POSS) -> pl.DataFrame:
@@ -82,7 +78,6 @@ def compute_season_rapm(stints: pl.DataFrame, season: str,
     out.sort(key=lambda r: r["rapm"], reverse=True)
     return pl.DataFrame(out, schema=["player_id", "name", "rapm", "possessions"])
 
-
 def fetch_stints(con, season: str) -> pl.DataFrame:
     return pl.from_arrow(con.execute(
         f"""SELECT {', '.join(OFF + DEF)}, points
@@ -90,7 +85,6 @@ def fetch_stints(con, season: str) -> pl.DataFrame:
         WHERE _season = ? AND garbage = 0""",
         [season],
     ).to_arrow_table())
-
 
 def seed_season(season: str, min_poss: int = MIN_POSS) -> int:
     from shared import store
@@ -105,7 +99,6 @@ def seed_season(season: str, min_poss: int = MIN_POSS) -> int:
     assert frame.height >= MIN_ROWS, f"prior season {season} too thin: {frame.height} rows"
     res = FetchResult(frame=frame, meta=FetchMeta(source="rapm-prior", season=season))
     return store.save_frame("silver_rapm_prior", res, entity=f"season:{season}")
-
 
 def main() -> None:
     args = argparse.ArgumentParser()
@@ -122,7 +115,6 @@ def main() -> None:
         n = seed_season(season, ns.min_poss)
         print(f"seeded prior {season}: {n} players")
 
-
 def _self_check() -> None:
     star = {"points": 1.2, **{c: v for c, v in zip(
         OFF, ["1", "2", "3", "4", "5"])},
@@ -136,7 +128,6 @@ def _self_check() -> None:
     assert by_id["1"] > by_id["6"], "ridge must rank the high-efficiency side first"
     assert frame.height == 10
     print(f"self-check ok: {frame.height} players, star {by_id['1']} > weak {by_id['6']}")
-
 
 if __name__ == "__main__":
     main()

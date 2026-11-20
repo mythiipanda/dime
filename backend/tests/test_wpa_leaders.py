@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.tools.wpa import (  # noqa: E402
+from shared.tools.wpa import (
     clamp_limit,
     clamp_min_events,
     clamp_season_year,
@@ -15,14 +15,13 @@ from shared.tools.wpa import (  # noqa: E402
     score_events,
     season_label,
 )
-from shared.tools.wpamodel import (  # noqa: E402
+from shared.tools.wpamodel import (
     TIPOFF_SEC,
     seconds_remaining,
     win_probability,
 )
 
 GAME = "0022500001"
-
 
 def _game_rows(game_id: str = GAME) -> list:
     from shared import store
@@ -41,7 +40,6 @@ def _game_rows(game_id: str = GAME) -> list:
         ).fetchall()
     finally:
         con.close()
-
 
 def test_book_balances_per_game():
     rows = _game_rows()
@@ -73,11 +71,9 @@ def test_book_balances_per_game():
     assert total == pytest.approx(before - win_probability(0, TIPOFF_SEC), abs=1e-9)
     assert abs(total) < 1.0
 
-
 def test_makers_credit_positive_bushel():
     players = score_events(_game_rows())
     assert sum(p["wpa"] for p in players.values()) > 0
-
 
 def test_happy_path_shape():
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 10})
@@ -96,7 +92,6 @@ def test_happy_path_shape():
     assert out["meta"]["source"] == "warehouse silver_hist_pbp"
     assert out["meta"]["estimated"] is True
 
-
 def test_star_sanity():
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 10})
     assert out["ok"] is True
@@ -104,7 +99,6 @@ def test_star_sanity():
     assert any("Gilgeous-Alexander" in n for n in names[:5])
     assert any("Jokić" in n for n in names)
     assert out["rows"]["leaders"][0]["wpa"] > 0
-
 
 def test_limit_clamp():
     assert clamp_limit(100) == 25
@@ -116,7 +110,6 @@ def test_limit_clamp():
     assert wide["meta"]["limit"] == 25
     narrow = get_wpa_leaders.invoke({"season": 2025, "limit": 0})
     assert len(narrow["rows"]["leaders"]) == 1
-
 
 def test_season_clamp_and_reject():
     assert season_label(2025) == "2024-25"
@@ -133,7 +126,6 @@ def test_season_clamp_and_reject():
     assert fallback["ok"] is True
     assert fallback["meta"]["season"] == 2025
 
-
 def test_empty_honesty():
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 10, "min_events": 999999})
     assert out["ok"] is False
@@ -141,13 +133,11 @@ def test_empty_honesty():
     assert clamp_min_events("garbage") == 100
     assert clamp_min_events(0) == 1
 
-
 def test_season_timing_gate():
     start = time.time()
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 10})
     assert out["ok"] is True
     assert time.time() - start < 5
-
 
 def test_meta_disclosure_keys_present():
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 3})
@@ -159,7 +149,6 @@ def test_meta_disclosure_keys_present():
     assert "no opponent" in blob or "teammate" in blob
     assert "cumulative" in blob and "games played" in blob
 
-
 def test_wpa_g_math():
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 10})
     assert out["ok"] is True
@@ -167,7 +156,6 @@ def test_wpa_g_math():
         assert "wpa_g" in row
         assert row["games"] >= 1
         assert row["wpa_g"] == pytest.approx(row["wpa"] / row["games"], abs=0.001)
-
 
 def test_full_names_on_james_rows():
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 25})
@@ -179,12 +167,10 @@ def test_full_names_on_james_rows():
         assert row["player"].strip() != "James"
         assert row["player_id"] is not None
 
-
 def test_tool_registered():
     from shared import tools
 
     assert "get_wpa_leaders" in tools.TOOL_NAMES
-
 
 def test_display_name_builds_static_index_once(monkeypatch):
     import shared.tools.wpa as wpa
@@ -203,7 +189,6 @@ def test_display_name_builds_static_index_once(monkeypatch):
     assert wpa._display_name(2, "Two") == "Two Player"
     assert wpa._display_name(3, "Three") == "Three"
     assert calls == 1
-
 
 def test_estimates_never_claim_warehouse_source():
     out = get_wpa_leaders.invoke({"season": 2026, "limit": 3})

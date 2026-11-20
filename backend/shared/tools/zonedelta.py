@@ -3,16 +3,15 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from .. import store as _store
 from ._core import coerce_player_id
-from .zone import ZONE_KEYS, ZONE_LEGEND, zone_of
+from .zone import ZONE_KEYS, ZONE_LEGEND, fetch_max_fetched_at
+from .zone import fetch_zone_aggregates, zone_of
 
 TABLE = "silver_hist_shots"
 
 MIN_SEASON, MAX_SEASON = 2010, 2025
 MIN_FLOOR, MAX_FLOOR = 10, 200
 DEFAULT_FLOOR = 50
-
 
 def clamp_season_year(season: object) -> int:
     try:
@@ -21,21 +20,17 @@ def clamp_season_year(season: object) -> int:
         return MAX_SEASON
     return max(MIN_SEASON, min(MAX_SEASON, year))
 
-
 def clamp_floor(value: object) -> int:
     try:
-        return max(MIN_FLOOR, min(MAX_FLOOR, int(value)))  # type: ignore[arg-type]
+        return max(MIN_FLOOR, min(MAX_FLOOR, int(value)))
     except (TypeError, ValueError):
         return DEFAULT_FLOOR
-
 
 def season_label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[-2:]}"
 
-
 def _is_made(row: dict[str, Any]) -> bool:
     return str(row.get("shot_result") or "").lower() == "made"
-
 
 def _display_name(person_id: int, fallback: str) -> str:
     try:
@@ -50,7 +45,6 @@ def _display_name(person_id: int, fallback: str) -> str:
         pass
     return fallback
 
-
 def fold_zones(shots: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     out = {key: {"fga": 0, "fgm": 0} for key in ZONE_KEYS}
     for s in shots:
@@ -60,6 +54,15 @@ def fold_zones(shots: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
             out[zone]["fgm"] += 1
     return out
 
+def fold_aggregates(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    out = {key: {"fga": 0, "fgm": 0} for key in ZONE_KEYS}
+    for r in rows:
+        zone = str(r.get("zone"))
+        if zone not in out:
+            continue
+        out[zone]["fga"] += int(r.get("fga") or 0)
+        out[zone]["fgm"] += int(r.get("fgm") or 0)
+    return out
 
 def build_deltas(player: dict[str, dict[str, int]],
                  league: dict[str, dict[str, int]],
@@ -85,14 +88,9 @@ def build_deltas(player: dict[str, dict[str, int]],
     rows.sort(key=lambda r: r["delta_pp"], reverse=True)
     return rows, excluded
 
-
-@tool
+@tool(description='Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).')
 def get_zone_deltas(player: str, season: int = MAX_SEASON,
                     min_attempts: int = DEFAULT_FLOOR) -> dict[str, Any]:
-    """Player-vs-league shooting-zone efficiency: per-zone FG% vs the
-    pooled league-average FG% for the same season, with delta in
-    percentage points. Zones below min_attempts (default 50, clamped
-    10..200) are excluded. Season is the end year (2010..2025)."""
     warnings: list[str] = []
     year = clamp_season_year(season)
     try:
@@ -106,7 +104,7 @@ def get_zone_deltas(player: str, season: int = MAX_SEASON,
         warnings.append(f"season {raw_year} clamped to {year}")
     floor = clamp_floor(min_attempts)
     try:
-        raw_floor = int(min_attempts)  # type: ignore[arg-type]
+        raw_floor = int(min_attempts)
         floor_ok = True
     except (TypeError, ValueError):
         raw_floor, floor_ok = DEFAULT_FLOOR, False
@@ -122,23 +120,15 @@ def get_zone_deltas(player: str, season: int = MAX_SEASON,
                 "rows": {}, "meta": {"season": year,
                                      "season_label": season_label(year)},
                 "error": str(exc)}
-    frame = _store.read_frame(TABLE, "season = ?", [year])
-    if frame.height == 0:
+    league = fold_aggregates(fetch_zone_aggregates(TABLE, year))
+    if not any(z["fga"] for z in league.values()):
         return {"tool": "get_zone_deltas", "ok": False, "rows": {},
                 "meta": {"season": year,
                          "season_label": season_label(year)},
                 "error": f"no shot rows for season {season_label(year)} "
                          f"in {TABLE}"}
-    all_shots = [{
-        "person_id": r.get("person_id"),
-        "x": r.get("x_legacy"), "y": r.get("y_legacy"),
-        "shot_value": r.get("shot_value", 0),
-        "shot_result": r.get("shot_result"),
-    } for r in frame.to_dicts()]
-    league = fold_zones(all_shots)
-    mine = fold_zones([s for s in all_shots
-                       if s.get("person_id") is not None
-                       and int(s["person_id"]) == person_id])
+    mine = fold_aggregates(fetch_zone_aggregates(
+        TABLE, year, where="person_id = ?", params=[person_id]))
     total = sum(z["fga"] for z in mine.values())
     name = _display_name(person_id, str(player).strip())
     if total == 0:
@@ -149,13 +139,11 @@ def get_zone_deltas(player: str, season: int = MAX_SEASON,
                          f"resolve through roster ids, surnames alone "
                          f"may be ambiguous"}
     zones, excluded = build_deltas(mine, league, floor)
-    fetched = [str(v) for v in frame.select("_fetched_at").to_series()
-               .to_list() if v]
     meta: dict[str, Any] = {
         "source": f"warehouse {TABLE}",
         "season": year,
         "season_label": season_label(year),
-        "fetched_at": max(fetched) if fetched else "unknown",
+        "fetched_at": fetch_max_fetched_at(TABLE, year),
         "player": name,
         "person_id": person_id,
         "player_shots": total,

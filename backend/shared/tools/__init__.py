@@ -12,6 +12,7 @@ from .league import (
     get_combine,
     get_contract_value,
     get_draft_board,
+    get_draft_capital,
     get_draft_model,
     get_elo,
     get_elo_standings,
@@ -19,6 +20,7 @@ from .league import (
     get_hustle,
     get_injuries,
     get_leaders,
+    get_news_feed,
     get_team_compare,
     get_team_trajectory,
     get_team_four_factors,
@@ -29,6 +31,7 @@ from .league import (
     get_playoff_team_ratings,
     get_player_ratings,
     get_playoff_sim,
+    get_impact_rank,
     get_rapm,
     get_ratings,
     get_risers,
@@ -37,7 +40,9 @@ from .league import (
     get_rest,
     get_standings,
     get_standings_deep,
+    get_team_daily_brief,
     get_trade_check,
+    get_trade_partners,
     get_trade_value,
     get_warehouse_freshness,
     get_win_prob,
@@ -45,6 +50,7 @@ from .league import (
     snapshot_leaderboard,
     text_to_sql,
 )
+from .career_arc import get_career_arc
 from .lineup import get_lineup_stats
 from .player import (
     compare_metrics,
@@ -76,14 +82,18 @@ from .preview import get_matchup_preview
 from .prediction import get_game_prediction
 from .priors import get_rapm_prior
 from .shared import resolve_entity, run_python, search_nba
+from .sql_exec import sql_exec
 from .query import query_warehouse_tool
 from .headtohead import get_head_to_head
 from .team import get_season_series
 from .gamelog import search_game_logs
 from .splits import get_matchup_splits, get_regression_check
+from .playtypes import get_playtype_profile
+from .stints import get_stint_timeline
 from .streaks import get_streaks
 from .rest import get_rest_advantage
 from .competitive import get_competitive_ratings
+from .espn import get_espn_event_summary, get_espn_odds, get_espn_scores
 from .lineup_matrix import get_lineup_matchup_matrix
 from .shots import search_shots
 from .zone import get_team_shot_zones
@@ -94,6 +104,7 @@ from .team import (
     get_injury_impact,
     get_lineups,
     get_matchup_brief,
+    get_opponent_scout,
     get_preview,
     get_recap,
     get_rotation_check,
@@ -102,16 +113,21 @@ from .team import (
     get_team_game_log,
     get_team_hub,
     get_team_splits,
+    get_team_season_summary,
 )
 from .today import get_today, get_morning_briefing
+from .tracking import get_defensive_matchups, get_tracking_profile
+from .transactions import get_transactions
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from .wpa import get_wpa_leaders
+from .possessions import get_possession_log
 from ._core import MAX_ROWS, STAT_CATEGORIES, clamp_stat, last_completed_season, resolve_season
 
-v1_tools: list[BaseTool] = [
+WAREHOUSE_TOOLS: list[BaseTool] = [
     resolve_entity,
     search_nba,
     run_python,
+    sql_exec,
     get_player_intel,
     get_season_averages,
     get_career_totals,
@@ -141,14 +157,18 @@ v1_tools: list[BaseTool] = [
     get_shot_zones,
     get_hustle,
     get_injuries,
+    get_news_feed,
+    get_team_daily_brief,
     get_splits,
     get_matchup_splits,
     get_regression_check,
+    get_playtype_profile,
     get_scouting_report,
     get_recap,
     text_to_sql,
     query_warehouse_tool,
     get_finder,
+    get_impact_rank,
     get_rapm,
     get_combine,
     get_compare,
@@ -157,6 +177,7 @@ v1_tools: list[BaseTool] = [
     get_award_race,
     get_award_results,
     get_historical_leaders,
+    get_career_arc,
     get_comps,
     get_player_rankings,
     get_player_report,
@@ -168,11 +189,15 @@ v1_tools: list[BaseTool] = [
     get_preview,
     get_matchup_preview,
     get_scout_pack,
+    get_opponent_scout,
     get_rotation_check,
     get_team_splits,
+    get_team_season_summary,
     get_injury_impact,
     get_cap_ledger,
+    get_draft_capital,
     get_trade_check,
+    get_trade_partners,
     get_trade_value,
     get_ratings,
     get_clutch,
@@ -201,6 +226,7 @@ v1_tools: list[BaseTool] = [
     get_watchlist,
     remove_watchlist_item,
     get_streaks,
+    get_stint_timeline,
     get_head_to_head,
     get_season_series,
     search_game_logs,
@@ -214,11 +240,18 @@ v1_tools: list[BaseTool] = [
     get_zone_deltas,
     get_rapm_prior,
     get_wpa_leaders,
+    get_espn_scores,
+    get_espn_event_summary,
+    get_espn_odds,
+    get_tracking_profile,
+    get_defensive_matchups,
+    get_transactions,
+    get_possession_log,
 ]
 
-TOOL_NAMES = [t.name for t in v1_tools]
+TOOL_NAMES = [t.name for t in WAREHOUSE_TOOLS]
 
 __all__ = [
     "MAX_ROWS", "STAT_CATEGORIES", "clamp_stat",
-    "v1_tools", "TOOL_NAMES",
+    "WAREHOUSE_TOOLS", "TOOL_NAMES",
 ]

@@ -36,6 +36,9 @@ test("Boards wrappers handle empty payloads, service errors and non-JSON failure
     await assert.rejects(getBoardMetrics(), /Boards request failed/);
   } finally { globalThis.fetch = previous; }
 });
+=======
+import { apiPath, getThreads } from "./api";
+>>>>>>> origin/dev
 
 test("points at the v2 router", () => {
   assert.equal(apiPath("/today"), "/api/today");
@@ -78,6 +81,25 @@ function installLocalStorage() {
   (globalThis as Record<string, unknown>).localStorage = shim;
   return store;
 }
+
+test("thread loading status distinguishes cached failures from successful empty results", async () => {
+  const storage = installLocalStorage();
+  const previous = globalThis.fetch;
+  const thread = { id: "cached", title: "Cached conversation", updated: "2026-11-19", turns: 1 };
+  try {
+    globalThis.fetch = async () => Response.json({ threads: [thread] });
+    assert.deepEqual(await getThreads({ withStatus: true }), { rows: [thread], error: null, fromCache: false });
+    globalThis.fetch = async () => { throw new Error("offline"); };
+    assert.deepEqual(await getThreads({ withStatus: true }), { rows: [thread], error: "offline", fromCache: true });
+    assert.deepEqual(await getThreads(), [thread]);
+    storage.clear();
+    globalThis.fetch = async () => new Response("unavailable", { status: 503 });
+    const failure = await getThreads({ withStatus: true });
+    assert.deepEqual(failure.rows, []); assert.equal(failure.fromCache, true); assert.match(failure.error!, /HTTP 503/);
+    globalThis.fetch = async () => Response.json({ threads: [] });
+    assert.deepEqual(await getThreads({ withStatus: true }), { rows: [], error: null, fromCache: false });
+  } finally { globalThis.fetch = previous; }
+});
 
 function run(question: string, created_at: string, id?: string): RunInfo {
   return { id, question, answer: `a:${question}`, tables: [], suggestions: [], created_at };

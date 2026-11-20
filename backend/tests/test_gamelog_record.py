@@ -5,17 +5,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared.tools.gamelog import (  # noqa: E402
+from shared.tools.gamelog import (
     _dedupe_games,
     _record_for_scope,
     _record_note,
     search_game_logs,
 )
 
-
 def _row(gid, wl, pts=20.0):
     return {"game_id": gid, "wl": wl, "pts": pts}
-
 
 def _full_row(gid, wl, date, pts=20.0, pid=2544, matchup="LAL vs. UTA"):
     d = _dt.date.fromisoformat(date)
@@ -27,7 +25,6 @@ def _full_row(gid, wl, date, pts=20.0, pid=2544, matchup="LAL vs. UTA"):
         "fg3a": 6.0, "ftm": 2.0, "fta": 2.0, "plus_minus": 4.0,
     }
 
-
 def test_dedupe_collapses_duplicate_game_id():
     rows = [_full_row("0022500001", "W", "2026-03-01"),
             _full_row("0022500001", "W", "2026-03-01"),
@@ -37,30 +34,25 @@ def test_dedupe_collapses_duplicate_game_id():
     assert _record_for_scope(unique, "regular") == {
         "w": 1, "l": 1, "games": 2, "scope": "regular"}
 
-
 def test_dedupe_keeps_distinct_rows_without_game_id():
     rows = [_full_row(None, "W", "2026-03-01"),
             _full_row(None, "W", "2026-03-02")]
     assert len(_dedupe_games(rows)) == 2
-
 
 def test_dedupe_collapses_identical_rows_without_game_id():
     rows = [_full_row(None, "W", "2026-03-01"),
             _full_row("", "W", "2026-03-01")]
     assert len(_dedupe_games(rows)) == 1
 
-
 def test_dedupe_collapses_cross_seed_game_id_formats():
     rows = [_full_row("0022500001", "W", "2026-03-01"),
             _full_row("202603010LAL", "W", "2026-03-01")]
     assert len(_dedupe_games(rows)) == 1
 
-
 def test_dedupe_keeps_same_statline_different_players():
     rows = [_full_row("g1", "W", "2026-03-01", pid=2544),
             _full_row("g1", "W", "2026-03-01", pid=201939)]
     assert len(_dedupe_games(rows)) == 2
-
 
 def test_dedupe_frame_collapses_cross_seed_duplicates():
     try:
@@ -86,11 +78,9 @@ def test_dedupe_frame_collapses_cross_seed_duplicates():
     other = pl.DataFrame({"a": [1, 1, 2]})
     assert dedupe_game_log_frame(other).height == 3
 
-
 def test_record_carries_scope_label():
     assert _record_for_scope([_row("g1", "W")], "regular")["scope"] == "regular"
     assert _record_for_scope([_row("g1", "W")], "playoffs")["scope"] == "playoffs"
-
 
 def test_record_note_only_when_games_below_total():
     assert _record_note(2, 2, "regular") is None
@@ -98,13 +88,11 @@ def test_record_note_only_when_games_below_total():
     assert note is not None
     assert "1 of 2" in note and "W/L" in note
 
-
 def test_record_ignores_rows_without_wl_result():
     rows = [_row("g1", "W"), _row("g2", "")]
     record = _record_for_scope(rows, "regular")
     assert (record["w"], record["l"], record["games"]) == (1, 0, 1)
     assert _record_note(record["games"], len(rows), "regular") is not None
-
 
 def test_jokic_record_43_22_live_read_only():
     res = search_game_logs.invoke({"player": "Nikola Jokic"})
@@ -117,7 +105,6 @@ def test_jokic_record_43_22_live_read_only():
     assert "record_note" not in res["meta"]
     ids = [m["game_id"] for m in rows["matches"]]
     assert len(ids) == len(set(ids)) == rows["returned"] == 50
-
 
 def test_playoff_record_scope_label_live_read_only():
     from shared import store as _store

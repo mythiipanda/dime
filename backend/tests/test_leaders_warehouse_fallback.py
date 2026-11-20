@@ -1,0 +1,146 @@
+import sys
+from pathlib import Path
+
+import duckdb
+import polars as pl
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from shared import coverage, store
+from shared.sources import nba_stats
+from shared.sources.base import FetchMeta, FetchResult
+from shared.tools.league import get_leaders
+
+SEASON = "2024-25"
+ABSENT_STATIC_SEASON = "2023-24"
+
+def _seed_leaders(path, seasons):
+    connection = duckdb.connect(str(path))
+    try:
+        connection.execute(
+            "CREATE TABLE silver_leaders_ast (RANK BIGINT, PLAYER VARCHAR, "
+            "TEAM VARCHAR, GP BIGINT, AST BIGINT, MIN BIGINT, "
+            "PLAYER_ID BIGINT, TEAM_ID BIGINT, "
+            "_source VARCHAR, _season VARCHAR, _fetched_at VARCHAR)"
+        )
+        for season in seasons:
+            if season == SEASON:
+                connection.execute(
+                    "INSERT INTO silver_leaders_ast VALUES "
+                    "(1, 'Trae Young', 'ATL', 76, 880, 2739, 1629027, "
+                    "1610612737, 'nba_stats', '2024-25', "
+                    "'2026-09-08T00:00:00+00:00'), "
+                    "(2, 'Nikola Jokic', 'DEN', 70, 716, 2500, 203999, "
+                    "1610612743, 'nba_stats', '2024-25', "
+                    "'2026-09-08T00:00:00+00:00')"
+                )
+            else:
+                connection.execute(
+                    "INSERT INTO silver_leaders_ast VALUES "
+                    "(1, 'Open Star', 'BOS', 70, 700, 2400, 1628369, "
+                    "1610612738, 'nba_stats', ?, "
+                    "'2026-09-08T00:00:00+00:00')",
+                    [season],
+                )
+    finally:
+        connection.close()
+
+@pytest.fixture()
+def warehouse(monkeypatch, tmp_path):
+    path = tmp_path / "leaders_fallback.duckdb"
+    _seed_leaders(path, [SEASON])
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store._tables_cache.clear()
+    store._pool_evict_all()
+    store.warehouse_identity_cache_clear()
+    coverage.coverage_cache_clear()
+    yield path
+    coverage.coverage_cache_clear()
+
+def _open_season():
+    from shared.tools._core import calendar_last_completed_season, season_static
+
+    start = int(calendar_last_completed_season().split("-")[0])
+    for offset in range(0, 4):
+        year = start + offset
+        candidate = f"{year}-{(year + 1) % 100:02d}"
+        if not season_static(candidate):
+            return candidate
+    raise AssertionError("no open season available")
+
+def test_assists_answered_from_warehouse_with_zero_live_calls(
+    warehouse, monkeypatch
+):
+    calls = []
+
+    def forbidden(season):
+        calls.append(season)
+        raise AssertionError("live consulted on a warehouse hit")
+
+    monkeypatch.setattr(nba_stats, "leaders", forbidden)
+    result = get_leaders.invoke({"stat_category": "AST", "season": SEASON})
+    assert calls == []
+    assert result["ok"] is True
+    assert result["meta"]["cached"] is True
+    assert "live_fallback" not in result["meta"]
+    assert result["meta"]["season"] == SEASON
+    assert result["rows"][0]["PLAYER"] == "Trae Young"
+    assert result["rows"][0]["AST"] == 880
+    assert result["rows"][0]["GP"] == 76
+    assert result["rows"][0]["PLAYER_NAME"] == "Trae Young"
+
+def test_live_shaped_rows_bind_same_as_warehouse_shaped_rows(
+    warehouse, monkeypatch
+):
+    warehouse_result = get_leaders.invoke({"stat_category": "AST", "season": SEASON})
+    requested = _open_season()
+
+    def fake_leaders(stat_category, season):
+        return FetchResult(
+            frame=pl.DataFrame(
+                {
+                    "PLAYER_ID": [1629027],
+                    "RANK": [1],
+                    "PLAYER": ["Trae Young"],
+                    "TEAM_ID": [1610612737],
+                    "TEAM": ["ATL"],
+                    "GP": [76],
+                    "MIN": [2739],
+                    "AST": [880],
+                }
+            ),
+            meta=FetchMeta(source=nba_stats.SOURCE, season=season),
+        )
+
+    monkeypatch.setattr(nba_stats, "leaders", fake_leaders)
+    live_result = get_leaders.invoke({"stat_category": "AST", "season": requested})
+    for result, expected_season in (
+        (warehouse_result, SEASON),
+        (live_result, requested),
+    ):
+        assert result["ok"] is True
+        assert result["meta"]["season"] == expected_season
+        row = result["rows"][0]
+        assert row["PLAYER_NAME"] == "Trae Young"
+        assert row["AST"] == 880
+        assert row["GP"] == 76
+
+def test_static_miss_without_warehouse_rows_fails_loudly(
+    warehouse, monkeypatch
+):
+    calls = []
+
+    def forbidden(stat_category, season):
+        calls.append((stat_category, season))
+        raise AssertionError("live consulted for a static miss")
+
+    monkeypatch.setattr(nba_stats, "leaders", forbidden)
+    result = get_leaders.invoke(
+        {"stat_category": "AST", "season": ABSENT_STATIC_SEASON}
+    )
+    assert calls == []
+    assert result["ok"] is False
+    assert result["rows"] == []
+    assert ABSENT_STATIC_SEASON in result["error"]

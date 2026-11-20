@@ -9,7 +9,6 @@ from shared import tools
 PASS = 0
 FAIL = 0
 
-
 def check(name: str, cond: bool, detail: str = "") -> None:
     global PASS, FAIL
     if cond:
@@ -19,7 +18,6 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         FAIL += 1
         print(f"FAIL {name} :: {detail[:200]}")
 
-
 def rows(res: object, default: object = None) -> object:
     if not isinstance(res, dict):
         return default if default is not None else []
@@ -28,14 +26,12 @@ def rows(res: object, default: object = None) -> object:
         return r
     return default if default is not None else []
 
-
 def safe_invoke(tool, payload: dict) -> dict:
     try:
         res = tool.invoke(payload)
         return res if isinstance(res, dict) else {"ok": False, "error": "non-dict result"}
     except Exception as e:
         return {"ok": False, "error": f"tool crashed: {e}"}
-
 
 def main() -> None:
     luka = safe_invoke(tools.resolve_entity, {"query": "Luka Doncic"})
@@ -155,7 +151,6 @@ def main() -> None:
 
     print(f"\nscenarios: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
-
 
 if __name__ == "__main__":
     main()
