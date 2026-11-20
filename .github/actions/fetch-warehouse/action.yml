@@ -1,33 +1,56 @@
 name: Fetch warehouse data
-description: Restore the stats warehouse release asset from cache (downloading and checksum-verifying it on a miss) and unpack it into backend/data.
+description: Restore the Hugging Face warehouse dataset from cache (downloading and checksum-verifying it on a miss) into backend/data.
 inputs:
-  url:
-    description: Release asset URL of the warehouse zip
-    default: https://github.com/mythiipanda/dime/releases/download/dime-data-20260930/dime_data_full.zip
-  sha256:
-    description: Expected SHA-256 of the warehouse zip
-    default: "5566409dd71881194edc6dd6ddddbf56a316824a9c34340b3ddb34d6c7a95ea8"
+  hf_token:
+    description: Hugging Face token with read access to the private warehouse dataset
+    required: false
+    default: ""
+  dataset:
+    description: Hugging Face dataset repo id
+    default: mythiix/dime-warehouse
+  revision:
+    description: Dataset revision to fetch
+    default: main
 runs:
   using: composite
   steps:
-    - name: Restore cached warehouse zip
+    - name: Download warehouse checksum
+      id: checksum
+      shell: bash
+      env:
+        HF_TOKEN: ${{ inputs.hf_token }}
+        DIME_WAREHOUSE_DATASET: ${{ inputs.dataset }}
+        DIME_WAREHOUSE_REVISION: ${{ inputs.revision }}
+      run: |
+        mkdir -p .dime-data backend/data
+        base="https://huggingface.co/datasets/${DIME_WAREHOUSE_DATASET}/resolve/${DIME_WAREHOUSE_REVISION}"
+        if [ -n "${HF_TOKEN:-}" ]; then
+          curl -fL --retry 3 -H "Authorization: Bearer ${HF_TOKEN}" -o .dime-data/warehouse.duckdb.sha256 "${base}/warehouse.duckdb.sha256"
+        else
+          curl -fL --retry 3 -o .dime-data/warehouse.duckdb.sha256 "${base}/warehouse.duckdb.sha256"
+        fi
+        sha256="$(awk '{print $1}' .dime-data/warehouse.duckdb.sha256)"
+        echo "sha256=${sha256}" >> "$GITHUB_OUTPUT"
+    - name: Restore cached warehouse
       id: cache
       uses: actions/cache@v4
       with:
-        path: .dime-data/warehouse.zip
-        key: dime-data-${{ inputs.sha256 }}
-    - name: Download warehouse zip
+        path: backend/data/warehouse.duckdb
+        key: dime-warehouse-${{ steps.checksum.outputs.sha256 }}
+    - name: Download warehouse
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       env:
-        DIME_DATA_URL: ${{ inputs.url }}
-        DIME_DATA_SHA256: ${{ inputs.sha256 }}
+        HF_TOKEN: ${{ inputs.hf_token }}
+        DIME_WAREHOUSE_DATASET: ${{ inputs.dataset }}
+        DIME_WAREHOUSE_REVISION: ${{ inputs.revision }}
+        EXPECTED_SHA256: ${{ steps.checksum.outputs.sha256 }}
       run: |
-        mkdir -p .dime-data
-        curl -fL --retry 3 -o .dime-data/warehouse.zip "$DIME_DATA_URL"
-        echo "$DIME_DATA_SHA256  .dime-data/warehouse.zip" | sha256sum -c -
-    - name: Unpack warehouse
-      shell: bash
-      run: |
-        unzip -q -o .dime-data/warehouse.zip -d backend
-        ls -la backend/data | head
+        base="https://huggingface.co/datasets/${DIME_WAREHOUSE_DATASET}/resolve/${DIME_WAREHOUSE_REVISION}"
+        if [ -n "${HF_TOKEN:-}" ]; then
+          curl -fL --retry 3 -H "Authorization: Bearer ${HF_TOKEN}" -o backend/data/warehouse.duckdb "${base}/warehouse.duckdb"
+        else
+          curl -fL --retry 3 -o backend/data/warehouse.duckdb "${base}/warehouse.duckdb"
+        fi
+        echo "${EXPECTED_SHA256}  backend/data/warehouse.duckdb" | sha256sum -c -
+        ls -la backend/data/warehouse.duckdb

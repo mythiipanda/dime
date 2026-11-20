@@ -53,6 +53,22 @@ def completed_season_for_date(day: object) -> str | None:
     start = year - 1 if month >= 7 else year - 2
     return f"{start}-{(start + 1) % 100:02d}"
 
+def current_season(today: object = None) -> str | None:
+    if today is None:
+        import datetime as _dt
+
+        today = _dt.date.today()
+    try:
+        year = int(today.year)
+        month = int(today.month)
+    except Exception:
+        return None
+    if month < 1 or month > 12:
+        return None
+    start = year if month >= 7 else year - 1
+    return f"{start}-{(start + 1) % 100:02d}"
+
+
 def calendar_last_completed_season(today: object = None) -> str | None:
     if today is None:
         import datetime as _dt
@@ -170,6 +186,7 @@ TOOL_LABELS = {
     "get_playoff_intel": "Pulling playoff logs",
     "get_trade_check": "Checking trade math",
     "get_trade_value": "Grading trade value",
+    "get_draft_capital": "Checking future pick ownership",
     "get_award_race": "Ranking award races",
     "get_award_results": "Reading award results",
     "get_last_x": "Pulling recent game logs",

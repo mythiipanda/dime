@@ -15,6 +15,7 @@ from .._core import (
     TTL_SCOREBOARD_PAST,
     _warehouse_or_live,
     clamp_stat,
+    current_season,
     is_past_game_date,
     is_scope_game,
     last_completed_season,
@@ -118,7 +119,10 @@ from .clutch import (
     get_clutch_stats,
     get_situational_splits,
 )
+from .draft_capital import get_draft_capital
+=======
 from .expectations import get_expectations
+>>>>>>> origin/dev
 from .draft_contracts import (
     _CONTRACT_WEIGHTS,
     _contract_fetched,

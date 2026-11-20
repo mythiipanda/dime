@@ -294,10 +294,14 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_splits",
       "get_recap",
       "get_scouting_report",
+      "web_search",
+      "web_fetch",
+=======
       "get_free_agents",
       "get_prospect",
       "get_roster_fit",
       "get_expectations",
+>>>>>>> origin/dev
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -375,8 +379,11 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
+    assert.equal(bridge.tools.length, 95);
+=======
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
+>>>>>>> origin/dev
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1299,8 +1306,13 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_splits: { player_id: 2544, season: "2024-25" },
       get_recap: { game_id: "0022300001", season: "2024-25" },
       get_scouting_report: { team_id: 1610612747, season: "2024-25" },
+      web_search: { query: " " },
+      web_fetch: { url: "http://127.0.0.1/" }
+=======
+      get_scouting_report: { team_id: 1610612747, season: "2024-25" },
       get_roster_fit: { team: "BOS", season: "2024-25" },
       get_expectations: { team: "BOS", season: "2024-25" }
+>>>>>>> origin/dev
     };
     let wrapperInvocations = 0;
     let toolsExercised = 0;

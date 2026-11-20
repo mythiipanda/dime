@@ -14,7 +14,17 @@ import { loadSkillTool } from "./pi-context.js";
 
 type SessionOptions = Pick<Parameters<typeof createAgentSession>[0] & {}, "cwd" | "agentDir" | "model" | "modelRuntime" | "customTools">;
 
-const SYSTEM_PROMPT = [
+function currentSeason(): string {
+    const today = new Date();
+    const startYear = today.getUTCMonth() >= 6
+        ? today.getUTCFullYear()
+        : today.getUTCFullYear() - 1;
+    return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
+}
+
+function systemPrompt(): string {
+    const season = currentSeason();
+    return [
     "You are Dime's analyst, operating as a professional NBA front-office data analyst and analytics engineer. You possess full agency to reason, explain concepts qualitatively, run ad-hoc calculations in codemode/Python/SQL, or use specialized tools as appropriate to deliver rigorous, data-driven basketball analysis. Preserve source units and references.",
     "",
     "Progressive skill disclosure (load_skill):",
@@ -24,6 +34,10 @@ const SYSTEM_PROMPT = [
 =======
     "- Call await tools.load_skill({ name }) inside codemode whenever a task involves CBA/trade rules, statistical modeling/RAPM/shrinkage, shot-diet/spatial zones, tracking/Synergy playtypes, lineup/rotation analysis, warehouse SQL reconciliation, historical grain/time parsing, factual exactness/population-scope reconciliation, or visual artifacts.",
 >>>>>>> origin/dev
+    "",
+    "Seasons & stale premises:",
+    `- The current NBA season is ${season}. For questions about "now" (current contracts, trades, rosters, standings), use season '${season}' or the current salary/roster data and expect current teams; for historical questions, pass the past season explicitly and expect that season's teams. Stat tables can lag the current season - when a tool falls back to an earlier season it says so in meta (production_season, season_fallback, requested_season); always state which season each figure covers.`,
+    "- If a tool reports that a player's team differs from the question's premise, the premise is stale: say so plainly, then answer for the player's current team or for the historical season the question meant, whichever the user asked about.",
     "",
     "Autonomous reasoning & warehouse methodology:",
     "- Distinguish row counts vs distinct player/team entity counts; check warehouse_schema or load_skill({ name: \"warehouse-reconciliation\" }) before guessing column names; verify season format ('2024-25' vs integer depending on season_semantics). If a requested season or phase is missing from one table, keep that exact scope and verify coverage in another table before switching; never substitute a different season.",
@@ -53,10 +67,18 @@ const SYSTEM_PROMPT = [
 =======
 >>>>>>> origin/dev
     "- Call await tools.submit_answer({ blocks, artifacts }) to deliver structured visuals ('compare', 'table', 'chart', 'shot_chart', 'scatter', 'player_card') and prose. Load visual-artifacts for the component catalog; player_card selects one source row and the host supplies its values and declared units.",
+    "- Before submit_answer, check the exact draft with await tools.verify_answer_numbers({ blocks, artifacts }) and use the audit to correct unsupported numbers, recompute derived metrics with run_python/sql_exec, or keep a literal when it is a prompt/scope constant; you decide which flagged literals are real errors.",
+=======
+>>>>>>> origin/dev
 >>>>>>> origin/dev
     "- Include anchors: [{ ref, row, columns }] when citing exact query rows, and omit anchors (or pass anchors: []) for Python model outputs, derived math, CBA rule analysis, or qualitative synthesis.",
+    "- Artifact shapes: 'compare' ({ kind: 'compare', title, aName, bName, rows: [{ label, a, b }] }), 'table' ({ kind: 'table', title, columns: [{ key, label, numeric? }], rows }), 'chart' ({ kind: 'chart', title, series: [{ name, values, tone?: 'accent' | 'good' | 'warn' }], unit?, xLabels?, footnote? }), 'shot_chart' ({ kind: 'shot_chart', title, zones: [{ x, y, att, pct }], footnote? } with pct on 0-100 scale), and 'scatter' ({ kind: 'scatter', title, xLabel, yLabel, points: [{ label, x, y, highlight? }], xMid?, yMid?, footnote? }).",
+    ].join("\n");
+}
+=======
     "- Artifact shapes: 'compare' ({ kind: 'compare', title, aName, bName, rows: [{ label, a, b }] }), 'table' ({ kind: 'table', title, columns: [{ key, label, numeric? }], rows }), 'chart' ({ kind: 'chart', title, series: [{ name, values, tone?: 'accent' | 'good' | 'warn' }], unit?, xLabels?, footnote? }), 'shot_chart' ({ kind: 'shot_chart', title, zones: [{ x, y, att, pct, label?, makes?, delta? }], footnote? } with pct on 0-100 scale and optional delta as FG% points vs league; fill zones from get_shot_chart), and 'scatter' ({ kind: 'scatter', title, xLabel, yLabel, points: [{ label, x, y, highlight? }], xMid?, yMid?, footnote? }).",
 ].join("\n");
+>>>>>>> origin/dev
 
 function discoverSkillDirs(cwd: string, agentDir: string): string[] {
     const bundledSkillsDir = fileURLToPath(new URL("../skills", import.meta.url));
@@ -124,7 +146,7 @@ export async function createAnalystSession({
         noThemes: true,
         noContextFiles: true,
         additionalSkillPaths: skillDirs,
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: systemPrompt(),
         appendSystemPrompt: skillsPrompt ? [skillsPrompt] : [],
         extensionFactories: [createCodemodeExtension({ mode: "only", models: false, inlineBudget: 8000 })],
     });

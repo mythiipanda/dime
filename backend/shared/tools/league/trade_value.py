@@ -20,6 +20,7 @@ from .cba_cap import (
     _payroll,
     _payroll_source,
     _salary_date,
+    _season_player_team,
     _salary_vintage,
     _unknown_player_hints,
 )
@@ -34,12 +35,28 @@ PICK_VALUE_M: dict[int, float] = {
 }
 
 
-def _pick_value_for_slot(slot: int, is_frp: bool) -> float:
+def _pick_value_for_slot(slot: int, is_frp: bool,
+                         curve_m: dict[int, float] | None = None) -> float:
+    if curve_m is not None and slot in curve_m:
+        return curve_m[slot]
     if is_frp:
         return PICK_VALUE_M.get(max(1, min(slot, 30)), 5.0)
     if 31 <= slot <= 40:
         return 2.5
     return 1.0
+
+
+def _draft_value_curve_m(con) -> dict[int, float] | None:
+    try:
+        rows = con.execute(
+            "select SLOT, VALUE_INDEX from silver_draft_value_curve "
+            "where _season = '2026-27'").fetchall()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    return {int(slot): round(float(idx) * PICK_VALUE_M[1], 1)
+            for slot, idx in rows if idx is not None}
 
 
 _TRADE_CHECK_UNMODELED = (
@@ -50,6 +67,19 @@ _TRADE_CHECK_UNMODELED = (
 
 
 def _trade_guard_vintage_error(con, season: str) -> str | None:
+    cols = {r[1] for r in con.execute(
+        "PRAGMA table_info(silver_salaries)").fetchall()}
+    explicit = sorted(c for c in cols
+                      if _re.fullmatch(r"SALARY_\d{4}_\d{2}", c))
+    if explicit:
+        wanted = "SALARY_" + str(season).replace("-", "_")
+        if wanted in cols or len(explicit) == 1:
+            return None
+        labels = sorted(c[7:].replace("_", "-") for c in explicit)
+        shown = labels[0] if len(labels) == 1 else ", ".join(labels)
+        return (f"salary data is for {shown}, not {season}; "
+                "trade math was not calculated")
+=======
     if season and "silver_salaries" in _warehouse_tables(con):
         columns = {r[1] for r in con.execute(
             "PRAGMA table_info(silver_salaries)").fetchall()}
@@ -63,6 +93,7 @@ def _trade_guard_vintage_error(con, season: str) -> str | None:
                 f"{vintages[0]}..{vintages[-1]}")
             return (f"salary data covers {label}, not {season}; "
                     "trade math was not calculated")
+>>>>>>> origin/dev
     salary_season, salary_rows, _ = _salary_vintage(con)
     if not (salary_rows and salary_season and salary_season != season):
         return None
@@ -70,14 +101,19 @@ def _trade_guard_vintage_error(con, season: str) -> str | None:
             "trade math was not calculated")
 
 
-def _trade_guard_team_error(con, team: str, players: str) -> str | None:
+def _trade_guard_team_error(con, team: str, players: str,
+                            season: str | None = None) -> str | None:
     for player in [x.strip() for x in str(players).split(",") if x.strip()]:
-        row = con.execute(
-            "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
-            [player]).fetchone()
-        if row and str(row[0] or "").upper() != team.upper():
-            return (f"salary data lists {player} with {row[0]}, "
-                    f"not {team.upper()}; trade math was not calculated")
+        actual = _season_player_team(con, player, season) if season else None
+        if not actual:
+            row = con.execute(
+                "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
+                [player]).fetchone()
+            actual = str(row[0] or "").upper() if row and row[0] else ""
+        if actual and actual != team.upper():
+            return (f"salary data lists {player} with {actual}, "
+                    f"not {team.upper()} in season {season}; "
+                    "trade math was not calculated")
     return None
 
 
@@ -89,7 +125,7 @@ def _trade_guard(con, season: str, team_a: str, players_a: str, team_b: str,
     for team, players in ((team_a, players_a), (team_b, players_b)):
         if not team:
             continue
-        team_error = _trade_guard_team_error(con, team, players)
+        team_error = _trade_guard_team_error(con, team, players, season)
         if team_error:
             return team_error
     return None
@@ -184,7 +220,8 @@ def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
     season: str | None = None,
 ) -> dict[str, Any]:
-    season = _pkg().resolve_season(season)
+    season = (str(season or "").strip() or _pkg().current_season()
+              or _pkg().resolve_season(None))
     if not players_a and not players_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
@@ -260,7 +297,7 @@ def get_trade_check(
                      "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
                      "Confirm with a cap specialist."},
             "meta": {"source": source, "rules": "v1-simplified",
-                     "salary_date": salary_date}}
+                     "salary_date": salary_date, "season": season}}
 
 
 _TRADE_PARTNER_PACKAGE_MAX = 3
@@ -619,7 +656,8 @@ def _trade_value_player(display: str, leaders: dict, adv: dict,
 
 
 def _trade_first_round_slot(entry: dict, net_rank: object,
-                            giving_abbr: str, prot) -> None:
+                            giving_abbr: str, prot,
+                            curve_m: dict[int, float] | None = None) -> None:
     if net_rank is None:
         slot = 15
         entry["assumptions"].append(
@@ -634,22 +672,31 @@ def _trade_first_round_slot(entry: dict, net_rank: object,
         slot = max(slot, n + 1)
         entry["assumptions"].append(
             f"top-{n} protected: conveyance risk applied")
-    value = _pick_value_for_slot(slot, True)
+    value = _pick_value_for_slot(slot, True, curve_m)
+    if curve_m is not None:
+        entry["assumptions"].append(
+            "valued on empirical draft value curve (silver_draft_value_curve)")
     if prot:
         value = round(value * 0.8, 1)
     entry.update(est_slot=slot, est_value_m=value)
 
 
-def _trade_second_round_slot(entry: dict, desc: str) -> None:
+def _trade_second_round_slot(entry: dict, desc: str,
+                             curve_m: dict[int, float] | None = None) -> None:
     m = _re.search(r"\b([3-5]\d)\b", desc)
     slot = int(m.group(1)) if m and 31 <= int(m.group(1)) <= 60 else 45
     entry.update(est_slot=slot,
-                 est_value_m=_pick_value_for_slot(slot, False))
+                 est_value_m=_pick_value_for_slot(slot, False, curve_m))
     entry["assumptions"].append("second-round slot estimate")
+    if curve_m is not None:
+        entry["assumptions"].append(
+            "valued on empirical draft value curve (silver_draft_value_curve)")
 
 
 def _trade_value_pick(desc: str, giving_abbr: str, ratings: dict,
-                      gaps: list[str]) -> dict[str, Any]:
+                      gaps: list[str],
+                      curve_m: dict[int, float] | None = None
+                      ) -> dict[str, Any]:
     low = desc.lower()
     year = _re.search(r"(\d{4})", desc)
     is_frp = bool(_re.search(r"frp|first[\s-]?round", low))
@@ -664,15 +711,17 @@ def _trade_value_pick(desc: str, giving_abbr: str, ratings: dict,
     if is_frp:
         net_rank = (ratings.get(giving_abbr.upper(), {}) or {}).get(
             "NET_RATING_RANK")
-        _trade_first_round_slot(entry, net_rank, giving_abbr, prot)
+        _trade_first_round_slot(entry, net_rank, giving_abbr, prot, curve_m)
     else:
-        _trade_second_round_slot(entry, desc)
+        _trade_second_round_slot(entry, desc, curve_m)
     return entry
 
 
 def _trade_value_picks(raw: str, giving_abbr: str, ratings: dict,
-                       gaps: list[str]) -> list[dict]:
-    return [_trade_value_pick(desc, giving_abbr, ratings, gaps)
+                       gaps: list[str],
+                       curve_m: dict[int, float] | None = None
+                       ) -> list[dict]:
+    return [_trade_value_pick(desc, giving_abbr, ratings, gaps, curve_m)
             for desc in [p.strip() for p in str(raw or "").split(",")
                          if p.strip()]]
 
@@ -804,7 +853,7 @@ def _trade_value_error(msg: str) -> dict[str, Any]:
     return {"tool": "get_trade_value", "ok": False, "error": msg}
 
 
-@tool(description='Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from 2025-26 production versus\n2026-27 salaries. Picks like "2029 FRP" or "2030 FRP top-4 protected".')
+@tool(description='Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from the latest completed\nproduction season versus the current salary sheet. Picks like "2029 FRP"\nor "2030 FRP top-4 protected".')
 def get_trade_value(
     team_a: str = "", players_a: str = "", team_b: str = "",
     players_b: str = "", picks_a: str = "", picks_b: str = "",
@@ -816,11 +865,13 @@ def get_trade_value(
                 f"both sides resolve to the same team ({team_a} / {team_b}) "
                 "- check the team names")
         team_a, team_b = norm
+    with _owned_connection(None, read_only=True) as vintage_con:
+        sal_season, sal_rows, _ = _salary_vintage(vintage_con)
+    sal_season = sal_season or "2026-27"
     prod_season = _pkg().last_completed_season()
-    sal_season = "2026-27"
     disclaimer = (f"All dollar figures are rough estimates from {prod_season} "
-                  "production vs 2026-27 salary data. Not cap-legality advice; "
-                  "pair with get_trade_check.")
+                  f"production vs {sal_season} salary data. Not cap-legality "
+                  "advice; pair with get_trade_check.")
 
     if not team_a or not team_b:
         return _trade_value_error("two teams needed")
@@ -857,6 +908,7 @@ def get_trade_value(
             warehouse.note("no 2026-27 salary rows: residuals unavailable")
         ratings = _trade_rating_rows(con, warehouse, prod_season)
         payroll_source = _payroll_source(con)
+        curve_m = _draft_value_curve_m(con)
 
     dpp = _trade_dollars_per_point(leaders, salaries, use_w)
     if not dpp:
@@ -868,8 +920,10 @@ def get_trade_value(
                                      warehouse.gaps) for n in names_a]
     players_b = [_trade_value_player(n, leaders, adv, salaries, use_w, dpp,
                                      warehouse.gaps) for n in names_b]
-    picks_list_a = _trade_value_picks(picks_a, team_a, ratings, warehouse.gaps)
-    picks_list_b = _trade_value_picks(picks_b, team_b, ratings, warehouse.gaps)
+    picks_list_a = _trade_value_picks(picks_a, team_a, ratings,
+                                      warehouse.gaps, curve_m)
+    picks_list_b = _trade_value_picks(picks_b, team_b, ratings,
+                                      warehouse.gaps, curve_m)
 
     total_a = _trade_side_total(players_a, picks_list_a)
     total_b = _trade_side_total(players_b, picks_list_b)
@@ -885,9 +939,9 @@ def get_trade_value(
     s1 = _trade_verdict_line(winner, total_a, total_b, delta, abbr_a, abbr_b)
     s2 = _trade_driver_line(_trade_driver(players_a, players_b))
     s3 = key_fit_note.strip() or "Fit notes are limited by missing team data."
-    s4 = ("All values are rough estimates from 2025-26 production versus "
-          "2026-27 salaries, so this is not cap-legality advice: pair it "
-          "with get_trade_check.")
+    s4 = (f"All values are rough estimates from {prod_season} production "
+          f"versus {sal_season} salaries, so this is not cap-legality advice: "
+          "pair it with get_trade_check.")
 
     return {"tool": "get_trade_value", "ok": True,
             "rows": {"team_a": {"team": abbr_a, "players": players_a,
@@ -907,5 +961,5 @@ def get_trade_value(
                      "(outperforming the contract), negative = overpaid"},
             "meta": {"source": payroll_source,
                      "production_season": prod_season,
-                     "salary_season": _salary_vintage()[0] or "2026-27",
+                     "salary_season": sal_season,
                      "estimates": True}}

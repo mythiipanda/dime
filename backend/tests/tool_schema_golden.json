@@ -20,9 +20,12 @@
     },
     "warehouse_schema": {
       "name": "warehouse_schema",
+      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_draft_value_curve, silver_four_factors, silver_four_factors_team, silver_future_picks, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
+=======
       "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_cap_room, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_free_agents, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
       "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
       "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_draft_boards, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_prospect_stats, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
+>>>>>>> origin/dev
       "args_schema": {
         "description": "Read declared warehouse columns, source units and season encodings.",
         "properties": {
@@ -1303,7 +1306,7 @@
     },
     "get_contract_value": {
       "name": "get_contract_value",
-      "description": "Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.",
+      "description": "Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual. Salaries come from the\ncurrent salary sheet; production comes from the requested season, or the\nlatest season with production rows when the requested one has none yet\n(meta.production_fallback says so).",
       "args_schema": {
         "description": "Contract value residuals from production vs salary.",
         "properties": {
@@ -1393,7 +1396,7 @@
     },
     "get_trade_value": {
       "name": "get_trade_value",
-      "description": "Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from 2025-26 production versus\n2026-27 salaries. Picks like \"2029 FRP\" or \"2030 FRP top-4 protected\".",
+      "description": "Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from the latest completed\nproduction season versus the current salary sheet. Picks like \"2029 FRP\"\nor \"2030 FRP top-4 protected\".",
       "args_schema": {
         "description": "Trade value grade: estimated production surplus value vs salary per side plus pick equity.",
         "properties": {
@@ -1435,6 +1438,27 @@
           }
         },
         "title": "get_trade_value",
+        "type": "object"
+      }
+    },
+    "get_draft_capital": {
+      "name": "get_draft_capital",
+      "description": "Future draft pick ownership: who holds each team's 2027+ picks, protections, swap rights and forfeits, valued on an empirical draft-value curve. Optional enrichment for trade analysis; warehouse-backed only, requires seeded silver_future_picks.",
+      "args_schema": {
+        "description": "Future draft pick ownership (2027+) with protections, swaps and forfeits, plus empirical pick value.",
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "draft_year": {
+            "default": "",
+            "title": "Draft Year",
+            "type": "string"
+          }
+        },
+        "title": "get_draft_capital",
         "type": "object"
       }
     },
@@ -3899,6 +3923,68 @@
         "type": "object"
       }
     },
+    "web_search": {
+      "name": "web_search",
+      "description": "Search the public web for current NBA news, rumors, transactions, and external context. Returns cited rows with rank, title, URL, snippet, domain, and published date when available. Use only when warehouse or live NBA tools cannot answer, or when current external reporting is needed; snippets are discovery evidence, so call web_fetch before relying on page details.",
+      "args_schema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 5,
+            "title": "Max Results",
+            "type": "integer"
+          },
+          "timelimit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timelimit"
+          },
+          "region": {
+            "default": "us-en",
+            "title": "Region",
+            "type": "string"
+          },
+          "safesearch": {
+            "default": "moderate",
+            "title": "Safesearch",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "web_search",
+        "type": "object"
+      }
+    },
+    "web_fetch": {
+      "name": "web_fetch",
+      "description": "Fetch one public HTTP(S) page and extract readable text. Use after web_search or when the user supplies a URL. Returns a cited row with final URL, title, publisher, extracted text, and content hash. Fetch only pages needed for the answer; web_search snippets are not a substitute for page evidence.",
+      "args_schema": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "web_fetch",
+        "type": "object"
+      }
+=======
+    },
     "get_free_agents": {
       "name": "get_free_agents",
       "description": "Free agency and cap planning: the upcoming free agent class by team or league-wide (UFA, player/team options, two-way), estimated cap holds, and each team's projected cap room and exceptions for the next cap season. Warehouse only; refresh with seed_free_agents.py. Hold and cap figures are CBA-formula estimates, marked ESTIMATED.",
@@ -3998,6 +4084,7 @@
         "title": "get_expectations",
         "type": "object"
       }
+>>>>>>> origin/dev
     }
   },
   "internal": {
