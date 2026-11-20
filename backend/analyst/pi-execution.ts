@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
@@ -14,6 +14,61 @@ const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
+const CODEMODE_STORE_ENTRY_TYPE = "codemode-store";
+const CODEMODE_STORE_FILE = "codemode-store.json";
+const CODEMODE_STORE_MAX_BYTES = 512 * 1024;
+
+export function codemodeStoreSnapshot(branch: ReadonlyArray<{ type: string }>): Record<string, unknown> {
+    const store = new Map<string, unknown>();
+    for (const entry of branch) {
+        if (entry.type !== "custom")
+            continue;
+        const custom = entry as { customType?: string; data?: unknown };
+        if (custom.customType !== CODEMODE_STORE_ENTRY_TYPE)
+            continue;
+        const data = objectValue(custom.data);
+        if (!data)
+            continue;
+        if (Array.isArray(data.delete))
+            for (const key of data.delete)
+                if (typeof key === "string")
+                    store.delete(key);
+        const set = objectValue(data.set);
+        if (!set)
+            continue;
+        for (const [key, value] of Object.entries(set))
+            store.set(key, value);
+    }
+    return Object.fromEntries(store);
+}
+
+function readStoredSnapshot(dir: string): Record<string, unknown> | undefined {
+    try {
+        const value: unknown = JSON.parse(readFileSync(join(dir, CODEMODE_STORE_FILE), "utf8"));
+        const snapshot = objectValue(value);
+        return snapshot && Object.keys(snapshot).length > 0 ? snapshot : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+
+function persistStoreSnapshot(dir: string, snapshot: Record<string, unknown>): void {
+    try {
+        const path = join(dir, CODEMODE_STORE_FILE);
+        if (Object.keys(snapshot).length === 0) {
+            if (existsSync(path))
+                unlinkSync(path);
+            return;
+        }
+        const json = JSON.stringify(snapshot);
+        if (json.length > CODEMODE_STORE_MAX_BYTES)
+            return;
+        writeFileSync(path, json);
+    }
+    catch {
+    }
+}
 
 export function analystEventFrom(event: AgentSessionEvent): AnalystEvent | undefined {
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
@@ -265,6 +320,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let session: Awaited<ReturnType<typeof createAnalystSession>> | undefined;
                 let bridge: Awaited<ReturnType<typeof connectPythonTools>> | undefined;
                 let kind = "configuration";
+                let bridgeCwd: string | undefined;
                 let bridgePid: number | undefined;
                 let acceptedSubmission: AnswerSubmission | undefined;
                 let modelApiKey: string | undefined;
@@ -274,6 +330,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     if (!Value.Check(analystContextSchema, input) || !input.q.trim())
                         throw new Error("Invalid product context");
                     const start = input;
+                    bridgeCwd = start.bridge.cwd;
                     modelApiKey = objectValue(start.model)?.apiKey as string | undefined;
                     const { runtime, model } = await resolveRuntime(start.model);
                     controller.signal.throwIfAborted();
@@ -313,6 +370,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         session.sessionManager.appendMessage(context);
                         session.agent.state.messages.push(context);
                     }
+                    const restoredStore = readStoredSnapshot(start.bridge.cwd);
+                    if (restoredStore)
+                        session.sessionManager.appendCustomEntry(CODEMODE_STORE_ENTRY_TYPE, { set: restoredStore, delete: [] });
                     const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);
                     if (workspaceFiles.length > 0) {
                         const workspaceContext: Message = {
@@ -346,6 +406,12 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
                 }
                 finally {
+                    try {
+                        if (session && bridgeCwd)
+                            persistStoreSnapshot(bridgeCwd, codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                    }
+                    catch {
+                    }
                     try {
                         await session?.abort();
                     }
