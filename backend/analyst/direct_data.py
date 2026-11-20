@@ -100,6 +100,49 @@ def product_trade(team_a: str, players_a: str, team_b: str, players_b: str, seas
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
 
+@tool(description='Find salary-matching packages for a player via the existing domain implementation.')
+def product_trade_partners(player: str, season: str = '2026-27', teams: str = '', max_packages: int = 3) -> dict:
+    from shared.tools import get_trade_partners
+    try:
+        return get_trade_partners.invoke(dict(player=player, season=season, teams=teams, max_packages=max_packages))
+    except ValueError as error:
+        return {'ok': False, 'error': str(error)}
+
+@tool(description='List one team\'s trade assets: roster salaries and owned draft picks.')
+def product_trade_assets(team: str, season: str = '2026-27') -> dict:
+    from shared import store
+    from shared.contracts import salary_records
+    abbr = str(team or '').strip().upper()
+    if not abbr:
+        return {'ok': False, 'error': 'team needed'}
+    try:
+        con = store.connect(read_only=True)
+    except Exception:
+        return {'ok': False, 'error': 'warehouse unreachable'}
+    try:
+        records = [r for r in salary_records(con, salary_season=season, include_fallback=True)
+                   if str(r.get('TEAM') or '').upper() == abbr and isinstance(r.get('salary'), (int, float))]
+        records.sort(key=lambda r: -(r['salary'] or 0))
+        players = [{'name': str(r.get('PLAYER_NAME') or ''), 'salary': round(float(r['salary']) / 1_000_000, 1)}
+                   for r in records if r.get('PLAYER_NAME')]
+        picks = []
+        tables = {row[0] for row in con.execute('SHOW TABLES').fetchall()}
+        if 'silver_future_picks' in tables:
+            rows = con.execute(
+                "SELECT DRAFT_YEAR, ROUND, ORIG_TEAM, PROTECTION, CONDITIONAL, SUMMARY "
+                "FROM silver_future_picks WHERE ? IN (SELECT UNNEST(string_split(HELD_BY, ';')))",
+                [abbr]).fetchall()
+            picks = [{'year': int(r[0]), 'round': int(r[1]), 'orig': str(r[2] or ''),
+                      'protection': r[3], 'conditional': bool(r[4]), 'summary': str(r[5] or '')}
+                     for r in rows]
+        source = 'salary_records' + (' + silver_future_picks' if 'silver_future_picks' in tables else '')
+        return {'ok': True, 'team': abbr, 'season': season, 'players': players, 'picks': picks,
+                'meta': {'source': source, 'season': season}}
+    except Exception as error:
+        return {'ok': False, 'error': str(error)}
+    finally:
+        con.close()
+
 @tool(description='Build the current debate card with the domain season clamp.')
 def product_debate(a: str, b: str, season: str = '2025-26') -> dict:
     from shared.tools import get_debate_card
@@ -151,7 +194,7 @@ def product_briefing(season: str = '2025-26') -> dict:
 def internal_catalogue():
     operations = (product_board_metrics, product_board_fill, product_board_seed, product_save_chat, product_save_run, product_threads, product_runs,
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
-        product_rerun, product_resolve, product_trade, product_debate, product_today,
+        product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing)
     result = {operation.name: operation for operation in operations}
     for operation in operations:

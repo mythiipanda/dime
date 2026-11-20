@@ -94,11 +94,18 @@ test("Shots explorer preserves zone data even if shot coordinates are unavailabl
 });
 
 test("Trades renders the backend's readable domain error on HTTP 422", async () => {
-  await mount(<TradesView />, async () => Response.json({ ok: false, error: "Salary data lists Luka with LAL, not DAL" }, { status: 422 }), async host => {
+  await mount(<TradesView />, async input => {
+    const url = String(input);
+    if (url.includes("/trade/assets")) {
+      const abbr = new URL(url).searchParams.get("team");
+      const players = abbr === "DAL" ? [{ name: "Luka Doncic", salary: 49.8 }] : [{ name: "Karl-Anthony Towns", salary: 57.1 }];
+      return Response.json({ ok: true, team: abbr, season: "2026-27", players, picks: [], meta: { source: "salary_records", season: "2026-27" } });
+    }
+    return Response.json({ ok: false, error: "Salary data lists Luka with LAL, not DAL" }, { status: 422 });
+  }, async host => {
     await act(async () => [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Luka"))!.click());
-    const button = [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Check with real cap rules"));
-    assert.ok(button);
-    await act(async () => button.click());
+    await act(async () => [...host.querySelectorAll("button")].find(item => item.textContent?.includes("Towns"))!.click());
+    await act(async () => new Promise(resolve => setTimeout(resolve, 50)));
     assert.match(host.textContent!, /Salary data lists Luka with LAL, not DAL/);
     assert.doesNotMatch(host.textContent!, /Could not reach the backend/);
   });
