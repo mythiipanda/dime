@@ -747,6 +747,30 @@ test("artifactToCopyText formats table artifacts as CSV with proper header and e
   );
 });
 
+test("artifactToCopyText keeps card sections and shot zone context", () => {
+  const card: DimeArtifact = {
+    kind: "team_card", title: "Card", teamName: "OKC", sourceRef: "standings", sourceRow: 0, nameColumn: "team",
+    metrics: [{ column: "wins", label: "Wins", value: 41, unit: "games" }],
+    sections: [
+      { label: "Payroll", sourceRef: "cap", sourceRow: 1,
+        fields: [{ column: "apron", label: "Apron status", value: "below first apron" }],
+        metrics: [{ column: "payroll", label: "Payroll", value: 172, unit: "$M" }] },
+    ],
+  } as unknown as DimeArtifact;
+  const csv = artifactToCopyText(card);
+  assert.ok(csv.startsWith("Section,Player,Team,Metric,Value,Unit,Source,Row,Column"), csv);
+  assert.ok(csv.includes(",OKC,,Wins,41,games,standings,0,wins"), csv);
+  assert.ok(csv.includes("Payroll,OKC,,Apron status,below first apron,,cap,1,apron"), csv);
+  assert.ok(csv.includes("Payroll,OKC,,Payroll,172,$M,cap,1,payroll"), csv);
+
+  const shot: DimeArtifact = {
+    kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 120, makes: 79, pct: 65.8, label: "Rim", delta: 3.1 }],
+  };
+  const shotCsv = artifactToCopyText(shot);
+  assert.ok(shotCsv.startsWith("Zone,X,Y,Attempts,Makes,FG%,Delta vs league"), shotCsv);
+  assert.ok(shotCsv.includes("Rim,0,0,120,79,65.8,3.1"), shotCsv);
+});
+
 test("artifactToCopyText formats compare artifacts as CSV", () => {
   const compareArtifact: DimeArtifact = {
     kind: "compare",
@@ -825,7 +849,7 @@ test("artifactToCopyText formats shot chart zones as CSV", () => {
   const text = artifactToCopyText(shotArtifact);
   assert.equal(
     text,
-    "X,Y,Attempts,Percentage\n50,12,142,71\n32,22,88,52",
+    "Zone,X,Y,Attempts,Makes,FG%,Delta vs league\n,50,12,142,,71,\n,32,22,88,,52,",
   );
 });
 

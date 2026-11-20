@@ -59,7 +59,7 @@ function artifactBlocks(artifact: DimeArtifact): ReportBlock[] {
     return [{ heading: artifact.title, lines }];
   }
   if (artifact.kind === "shot_chart") {
-    const lines = artifact.zones.map(zone => `(${zone.x}, ${zone.y}): ${zone.att} attempts, ${Math.round(zone.pct * 100)}%`);
+    const lines = artifact.zones.map(zone => `${zone.label ?? `(${zone.x}, ${zone.y})`}: ${zone.att} attempts, ${num(zone.pct)}%${zone.makes !== undefined ? `, ${zone.makes} makes` : ""}${zone.delta !== undefined ? `, ${zone.delta > 0 ? "+" : ""}${num(zone.delta)} pts vs league` : ""}`);
     if (artifact.footnote) lines.push(artifact.footnote);
     return [{ heading: artifact.title, lines }];
   }
