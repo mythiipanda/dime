@@ -99,7 +99,13 @@ When presenting modeling results:
 The analyst agent has direct access to the `run_python` tool equipped with preloaded:
 - `con`: Read-only DuckDB connection connected directly to the analytical warehouse.
 - `pl`: Polars library for high-speed tabular manipulation and aggregation.
+- `np`: NumPy for vectorized modeling and resampling.
 - `math` and `statistics`: Standard library mathematical algorithms.
+
+### Warehouse Grain for Shot-Row Modeling
+
+- `silver_hist_shots` carries `person_id` and a surname-only `player_name`. Group by `person_id`, never `player_name`: same-surname players merge into one phantom player, which corrupts both the cohort and the fitted prior.
+- `silver_player_season` holds only the latest season. For earlier seasons join `silver_hist_player_seasons` on `player_id`; its counting stats are per-game, so cohort thresholds like `FG3A >= 40` come from `COUNT(*)` over shot rows, not the season row.
 
 ### Example: Fitting Bayesian Shrinkage Over Warehouse Rows
 ```python

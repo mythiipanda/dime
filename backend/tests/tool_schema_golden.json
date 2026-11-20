@@ -3194,7 +3194,7 @@
     },
     "run_python": {
       "name": "run_python",
-      "description": "Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations.",
+      "description": "Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations.",
       "args_schema": {
         "properties": {
           "code": {

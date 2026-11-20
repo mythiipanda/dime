@@ -51,7 +51,7 @@ GROUP BY player_id
 
 ## 5. Current Season vs Completed Seasons (Stale Premises)
 
-Warehouse coverage lags the calendar: production and game tables (`silver_leaders_*`, `silver_team_games`, `silver_player_season`, box scores, play-by-play) hold completed seasons only, while contract and roster tables (`silver_salaries`, `silver_cap_players`) describe the current league and are labelled with the current season in `_season`. Consequences:
+Warehouse coverage lags the calendar: production and game tables (`silver_leaders_*`, `silver_team_games`, `silver_player_season`, box scores, play-by-play) hold completed seasons only, while contract and roster tables (`silver_salaries`, `silver_cap_players`) describe the current league and are labelled with the current season in `_season`. `silver_player_season` carries only the latest season; for earlier seasons join `silver_hist_player_seasons`, which stores per-game averages and per-season rows. Consequences:
 
 - **"Current" questions**: pass the current NBA season to contract, trade and roster tools. They pair current salary/roster data with the latest production season and report both in `meta` (`production_season` vs `salary_season`). Stat-only tools that have no rows for the current season fall back to the latest season with data and set `meta.season_fallback` / `meta.requested_season` — always quote the season each figure actually covers.
 - **Team attribution is season-dependent**: a player who changed teams has one team in past-season production rows and another in the current salary sheet (for example a star traded in the offseason). Resolve "who is on team X" against the season the question is about before answering.
