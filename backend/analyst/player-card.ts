@@ -66,7 +66,8 @@ export function resolveProvenance(record: SourceRecord, data: Record<string, unk
         capability: record.tool, origin: "undeclared",
         ...(typeof meta?.source === "string" ? { dataset: meta.source } : {}),
         ...(typeof meta?.season === "string" ? { season: meta.season } : {}),
-        ...(typeof meta?.as_of === "string" ? { as_of: meta.as_of } : {})
+        ...(typeof meta?.as_of === "string" ? { as_of: meta.as_of } : {}),
+        ...(typeof meta?.sql === "string" ? { sql: meta.sql } : {})
     };
 }
 

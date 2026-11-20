@@ -722,7 +722,7 @@ function playerCardInput(overrides = {}) {
 function playerCardSource() {
   const source = makeSourceRecord("card-source", { rows: [{ player: "Alex Example", team: "Fixture City", pts: 24.6, missed: 0, impact: null }] });
   source.response.structuredContent.declared_column_semantics = { pts: { unit: "points/game" }, missed: { unit: "games" } };
-  source.response.structuredContent.meta = { season: "fixture-season" };
+  source.response.structuredContent.meta = { season: "fixture-season", sql: "SELECT player, team, pts FROM fixture WHERE player = ?" };
   return source;
 }
 
@@ -738,6 +738,7 @@ test("player cards resolve identity, exact values and declared units from one so
   assert.deepEqual(card.metrics, [{ column: "pts", label: "Points", value: 24.6, unit: "points/game" }, { column: "missed", label: "Missed", value: 0, unit: "games" }, { column: "impact", label: "Impact", value: null }]);
   assert.equal(card.provenance.origin, "undeclared");
   assert.equal(card.provenance.season, "fixture-season");
+  assert.equal(card.provenance.sql, "SELECT player, team, pts FROM fixture WHERE player = ?");
   assert.deepEqual(input, original);
 });
 
