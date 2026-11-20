@@ -20,7 +20,7 @@
     },
     "warehouse_schema": {
       "name": "warehouse_schema",
-      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
+      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_draft_boards, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_prospect_stats, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
       "args_schema": {
         "description": "Read declared warehouse columns, source units and season encodings.",
         "properties": {
@@ -3814,6 +3814,31 @@
           "team_id"
         ],
         "title": "get_scouting_report",
+        "type": "object"
+      }
+    },
+    "get_prospect": {
+      "name": "get_prospect",
+      "description": "Prospect lookup for the upcoming draft: public big-board/mock placement, current college production stats, pick-slot comps from historical drafts, and nearest historical combine measurables. Player name; draft_year defaults to the current class (2027). Warehouse only; refresh with seed_prospects.py. International prospects carry board/physical data without college stats.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "draft_year": {
+            "default": "2027",
+            "title": "Draft Year",
+            "type": "string"
+          },
+          "position": {
+            "default": "",
+            "title": "Position",
+            "type": "string"
+          }
+        },
+        "title": "get_prospect",
         "type": "object"
       }
     },
