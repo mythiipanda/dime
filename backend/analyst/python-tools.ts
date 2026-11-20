@@ -109,10 +109,14 @@ export const ANALYST_TOOL_NAMES = [
     "get_splits",
     "get_recap",
     "get_scouting_report",
+    "web_search",
+    "web_fetch",
+=======
     "get_free_agents",
     "get_prospect",
     "get_roster_fit",
     "get_expectations",
+>>>>>>> origin/dev
 ] as const;
 
 export type PythonToolName = (typeof ANALYST_TOOL_NAMES)[number];
@@ -124,6 +128,7 @@ const NAMESPACES: Record<string, ToolNamespace> = {
     cba: { name: "cba", description: "2023 CBA salary cap ledgers, trade legality checks, contract values, and transactions." },
     spatial: { name: "spatial", description: "Shot zones, shot diets, optical tracking, and Synergy playtype tools." },
     matchup: { name: "matchup", description: "Game predictions, head-to-head matchups, boxscores, rest, and stint logs." },
+    web: { name: "web", description: "Public web search and page fetch tools for current external sources." },
 };
 
 const TOOL_NAMESPACE_GROUPS: Record<string, readonly PythonToolName[]> = {
@@ -137,7 +142,11 @@ const TOOL_NAMESPACE_GROUPS: Record<string, readonly PythonToolName[]> = {
 >>>>>>> origin/dev
     player: ["get_rapm", "get_rapm_prior", "get_impact_rank", "get_raptor_history", "get_comps", "get_on_off", "get_wowy", "get_clutch_stats", "get_hustle", "get_injuries", "get_rookie_leaders", "get_young_player_usage", "get_player_risers", "get_player_ratings", "get_situational_splits", "get_career_arc", "get_last_x", "get_player_report", "get_splits", "get_scouting_report", "get_scout_pack", "get_regression_check", "get_rotation_check", "get_injury_impact", "search_game_logs"],
     team: ["get_lineup_stats", "get_lineup_leaders", "get_lineups", "get_four_factors", "get_team_four_factors", "get_team_trajectory", "get_ratings", "get_team_leaders", "get_team_compare", "get_team_game_log", "get_team_hub", "get_risers", "get_playoff_team_ratings", "get_competitive_ratings", "get_elo", "get_elo_standings", "get_standings", "get_standings_deep"],
+    league: ["get_wpa_leaders", "get_award_results", "get_award_race", "get_briefing", "get_morning_briefing", "get_today", "get_leaders", "get_leaderboard_deltas", "get_historical_leaders", "get_playoffs", "get_playoff_sim", "get_draft_board", "get_combine", "get_draft_model", "get_warehouse_freshness", "get_dataset", "get_dataset_freshness", "get_finder", "get_streaks", "get_watchlist", "get_recap"],
+    web: ["web_search", "web_fetch"],
+=======
     league: ["get_wpa_leaders", "get_award_results", "get_award_race", "get_briefing", "get_morning_briefing", "get_today", "get_leaders", "get_leaderboard_deltas", "get_historical_leaders", "get_playoffs", "get_playoff_sim", "get_draft_board", "get_combine", "get_draft_model", "get_warehouse_freshness", "get_dataset", "get_dataset_freshness", "get_finder", "get_streaks", "get_watchlist", "get_recap", "get_news_feed", "get_team_daily_brief", "get_prospect", "get_free_agents"],
+>>>>>>> origin/dev
 };
 
 const TOOL_NAMESPACE_MAP = new Map<string, ToolNamespace>(

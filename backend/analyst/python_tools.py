@@ -32,6 +32,7 @@ from analyst.tools import (
     rankings as _rankings_tools,
     spatial as _spatial_tools,
     team as _team_tools,
+    web as _web_tools,
 )
 
 sanitize_for_wire = _common.sanitize_for_wire
@@ -149,10 +150,14 @@ _TOOL_ORDER = (
     "get_splits",
     "get_recap",
     "get_scouting_report",
+    "web_search",
+    "web_fetch",
+=======
     "get_free_agents",
     "get_prospect",
     "get_roster_fit",
     "get_expectations",
+>>>>>>> origin/dev
 )
 
 _REGISTRARS = (
@@ -165,6 +170,7 @@ _REGISTRARS = (
     _cba_tools,
     _matchup_tools,
     _briefing_tools,
+    _web_tools,
 )
 
 
