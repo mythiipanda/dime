@@ -151,6 +151,70 @@ test("deriveArtifacts still derives the table and compare from evidence rows", (
   assert.equal(derived[0].kind, "table");
 });
 
+test("a player_card with sections resolves per-section rows, fields and provenance", () => {
+  const chunks = reduceBackendEvent("custom_data", {
+    tables: [],
+    artifacts: [
+      {
+        kind: "player_card",
+        title: "Player snapshot",
+        playerName: "Shai Gilgeous-Alexander",
+        team: "OKC",
+        sourceRef: "ref-identity",
+        sourceRow: 0,
+        nameColumn: "player_name",
+        metrics: [{ column: "pts", label: "PTS", value: 32.1, unit: "points/game" }],
+        sections: [
+          {
+            label: "Contract",
+            sourceRef: "ref-contract",
+            sourceRow: 0,
+            metrics: [{ column: "salary", label: "Salary", value: 30000000 }],
+            fields: [{ column: "contract_type", label: "Deal", value: "DVET-EXT" }],
+            provenance: { capability: "sql_exec", origin: "undeclared", dataset: "bref_contracts", season: "2026-27" },
+          },
+          {
+            label: "Availability",
+            sourceRef: "ref-injury",
+            sourceRow: 0,
+            fields: [{ column: "status", label: "Status", value: "Questionable" }],
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(chunks.length, 1);
+  const only = chunks[0];
+  if (only.type !== "artifact" || only.artifact.kind !== "player_card") assert.fail("expected player_card artifact");
+  const card = only.artifact;
+  assert.equal(card.sections?.length, 2);
+  assert.equal(card.sections?.[0].label, "Contract");
+  assert.equal(card.sections?.[0].metrics?.[0].value, 30000000);
+  assert.equal(card.sections?.[0].fields?.[0].value, "DVET-EXT");
+  assert.equal(card.sections?.[0].provenance?.dataset, "bref_contracts");
+  assert.equal(card.sections?.[1].fields?.[0].value, "Questionable");
+});
+
+test("a player_card section with forged or malformed values is dropped with the artifact", () => {
+  const base = {
+    kind: "player_card",
+    title: "Player snapshot",
+    playerName: "Shai Gilgeous-Alexander",
+    sourceRef: "ref-identity",
+    sourceRow: 0,
+    nameColumn: "player_name",
+    metrics: [{ column: "pts", label: "PTS", value: 32.1 }],
+  };
+  for (const sections of [
+    [{ label: "S", sourceRef: "r", sourceRow: 0 }],
+    [{ label: "S", sourceRef: "r", sourceRow: 0, metrics: [{ column: "v", label: "V", value: "forged" }] }],
+    [{ label: "S", sourceRef: "r", sourceRow: -1, metrics: [{ column: "v", label: "V", value: 1 }] }],
+  ]) {
+    const chunks = reduceBackendEvent("custom_data", { tables: [], artifacts: [{ ...base, sections }] });
+    assert.deepEqual(chunks, []);
+  }
+});
 test("a memo the agent submitted resolves with sections and citations", () => {
   const chunks = reduceBackendEvent("custom_data", {
     tables: [],

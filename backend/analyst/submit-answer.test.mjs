@@ -792,6 +792,57 @@ test("player cards use source units fallback and refuse non-finite or string met
   }
 });
 
+test("player card sections resolve values and provenance from their own source rows", () => {
+  const header = playerCardSource();
+  const contract = makeSourceRecord("contract-src", { rows: [{ salary: 30000000, contract_type: "DVET-EXT" }] });
+  contract.response.structuredContent.meta = { season: "2026-27", source: "bref_contracts" };
+  const injury = makeSourceRecord("injury-src", { rows: [{ status: "Questionable", detail: "Ankle" }] });
+  injury.response.structuredContent.meta = { season: "2026-27", source: "espn" };
+  const sources = new Map([[header.ref, header], [contract.ref, contract], [injury.ref, injury]]);
+  const input = playerCardInput({
+    sections: [
+      { label: "Contract", ref: "contract-src", row: 0,
+        metrics: [{ column: "salary", label: "Salary" }],
+        fields: [{ column: "contract_type", label: "Deal" }] },
+      { label: "Availability", ref: "injury-src", row: 0,
+        fields: [{ column: "status", label: "Status" }, { column: "detail", label: "Detail" }] },
+    ],
+  });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  const card = result.artifacts[0];
+  assert.equal(card.sections.length, 2);
+  const [contractSection, injurySection] = card.sections;
+  assert.equal(contractSection.label, "Contract");
+  assert.equal(contractSection.sourceRef, "contract-src");
+  assert.deepEqual(contractSection.metrics, [{ column: "salary", label: "Salary", value: 30000000 }]);
+  assert.deepEqual(contractSection.fields, [{ column: "contract_type", label: "Deal", value: "DVET-EXT" }]);
+  assert.equal(contractSection.provenance.season, "2026-27");
+  assert.equal(contractSection.provenance.dataset, "bref_contracts");
+  assert.equal(contractSection.provenance.capability, "sql_exec");
+  assert.deepEqual(injurySection.fields, [{ column: "status", label: "Status", value: "Questionable" }, { column: "detail", label: "Detail", value: "Ankle" }]);
+  assert.equal(injurySection.metrics, undefined);
+  assert.equal(injurySection.provenance.dataset, "espn");
+});
+
+test("player card sections reject bad selectors, forged values and empty sections", () => {
+  const header = playerCardSource();
+  const other = makeSourceRecord("other-src", { rows: [{ val: 5, status: "ok" }] });
+  const sources = new Map([[header.ref, header], [other.ref, other]]);
+  const validate = input => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  for (const sections of [
+    [],
+    Array.from({ length: 7 }, () => ({ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }] })),
+    [{ label: "S", ref: "other-src", row: 0 }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [], fields: [] }],
+    [{ label: "S", ref: "missing-src", row: 0, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 3, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "missing", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "status", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "val", label: "F" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "status", label: "F", value: "forged" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }], provenance: { origin: "warehouse" } }],
+  ]) assert.throws(() => validate(playerCardInput({ sections })));
+});
 test("priorSubmissions returns thread submissions in order and compactPriorSubmissions bounds them", async () => {
   const dir = await mkdtemp(join(tmpdir(), "prior-subs-"));
   try {
