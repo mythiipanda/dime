@@ -158,6 +158,7 @@ export type AnalystEvent = {
 } | {
     type: "tool_call";
     name: string;
+    args?: unknown;
 } | {
     type: "tool_result";
     name: string;
@@ -348,7 +349,7 @@ function wrapBridgeTools(
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
             tracker.toolCalls += 1;
-            emit({ type: "tool_call", name: tool.name });
+            emit({ type: "tool_call", name: tool.name, args: args[1] });
             const callId = typeof args[0] === "string" && args[0] ? args[0] : `call_${tracker.toolCalls}`;
             if (tripped.has(tool.name)) {
                 const { record, payload } = buildBreakerRecord(tool.name, callId, failStreaks.get(tool.name) ?? 0, lastErrors.get(tool.name)?.error);
