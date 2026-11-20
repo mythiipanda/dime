@@ -48,7 +48,8 @@ export function resolvePlayerCard(artifact: Record<string, unknown>, getSource: 
         provenance: {
             capability: source.tool, origin: "undeclared",
             ...(typeof meta?.season === "string" ? { season: meta.season } : {}),
-            ...(typeof meta?.as_of === "string" ? { as_of: meta.as_of } : {})
+            ...(typeof meta?.as_of === "string" ? { as_of: meta.as_of } : {}),
+            ...(typeof meta?.sql === "string" ? { sql: meta.sql } : {})
         }
     };
 }

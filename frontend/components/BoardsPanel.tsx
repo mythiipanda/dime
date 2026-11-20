@@ -7,6 +7,7 @@ import { fillBoardCells, getBoardMetrics, seedBoardRows } from "../lib/boards-ap
 import { addColumn, addRow, boardCsv, boardPrompt, boardTemplates, boardsArePersistent, duplicateBoard, getBoard, newBoard, removeColumn, removeRow, reorderColumns, reorderRows, saveBoard, sortByColumn, type Board, type BoardMetric, type BoardTemplate } from "../lib/boards";
 import { BoardsTable } from "./BoardsTable";
 import { SavedBoards } from "./SavedBoards";
+import BoardPins from "./BoardPins";
 import { Button } from "./ds/Button";
 import { Panel, PageHeader } from "./ds/Panel";
 import { SegmentedControl } from "./ds/SegmentedControl";
@@ -116,6 +117,7 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
     {notice && <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-red">{notice}{board.rows.length > 0 && " Cached values have not been refreshed."}</p><Button size="sm" onClick={() => catalogError ? setCatalogAttempt(value => value + 1) : refresh()}>Retry</Button></div>}
     {(busy || seeding) && <p role="status" className="mb-4 text-xs text-ink-3">{seeding ? "Finding the starting player pool…" : "Filling from the warehouse…"}</p>}
     {board.rows.length && board.columns.length ? <BoardsTable board={board} metrics={metrics} loading={busy} sort={sort} onSort={metric => { const best = sort?.id === metric.id ? !sort.best : true; setSort({ id: metric.id, best }); commit(sortByColumn(board, metric, best)); }} onRemoveRow={id => commit(removeRow(board, id))} onRemoveColumn={id => commit(removeColumn(board, id))} onMoveRow={(from, to) => { setSort(null); commit(reorderRows(board, from, to)); }} onMoveColumn={(from, to) => commit(reorderColumns(board, from, to))} /> : <Panel title={seeding ? "Building your starting pool" : !board.rows.length ? "Make room for a better decision." : "Choose what to compare."} description={!board.rows.length ? "Add a player, then choose your metrics. Dime fills the grid from the warehouse." : "Add a metric to see warehouse-backed values."}>{!seeding && !board.rows.length && template?.seed && <Button onClick={() => void populate(board, template)}>Populate template</Button>}</Panel>}
+    <BoardPins board={board} onCommit={commit} />
     <div className="mt-5 flex flex-wrap items-start justify-between gap-4"><p className="max-w-lg text-xs leading-relaxed text-ink-3">Click a value to inspect its source. Best marks the strongest rank in this board; defensive rating and salary favor lower values. Salary uses 2026–27 data.</p><Button onClick={() => onAsk(boardPrompt(board, metrics))}>Ask Dime about this board<ArrowUpRight size={13} /></Button></div>
   </div>;
 }
