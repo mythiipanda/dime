@@ -64,6 +64,9 @@ def seed_team_rows(end_year: int = END_YEAR) -> int:
         frame = team_rows(con, end_year)
     finally:
         con.close()
+    if frame.is_empty():
+        print(f"silver_playoffs: no playoff rows for {season} yet; skipped")
+        return 0
     validate_team_rows(frame)
     result = FetchResult(frame=frame, meta=FetchMeta(source=SOURCE, season=season))
     return store.save_frame("silver_playoffs", result, replace_season=True)

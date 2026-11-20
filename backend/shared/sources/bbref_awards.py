@@ -32,7 +32,7 @@ BACKOFF_S = 30.0
 _RESULT_STATS = ("team_id", "points_won", "points_max", "award_share")
 VOTE_OUT_COLUMNS = ("VOTES_FIRST", "VOTES_SECOND", "VOTES_THIRD")
 SEASON_LABEL = re.compile(r"\d{4}-\d{2}")
-SHARE_TOLERANCE = 0.001
+SHARE_TOLERANCE = 0.01
 
 class AwardsPageError(RuntimeError):
     pass

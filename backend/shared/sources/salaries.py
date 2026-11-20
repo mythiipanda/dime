@@ -16,7 +16,7 @@ HEADERS = {
     "Referer": "https://www.basketball-reference.com/",
 }
 
-TEAM_ABBR = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX"}
+TEAM_ABBR = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX", "WSH": "WAS"}
 
 def _fold(name: str) -> str:
     return "".join(
