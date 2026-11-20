@@ -1,5 +1,6 @@
 import math
 import random
+from ._core import resolve_season
 SEED = 42
 HOME_ELO = 400 * math.log10(0.55 / 0.45)
 

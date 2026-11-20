@@ -8,7 +8,11 @@ from pathlib import Path
 
 import polars as pl
 import requests
-from lxml import html
+
+try:
+    from lxml import html
+except ImportError:
+    html = None
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -215,6 +219,10 @@ def log_coverage(gap: list) -> None:
         log(f"  gap {g['player']}: {g['status']}")
 
 def main() -> None:
+    if html is None:
+        raise SystemExit(
+            "lxml is required to read basketball-reference gamelog pages; "
+            "install it with 'pip install lxml' and retry")
     limit = None
     ids_override = None
     if "--limit" in sys.argv:

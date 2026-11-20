@@ -9,7 +9,11 @@ from pathlib import Path
 
 import polars as pl
 import requests
-from lxml import html
+
+try:
+    from lxml import html
+except ImportError:
+    html = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -302,6 +306,10 @@ def save_rows(rows: list, table: str, nba_id: int, season: str) -> int:
     return store.save_frame(table, result, entity=f"player:{nba_id}")
 
 def main() -> None:
+    if html is None:
+        raise SystemExit(
+            "lxml is required to read basketball-reference gamelog pages; "
+            "install it with 'pip install lxml' and retry")
     limit = None
     if "--limit" in sys.argv:
         limit = int(sys.argv[sys.argv.index("--limit") + 1])

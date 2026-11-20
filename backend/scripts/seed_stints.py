@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 import duckdb
@@ -78,19 +79,15 @@ def _rows(con, sql, params):
     return [dict(zip(cols, r)) for r in rel.fetchall()]
 
 
-def load_possessions(source_db, game_id):
-    con = duckdb.connect(str(source_db), read_only=True)
-    try:
-        if POSSESSION_TABLE not in _tables(con):
-            return [], ""
-        cols = ", ".join(POSSESSION_COLS)
-        rows = _rows(
-            con,
-            f"SELECT {cols}, _season FROM {POSSESSION_TABLE} "
-            "WHERE game_id = ? ORDER BY possession_number",
-            [game_id])
-    finally:
-        con.close()
+def load_possessions(con, game_id):
+    if POSSESSION_TABLE not in _tables(con):
+        return [], ""
+    cols = ", ".join(POSSESSION_COLS)
+    rows = _rows(
+        con,
+        f"SELECT {cols}, _season FROM {POSSESSION_TABLE} "
+        "WHERE game_id = ? ORDER BY possession_number",
+        [game_id])
     seasons = sorted({str(r.get("_season") or "") for r in rows})
     seasons = [s for s in seasons if s]
     if len(seasons) != 1:
@@ -98,18 +95,14 @@ def load_possessions(source_db, game_id):
     return rows, seasons[0]
 
 
-def resolve_home_away(source_db, game_id):
-    con = duckdb.connect(str(source_db), read_only=True)
-    try:
-        if GAMELOG_TABLE not in _tables(con):
-            return None
-        logs = _rows(
-            con,
-            f"SELECT team_id, matchup, team_abbreviation FROM "
-            f"{GAMELOG_TABLE} WHERE game_id = ?",
-            [game_id])
-    finally:
-        con.close()
+def resolve_home_away(con, game_id):
+    if GAMELOG_TABLE not in _tables(con):
+        return None
+    logs = _rows(
+        con,
+        f"SELECT team_id, matchup, team_abbreviation FROM "
+        f"{GAMELOG_TABLE} WHERE game_id = ?",
+        [game_id])
     home = away = None
     for row in logs:
         try:
@@ -137,21 +130,14 @@ def stints_frame(game_id, rows, season, placed):
     return pl.DataFrame(slim, schema=SCHEMA)
 
 
-def unit_complete(season, entity):
-    try:
-        return bool(store.last_fetch(TABLE, season, entity))
-    except Exception:
-        return False
-
-
-def materialize_game(source_db, game_id, season=""):
-    rows, row_season = load_possessions(source_db, game_id)
+def materialize_game(con, game_id, season=""):
+    rows, row_season = load_possessions(con, game_id)
     if not rows:
         return False, "no possession rows"
     season = season or row_season
     if not season:
         return False, "season unresolvable"
-    placed = resolve_home_away(source_db, game_id)
+    placed = resolve_home_away(con, game_id)
     if placed is None:
         return False, "home and away unresolvable"
     frame = stints_frame(game_id, rows, season, placed)
@@ -200,6 +186,90 @@ def resolve_target(raw_db):
     return target
 
 
+def _load_plan(args, source_db):
+    if args.game_id:
+        con = duckdb.connect(str(source_db), read_only=True)
+        try:
+            rows, row_season = load_possessions(con, args.game_id)
+        finally:
+            con.close()
+        seasons = [row_season] if row_season else []
+        games = {row_season: [args.game_id]} if row_season else {}
+        return seasons, games
+    picked = [s.strip() for s in str(args.season).split(",") if s.strip()]
+    seasons = picked or available_seasons(source_db)
+    games = {}
+    for season in seasons:
+        ids = season_games(source_db, season)
+        if args.limit and args.limit > 0:
+            ids = ids[:args.limit]
+        games[season] = ids
+    return seasons, games
+
+
+def _print_plan(seasons, games):
+    for season in seasons:
+        for gid in games.get(season, []):
+            print(f"{TABLE} {season} {gid}")
+    print(f"games: {sum(len(v) for v in games.values())}")
+
+
+def _completed_entities(season):
+    try:
+        con = duckdb.connect(str(store.DB_PATH), read_only=True)
+    except Exception:
+        return set()
+    try:
+        if "fetch_log" not in _tables(con):
+            return set()
+        return {r[0] for r in con.execute(
+            "SELECT DISTINCT entity FROM fetch_log "
+            "WHERE dataset = ? AND season = ?",
+            [TABLE, season]).fetchall() if r[0]}
+    except Exception:
+        return set()
+    finally:
+        con.close()
+
+
+def _materialize_games(seasons, games, source_db, budget_seconds=0):
+    done = skipped = failed = 0
+    started = time.monotonic()
+
+    def over_budget():
+        return budget_seconds > 0 and time.monotonic() - started >= budget_seconds
+
+    con = duckdb.connect(str(source_db), read_only=True)
+    try:
+        for season in sorted(seasons, reverse=True):
+            completed = _completed_entities(season)
+            for gid in sorted(games.get(season, []), reverse=True):
+                if over_budget():
+                    print(f"budget reached after {done} games; "
+                          "remaining work resumes on the next run",
+                          flush=True)
+                    return done, skipped, failed
+                if gid in completed:
+                    skipped += 1
+                    continue
+                try:
+                    ok, note = materialize_game(con, gid, season)
+                except Exception as exc:
+                    print(f"failed {TABLE} {season} {gid}: {exc}"[:200],
+                          flush=True)
+                    failed += 1
+                    continue
+                if ok:
+                    print(f"saved {TABLE} {season} {gid} {note}", flush=True)
+                    done += 1
+                else:
+                    print(f"skip {TABLE} {season} {gid}: {note}", flush=True)
+                    skipped += 1
+    finally:
+        con.close()
+    return done, skipped, failed
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--season", default="")
@@ -207,6 +277,7 @@ def main(argv=None):
     ap.add_argument("--db", default="")
     ap.add_argument("--source-db", default="")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--budget-seconds", type=float, default=0)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
     target = resolve_target(args.db)
@@ -216,45 +287,12 @@ def main(argv=None):
     store.DB_PATH = target
     store.LOCK_PATH = target.parent / ".write.lock"
     source_db = args.source_db or str(store.CANONICAL_DB_PATH)
-    if args.game_id:
-        rows, row_season = load_possessions(source_db, args.game_id)
-        seasons = [row_season] if row_season else []
-        games = {row_season: [args.game_id]} if row_season else {}
-    else:
-        picked = [s.strip() for s in str(args.season).split(",") if s.strip()]
-        seasons = picked or available_seasons(source_db)
-        games = {}
-        for season in seasons:
-            ids = season_games(source_db, season)
-            if args.limit and args.limit > 0:
-                ids = ids[:args.limit]
-            games[season] = ids
+    seasons, games = _load_plan(args, source_db)
     if args.dry_run:
-        for season in seasons:
-            for gid in games.get(season, []):
-                print(f"{TABLE} {season} {gid}")
-        print(f"games: {sum(len(v) for v in games.values())}")
+        _print_plan(seasons, games)
         return 0
-    done = skipped = failed = 0
-    for season in seasons:
-        for gid in games.get(season, []):
-            if unit_complete(season, gid):
-                print(f"skip {TABLE} {season} {gid}", flush=True)
-                skipped += 1
-                continue
-            try:
-                ok, note = materialize_game(source_db, gid, season)
-            except Exception as exc:
-                print(f"failed {TABLE} {season} {gid}: {exc}"[:200],
-                      flush=True)
-                failed += 1
-                continue
-            if ok:
-                print(f"saved {TABLE} {season} {gid} {note}", flush=True)
-                done += 1
-            else:
-                print(f"skip {TABLE} {season} {gid}: {note}", flush=True)
-                skipped += 1
+    done, skipped, failed = _materialize_games(
+        seasons, games, source_db, args.budget_seconds)
     print(f"done games={done} skipped={skipped} failed={failed}")
     return 1 if failed else 0
 

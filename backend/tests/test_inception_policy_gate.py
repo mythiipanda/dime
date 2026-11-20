@@ -18,7 +18,8 @@ def test_explicit_policy_reactivates_inception(monkeypatch):
     _keys(monkeypatch); monkeypatch.setattr(settings,"dime_enable_inception",True)
     seen=[]
     monkeypatch.setattr(providers,"ChatOpenAI",lambda **kw: seen.append(kw) or object())
-    assert providers.fallback_order("inception")[0] == "gemini"
+    assert providers.fallback_order("inception")[0] == "openrouter"
+    assert providers.fallback_order("inception")[-1] == "inception"
     assert providers.resolve_model_id("inception:any") == (
         "inception", settings.inception_model)
     assert providers.get_llm("inception") is not None

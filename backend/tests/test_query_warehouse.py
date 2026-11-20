@@ -336,5 +336,84 @@ def test_from_position_function_calls_blocked(tiny_warehouse):
     assert out["ok"] is True, out.get("error")
     out = q.query_warehouse(
         "SELECT * FROM silver_standings, "
-        "LATERAL (SELECT WINS FROM silver_standings) t")
+        "LATERAL (SELECT WINS AS wins_lateral FROM silver_standings) t")
     assert out["ok"] is True, out.get("error")
+
+@pytest.fixture()
+def memory_warehouse(monkeypatch):
+    con = duckdb.connect(":memory:")
+    calls: list[str] = []
+    try:
+        con.execute(
+            "CREATE TABLE silver_standings "
+            "(TEAM TEXT, WINS INTEGER, _season TEXT)")
+        con.execute(
+            "INSERT INTO silver_standings VALUES "
+            "('OKC', 68, '2025-26'), ('BOS', 64, '2025-26')")
+
+        class SharedConnection:
+            def __init__(self, real):
+                self._real = real
+
+            @property
+            def description(self):
+                return self._real.description
+
+            def execute(self, *args, **kwargs):
+                if args:
+                    calls.append(str(args[0]))
+                return self._real.execute(*args, **kwargs)
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(store, "connect",
+                            lambda **_kw: SharedConnection(con))
+        yield con, calls
+    finally:
+        con.close()
+
+@pytest.mark.parametrize("sql,duplicate", [
+    ("SELECT 1 AS n, 2 AS n FROM silver_standings", "n"),
+    ("SELECT WINS AS n, TEAM AS n FROM silver_standings", "n"),
+    ("SELECT COUNT(*), COUNT(*) FROM silver_standings", "count_star()"),
+    ("SELECT a.WINS, b.WINS FROM silver_standings a "
+     "JOIN silver_standings b ON a.TEAM = b.TEAM", "WINS"),
+])
+def test_query_warehouse_rejects_duplicate_output_names(
+        memory_warehouse, sql, duplicate):
+    _con, calls = memory_warehouse
+    out = q.query_warehouse(sql)
+    assert out["ok"] is False
+    assert set(out) == {"tool", "ok", "error"}
+    assert "duplicate output column name" in out["error"]
+    assert duplicate in out["error"]
+    assert "unique alias" in out["error"]
+    assert "rows" not in out
+    assert calls.count(sql) == 1
+
+def test_query_warehouse_unique_aliases_preserve_values(memory_warehouse):
+    _con, calls = memory_warehouse
+    sql = ("SELECT WINS AS wins, TEAM AS team, WINS + 1 AS wins_plus "
+           "FROM silver_standings ORDER BY TEAM")
+    out = q.query_warehouse(sql)
+    assert out["ok"] is True, out.get("error")
+    assert out["columns"] == ["wins", "team", "wins_plus"]
+    assert out["rows"] == [
+        {"wins": 64, "team": "BOS", "wins_plus": 65},
+        {"wins": 68, "team": "OKC", "wins_plus": 69},
+    ]
+    assert out["truncated"] is False
+    assert out["meta"]["returned"] == 2
+    assert out["meta"]["row_cap"] == 500
+    assert calls.count(sql) == 1
+
+def test_query_warehouse_names_differing_only_by_case_are_distinct(
+        memory_warehouse):
+    _con, calls = memory_warehouse
+    sql = "SELECT 1 AS N, 2 AS n, 3 AS Wins FROM silver_standings"
+    out = q.query_warehouse(sql)
+    assert out["ok"] is True, out.get("error")
+    assert out["columns"] == ["N", "n", "Wins"]
+    assert out["rows"][0] == {"N": 1, "n": 2, "Wins": 3}
+    assert calls.count(sql) == 1

@@ -160,11 +160,12 @@ def _sgl_row(reb=5.0, fetched_at=None):
     }
 
 def test_search_game_logs_dedupes_before_filter_crossing_threshold(monkeypatch):
-    from shared.tools import gamelog
+    from shared.tools import gamelog, _core
+    monkeypatch.setattr(_core, "last_completed_season", lambda: "2025-26")
 
     old = _sgl_row(reb=6.0, fetched_at="2025-11-19T08:00:00")
     new = _sgl_row(reb=5.0, fetched_at="2025-11-20T08:00:00")
-    monkeypatch.setattr(gamelog, "_load_games", lambda *args: [old, new])
+    monkeypatch.setattr(gamelog, "_load_games", lambda *args, **kwargs: [old, new])
     monkeypatch.setattr(gamelog, "coerce_player_id", lambda player: 2544)
 
     out = gamelog.search_game_logs.invoke(
@@ -174,11 +175,12 @@ def test_search_game_logs_dedupes_before_filter_crossing_threshold(monkeypatch):
     assert out["rows"]["matches"] == []
 
 def test_search_game_logs_canonical_row_qualifies_and_flags(monkeypatch):
-    from shared.tools import gamelog
+    from shared.tools import gamelog, _core
+    monkeypatch.setattr(_core, "last_completed_season", lambda: "2025-26")
 
     old = _sgl_row(reb=5.0, fetched_at="2025-11-19T08:00:00")
     new = _sgl_row(reb=6.0, fetched_at="2025-11-20T08:00:00")
-    monkeypatch.setattr(gamelog, "_load_games", lambda *args: [old, new])
+    monkeypatch.setattr(gamelog, "_load_games", lambda *args, **kwargs: [old, new])
     monkeypatch.setattr(gamelog, "coerce_player_id", lambda player: 2544)
 
     out = gamelog.search_game_logs.invoke(

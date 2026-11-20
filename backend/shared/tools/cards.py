@@ -22,6 +22,7 @@ DESK_OVERRIDE = {
     "get_shot_compare": "player",
     "get_preview": "team",
     "get_scout_pack": "team",
+    "get_opponent_scout": "team",
     "get_rotation_check": "team",
     "get_injury_impact": "team",
     "get_matchup_preview": "preview",
@@ -44,8 +45,9 @@ def _family_for(name: str, tool) -> str:
     if name in DESK_OVERRIDE:
         return DESK_OVERRIDE[name]
     mod = getattr(getattr(tool, "func", None), "__module__", None) or ""
-    if mod.startswith(("app.tools.", "shared.tools.")):
-        return mod.rsplit(".", 1)[-1]
+    for prefix in ("app.tools.", "shared.tools."):
+        if mod.startswith(prefix):
+            return mod[len(prefix):].split(".", 1)[0]
     return "misc"
 
 def _cost_for(name: str) -> str:

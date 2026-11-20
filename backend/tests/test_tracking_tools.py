@@ -1,4 +1,3 @@
-
 import sys
 from pathlib import Path
 
@@ -7,8 +6,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shared import store as _store  # noqa: E402
-from shared.tools import tracking as _tracking  # noqa: E402
+from shared import store as _store
+from shared.tools import tracking as _tracking
 
 SEASON = "2025-26"
 PID = 2544
@@ -244,8 +243,9 @@ def test_tools_are_exported():
     assert "get_defensive_matchups" in _tools.TOOL_NAMES
 
 
-def test_capabilities_are_registered():
-    from v2.adapters.capabilities import CAPABILITIES
+def test_analyst_catalogue_registered():
+    from analyst import python_tools
 
-    assert CAPABILITIES["tracking_profile"].tool_name == "get_tracking_profile"
-    assert CAPABILITIES["defensive_matchups"].tool_name == "get_defensive_matchups"
+    tools = python_tools.catalogue()
+    assert "get_tracking_profile" in tools
+    assert "get_defensive_matchups" in tools

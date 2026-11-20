@@ -232,6 +232,42 @@ export function getClientId(): string {
   return id;
 }
 
+async function withPiSources(payload: unknown, thread: string | null | undefined, signal: AbortSignal): Promise<unknown> {
+  if (thread && payload && typeof payload === "object" &&
+      "carry" in payload && payload.carry && typeof payload.carry === "object" &&
+      "run_id" in payload.carry && typeof payload.carry.run_id === "string" &&
+      "source_refs" in payload.carry) {
+    try {
+      const query = new URLSearchParams({ thread, client: getClientId() });
+      const sources = await fetch(`${BACKEND}/api/v2/runs/${encodeURIComponent(payload.carry.run_id)}/sources?${query}`, { signal });
+      if (sources.ok) {
+        const artifact: unknown = await sources.json();
+        if (artifact && typeof artifact === "object" && "sources" in artifact) {
+          payload = {
+            ...payload,
+            carry: {
+              ...payload.carry,
+              sources: artifact.sources,
+              ...("submission" in artifact && artifact.submission ? { submission: artifact.submission } : {})
+            }
+          };
+        }
+      }
+    } catch {
+      // Keep the answer and opaque refs when source retrieval is unavailable.
+    }
+  }
+  return payload;
+}
+
+function parseSseFrame(frame: string): { type: string; payload: unknown } {
+  const lines = frame.split("\n");
+  const typeLine = lines.find(line => line.startsWith("event:"));
+  const data = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trim());
+  if (!typeLine || !data.length) throw new SyntaxError("Incomplete SSE frame");
+  return { type: typeLine.slice(6).trim(), payload: JSON.parse(data.join("\n")) };
+}
+
 export async function postChatStream(
   q: string,
   model: string | null,
@@ -330,20 +366,14 @@ export async function postChatStream(
     const parts = buf.split("\n\n");
     buf = parts.pop() || "";
     for (const part of parts) {
-      const typeLine = part.split("\n").find((l) => l.startsWith("event:"));
-      const dataLines = part
-        .split("\n")
-        .filter((l) => l.startsWith("data:"))
-        .map((l) => l.slice(5).trim());
-      if (!typeLine || !dataLines.length) continue;
       try {
-        const eventType = typeLine.slice(6).trim();
-        if (eventType === "graph_end") terminal = true;
-
-        handlers.onEvent(
-          eventType,
-          JSON.parse(dataLines.join("\n")),
-        );
+        const frame = parseSseFrame(part);
+        if (frame.type === "graph_end") terminal = true;
+        if (frame.type === "final_answer") {
+          handlers.onEvent(frame.type, await withPiSources(frame.payload, thread, ctrl.signal));
+        } else {
+          handlers.onEvent(frame.type, frame.payload);
+        }
       } catch {
         continue;
       }
@@ -494,15 +524,21 @@ export function appendCachedRun(thread: string, run: RunInfo): void {
   lsSet(RUNS_KEY(thread), cached.slice(-MAX_CACHED_RUNS));
 }
 
-export async function getThreads(): Promise<ThreadInfo[]> {
+type ThreadLoad = { rows: ThreadInfo[]; error: string | null; fromCache: boolean };
+
+export function getThreads(): Promise<ThreadInfo[]>;
+export function getThreads(options: { withStatus: true }): Promise<ThreadLoad>;
+export async function getThreads(options?: { withStatus: true }): Promise<ThreadInfo[] | ThreadLoad> {
+  let result: ThreadLoad;
   try {
     const res = await fetch(`${BACKEND}${apiPath(`/threads?client=${encodeURIComponent(getClientId())}`)}`);
-    if (!res.ok) return loadCachedThreads();
+    if (!res.ok) throw new Error(`Could not load conversations (HTTP ${res.status}).`);
     const server = ((await res.json()).threads || []) as ThreadInfo[];
-    return mergeThreads(server);
-  } catch {
-    return loadCachedThreads();
+    result = { rows: mergeThreads(server), error: null, fromCache: false };
+  } catch (error) {
+    result = { rows: loadCachedThreads(), error: error instanceof Error ? error.message : "Could not load conversations.", fromCache: true };
   }
+  return options?.withStatus ? result : result.rows;
 }
 
 export interface RunInfo {

@@ -118,6 +118,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_boxscore: "Box scores",
   get_briefing: "Briefing",
   get_cap_ledger: "Cap sheet",
+  get_career_arc: "Career arc",
   get_career_totals: "Career totals",
   get_clutch: "Clutch stats",
   get_combine: "Combine",
@@ -125,7 +126,10 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_competitive_ratings: "Competitive ratings",
   get_comps: "Comparisons",
   get_contract_value: "Contract values",
+  get_dataset: "Data engine",
+  get_dataset_freshness: "Data freshness",
   get_debate_card: "Debate cards",
+  get_defensive_matchups: "Defensive matchups",
   get_draft_board: "Draft board",
   get_draft_model: "Draft model",
   get_elo: "Elo",
@@ -151,6 +155,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_lineup_matchup_matrix: "Lineup matchups",
   get_lineup_stats: "Lineup stats",
   get_lineups: "Lineups",
+  get_matchup_brief: "Matchup brief",
   get_matchup_preview: "Matchup preview",
   get_matchup_splits: "Matchup splits",
   get_morning_briefing: "Morning briefing",
@@ -166,6 +171,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_playoff_sim: "Playoff simulator",
   get_playoff_team_ratings: "Playoff team ratings",
   get_playoffs: "Playoffs",
+  get_playtype_profile: "Play types",
+  get_possession_log: "Possession log",
   get_preview: "Preview",
   get_rapm: "RAPM",
   get_rapm_prior: "RAPM priors",
@@ -184,6 +191,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_season_series: "Season series",
   get_shot_compare: "Shot comparison",
   get_shot_zones: "Shot zones",
+  get_splits: "Player splits",
+  get_stint_timeline: "Lineup stints",
   get_team_compare: "Team comparison",
   get_team_four_factors: "Four factors",
   get_team_game_log: "Game log",
@@ -193,8 +202,10 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_team_splits: "Team splits",
   get_team_trajectory: "Trajectory",
   get_today: "Today's games",
+  get_tracking_profile: "Tracking stats",
   get_trade_check: "Trade checker",
   get_trade_value: "Trade values",
+  get_transactions: "Transactions",
   get_trend: "Trends",
   get_warehouse_freshness: "Data freshness",
   get_watchlist: "Watchlist",
@@ -645,4 +656,79 @@ export function withCitationMarkers(text: string, sources: EvidenceSource[]): st
     out = out.replace(rx, value + marker);
   });
   return out;
+}
+
+
+export interface PiSource {
+  ref: string;
+  tool: string;
+  label: string;
+  rows: Record<string, unknown>[];
+  units: Record<string, string>;
+  data: unknown;
+}
+
+export function parsePiSources(raw: unknown): PiSource[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((record): PiSource[] => {
+    if (!isRecord(record) || typeof record.ref !== "string" || typeof record.tool !== "string" ||
+        !isRecord(record.response) || !Array.isArray(record.response.content)) return [];
+    const text = record.response.content.find((item: unknown) => isRecord(item) && item.type === "text");
+    if (!isRecord(text) || typeof text.text !== "string") return [];
+    try {
+      const data: unknown = JSON.parse(text.text);
+      const rows = isRecord(data) && Array.isArray(data.rows) ? data.rows.filter(isRecord) : [];
+      const meta = isRecord(data) && isRecord(data.meta) ? data.meta : {};
+      const tables = Array.isArray(meta.tables) ? meta.tables.filter((table): table is string => typeof table === "string") : [];
+      const units: Record<string, string> = {};
+      if (isRecord(data) && isRecord(data.declared_column_semantics)) {
+        for (const [column, semantics] of Object.entries(data.declared_column_semantics)) {
+          if (isRecord(semantics) && typeof semantics.unit === "string") units[column] = semantics.unit;
+        }
+      }
+      return [{ ref: record.ref, tool: record.tool, label: tables.join(", ") || record.tool, rows, units, data }];
+    } catch { return [{ ref: record.ref, tool: record.tool, label: record.tool, rows: [], units: {}, data: text.text }]; }
+  });
+}
+
+export interface AnchorSelector {
+  ref: string;
+  row: number;
+  columns: string[];
+}
+
+export interface AnswerBlock {
+  text: string;
+  anchors: AnchorSelector[];
+}
+
+export interface AnswerSubmission {
+  blocks: AnswerBlock[];
+}
+
+export function parseAnswerSubmission(raw: unknown): AnswerSubmission | null {
+  if (!isRecord(raw) || !Array.isArray(raw.blocks) || raw.blocks.length === 0) return null;
+  const blocks: AnswerBlock[] = [];
+  for (const item of raw.blocks) {
+    if (!isRecord(item) || typeof item.text !== "string" || !item.text || !Array.isArray(item.anchors)) return null;
+    const anchors: AnchorSelector[] = [];
+    for (const a of item.anchors) {
+      if (
+        !isRecord(a) ||
+        typeof a.ref !== "string" ||
+        !a.ref ||
+        typeof a.row !== "number" ||
+        !Number.isInteger(a.row) ||
+        a.row < 0 ||
+        !Array.isArray(a.columns) ||
+        a.columns.length === 0 ||
+        !a.columns.every((c): c is string => typeof c === "string" && c.length > 0)
+      ) {
+        return null;
+      }
+      anchors.push({ ref: a.ref, row: a.row, columns: [...a.columns] });
+    }
+    blocks.push({ text: item.text, anchors });
+  }
+  return { blocks };
 }

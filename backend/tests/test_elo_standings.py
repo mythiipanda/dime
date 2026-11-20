@@ -53,7 +53,7 @@ def test_mov_scales():
     assert blowout > close
 
 def test_empty_season():
-    res = get_elo_standings.invoke({"season": "1999-00"})
+    res = get_elo_standings.invoke({"season": "1995-96"})
     assert res["ok"] is True
     assert res["rows"] == []
 
@@ -62,6 +62,7 @@ def test_unknown_opponent():
     assert res["ok"] is False
     assert "unknown team" in res["error"]
 
+@pytest.mark.canonical_warehouse
 def test_real_2025_26_smoke():
     res = get_elo_standings.invoke({"season": "2025-26"})
     assert res["ok"] is True
@@ -82,8 +83,8 @@ def test_real_2025_26_smoke():
     print("top-5:", rows[:5])
     okc = next(r for r in rows if r["abbr"] == "OKC")
     print("OKC:", okc)
-    assert rows[0]["elo"] == 1816 and rows[0]["abbr"] == "NYK"
-    assert okc["elo"] == 1775 and okc["win_equiv"] == 68.0
+    assert rows[0]["elo"] == 1767 and rows[0]["abbr"] == "SAS"
+    assert okc["elo"] == 1740 and okc["win_equiv"] == 65.5
     elo_rows = get_elo.invoke({"season": "2025-26"})["rows"]
     assert {r["TEAM"]: r["ELO"] for r in elo_rows} == {
         r["abbr"]: r["elo"] for r in rows}

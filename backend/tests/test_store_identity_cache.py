@@ -1,6 +1,7 @@
 import hashlib
 import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -64,6 +65,7 @@ def test_off_probe_region_byte_mutation_with_restored_mtime_and_size_is_never_st
     first = store.warehouse_identity()
     assert first["warehouse_sha256"] == hashlib.sha256(payload).hexdigest()
     stat = db.stat()
+    time.sleep(0.01)
     mutated = bytearray(payload)
     mutated[20000] = ord("b")
     db.write_bytes(mutated)
@@ -83,6 +85,7 @@ def test_in_place_single_byte_mutation_with_restored_mtime_is_never_stale(monkey
     store.warehouse_identity_cache_clear()
     first = store.warehouse_identity()
     stat = db.stat()
+    time.sleep(0.01)
     with open(db, "r+b") as handle:
         handle.seek(20000)
         handle.write(b"q")
@@ -110,6 +113,7 @@ def _torn_digest_for(db: Path, payload: bytes, mutated: bytes, offset: int, stat
         os.lseek(descriptor, 0, os.SEEK_SET)
         half = len(payload) // 2
         digest.update(os.read(descriptor, half))
+        time.sleep(0.01)
         with open(db, "r+b") as handle:
             handle.seek(offset)
             handle.write(mutated)
@@ -182,6 +186,7 @@ def test_change_token_advances_when_mtime_and_size_are_restored(tmp_path):
         os.close(descriptor)
     assert isinstance(before, int)
     stat = db.stat()
+    time.sleep(0.01)
     with open(db, "r+b") as handle:
         handle.seek(4096)
         handle.write(b"m")
@@ -369,48 +374,13 @@ def test_derivation_contract_is_a_named_version():
     assert "sample" not in inspect.getsource(store._warehouse_identity_uncached)
 
 
-def test_manifest_records_the_derivation_version(monkeypatch, tmp_path):
-    db = _point_db_at(monkeypatch, tmp_path)
-    from v2.api import routes
-    routes.runtime_warehouse_identity.cache_clear()
-    try:
-        recorded = routes.runtime_warehouse_identity()
-        assert recorded["sha256_derivation"] == store.WAREHOUSE_SHA256_DERIVATION
-        assert recorded["sha256"] == hashlib.sha256(b"warehouse-bytes-v1").hexdigest()
-        routes.runtime_asset_manifest.cache_clear()
-        manifest = routes.runtime_asset_manifest()
-        assert dict(manifest.warehouse) == recorded
-    finally:
-        routes.runtime_warehouse_identity.cache_clear()
-        routes.runtime_asset_manifest.cache_clear()
 
 
-def test_manifest_recorded_under_another_derivation_is_rejected_as_incompatible(
-        monkeypatch, tmp_path):
-    import json
-    from v2.api import routes
-    db = _point_db_at(monkeypatch, tmp_path)
-    routes.runtime_warehouse_identity.cache_clear()
-    routes.runtime_asset_manifest.cache_clear()
-    try:
-        observed = routes.runtime_asset_manifest().as_dict()
-    finally:
-        routes.runtime_warehouse_identity.cache_clear()
-        routes.runtime_asset_manifest.cache_clear()
-    for recorded_derivation in (None, "sha256-sampled", "sha256-head-tail"):
-        candidate = json.loads(json.dumps(observed))
-        if recorded_derivation is None:
-            del candidate["warehouse"]["sha256_derivation"]
-        else:
-            candidate["warehouse"]["sha256_derivation"] = recorded_derivation
-        path = tmp_path / f"stale-derivation-{recorded_derivation}.json"
-        path.write_text(json.dumps(candidate))
-        with pytest.raises(RuntimeError, match="derivation"):
-            routes.preflight_runtime_assets(path)
 
 
 def test_absent_error_factory_is_single_sourced():
-    source = Path(store.__file__).read_text(encoding="utf-8")
+    source = "\n".join(p.read_text(encoding="utf-8")
+                       for p in sorted(Path(store.__file__).parent.glob("*.py")))
     assert source.count("f\"warehouse absent: {path}\"") == 1
     assert "f\"warehouse absent: {DB_PATH}\"" not in source
     factory_definition = "def _warehouse_absent_error(path: Path | str) -> FileNotFoundError:"
@@ -418,7 +388,7 @@ def test_absent_error_factory_is_single_sourced():
     constructions = [line.strip() for line in source.splitlines()
                      if "FileNotFoundError(" in line]
     assert constructions == ["return FileNotFoundError(f\"warehouse absent: {path}\")"]
-    assert source.count("raise _warehouse_absent_error(") == 2
+    assert source.count("raise pkg._warehouse_absent_error(") == 2
 
 
 def _point_db_at_absent(monkeypatch, tmp_path):

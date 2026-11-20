@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -10,7 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import store
 from shared.tools import league as league_mod
 from shared.tools import team as team_mod
-from v2.adapters import call_capability
 
 REPO_WAREHOUSE = (
     Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
@@ -60,16 +60,18 @@ def _season_points_pg(con, team_city, season):
 def _playoff_round_wins(con, team, opponent, season, round_code):
     return con.execute(
         "SELECT COUNT(*) FILTER (WHERE wl = 'W'), COUNT(DISTINCT game_id)"
-        " FROM silver_playoffs"
-        " WHERE _season = ? AND team_abbreviation = ? AND MATCHUP ILIKE ?"
+        " FROM silver_hist_gamelogs"
+        " WHERE _season = ? AND season_type = 'playoffs'"
+        "   AND team_abbreviation = ? AND matchup ILIKE ?"
         "   AND SUBSTR(game_id, 8, 1) = ?",
         [season, team, f"%{opponent}%", round_code],
     ).fetchone()
 
 def _brief(a, b, season):
-    env = call_capability("matchup_brief", {"a": a, "b": b, "season": season})
-    assert env.capability == "matchup_brief"
-    return env.rows
+    out = asyncio.run(team_mod.get_matchup_brief.ainvoke(
+        {"a": a, "b": b, "season": season}))
+    assert out["ok"] is True
+    return out["rows"]
 
 def _split(rows, name):
     return next(row for row in rows if row["split"] == name)
@@ -181,6 +183,7 @@ def _synthetic_splits():
     return out
 
 def test_split_omits_a_rate_the_warehouse_cannot_supply(tmp_path, monkeypatch):
+    _skip_without_warehouse()
     _synthetic(tmp_path, monkeypatch, [None, None, None], ["W", "W", "L"])
     row = _split(_synthetic_splits()["rows"], "last10")
     assert row["GP"] == 3
@@ -190,6 +193,7 @@ def test_split_omits_a_rate_the_warehouse_cannot_supply(tmp_path, monkeypatch):
 def test_split_divides_a_rate_by_the_games_that_carry_a_score(
     tmp_path, monkeypatch,
 ):
+    _skip_without_warehouse()
     _synthetic(tmp_path, monkeypatch, [120.0, None, 90.0], ["W", "L", "W"])
     row = _split(_synthetic_splits()["rows"], "last10")
     assert row["GP"] == 3
@@ -199,6 +203,7 @@ def test_split_divides_a_rate_by_the_games_that_carry_a_score(
 def test_split_does_not_count_an_undecided_game_as_a_loss(
     tmp_path, monkeypatch,
 ):
+    _skip_without_warehouse()
     _synthetic(tmp_path, monkeypatch, [120.0, 90.0, 0.0], ["W", "L", None])
     row = _split(_synthetic_splits()["rows"], "last10")
     assert row["GP"] == 3
@@ -222,6 +227,7 @@ def test_warehouse_undecided_game_is_not_published_as_a_loss():
         row = _split(out["rows"], "last10")
         assert row["UNDECIDED"] == row["GP"] - row["W"] - row["L"]
 
+@pytest.mark.canonical_warehouse
 @pytest.mark.parametrize(
     "a, b, season, round_code",
     [
@@ -255,6 +261,7 @@ def test_season_series_keeps_game_wins_and_series_wins_distinct(
     assert summary["series"][0]["games_won"] == {a: series_a, b: series_b}
     assert summary["games_undecided"] == 0
 
+@pytest.mark.canonical_warehouse
 def test_a_game_count_never_satisfies_a_series_count():
     _skip_without_warehouse()
     summary = _brief("BOS", "NYK", "2024-25")["season_series"]["summary"]
@@ -301,6 +308,7 @@ def test_leader_qualification_publishes_the_value_the_floor_applies_to():
         assert f"{round(minutes):,}" in out["meta"]["deterministic_answer"]
         assert "total minutes" in out["meta"]["deterministic_answer"]
 
+@pytest.mark.canonical_warehouse
 def test_per_game_minutes_cannot_answer_the_total_minutes_floor():
     _skip_without_warehouse()
     with _warehouse() as con:

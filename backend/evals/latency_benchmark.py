@@ -142,6 +142,28 @@ def _run_id_of(data):
     return None
 
 
+def _record_tool_timing(event_type, data, durations):
+    if event_type != TOOL_RESULT:
+        return False
+    ms = data.get("ms")
+    if not isinstance(ms, (int, float)) or isinstance(ms, bool):
+        return False
+    name = data.get("name")
+    key = name if isinstance(name, str) and name else "unknown"
+    durations[key] = round(durations.get(key, 0.0) + ms / 1000.0, 6)
+    return True
+
+
+def _legacy_frame_part(event_type, data, text):
+    if text is None or "node" in data:
+        return None
+    if _run_id_of(data) is not None:
+        return "legacy"
+    if event_type is None:
+        return "fallback"
+    return None
+
+
 def summarize_frames(frames):
     ttft = None
     answer = None
@@ -164,19 +186,16 @@ def summarize_frames(frames):
             continue
         if event_type in (TOOL_CALL, TOOL_RESULT):
             saw_tool = True
-        if event_type == TOOL_RESULT:
-            ms = data.get("ms")
-            if isinstance(ms, (int, float)) and not isinstance(ms, bool):
-                name = data.get("name")
-                key = name if isinstance(name, str) and name else "unknown"
-                durations[key] = round(durations.get(key, 0.0) + ms / 1000.0, 6)
-                saw_timing = True
+        if _record_tool_timing(event_type, data, durations):
+            saw_timing = True
         if event_type == FINAL_ANSWER and text is not None:
             answer = text
-        elif text is not None and _run_id_of(data) is not None and "node" not in data:
-            legacy_parts.append(text)
-        elif event_type is None and text is not None and "node" not in data:
-            fallback_parts.append(text)
+        else:
+            part = _legacy_frame_part(event_type, data, text)
+            if part == "legacy":
+                legacy_parts.append(text)
+            elif part == "fallback":
+                fallback_parts.append(text)
     if answer is None:
         answer = "".join(legacy_parts) if legacy_parts else "".join(fallback_parts)
     if not frames:

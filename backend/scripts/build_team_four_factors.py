@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store
-from v2.adapters import coverage
+from shared import coverage
 
 SQL = """
 WITH games AS (

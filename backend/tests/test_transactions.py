@@ -58,7 +58,7 @@ def _frame(monkeypatch, rows=None):
 
 
 def _seasons(monkeypatch, seasons):
-    import v2.adapters.coverage as coverage
+    import shared.coverage as coverage
 
     monkeypatch.setattr(coverage, "table_seasons", lambda *a, **k: set(seasons))
 

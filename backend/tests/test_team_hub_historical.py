@@ -1,4 +1,3 @@
-
 import sys
 from pathlib import Path
 
@@ -144,6 +143,33 @@ def test_summary_exact_on_hist_slice(hist_db):
     assert s["ppg"] == pytest.approx(341 / 3, abs=0.05)
     assert s["ts_pct"] == pytest.approx(
         round(100 * 341 / (2 * (93 + 0.44 * 30)), 1))
+
+def test_team_season_summary_reads_hist_slice(monkeypatch, hist_db):
+    monkeypatch.setattr(store, "warehouse_identity", lambda: {
+        "warehouse_id": "configured-runtime",
+        "warehouse_sha256": "0" * 64,
+    })
+    out = team_mod.get_team_season_summary.invoke({
+        "team_id": 2,
+        "season": "2024-25",
+        "period_scope": "regular_season",
+    })
+
+    assert out["ok"] is True
+    assert out["rows"] == [{
+        "TEAM_ID": 2,
+        "SEASON": "2024-25",
+        "PERIOD_SCOPE": "regular_season",
+        "GAMES": 3,
+        "WINS": 2,
+        "LOSSES": 1,
+        "PTS": 341,
+        "PPG": pytest.approx(341 / 3),
+    }]
+    assert out["meta"]["season"] == "2024-25"
+    assert out["meta"]["source"] == "warehouse:silver_hist_gamelogs"
+    assert out["meta"]["warehouse_id"] == "configured-runtime"
+    assert "completeness is unverified" in out["meta"]["coverage"]
 
 def test_summary_realistic_rows_partial_season():
     games = [

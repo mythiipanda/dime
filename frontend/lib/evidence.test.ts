@@ -15,6 +15,9 @@ import {
   withCitationMarkers,
   withUnverifiedMarkers,
   gapMessage,
+  parseAnswerSubmission,
+  parsePiSources,
+  type PiSource,
 } from "./evidence";
 import type { AiMessage } from "./chat";
 
@@ -356,7 +359,7 @@ const BANNED_TOKENS = ["silver_", "warehouse", "evidence_id", "_season", "Eviden
 test("registry tools all have a display decision", () => {
   const toolsDir = join(process.cwd(), "..", "backend", "shared", "tools");
   const names = new Set<string>();
-  for (const file of readdirSync(toolsDir)) {
+  for (const file of readdirSync(toolsDir, { recursive: true, encoding: "utf8" })) {
     if (!file.endsWith(".py")) continue;
     const src = readFileSync(join(toolsDir, file), "utf8");
     for (const m of src.matchAll(/@tool\b[^\n]*\ndef ([a-z_0-9]+)/g)) names.add(m[1]);
@@ -385,6 +388,84 @@ test("registry tools all have a display decision", () => {
     if (mapped.has(name)) continue;
     const label = capabilityLabel(name);
     for (const token of BANNED_TOKENS) assert.ok(!label.includes(token), `${name} fallback leaks ${token}`);
+  }
+});
+
+const NEW_REGISTRY_CASES: Array<[string, string]> = [
+  ["get_defensive_matchups", "Defensive matchups"],
+  ["get_playtype_profile", "Play types"],
+  ["get_possession_log", "Possession log"],
+  ["get_stint_timeline", "Lineup stints"],
+  ["get_tracking_profile", "Tracking stats"],
+  ["get_transactions", "Transactions"],
+];
+
+test("newly registered capabilities are curated, not left to the fallback", () => {
+  for (const [capability, label] of NEW_REGISTRY_CASES) {
+    assert.equal(capabilityLabel(capability), label);
+    assert.ok(!label.includes("_"), label + " keeps a machine token");
+    assert.ok(!label.includes("get"), label + " keeps the tool prefix");
+  }
+});
+
+test("new capability claims read as plain sources and pills", () => {
+  const tables = NEW_REGISTRY_CASES.map(([capability]) => ({
+    ...CLAIM_TABLE,
+    provenance: { capability, season: "2024-25", as_of: "2025-04-14" },
+  }));
+  const sources = evidenceSources(aiWith({}, tables));
+  assert.equal(sources.length, 6);
+  assert.deepEqual(sources.map((s) => s.origin), [
+    "Defensive matchups, 2024-25 season",
+    "Play types, 2024-25 season",
+    "Possession log, 2024-25 season",
+    "Lineup stints, 2024-25 season",
+    "Tracking stats, 2024-25 season",
+    "Transactions, 2024-25 season",
+  ]);
+  assert.deepEqual(contextPills(aiWith({}, tables)), [
+    "2024-25",
+    "Defensive matchups",
+    "Play types",
+  ]);
+  const shown = JSON.stringify(sources.map((s) => [s.subject, s.stat, s.value, s.origin]));
+  for (const [capability] of NEW_REGISTRY_CASES) {
+    assert.ok(!shown.includes(capability), "leaked " + capability);
+  }
+});
+
+test("new capability tools keep their truthful evidence note", () => {
+  const live = {
+    tool: "get_transactions",
+    rows: [{ team: "BOS" }],
+    meta: {
+      capability: "get_transactions",
+      season: "2024-25",
+      source: "espn",
+      evidence_status: "ineligible",
+      evidence_reason: "live_external_no_warehouse_provenance",
+    },
+  };
+  const unlisted = {
+    tool: "get_playtype_profile",
+    rows: [{ subject: "BOS" }],
+    meta: {
+      capability: "get_playtype_profile",
+      season: "2024-25",
+      evidence_status: "ineligible",
+      evidence_reason: "unlisted_kind",
+    },
+  };
+  const sources = evidenceSources(aiWith({}, [live, unlisted]));
+  assert.equal(sources[0].stat, "Transactions");
+  assert.equal(sources[0].origin, "Transactions, 2024-25 season");
+  assert.equal(sources[0].note, "ESPN live data — couldn't be traced to source data.");
+  assert.equal(sources[1].stat, "Play types");
+  assert.equal(sources[1].origin, "Play types, 2024-25 season");
+  assert.equal(sources[1].note, "Couldn't be traced to source data.");
+  const shown = JSON.stringify(sources.map((s) => [s.stat, s.origin, s.note]));
+  for (const token of [...BANNED_TOKENS, "live_external_no_warehouse_provenance", ...NEW_REGISTRY_CASES.map(([c]) => c)]) {
+    assert.ok(!shown.includes(token), "leaked " + token);
   }
 });
 
@@ -447,4 +528,164 @@ test("espn evidence reads as plain words with no infra tokens", () => {
   for (const token of [...BANNED_TOKENS, "live_external_no_warehouse_provenance"]) {
     assert.ok(!shown.includes(token), "leaked " + token);
   }
+});
+
+
+test("parseAnswerSubmission accepts valid blocks and anchors", () => {
+  const raw = {
+    blocks: [
+      {
+        text: "Leading prose statement.",
+        anchors: [{ ref: "src-1", row: 0, columns: ["PTS", "PLAYER"] }],
+      },
+      {
+        text: "Secondary statement without anchors.",
+        anchors: [],
+      },
+    ],
+  };
+  const parsed = parseAnswerSubmission(raw);
+  assert.ok(parsed);
+  assert.equal(parsed.blocks.length, 2);
+  assert.equal(parsed.blocks[0].text, "Leading prose statement.");
+  assert.equal(parsed.blocks[0].anchors[0].ref, "src-1");
+  assert.equal(parsed.blocks[0].anchors[0].row, 0);
+  assert.deepEqual(parsed.blocks[0].anchors[0].columns, ["PTS", "PLAYER"]);
+  assert.equal(parsed.blocks[1].anchors.length, 0);
+});
+
+test("parseAnswerSubmission rejects malformed payloads and invalid boundaries", () => {
+  assert.equal(parseAnswerSubmission(null), null);
+  assert.equal(parseAnswerSubmission(undefined), null);
+  assert.equal(parseAnswerSubmission("not-an-object"), null);
+  assert.equal(parseAnswerSubmission([]), null);
+  assert.equal(parseAnswerSubmission({}), null);
+  assert.equal(parseAnswerSubmission({ blocks: [] }), null); // empty blocks array rejected
+  assert.equal(parseAnswerSubmission({ blocks: [{ text: "", anchors: [] }] }), null); // empty text rejected
+  assert.equal(parseAnswerSubmission({ blocks: [{ text: "valid", anchors: "not-array" }] }), null);
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "", row: 0, columns: ["c"] }] }], // empty ref
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: -1, columns: ["c"] }] }], // negative row
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 1.5, columns: ["c"] }] }], // non-integer row
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 0, columns: [] }] }], // empty columns
+    }),
+    null
+  );
+  assert.equal(
+    parseAnswerSubmission({
+      blocks: [{ text: "valid", anchors: [{ ref: "s", row: 0, columns: [123] }] }], // non-string columns
+    }),
+    null
+  );
+});
+
+test("anchor resolvability logic distinguishes hydrated sources from unhydrated/invalid", () => {
+  const sources: PiSource[] = [
+    {
+      ref: "src-1",
+      tool: "sql_exec",
+      label: "Season Totals",
+      units: { PTS: "points" },
+      rows: [{ PTS: 30, PLAYER: "Luka" }],
+      data: { origin: "warehouse", sources: [] },
+    },
+  ];
+
+  function resolveAnchor(anchor: { ref: string; row: number; columns: string[] }, sList?: PiSource[]) {
+    const s = sList?.find((item) => item.ref === anchor.ref);
+    const rowData = s?.rows?.[anchor.row];
+    return Boolean(
+      rowData &&
+      anchor.columns.length > 0 &&
+      anchor.columns.every((c) => Object.hasOwn(rowData as object, c))
+    );
+  }
+
+  // Hydration absent (sources undefined or empty) -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS"] }, undefined), false);
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS"] }, []), false);
+
+  // Valid hydrated source, row, and columns -> resolves
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["PTS", "PLAYER"] }, sources), true);
+
+  // Row out of bounds -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 5, columns: ["PTS"] }, sources), false);
+
+  // Column missing on row -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-1", row: 0, columns: ["REB"] }, sources), false);
+
+  // Unknown ref -> must not resolve
+  assert.equal(resolveAnchor({ ref: "src-unknown", row: 0, columns: ["PTS"] }, sources), false);
+});
+
+test("parsePiSources preserves plain-text tool errors and keeps JSON success", () => {
+  const rawError = "Tool execution failed: warehouse read failed";
+  const parsed = parsePiSources([
+    {
+      ref: "src-err",
+      tool: "run_python",
+      response: { content: [{ type: "text", text: rawError }] },
+    },
+    {
+      ref: "src-ok",
+      tool: "sql_exec",
+      response: {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              rows: [{ PTS: 30, PLAYER: "Luka" }],
+              meta: { tables: ["Season Totals"] },
+              declared_column_semantics: { PTS: { unit: "points" } },
+            }),
+          },
+        ],
+      },
+    },
+    { ref: "src-bad", tool: "sql_exec", response: { content: [{ type: "text", text: 42 }] } },
+    { tool: "sql_exec", response: { content: [{ type: "text", text: rawError }] } },
+    "not-a-record",
+  ]);
+  assert.equal(parsed.length, 2);
+  const err = parsed[0];
+  assert.equal(err.ref, "src-err");
+  assert.equal(err.tool, "run_python");
+  assert.equal(err.label, "run_python");
+  assert.deepEqual(err.rows, []);
+  assert.deepEqual(err.units, {});
+  assert.equal(err.data, rawError);
+  assert.equal(JSON.stringify(err.data), JSON.stringify(rawError));
+  const ok = parsed[1];
+  assert.equal(ok.label, "Season Totals");
+  assert.deepEqual(ok.rows, [{ PTS: 30, PLAYER: "Luka" }]);
+  assert.deepEqual(ok.units, { PTS: "points" });
+  assert.deepEqual(ok.data, {
+    rows: [{ PTS: 30, PLAYER: "Luka" }],
+    meta: { tables: ["Season Totals"] },
+    declared_column_semantics: { PTS: { unit: "points" } },
+  });
+  assert.equal(err.rows[0], undefined);
+  const rowData = err.rows[0];
+  assert.equal(Boolean(rowData && ["PTS"].every((c) => Object.hasOwn(rowData as object, c))), false);
+  assert.deepEqual(parsePiSources("not-an-array"), []);
+  assert.deepEqual(
+    parsePiSources([{ ref: "src-x", tool: "t", response: { content: "not-array" } }]),
+    []
+  );
 });

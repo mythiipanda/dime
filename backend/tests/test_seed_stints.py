@@ -77,6 +77,10 @@ def dbs(monkeypatch, tmp_path):
     return source, target
 
 
+def _source_con(path):
+    return duckdb.connect(str(path), read_only=True)
+
+
 def _target_rows(game):
     con = store.connect(read_only=True)
     try:
@@ -94,7 +98,11 @@ def _target_rows(game):
 
 def test_materialize_game_writes_stints_and_watermark(dbs):
     source, _ = dbs
-    ok, note = seed.materialize_game(str(source), GAME)
+    con = _source_con(source)
+    try:
+        ok, note = seed.materialize_game(con, GAME)
+    finally:
+        con.close()
     assert ok
     assert note == "2 stints"
     assert _target_rows(GAME) == [
@@ -106,24 +114,34 @@ def test_materialize_game_writes_stints_and_watermark(dbs):
 
 def test_materialize_game_rerun_is_idempotent(dbs):
     source, _ = dbs
-    assert seed.materialize_game(str(source), GAME)[0]
-    assert seed.materialize_game(str(source), GAME)[0]
+    con = _source_con(source)
+    try:
+        assert seed.materialize_game(con, GAME)[0]
+        assert seed.materialize_game(con, GAME)[0]
+    finally:
+        con.close()
     assert len(_target_rows(GAME)) == 2
     assert store.last_fetch("silver_stints", "2025-26", GAME)
 
 
 def test_materialize_unknown_game_reports_no_rows(dbs):
     source, _ = dbs
-    ok, note = seed.materialize_game(str(source), "0000000000")
+    con = _source_con(source)
+    try:
+        ok, note = seed.materialize_game(con, "0000000000")
+    finally:
+        con.close()
     assert not ok
     assert note == "no possession rows"
-    assert not seed.unit_complete("2025-26", "0000000000")
+    assert "0000000000" not in seed._completed_entities("2025-26")
 
 
 def test_crash_before_watermark_leaves_clean_resume(dbs):
     source, _ = dbs
-    rows, season = seed.load_possessions(str(source), GAME)
-    placed = seed.resolve_home_away(str(source), GAME)
+    con = _source_con(source)
+    rows, season = seed.load_possessions(con, GAME)
+    placed = seed.resolve_home_away(con, GAME)
+    con.close()
     assert placed is not None
     frame = seed.stints_frame(GAME, rows, season, placed)
     with pytest.raises(RuntimeError, match="simulated crash"):
@@ -131,8 +149,12 @@ def test_crash_before_watermark_leaves_clean_resume(dbs):
             "silver_stints", frame, season, seed.SOURCE, GAME,
             "game_id = ?", [GAME], _fault="after_insert")
     assert _target_rows(GAME) == []
-    assert not seed.unit_complete(season, GAME)
-    ok, _ = seed.materialize_game(str(source), GAME)
+    assert not store.last_fetch("silver_stints", season, GAME)
+    con = _source_con(source)
+    try:
+        ok, _ = seed.materialize_game(con, GAME)
+    finally:
+        con.close()
     assert ok
     assert len(_target_rows(GAME)) == 2
     assert store.last_fetch("silver_stints", season, GAME)
@@ -140,10 +162,51 @@ def test_crash_before_watermark_leaves_clean_resume(dbs):
 
 def test_resolve_home_away_from_matchups(dbs):
     source, _ = dbs
-    assert seed.resolve_home_away(str(source), GAME) == (
-        HOME, AWAY, "SAS", "NYK")
+    con = _source_con(source)
+    try:
+        assert seed.resolve_home_away(con, GAME) == (
+            HOME, AWAY, "SAS", "NYK")
+    finally:
+        con.close()
 
 
 def test_resolve_home_away_unknown_game_is_none(dbs):
     source, _ = dbs
-    assert seed.resolve_home_away(str(source), "0000000000") is None
+    con = _source_con(source)
+    try:
+        assert seed.resolve_home_away(con, "0000000000") is None
+    finally:
+        con.close()
+
+
+def test_materialize_games_skips_completed_entities(dbs):
+    source, _ = dbs
+    done, skipped, failed = seed._materialize_games(
+        ["2025-26"], {"2025-26": [GAME]}, str(source))
+    assert (done, skipped, failed) == (1, 0, 0)
+    done, skipped, failed = seed._materialize_games(
+        ["2025-26"], {"2025-26": [GAME]}, str(source))
+    assert (done, skipped, failed) == (0, 1, 0)
+
+
+def test_materialize_games_budget_stops_cleanly(dbs):
+    source, _ = dbs
+    done, skipped, failed = seed._materialize_games(
+        ["2025-26"], {"2025-26": [GAME]}, str(source),
+        budget_seconds=1e-9)
+    assert (done, skipped, failed) == (0, 0, 0)
+
+
+def test_main_dry_run_prints_season_plan(monkeypatch, tmp_path, capsys):
+    source = tmp_path / "unused.duckdb"
+    monkeypatch.setattr(seed, "season_games", lambda db, season: ["game-a"])
+    target = tmp_path / "target.duckdb"
+    result = seed.main([
+        "--db", str(target), "--source-db", str(source),
+        "--season", "2024-25", "--dry-run",
+    ])
+    assert result == 0
+    assert capsys.readouterr().out.splitlines()[-2:] == [
+        f"{seed.TABLE} 2024-25 game-a",
+        "games: 1",
+    ]

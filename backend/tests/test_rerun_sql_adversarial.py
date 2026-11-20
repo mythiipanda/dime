@@ -71,7 +71,6 @@ DISALLOWED_TABLES = [
     "SELECT * FROM read_csv('/etc/passwd')",
     "SELECT * FROM pragma_table_info('silver_standings')",
     "SELECT read_csv('/etc/passwd')",
-    "WITH foo AS (SELECT WINS FROM silver_standings) SELECT * FROM foo",
 ]
 
 NON_SELECT = [
@@ -90,8 +89,81 @@ LEGIT = [
     "SELECT WINS FROM silver_standings LIMIT 1 OFFSET 0",
     "SELECT * FROM (SELECT WINS FROM silver_standings)",
     "WITH a AS (SELECT 1) SELECT * FROM silver_standings",
+    "WITH foo AS (SELECT WINS FROM silver_standings) SELECT * FROM foo",
     "SELECT WINS FROM silver_standings;;",
 ]
+
+
+def test_rerun_sql_accepts_captured_cte_with_known_physical_source(monkeypatch):
+    import shared.tools.league as league
+
+    sql = (
+        "WITH celtics_games AS (SELECT game_id, "
+        "MAX(CASE WHEN wl = 'W' THEN 1 ELSE 0 END) AS is_win, "
+        "SUM(pts) AS game_points FROM silver_hist_gamelogs "
+        "WHERE _season = '2024-25' AND team_abbreviation = 'BOS' "
+        "GROUP BY game_id) SELECT COUNT(*) AS GAMES, "
+        "SUM(is_win) AS WINS, SUM(1 - is_win) AS LOSSES, "
+        "SUM(game_points) AS TOTAL_POINTS FROM celtics_games"
+    )
+
+    class FakeConnection:
+        def execute(self, statement):
+            assert statement == "SHOW TABLES"
+            return self
+
+        def fetchall(self):
+            return [("silver_hist_gamelogs",)]
+
+        def close(self):
+            pass
+
+    executed = []
+
+    def fake_executor(connection, query, timeout_seconds):
+        executed.append(query)
+        return ["GAMES"], [(0,)]
+
+    monkeypatch.setattr(league.store, "connect", lambda **_kwargs: FakeConnection())
+    monkeypatch.setattr(league, "_execute_with_timeout", fake_executor)
+
+    result = asyncio.run(league.rerun_sql(sql))
+
+    assert result["ok"] is True
+    assert result["sql"] == sql
+    assert result["tables"] == ["silver_hist_gamelogs"]
+    assert result["rows"] == [{"GAMES": 0}]
+    assert executed == [sql]
+
+
+def test_rerun_sql_rejects_unknown_physical_table_before_execution(monkeypatch):
+    import shared.tools.league as league
+
+    class FakeConnection:
+        def execute(self, statement):
+            assert statement == "SHOW TABLES"
+            return self
+
+        def fetchall(self):
+            return [("silver_hist_gamelogs",)]
+
+        def close(self):
+            pass
+
+    executed = []
+    monkeypatch.setattr(league.store, "connect", lambda **_kwargs: FakeConnection())
+    monkeypatch.setattr(
+        league, "_execute_with_timeout",
+        lambda *args: executed.append(args[1]),
+    )
+
+    result = asyncio.run(
+        league.rerun_sql("SELECT COUNT(*) FROM not_a_declared_table")
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "unknown or unavailable tables: not_a_declared_table"
+    assert executed == []
 
 
 @pytest.mark.parametrize("bad", WRITES + STACKED + DISALLOWED_TABLES + NON_SELECT)
@@ -102,7 +174,9 @@ def test_validate_rejects_adversarial_sql(bad):
 
 @pytest.mark.parametrize("good", LEGIT)
 def test_validate_accepts_legit_reads(good):
-    assert _validate_readonly_sql(good, {"silver_standings"})
+    sql, tables = _validate_readonly_sql(good, {"silver_standings"})
+    assert sql
+    assert tables == ["silver_standings"]
 
 
 @pytest.mark.parametrize("bad", WRITES + STACKED + DISALLOWED_TABLES)
@@ -116,4 +190,78 @@ def test_rerun_sql_rejects_without_mutation(warehouse, bad):
 def test_rerun_sql_legit_read_returns_rows(warehouse):
     out = asyncio.run(rerun_sql("SELECT TEAM, WINS FROM silver_standings"))
     assert out["ok"] is True
+    assert out["tables"] == ["silver_standings"]
     assert out["rows"] == [{"TEAM": "OKC", "WINS": 68}]
+
+
+@pytest.fixture()
+def memory_warehouse(monkeypatch):
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "CREATE TABLE silver_standings "
+            "(TEAM TEXT, WINS INTEGER, _season TEXT)")
+        con.execute(
+            "INSERT INTO silver_standings VALUES ('OKC', 68, '2025-26')")
+
+        class SharedConnection:
+            def __init__(self, real):
+                self._real = real
+
+            @property
+            def description(self):
+                return self._real.description
+
+            def execute(self, *args, **kwargs):
+                return self._real.execute(*args, **kwargs)
+
+            def close(self):
+                pass
+
+        monkeypatch.setattr(store, "connect",
+                            lambda **_kw: SharedConnection(con))
+        yield con
+    finally:
+        con.close()
+
+
+@pytest.mark.parametrize("sql,duplicate", [
+    ("SELECT 1 AS n, 2 AS n FROM silver_standings", "n"),
+    ("SELECT WINS AS n, TEAM AS n FROM silver_standings", "n"),
+    ("SELECT COUNT(*), COUNT(*) FROM silver_standings", "count_star()"),
+])
+def test_rerun_sql_rejects_duplicate_output_names(
+        memory_warehouse, sql, duplicate):
+    out = asyncio.run(rerun_sql(sql))
+    assert out["ok"] is False
+    assert "duplicate output column name" in out["error"]
+    assert duplicate in out["error"]
+    assert "unique alias" in out["error"]
+    assert "rows" not in out
+
+
+def test_rerun_sql_unique_aliases_preserve_values(memory_warehouse):
+    out = asyncio.run(rerun_sql(
+        "SELECT AVG(WINS) AS avg_w, COUNT(*) AS n FROM silver_standings"))
+    assert out["ok"] is True
+    assert out["columns"] == ["avg_w", "n"]
+    assert out["rows"] == [{"avg_w": 68.0, "n": 1}]
+    assert out["tables"] == ["silver_standings"]
+    assert out["capped"] is False
+
+
+def test_rerun_sql_names_differing_only_by_case_are_distinct(
+        memory_warehouse):
+    out = asyncio.run(rerun_sql(
+        "SELECT 1 AS N, 2 AS n FROM silver_standings"))
+    assert out["ok"] is True
+    assert out["columns"] == ["N", "n"]
+    assert out["rows"] == [{"N": 1, "n": 2}]
+
+
+def test_sql_exec_propagates_duplicate_column_failure(memory_warehouse):
+    from shared.tools.sql_exec import sql_exec
+    out = asyncio.run(sql_exec.ainvoke(
+        {"sql": "SELECT 1 AS n, 2 AS n FROM silver_standings"}))
+    assert out["ok"] is False
+    assert "duplicate output column name" in out["error"]

@@ -25,6 +25,9 @@ def _page(year: int):
 
 @pytest.fixture(scope="module")
 def recorded_awards(tmp_path_factory):
+    pytest.importorskip(
+        "lxml",
+        reason="lxml is required to parse basketball-reference award pages")
     import seed_bbref_awards as seed
     from shared import store
 
@@ -44,7 +47,7 @@ def recorded_awards(tmp_path_factory):
 def _point_at(path: Path, tmp_path: Path, monkeypatch) -> Path:
     from shared import store
     from shared.tools import _core
-    from v2.adapters import coverage
+    from shared import coverage
 
     monkeypatch.setattr(store, "DB_PATH", path)
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")

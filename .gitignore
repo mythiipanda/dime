@@ -1,6 +1,5 @@
 # Local-only files. Never commit these. CI fails if they are tracked.
 LEARNINGS.MD
-AGENTS.md
 decisions.tsv
 SHIFT_LOG.md
 backend/scripts/*_progress.json
@@ -79,3 +78,10 @@ agent/
 research/
 dime-arch/
 .cccc.cache
+
+.scratch/
+.t3-context/
+/backend/hillclimb/dbg_*/
+/backend/hillclimb/*.bak
+
+/backend/analyst/dist/

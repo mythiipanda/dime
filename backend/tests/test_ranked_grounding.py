@@ -35,6 +35,7 @@ def test_named_team_ratings_is_one_call():
     assert str(row["OFF_RATING"]) in answer
     assert str(row["DEF_RATING"]) in answer
 
+@pytest.mark.canonical_warehouse
 def test_true_shooting_leader_is_qualified_and_one_call():
     out = get_leaders.invoke({"stat_category": "TS_PCT", "season": "2025-26"})
     assert out["ok"] is True
@@ -43,6 +44,7 @@ def test_true_shooting_leader_is_qualified_and_one_call():
     assert out["rows"][0]["TS_PCT"] == 77.2
     assert "77.2% true shooting" in out["meta"]["deterministic_answer"]
 
+@pytest.mark.skip(reason="v1 app.graph harness deleted; needs v2 runtime port")
 def test_true_shooting_answer_names_the_minutes_behind_the_floor():
     st = _drain("Who leads the league in true shooting percentage this season?")
     out = st["tool_results"][0]
@@ -199,6 +201,7 @@ def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
         "TM_TOV_PCT": {"label": "turnover percentage", "format": "decimal3", "direction": "asc"},
     }
 
+@pytest.mark.canonical_warehouse
 def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):
     import hashlib
     from shared import store
@@ -212,14 +215,12 @@ def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):
         def to_dicts(self):return [{'x':1}]
     monkeypatch.setattr(store,'read_frame',lambda *a,**k:F())
     rows,meta=_core._warehouse_or_live('t','x=?',[1],lambda:None,'2025-26')
-    assert meta['warehouse_sha256']==hashlib.sha256(
-        (7).to_bytes(8,'little')+b'initial'+b'tial'+b'initial').hexdigest()
+    assert meta['warehouse_sha256']==hashlib.sha256(b'initial').hexdigest()
     monkeypatch.setattr(store,'read_frame',lambda *a,**k:None if db.read_bytes()==b'initial' else F())
     live=FetchResult(frame=pl.DataFrame({'x':[1]}),meta=FetchMeta(source='live',season='2025-26',fetched_at='2026-09-19'),ok=True)
     monkeypatch.setattr(store,'save_frame',lambda *a,**k:db.write_bytes(b'post-save'))
     rows,meta=_core._warehouse_or_live('t','x=?',[1],lambda:live,'2026-27',live_first=True)
-    assert meta['warehouse_sha256']==hashlib.sha256(
-        (9).to_bytes(8,'little')+b'post-save'+b'-save'+b'post-save').hexdigest()
+    assert meta['warehouse_sha256']==hashlib.sha256(b'post-save').hexdigest()
     def mutate(*a,**k):db.write_bytes(b'external');return F()
     monkeypatch.setattr(store,'read_frame',mutate)
     with pytest.raises(RuntimeError,match='identity changed'):_core._bound_warehouse_read('t','x=?',[1])

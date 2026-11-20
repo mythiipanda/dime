@@ -10,6 +10,7 @@
 const OVERRIDES: Record<string, string> = {
   "gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite",
   "gemini-3.5-flash": "Gemini 3.5 Flash",
+  "gemini-4-hydrogen": "Gemini 4 Hydrogen",
   "z-ai/glm-5.3-flash": "GLM 5.3 Flash",
   "deepseek-ai/deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
   "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super 120B",

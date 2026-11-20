@@ -88,7 +88,7 @@ def _requested_seasons(start: str, end: str) -> list[str]:
 
 
 def _no_coverage(start: str, end: str, txn_type: str, team: str) -> dict[str, Any]:
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     available = sorted(table_seasons(_TABLE))
     span = start or end
@@ -117,10 +117,32 @@ def _slim(row: dict[str, Any]) -> dict[str, Any]:
     return {col: row.get(col) for col in _COLUMNS if col in row}
 
 
-@tool
+def _matching_rows(raws: list[dict[str, Any]], start: str, end: str,
+                   team_id: int | None, team: str,
+                   txn_type: str | None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for raw in raws:
+        day = str(raw.get("txn_date") or "")
+        if start and day < start:
+            continue
+        if end and day > end:
+            continue
+        if team_id is not None:
+            same_id = _as_int(raw.get("team_id")) == team_id
+            same_abbr = (str(raw.get("team") or "").strip().upper()
+                         == team.upper())
+            if not (same_id or same_abbr):
+                continue
+        if txn_type and str(raw.get("txn_type") or "") != txn_type:
+            continue
+        rows.append(_slim(raw))
+    rows.sort(key=lambda row: str(row.get("txn_date") or ""), reverse=True)
+    return rows
+
+
+@tool(description='Team transactions: signings, waivers, trades by team and date range.')
 def get_transactions(team: str = "", start: str = "", end: str = "",
                      txn_type: str = "") -> dict[str, Any]:
-    """Team transactions: signings, waivers, trades by team and date range."""
     want_team = "" if team is None else str(team).strip()
     want_start = "" if start is None else str(start).strip()
     want_end = "" if end is None else str(end).strip()
@@ -147,7 +169,7 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
                              "txn_type": canonical}}
     requested = _requested_seasons(want_start, want_end)
     if requested:
-        from v2.adapters.coverage import table_seasons
+        from shared.coverage import table_seasons
 
         available = set(table_seasons(_TABLE))
         if not any(season in available for season in requested):
@@ -169,24 +191,7 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
             raws = frame.to_dicts()
         except Exception:
             raws = []
-    rows: list[dict[str, Any]] = []
-    for raw in raws:
-        day = str(raw.get("txn_date") or "")
-        if want_start and day < want_start:
-            continue
-        if want_end and day > want_end:
-            continue
-        if tid is not None:
-            same_id = _as_int(raw.get("team_id")) == tid
-            same_abbr = (str(raw.get("team") or "").strip().upper()
-                         == want_team.upper())
-            if not (same_id or same_abbr):
-                continue
-        if canonical:
-            if str(raw.get("txn_type") or "") != canonical:
-                continue
-        rows.append(_slim(raw))
-    rows.sort(key=lambda r: str(r.get("txn_date") or ""), reverse=True)
+    rows = _matching_rows(raws, want_start, want_end, tid, want_team, canonical)
     if not rows:
         subject = want_team.upper() if want_team else "the league"
         bounds = want_start or want_end
@@ -212,3 +217,7 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
                                  "for seasons on file; a range outside "
                                  "coverage is reported, never swapped.",
                      **store.warehouse_identity()}}
+
+get_transactions.args_schema.__doc__ = (
+    'Team transactions: signings, waivers, trades by team and date range.'
+)

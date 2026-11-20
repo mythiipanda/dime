@@ -1,5 +1,6 @@
 
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -113,10 +114,25 @@ def test_apron_matching_rules():
         20_000_000, "100% (above the first apron)")
     assert _allowed_incoming(20_000_000, False) == (
         25_250_000, "125% plus $250k (below the first apron)")
+    assert _allowed_incoming(20_000_000, False, 13_330_652) == (
+        33_580_652, "cap room plus outgoing salary plus $250k (under the cap)")
+    assert _allowed_incoming(20_000_000, False, 1_000_000) == (
+        25_250_000, "125% plus $250k (below the first apron)")
     over = _apron_state(CAP["apron2"] + 1)
     assert over["over_apron1"] and over["over_apron2"]
     under = _apron_state(0)
     assert not under["over_apron1"] and not under["over_apron2"]
+
+
+def test_outgoing_needed_inverts_matching():
+    from shared.tools.league import _allowed_incoming, _outgoing_needed
+
+    assert _outgoing_needed(19_512_195, True) == 19_512_195
+    need = _outgoing_needed(34_206_898, False)
+    assert _allowed_incoming(need, False)[0] >= 34_206_898
+    assert _allowed_incoming(need - 1, False)[0] < 34_206_898
+    assert _outgoing_needed(10_000_000, False, 13_000_000) == 0
+
 
 def test_pair_history_slim_both_on():
     from shared.tools.player import pair_history
@@ -258,6 +274,72 @@ def test_splits_regression_smoke():
         "too early", "sustainable", "likely regresses")
     assert res["rows"]["career"]["available"] is True
     assert res["rows"]["career"]["per_game"] > 0
+
+def test_splits_driver_ranking_uses_fraction_ts_delta(monkeypatch):
+    from shared.tools import _core, splits
+
+    def _row(day, pts, minutes):
+        return {"GAME_DATE": f"Jan {day}, 2026", "MATCHUP": "LAL vs. UTA",
+                "PTS": pts, "FGA": 20, "FTA": 0, "MIN": minutes}
+
+    def _run(rows):
+        monkeypatch.setattr(_core, "last_completed_season",
+                            lambda: "2025-26")
+        monkeypatch.setattr(splits, "_load_gamelogs",
+                            lambda player, season: (2544, list(rows), {}))
+        monkeypatch.setattr(splits, "_defense_lookup",
+                            lambda season: (None, "synthetic"))
+        monkeypatch.setattr(splits, "_career_baseline",
+                            lambda pid, stat: {"available": False})
+        monkeypatch.setattr(splits, "_resolve_name",
+                            lambda pid, fallback: fallback)
+        return splits.get_regression_check.invoke(
+            {"player": "Synthetic Player", "stat": "PTS", "n": 5,
+             "season": "2025-26"})
+
+    rows = ([_row(d, 20, 20) for d in (1, 2, 3, 4, 5)]
+            + [_row(d, 21, 30) for d in (10, 11, 12, 13, 14)])
+    before = [dict(r) for r in rows]
+    res = _run(rows)
+    assert rows == before
+    assert res["ok"] is True
+    assert res["rows"]["player"] == "Synthetic Player"
+    assert res["rows"]["verdict"] == "sustainable"
+    drivers = res["rows"]["drivers"]
+    drivers_all = res["rows"]["drivers_all"]
+    assert [d["factor"] for d in drivers] == [
+        "minutes", "true_shooting", "shot_volume"]
+    assert [d["factor"] for d in drivers_all] == [
+        "true_shooting", "minutes", "shot_volume", "opponent_defense"]
+    ts_all = next(d for d in drivers_all if d["factor"] == "true_shooting")
+    ts_top = next(d for d in drivers if d["factor"] == "true_shooting")
+    assert ts_all == ts_top
+    assert ts_all["delta"] == 1.3
+    assert ts_all["unit"] == "pct"
+    assert ts_all["window"] == 52.5
+    assert ts_all["baseline"] == 51.2
+
+    control = ([_row(d, 8, 20) for d in (1, 2, 3, 4, 5)]
+               + [_row(d, 16, 30) for d in (10, 11, 12, 13, 14)])
+    res = _run(control)
+    assert res["rows"]["drivers"][0]["factor"] == "true_shooting"
+    assert res["rows"]["verdict"] == "likely regresses"
+
+    negative = ([_row(d, 16, 20) for d in (1, 2, 3, 4, 5)]
+                + [_row(d, 8, 30) for d in (10, 11, 12, 13, 14)])
+    res = _run(negative)
+    assert res["rows"]["drivers"][0]["factor"] == "true_shooting"
+    ts_neg = next(d for d in res["rows"]["drivers_all"]
+                  if d["factor"] == "true_shooting")
+    assert ts_neg["delta"] == -10.0
+
+    zero = ([_row(d, 20, 20) for d in (1, 2, 3, 4, 5)]
+            + [_row(d, 20, 30) for d in (10, 11, 12, 13, 14)])
+    res = _run(zero)
+    assert res["rows"]["drivers"][0]["factor"] == "minutes"
+    ts_zero = next(d for d in res["rows"]["drivers_all"]
+                   if d["factor"] == "true_shooting")
+    assert ts_zero["delta"] == 0.0
 
 def _warehouse_has_hist_durant():
     from shared import store
@@ -413,9 +495,10 @@ def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
         "Every verdict-eligible metric favors Nikola Jokic")
     assert "2021-22 vintage" in out["rows"]["verdict"]
 
+@pytest.mark.canonical_warehouse
 def test_resolve_entity_uses_warehouse_canonical_id_for_exact_suffix_name():
     res = tools.resolve_entity.invoke({"query": "Tim Hardaway Jr."})
     player = res["rows"]["players"][0]
-    assert player["id"] == 203501
+    assert player["id"] == 896
     assert player["static_id"] == 203501
     assert player["identity_source"] == "warehouse_exact_name"

@@ -167,7 +167,7 @@ def _as_int(value: object) -> int | None:
 
 
 def _no_coverage(tool: str, table: str, season: str) -> dict[str, Any]:
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     available = sorted(table_seasons(table))
     if available:
@@ -199,11 +199,37 @@ def _resolve_name(pid: int, fallback: str) -> str:
     return _name(pid, fallback)
 
 
-@tool
+def _profile_rows(measures: list[str], scope: str, pid: int | None,
+                  tid: int | None, want_team: str, season: str
+                  ) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    identity = _PLAYER_IDENTITY if scope == "player" else _TEAM_IDENTITY
+    for kind in measures:
+        entity = f"ptstats:{scope}:{kind}"
+        frame = store.read_frame(
+            _TRACKING_TABLE, "_season = ? AND _entity = ?",
+            [season, entity])
+        if frame is None or frame.height == 0:
+            continue
+        for raw in frame.to_dicts():
+            if scope == "player" and _as_int(raw.get("PLAYER_ID")) != pid:
+                continue
+            if scope == "team":
+                same_id = _as_int(raw.get("TEAM_ID")) == tid
+                same_abbr = (str(raw.get("TEAM_ABBREVIATION") or "").strip().upper()
+                             == want_team.upper())
+                if not (same_id or same_abbr):
+                    continue
+            slim = _curated(raw, identity, _MEASURE_COLUMNS[kind])
+            slim["measure_type"] = kind
+            rows.append(slim)
+    return rows
+
+
+@tool(description='Player or team tracking profile: drives, shooting, touches, rebounding, speed.')
 def get_tracking_profile(player: str = "", team: str = "",
                          season: str = "2025-26",
                          measure_type: str = "") -> dict[str, Any]:
-    """Player or team tracking profile: drives, shooting, touches, rebounding, speed."""
     season = _season_or_default(season)
     want_player = str(player or "").strip()
     want_team = str(team or "").strip()
@@ -236,32 +262,11 @@ def get_tracking_profile(player: str = "", team: str = "",
                 "error": f"unknown team: {want_team}",
                 "meta": {"source": f"warehouse:{_TRACKING_TABLE}",
                          "season": season}}
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     if season not in table_seasons(_TRACKING_TABLE):
         return _no_coverage("get_tracking_profile", _TRACKING_TABLE, season)
-    rows: list[dict[str, Any]] = []
-    identity = _PLAYER_IDENTITY if scope == "player" else _TEAM_IDENTITY
-    for kind in measures:
-        entity = f"ptstats:{scope}:{kind}"
-        frame = store.read_frame(
-            _TRACKING_TABLE, "_season = ? AND _entity = ?",
-            [season, entity])
-        if frame is None or frame.height == 0:
-            continue
-        for raw in frame.to_dicts():
-            if scope == "player":
-                if _as_int(raw.get("PLAYER_ID")) != pid:
-                    continue
-            else:
-                same_id = _as_int(raw.get("TEAM_ID")) == tid
-                same_abbr = (str(raw.get("TEAM_ABBREVIATION") or "").strip().upper()
-                             == want_team.upper())
-                if not (same_id or same_abbr):
-                    continue
-            slim = _curated(raw, identity, _MEASURE_COLUMNS[kind])
-            slim["measure_type"] = kind
-            rows.append(slim)
+    rows = _profile_rows(measures, scope, pid, tid, want_team, season)
     if not rows:
         subject = want_player or want_team
         label = measure if measure else "tracking"
@@ -285,10 +290,9 @@ def get_tracking_profile(player: str = "", team: str = "",
                      **store.warehouse_identity()}}
 
 
-@tool
+@tool(description="One defender's defended-shot profile: frequency and shooter results.")
 def get_defensive_matchups(player: str = "",
                            season: str = "2025-26") -> dict[str, Any]:
-    """One defender's defended-shot profile: frequency and shooter results."""
     season = _season_or_default(season)
     want = str(player or "").strip()
     if not want:
@@ -303,7 +307,7 @@ def get_defensive_matchups(player: str = "",
                 "error": f"unknown player: {want}",
                 "meta": {"source": f"warehouse:{_DEFEND_TABLE}",
                          "season": season}}
-    from v2.adapters.coverage import table_seasons
+    from shared.coverage import table_seasons
 
     if season not in table_seasons(_DEFEND_TABLE):
         return _no_coverage("get_defensive_matchups", _DEFEND_TABLE, season)
@@ -331,3 +335,10 @@ def get_defensive_matchups(player: str = "",
                                  "those shots fell. No per-opponent rows "
                                  "exist, so none are shown.",
                      **store.warehouse_identity()}}
+
+get_tracking_profile.args_schema.__doc__ = (
+    'Player or team tracking profile: drives, shooting, touches, rebounding, speed.'
+)
+get_defensive_matchups.args_schema.__doc__ = (
+    "One defender's defended-shot profile: frequency and shooter results."
+)

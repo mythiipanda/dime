@@ -1,5 +1,6 @@
 import json
 import sys
+import pytest
 import time
 from pathlib import Path
 
@@ -58,6 +59,7 @@ def test_sql_case_matches_zone_of_on_null_coords():
     assert got3 == zone_of(None, None, 3) == "atb_3"
 
 
+@pytest.mark.canonical_warehouse
 def test_get_shot_zones_matches_pre_change_outputs():
     for name, kwargs in [
         ("sz_sga", {"player_id": 1628983, "season": "2024-25"}),
@@ -70,6 +72,7 @@ def test_get_shot_zones_matches_pre_change_outputs():
         assert _norm(get_shot_zones.invoke(kwargs)) == _load(name)
 
 
+@pytest.mark.canonical_warehouse
 def test_get_team_shot_zones_matches_pre_change_outputs():
     for name, kwargs in [
         ("tz_league", {"teams": "league", "season": "2025-26"}),
@@ -79,6 +82,7 @@ def test_get_team_shot_zones_matches_pre_change_outputs():
         assert _norm(get_team_shot_zones.invoke(kwargs)) == _load(name)
 
 
+@pytest.mark.canonical_warehouse
 def test_get_zone_deltas_matches_pre_change_outputs():
     for name, kwargs in [
         ("zd_sga", {"player": "Shai Gilgeous-Alexander", "season": 2025}),

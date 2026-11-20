@@ -3,13 +3,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 from typing import Literal
 
-RuntimeV2Mode = Literal["off", "on", "shadow"]
+RuntimeV2Mode = Literal["off", "on", "shadow", "action_loop"]
 
 _MODE_ALIASES: dict[str, RuntimeV2Mode] = {
     "": "on",
     "on": "on",
     "shadow": "shadow",
     "off": "off",
+    "action_loop": "action_loop",
 }
 
 def runtime_v2_mode() -> RuntimeV2Mode:
@@ -19,7 +20,7 @@ def runtime_v2_mode() -> RuntimeV2Mode:
     if resolved is None:
         raise ValueError(
             "unknown DIME_RUNTIME_V2 value: " + repr(raw)
-            + "; expected 'on', 'shadow', 'off', or unset/empty for 'on'"
+            + "; expected 'on', 'shadow', 'off', 'action_loop', or unset/empty for 'on'"
         )
     return resolved
 
@@ -43,8 +44,14 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     dime_enable_groq: bool = False
     groq_model: str = ""
+    agnes_api_key: str = ""
+    dime_enable_agnes: bool = False
+    agnes_model: str = "agnes-3.0-flash"
     cerebras_api_key: str = ""
     cerebras_model: str = ""
+    reflection_api_key: str = ""
+    dime_enable_reflection: bool = False
+    reflection_model: str = ""
     cors_allowed_origins: str = "http://localhost:3000,https://dime-fawn.vercel.app,http://127.0.0.1:3000"
     llm_timeout_s: int = 60
     llm_max_retries: int = 1

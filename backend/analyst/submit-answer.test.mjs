@@ -1,0 +1,1102 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  validateAnswerSubmission,
+  createSubmitAnswerTool,
+} from "./dist/submit-tool.js";
+import { ProductStore } from "./dist/product-store.js";
+import { Type } from "typebox";
+import { mkdir, writeFile } from "node:fs/promises";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { createAnalystSession } from "./dist/runtime.js";
+import { createPiExecution } from "./dist/pi-execution.js";
+import { createAnalyst } from "./dist/analyst.js";
+import { priorSourceTool } from "./dist/pi-context.js";
+
+function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
+  const result = error !== undefined ? { rows, error } : { rows };
+  return {
+    ref,
+    callId: "call-" + ref,
+    tool: "sql_exec",
+    response: {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+      structuredContent: result,
+      isError,
+    },
+  };
+}
+
+test("validateAnswerSubmission accepts valid blocks and anchors", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ player: "Luka Doncic", pts: 33.9 }, { player: "SGA", pts: 30.1 }] })],
+    ["src-2", makeSourceRecord("src-2", { rows: [{ team: "DAL", pace: 100.5 }] })],
+  ]);
+
+  const submission = {
+    blocks: [
+      {
+        text: "Luka Doncic led the league in scoring.",
+        anchors: [{ ref: "src-1", row: 0, columns: ["player", "pts"] }],
+      },
+      {
+        text: "Dallas played at a 100.5 pace.",
+        anchors: [{ ref: "src-2", row: 0, columns: ["team", "pace"] }],
+      },
+    ],
+  };
+
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.blocks.length, 2);
+  assert.equal(validated.blocks[0].text, "Luka Doncic led the league in scoring.");
+  assert.equal(validated.blocks[0].anchors[0].ref, "src-1");
+  assert.equal(validated.blocks[0].anchors[0].row, 0);
+  assert.deepEqual(validated.blocks[0].anchors[0].columns, ["player", "pts"]);
+});
+
+test("validateAnswerSubmission allows blocks without anchors", () => {
+  const sources = new Map();
+  const submission = {
+    blocks: [
+      { text: "Introductory context without anchors.", anchors: [] },
+    ],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.blocks.length, 1);
+  assert.equal(validated.blocks[0].anchors.length, 0);
+});
+
+test("validateAnswerSubmission rejects non-existent source ref", () => {
+  const sources = new Map();
+  const submission = {
+    blocks: [
+      {
+        text: "Claim with missing source.",
+        anchors: [{ ref: "missing-ref", row: 0, columns: ["col"] }],
+      },
+    ],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Unknown source ref: missing-ref/
+  );
+});
+
+test("validateAnswerSubmission rejects error source ref", () => {
+  const sources = new Map([
+    ["err-1", makeSourceRecord("err-1", { isError: true, error: "Syntax error" })],
+  ]);
+  const submission = {
+    blocks: [
+      {
+        text: "Claim referencing failed query.",
+        anchors: [{ ref: "err-1", row: 0, columns: ["col"] }],
+      },
+    ],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Source ref is an error result: err-1/
+  );
+});
+
+test("validateAnswerSubmission rejects row index out of bounds", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ id: 1 }] })],
+  ]);
+  const submission = {
+    blocks: [
+      {
+        text: "Claim referencing row 5.",
+        anchors: [{ ref: "src-1", row: 5, columns: ["id"] }],
+      },
+    ],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /out of bounds \(length: 1\) for ref: src-1/
+  );
+});
+
+test("validateAnswerSubmission rejects column that does not exist on row", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ player: "Luka", pts: 33.9 }] })],
+  ]);
+  const submission = {
+    blocks: [
+      {
+        text: "Claim referencing non-existent column.",
+        anchors: [{ ref: "src-1", row: 0, columns: ["player", "rebounds"] }],
+      },
+    ],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Column 'rebounds' does not exist on row 0 for ref: src-1/
+  );
+});
+
+test("validateAnswerSubmission rejects empty blocks or empty text", () => {
+  const sources = new Map();
+  assert.throws(
+    () => validateAnswerSubmission({ blocks: [] }, ref => sources.get(ref)),
+    /Invalid answer submission schema/
+  );
+  assert.throws(
+    () => validateAnswerSubmission({ blocks: [{ text: "", anchors: [] }] }, ref => sources.get(ref)),
+    /Invalid answer submission schema/
+  );
+});
+
+test("createSubmitAnswerTool executes and calls onAccept", async () => {
+  const source = makeSourceRecord("src-1", { rows: [{ stat: "reb", value: 10 }] });
+  let accepted = null;
+  const tool = createSubmitAnswerTool(
+    () => [source],
+    sub => { accepted = sub; }
+  );
+
+  const submission = {
+    blocks: [
+      { text: "10 rebounds recorded.", anchors: [{ ref: "src-1", row: 0, columns: ["stat", "value"] }] },
+    ],
+  };
+
+  const result = await tool.execute("call-1", submission);
+  assert.equal(accepted?.blocks.length, 1);
+  assert.equal(accepted.blocks[0].text, "10 rebounds recorded.");
+  assert.deepEqual(result.content, [{ type: "text", text: "Answer submitted with 1 block(s)." }]);
+  assert.equal(result.details, undefined);
+});
+
+test("ProductStore persists and reads submission in pi-sources artifact", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "dime-r625-test-"));
+  try {
+    const dbPath = join(tempDir, "conversations.sqlite3");
+    const sourcesDir = join(tempDir, "sources");
+    const store = new ProductStore(dbPath, sourcesDir);
+
+    const runId = "run-" + "a".repeat(32);
+    const source = makeSourceRecord("src-test", { rows: [{ val: 42 }] });
+    const submission = {
+      blocks: [
+        { text: "The answer is 42.", anchors: [{ ref: "src-test", row: 0, columns: ["val"] }] },
+      ],
+    };
+
+    store.saveSources(runId, [source], [source], submission);
+
+    const identity = { owner: "user-1", thread: "thread-1" };
+    store.append(identity, "What is the answer?", "The answer is 42.", runId);
+
+    const read = store.readSources(identity, runId);
+    assert.equal(read.run_id, runId);
+    assert.equal(read.sources.length, 1);
+    assert.equal(read.sources[0].ref, "src-test");
+    assert.deepEqual(read.submission, submission);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("ProductStore backward compatibility reads legacy artifact without submission", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "store-backcompat-"));
+  try {
+    const dbPath = join(dir, "conversations.sqlite3");
+    const sourcesDir = join(dir, "sources");
+    await mkdir(sourcesDir, { recursive: true });
+
+    const store = new ProductStore(dbPath, sourcesDir);
+
+    const runId = "run-" + "b".repeat(32);
+    const legacyArtifact = {
+      run_id: runId,
+      source_refs: ["legacy-ref-1"],
+      sources: [
+        {
+          ref: "legacy-ref-1",
+          callId: "call-1",
+          tool: "sql_exec",
+          response: {
+            content: [{ type: "text", text: JSON.stringify({ rows: [{ val: 123 }] }) }],
+            structuredContent: { rows: [{ val: 123 }] },
+            isError: false,
+          },
+        },
+      ],
+    };
+
+    // Write legacy JSON without submission
+    await writeFile(join(sourcesDir, `${runId}.json`), JSON.stringify(legacyArtifact), "utf-8");
+
+    const identity = { owner: "test-owner", thread: "thread-1" };
+    store.append(identity, "Legacy question?", "Legacy answer.", runId);
+
+    // Read through store
+    const loaded = store.readSources(identity, runId);
+    assert.equal(loaded.run_id, runId);
+    assert.equal(loaded.sources.length, 1);
+    assert.equal(loaded.sources[0].ref, "legacy-ref-1");
+    assert.equal(loaded.submission, undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ProductStore enforces owner and thread isolation on readSources", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "store-isolation-"));
+  try {
+    const dbPath = join(dir, "conversations.sqlite3");
+    const sourcesDir = join(dir, "sources");
+    const store = new ProductStore(dbPath, sourcesDir);
+
+    const runId = "run-" + "c".repeat(32);
+    const source = makeSourceRecord("src-1", { rows: [{ pts: 30 }] });
+    const submission = {
+      blocks: [{ text: "Player scored 30.", anchors: [{ ref: "src-1", row: 0, columns: ["pts"] }] }],
+    };
+
+    store.saveSources(runId, [source], [source], submission);
+
+    // Append only under Alice on thread-alpha
+    store.append({ owner: "alice", thread: "thread-alpha" }, "Q", "A", runId);
+
+    // Alice on thread-alpha can read
+    const readByAlice = store.readSources({ owner: "alice", thread: "thread-alpha" }, runId);
+    assert.equal(readByAlice.run_id, runId);
+    assert.equal(readByAlice.submission?.blocks[0].text, "Player scored 30.");
+
+    // Bob on thread-alpha cannot read Alice's run
+    assert.throws(
+      () => store.readSources({ owner: "bob", thread: "thread-alpha" }, runId),
+      /Source not found/
+    );
+
+    // Alice on thread-beta cannot read thread-alpha run
+    assert.throws(
+      () => store.readSources({ owner: "alice", thread: "thread-beta" }, runId),
+      /Source not found/
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Pi session fixture validates current and prior refs, rejects invalid selectors, and permits revision", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-session-fixture-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const currentRecord = makeSourceRecord("current", { rows: [{ pts_total: 2484, gp_total: 76 }] });
+  const priorRecord = makeSourceRecord("prior-owned", { rows: [{ PPG: 32.7, TS_PCT: 0.637 }] });
+  const failedRecord = makeSourceRecord("failed", { isError: true, error: "table not found" });
+
+  const sourcesMap = new Map([
+    ["current", currentRecord],
+    ["prior-owned", priorRecord],
+    ["failed", failedRecord],
+  ]);
+
+  let submitted;
+  const accepted = [];
+  const rejected = [];
+
+  const submitTool = createSubmitAnswerTool(
+    () => Array.from(sourcesMap.values()),
+    (sub) => {
+      submitted = structuredClone(sub);
+      accepted.push(submitted);
+    }
+  );
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const requests = [];
+  const code = `
+    const invalid = [
+      { ref: "unknown", row: 0, columns: ["pts_total"] },
+      { ref: "failed", row: 0, columns: ["pts_total"] },
+      { ref: "current", row: 99, columns: ["pts_total"] },
+      { ref: "current", row: 0, columns: ["missing"] },
+      { ref: "current", row: -1, columns: ["pts_total"] }
+    ];
+    const rejections = [];
+    for (const anchor of invalid) {
+      try {
+        await tools.submit_answer({ blocks: [{ text: "claim", anchors: [anchor] }] });
+        rejections.push(false);
+      } catch (e) {
+        rejections.push(true);
+      }
+    }
+    // Valid selector with false assertion accepted by tool (selectors do not verify truth)
+    await tools.submit_answer({
+      blocks: [{ text: "He scored 9999 points.", anchors: [{ ref: "current", row: 0, columns: ["pts_total"] }] }]
+    });
+    // Revision with multiple blocks and current + prior refs
+    await tools.submit_answer({
+      blocks: [
+        { text: "He scored 2484 points in 76 games.", anchors: [{ ref: "current", row: 0, columns: ["pts_total", "gp_total"] }] },
+        { text: "He averaged 32.7 points and TS was 0.637.", anchors: [{ ref: "prior-owned", row: 0, columns: ["PPG", "TS_PCT"] }] }
+      ]
+    });
+    return { rejections, done: true };
+  `;
+
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      requests.push(structuredClone(context));
+      const first = requests.length === 1;
+      const message = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content: first
+          ? [{ type: "toolCall", id: "submit-fixture", name: "codemode", arguments: { code } }]
+          : [{ type: "text", text: "Unanchored trailing prose must not replace submitted answer" }],
+        stopReason: first ? "toolUse" : "stop",
+        timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: message.stopReason, message });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const session = await createAnalystSession({
+    cwd,
+    agentDir,
+    model: runtime.getModel("fixture", "fixture"),
+    modelRuntime: runtime,
+    tools: [submitTool, priorSourceTool([priorRecord])],
+  });
+
+  try {
+    assert.deepEqual(session.getActiveToolNames(), ["codemode"]);
+    assert.deepEqual(new Set(session.getCallableToolNames()), new Set(["submit_answer", "read_source", "load_skill"]));
+
+    await session.prompt("Run synthetic submission fixture");
+    assert.equal(requests.length, 2);
+    assert.equal(accepted.length, 2);
+    const secondReq = JSON.stringify(requests[1]);
+    assert.ok(secondReq.includes("true,true,true,true,true"));
+
+    // Revision submission is final
+    assert.equal(submitted.blocks.length, 2);
+    assert.equal(submitted.blocks[0].anchors[0].ref, "current");
+    assert.equal(submitted.blocks[1].anchors[0].ref, "prior-owned");
+  } finally {
+    await session.abort();
+    session.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("createPiExecution canonical text overrides trailing prose, retains sources, and handles fallback", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-exec-fixture-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const currentRecord = makeSourceRecord("src-current", { rows: [{ pts: 33.9, player: "Luka" }] });
+  const failedRecord = makeSourceRecord("src-failed", { isError: true, error: "table not found" });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  let mode = "canonical";
+  let execRequests = 0;
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      if (mode === "canonical") {
+        if (execRequests === 1) {
+          const code = `
+            await tools.query_tool({ q: "points" });
+            await tools.fail_tool({});
+            await tools.submit_answer({
+              blocks: [
+                { text: "Luka led scoring with 33.9 PPG.", anchors: [{ ref: "src-current", row: 0, columns: ["pts", "player"] }] },
+                { text: "Conclusion block without anchors.", anchors: [] }
+              ]
+            });
+            return { done: true };
+          `;
+          const msg = {
+            role: "assistant",
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            content: [{ type: "toolCall", id: "call-1", name: "codemode", arguments: { code } }],
+            stopReason: "toolUse",
+            timestamp: Date.now(),
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          };
+          const stream = createAssistantMessageEventStream();
+          stream.push({ type: "done", reason: "toolUse", message: msg });
+          stream.end();
+          return stream;
+        } else {
+          // Trailing prose from assistant
+          const msg = {
+            role: "assistant",
+            api: model.api,
+            provider: model.provider,
+            model: model.id,
+            content: [{ type: "text", text: "Trailing model text that MUST be overridden by canonical text." }],
+            stopReason: "stop",
+            timestamp: Date.now(),
+            usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          };
+          const stream = createAssistantMessageEventStream();
+          stream.push({ type: "done", reason: "stop", message: msg });
+          stream.end();
+          return stream;
+        }
+      } else {
+        // Fallback mode: no submit_answer called
+        const msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "text", text: "Plain fallback prose without tool call." }],
+          stopReason: "stop",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+        const stream = createAssistantMessageEventStream();
+        stream.push({ type: "done", reason: "stop", message: msg });
+        stream.end();
+        return stream;
+      }
+    },
+  });
+
+  const mockBridge = {
+    tools: [
+      {
+        name: "query_tool",
+        label: "Query Tool",
+        description: "Run query",
+        parameters: Type.Object({ q: Type.String() }),
+        async execute() {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ rows: [{ pts: 33.9, player: "Luka" }] }) }],
+            structuredContent: { ref: "src-current", tool: "query_tool", isError: false, result: { rows: [{ pts: 33.9, player: "Luka" }] } },
+          };
+        },
+      },
+      {
+        name: "fail_tool",
+        label: "Fail Tool",
+        description: "Fail query",
+        parameters: Type.Object({}),
+        async execute() {
+          return {
+            content: [{ type: "text", text: "table not found" }],
+            structuredContent: { ref: "src-failed", tool: "fail_tool", isError: true, result: { error: "table not found" } },
+          };
+        },
+      },
+    ],
+    results: new Map([
+      ["src-current", currentRecord],
+      ["src-failed", failedRecord],
+    ]),
+    pid: 12345,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  // Test 1: Canonical text overrides trailing prose
+  const events = [];
+  for await (const event of pi.stream({
+    q: "Who led scoring?",
+    history: [],
+    model: "fixture:fixture",
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+
+  const answerEvent = events.find((e) => e.type === "answer");
+  assert.ok(answerEvent);
+  // Canonical text from blocks joined by double newline
+  const expectedCanonical = "Luka led scoring with 33.9 PPG.\n\nConclusion block without anchors.";
+  assert.equal(answerEvent.text, expectedCanonical);
+  assert.notEqual(answerEvent.text, "Trailing model text that MUST be overridden by canonical text.");
+  assert.ok(answerEvent.submission);
+  assert.equal(answerEvent.submission.blocks.length, 2);
+
+  // Retains source records in emitted events
+  const sourceEvents = events.filter((e) => e.type === "source");
+  assert.equal(sourceEvents.length, 2);
+  assert.ok(sourceEvents.some((e) => e.record.ref === "src-current"));
+  assert.ok(sourceEvents.some((e) => e.record.ref === "src-failed"));
+
+  // Test 2: Fallback mode when model does not call submit_answer
+  mode = "fallback";
+  execRequests = 0;
+  const fallbackEvents = [];
+  for await (const event of pi.stream({
+    q: "Who led scoring?",
+    history: [],
+    model: "fixture:fixture",
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    fallbackEvents.push(event);
+  }
+
+  const fallbackAnswer = fallbackEvents.find((e) => e.type === "answer");
+  assert.ok(fallbackAnswer);
+  assert.equal(fallbackAnswer.text, "Plain fallback prose without tool call.");
+  assert.equal(fallbackAnswer.submission, undefined);
+
+  await rm(cwd, { recursive: true, force: true });
+});
+
+test("createAnalyst downstream verification remains unassessed and preserves submission carry", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "analyst-downstream-"));
+  try {
+    const dbPath = join(dir, "conversations.sqlite3");
+    const sourcesDir = join(dir, "sources");
+    const privateDir = join(dir, "private");
+    const warehousePath = join(dir, "warehouse.duckdb");
+    const statePath = join(dir, "state.duckdb");
+    const store = new ProductStore(dbPath, sourcesDir);
+
+    const testEnv = {
+      ...process.env,
+      DIME_CONVERSATION_STORE: dbPath,
+      DIME_PI_SOURCES_DIR: sourcesDir,
+      DIME_PI_PRIVATE_DIR: privateDir,
+      DIME_WAREHOUSE: warehousePath,
+      DIME_STATE_DB: statePath,
+    };
+
+    const submission = {
+      blocks: [
+        {
+          text: "Downstream test statement.",
+          anchors: [{ ref: "src-1", row: 0, columns: ["stat"] }],
+        },
+      ],
+    };
+
+    const mockExecute = {
+      async *stream() {
+        yield {
+          type: "source",
+          record: makeSourceRecord("src-1", { rows: [{ stat: 42 }] }),
+        };
+        yield {
+          type: "answer",
+          text: "Downstream test statement.",
+          submission,
+        };
+        yield { type: "closed" };
+      },
+    };
+
+    const analyst = createAnalyst({
+      env: testEnv,
+      resolveModel: () => ({
+        id: "fixture",
+        name: "Fixture",
+        provider: "fixture",
+        api: "openai-completions",
+        reasoning: false,
+        input: ["text"],
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      }),
+      store,
+      execution: mockExecute,
+      saveChat: async () => {},
+      saveRun: async () => {},
+    });
+
+    const observed = [];
+    for await (const event of analyst.stream({
+      q: "synthetic downstream question",
+      thread: "thread-1",
+      client: "test-client",
+    })) {
+      observed.push(event);
+    }
+
+    const final = observed.find((e) => e.type === "final_answer");
+    assert.ok(final);
+    // Unassessed status preserved - truth is not verified
+    assert.equal(final.data.carry.verification, "unassessed");
+    assert.equal(final.data.carry.answer_status, "unassessed");
+    assert.deepEqual(final.data.carry.source_refs, ["src-1"]);
+    assert.deepEqual(final.data.carry.submission, submission);
+
+    // Stored sources also include the submission
+    const runId = final.data.carry.run_id;
+    const loaded = store.readSources({ owner: "test-client", thread: "thread-1" }, runId);
+    assert.deepEqual(loaded.submission, submission);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("validateAnswerSubmission permits omitted anchors and normalizes shot_chart pct from 0-1 to 0-100", () => {
+  const validated = validateAnswerSubmission({
+    blocks: [{ text: "Empirical Bayes ridge estimate without SQL row anchors." }],
+    artifacts: [
+      {
+        kind: "shot_chart",
+        title: "Zone Profile",
+        zones: [
+          { x: 0, y: 2, att: 180, pct: 0.68 },
+          { x: 22, y: 1, att: 90, pct: 0.425 },
+        ],
+      },
+    ],
+  }, () => undefined);
+  assert.deepEqual(validated.blocks[0].anchors, []);
+  assert.equal(validated.artifacts[0].zones[0].pct, 68);
+  assert.equal(validated.artifacts[0].zones[1].pct, 42.5);
+});
+
+test("shot_chart zones carry optional label, makes and league-delta fields", () => {
+  const validated = validateAnswerSubmission({
+    blocks: [{ text: "Shot diet" }],
+    artifacts: [
+      {
+        kind: "shot_chart",
+        title: "Zone efficiency vs league",
+        zones: [
+          { x: 0, y: 4, att: 380, makes: 260, pct: 68.4, delta: 8.1, label: "rim-C" },
+          { x: -14, y: 14, att: 120, makes: 56, pct: 46.5, delta: -3.4, label: "long_mid-L" },
+        ],
+      },
+    ],
+  }, () => undefined);
+  const zone = validated.artifacts[0].zones[0];
+  assert.equal(zone.label, "rim-C");
+  assert.equal(zone.makes, 260);
+  assert.equal(zone.delta, 8.1);
+  assert.equal(zone.pct, 68.4);
+});
+
+function playerCardInput(overrides = {}) {
+  return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
+    metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
+}
+
+function playerCardSource() {
+  const source = makeSourceRecord("card-source", { rows: [{ player: "Alex Example", team: "Fixture City", pts: 24.6, missed: 0, impact: null }] });
+  source.response.structuredContent.declared_column_semantics = { pts: { unit: "points/game" }, missed: { unit: "games" } };
+  source.response.structuredContent.meta = { season: "fixture-season", sql: "SELECT player, team, pts FROM fixture WHERE player = ?" };
+  return source;
+}
+
+test("player cards resolve identity, exact values and declared units from one source row", () => {
+  const source = playerCardSource(), input = playerCardInput();
+  const original = structuredClone(input);
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [input] }, ref => ref === source.ref ? source : undefined);
+  const card = result.artifacts[0];
+  assert.equal(card.playerName, "Alex Example");
+  assert.equal(card.team, "Fixture City");
+  assert.equal(card.sourceRef, source.ref);
+  assert.equal(card.sourceRow, 0);
+  assert.deepEqual(card.metrics, [{ column: "pts", label: "Points", value: 24.6, unit: "points/game" }, { column: "missed", label: "Missed", value: 0, unit: "games" }, { column: "impact", label: "Impact", value: null }]);
+  assert.equal(card.provenance.origin, "undeclared");
+  assert.equal(card.provenance.season, "fixture-season");
+  assert.equal(card.provenance.sql, "SELECT player, team, pts FROM fixture WHERE player = ?");
+  assert.deepEqual(input, original);
+});
+
+test("player cards reject forged values, units, row joins and invalid selectors", () => {
+  const source = playerCardSource();
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [artifact] }, () => source);
+  for (const overrides of [
+    { row: -1 }, { row: 0.5 }, { row: 1 }, { nameColumn: "missing" }, { nameColumn: "pts" }, { teamColumn: "missing" },
+    { playerName: "Forged" }, { provenance: { origin: "warehouse" } }, { metrics: [] },
+    { metrics: Array.from({ length: 7 }, () => ({ column: "pts", label: "Points" })) },
+    { metrics: [{ column: "pts", label: "Points", value: 99 }] },
+    { metrics: [{ column: "pts", label: "Points", unit: "%" }] },
+    { metrics: [{ column: "pts", label: "Points", row: 1 }] },
+    { metrics: [{ column: "player", label: "Wrong type" }] },
+    { metrics: [{ column: "missing", label: "Missing" }] },
+  ]) assert.throws(() => validate(playerCardInput(overrides)));
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [playerCardInput()] }, () => undefined), /Unknown player_card source/);
+  source.response.isError = true;
+  assert.throws(() => validate(playerCardInput()), /successful source/);
+});
+
+test("player cards use source units fallback and refuse non-finite or string metrics", () => {
+  const source = playerCardSource();
+  source.response.structuredContent.units = { impact: "points/100 possessions" };
+  const validate = () => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [playerCardInput()] }, () => source);
+  assert.equal(validate().artifacts[0].metrics[2].unit, "points/100 possessions");
+  for (const value of ["24.6", Infinity, NaN, {}, undefined]) {
+    source.response.structuredContent.rows[0].pts = value;
+    assert.throws(validate);
+  }
+});
+
+test("player card sections resolve values and provenance from their own source rows", () => {
+  const header = playerCardSource();
+  const contract = makeSourceRecord("contract-src", { rows: [{ salary: 30000000, contract_type: "DVET-EXT" }] });
+  contract.response.structuredContent.meta = { season: "2026-27", source: "bref_contracts" };
+  const injury = makeSourceRecord("injury-src", { rows: [{ status: "Questionable", detail: "Ankle" }] });
+  injury.response.structuredContent.meta = { season: "2026-27", source: "espn" };
+  const sources = new Map([[header.ref, header], [contract.ref, contract], [injury.ref, injury]]);
+  const input = playerCardInput({
+    sections: [
+      { label: "Contract", ref: "contract-src", row: 0,
+        metrics: [{ column: "salary", label: "Salary" }],
+        fields: [{ column: "contract_type", label: "Deal" }] },
+      { label: "Availability", ref: "injury-src", row: 0,
+        fields: [{ column: "status", label: "Status" }, { column: "detail", label: "Detail" }] },
+    ],
+  });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  const card = result.artifacts[0];
+  assert.equal(card.sections.length, 2);
+  const [contractSection, injurySection] = card.sections;
+  assert.equal(contractSection.label, "Contract");
+  assert.equal(contractSection.sourceRef, "contract-src");
+  assert.deepEqual(contractSection.metrics, [{ column: "salary", label: "Salary", value: 30000000 }]);
+  assert.deepEqual(contractSection.fields, [{ column: "contract_type", label: "Deal", value: "DVET-EXT" }]);
+  assert.equal(contractSection.provenance.season, "2026-27");
+  assert.equal(contractSection.provenance.dataset, "bref_contracts");
+  assert.equal(contractSection.provenance.capability, "sql_exec");
+  assert.deepEqual(injurySection.fields, [{ column: "status", label: "Status", value: "Questionable" }, { column: "detail", label: "Detail", value: "Ankle" }]);
+  assert.equal(injurySection.metrics, undefined);
+  assert.equal(injurySection.provenance.dataset, "espn");
+});
+
+test("player card sections reject bad selectors, forged values and empty sections", () => {
+  const header = playerCardSource();
+  const other = makeSourceRecord("other-src", { rows: [{ val: 5, status: "ok" }] });
+  const sources = new Map([[header.ref, header], [other.ref, other]]);
+  const validate = input => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  for (const sections of [
+    [],
+    Array.from({ length: 7 }, () => ({ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }] })),
+    [{ label: "S", ref: "other-src", row: 0 }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [], fields: [] }],
+    [{ label: "S", ref: "missing-src", row: 0, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 3, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "missing", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "status", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "val", label: "F" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "status", label: "F", value: "forged" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }], provenance: { origin: "warehouse" } }],
+  ]) assert.throws(() => validate(playerCardInput({ sections })));
+});
+
+function teamCardInput(overrides = {}) {
+  return { kind: "team_card", title: "Team snapshot", ref: "team-src", row: 0, nameColumn: "team_name",
+    metrics: [{ column: "wins", label: "W" }, { column: "losses", label: "L" }, { column: "net_rating", label: "Net Rtg" }], ...overrides };
+}
+
+function teamCardSource() {
+  const source = makeSourceRecord("team-src", { rows: [{ team_name: "Example City Club", wins: 42, losses: 22, net_rating: 4.1 }] });
+  source.response.structuredContent.declared_column_semantics = { net_rating: { unit: "points/100 possessions" } };
+  source.response.structuredContent.meta = { season: "2026-27" };
+  return source;
+}
+
+test("team cards resolve identity, metrics and sections with per-section provenance", () => {
+  const header = teamCardSource();
+  const cap = makeSourceRecord("cap-src", { rows: [{ total_salary: 187000000, apron_room: -12000000, cap_status: "Above first apron" }] });
+  cap.response.structuredContent.meta = { season: "2026-27", source: "bref_cap" };
+  const fourFactors = makeSourceRecord("4f-src", { rows: [{ efg_pct: 0.56, rank_efg: 4, tov_pct: 0.128 }] });
+  fourFactors.response.structuredContent.meta = { season: "2026-27", source: "nba_four_factors" };
+  const picks = makeSourceRecord("picks-src", { rows: [{ pick_summary: "Own 2027-2032" }] });
+  picks.response.structuredContent.meta = { season: "2026-27", source: "picks" };
+  const sources = new Map([header, cap, fourFactors, picks].map(s => [s.ref, s]));
+  const input = teamCardInput({
+    sections: [
+      { label: "Payroll", ref: "cap-src", row: 0,
+        metrics: [{ column: "total_salary", label: "Payroll" }, { column: "apron_room", label: "Apron room" }],
+        fields: [{ column: "cap_status", label: "Cap status" }] },
+      { label: "Four factors", ref: "4f-src", row: 0,
+        metrics: [{ column: "efg_pct", label: "eFG%" }, { column: "rank_efg", label: "eFG rank" }] },
+      { label: "Draft capital", ref: "picks-src", row: 0,
+        fields: [{ column: "pick_summary", label: "Picks" }] },
+    ],
+  });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  const card = result.artifacts[0];
+  assert.equal(card.kind, "team_card");
+  assert.equal(card.teamName, "Example City Club");
+  assert.equal(card.sourceRef, "team-src");
+  assert.deepEqual(card.metrics[2], { column: "net_rating", label: "Net Rtg", value: 4.1, unit: "points/100 possessions" });
+  assert.equal(card.provenance.season, "2026-27");
+  assert.equal(card.sections.length, 3);
+  const [capSection, fourFactorSection, pickSection] = card.sections;
+  assert.deepEqual(capSection.metrics, [{ column: "total_salary", label: "Payroll", value: 187000000 }, { column: "apron_room", label: "Apron room", value: -12000000 }]);
+  assert.deepEqual(capSection.fields, [{ column: "cap_status", label: "Cap status", value: "Above first apron" }]);
+  assert.equal(capSection.provenance.dataset, "bref_cap");
+  assert.equal(fourFactorSection.metrics[1].value, 4);
+  assert.equal(fourFactorSection.provenance.dataset, "nba_four_factors");
+  assert.equal(pickSection.fields[0].value, "Own 2027-2032");
+});
+
+test("team cards reject forged values, bad rows and invalid selectors", () => {
+  const source = teamCardSource();
+  const other = makeSourceRecord("other-src", { rows: [{ val: 5, note: "ok" }] });
+  const sources = new Map([[source.ref, source], [other.ref, other]]);
+  const validate = input => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  for (const overrides of [
+    { row: -1 }, { row: 1 }, { nameColumn: "missing" }, { nameColumn: "wins" }, { teamName: "Forged" },
+    { metrics: [] }, { metrics: [{ column: "wins", label: "W", value: 42 }] },
+    { metrics: [{ column: "team_name", label: "Name" }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0 }] },
+    { sections: [{ label: "S", ref: "missing-src", row: 0, metrics: [{ column: "val", label: "V" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "val", label: "F" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "note", label: "V" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V", unit: "%" }] }] },
+  ]) assert.throws(() => validate(teamCardInput(overrides)));
+});
+=======
+test("player card sections resolve values and provenance from their own source rows", () => {
+  const header = playerCardSource();
+  const contract = makeSourceRecord("contract-src", { rows: [{ salary: 30000000, contract_type: "DVET-EXT" }] });
+  contract.response.structuredContent.meta = { season: "2026-27", source: "bref_contracts" };
+  const injury = makeSourceRecord("injury-src", { rows: [{ status: "Questionable", detail: "Ankle" }] });
+  injury.response.structuredContent.meta = { season: "2026-27", source: "espn" };
+  const sources = new Map([[header.ref, header], [contract.ref, contract], [injury.ref, injury]]);
+  const input = playerCardInput({
+    sections: [
+      { label: "Contract", ref: "contract-src", row: 0,
+        metrics: [{ column: "salary", label: "Salary" }],
+        fields: [{ column: "contract_type", label: "Deal" }] },
+      { label: "Availability", ref: "injury-src", row: 0,
+        fields: [{ column: "status", label: "Status" }, { column: "detail", label: "Detail" }] },
+    ],
+  });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  const card = result.artifacts[0];
+  assert.equal(card.sections.length, 2);
+  const [contractSection, injurySection] = card.sections;
+  assert.equal(contractSection.label, "Contract");
+  assert.equal(contractSection.sourceRef, "contract-src");
+  assert.deepEqual(contractSection.metrics, [{ column: "salary", label: "Salary", value: 30000000 }]);
+  assert.deepEqual(contractSection.fields, [{ column: "contract_type", label: "Deal", value: "DVET-EXT" }]);
+  assert.equal(contractSection.provenance.season, "2026-27");
+  assert.equal(contractSection.provenance.dataset, "bref_contracts");
+  assert.equal(contractSection.provenance.capability, "sql_exec");
+  assert.deepEqual(injurySection.fields, [{ column: "status", label: "Status", value: "Questionable" }, { column: "detail", label: "Detail", value: "Ankle" }]);
+  assert.equal(injurySection.metrics, undefined);
+  assert.equal(injurySection.provenance.dataset, "espn");
+});
+
+test("player card sections reject bad selectors, forged values and empty sections", () => {
+  const header = playerCardSource();
+  const other = makeSourceRecord("other-src", { rows: [{ val: 5, status: "ok" }] });
+  const sources = new Map([[header.ref, header], [other.ref, other]]);
+  const validate = input => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  for (const sections of [
+    [],
+    Array.from({ length: 7 }, () => ({ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }] })),
+    [{ label: "S", ref: "other-src", row: 0 }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [], fields: [] }],
+    [{ label: "S", ref: "missing-src", row: 0, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 3, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "missing", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "status", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "val", label: "F" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "status", label: "F", value: "forged" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }], provenance: { origin: "warehouse" } }],
+  ]) assert.throws(() => validate(playerCardInput({ sections })));
+});
+>>>>>>> origin/dev
+test("priorSubmissions returns thread submissions in order and compactPriorSubmissions bounds them", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "prior-subs-"));
+  try {
+    const store = new ProductStore(join(dir, "conversations.sqlite3"), join(dir, "sources"));
+    const identity = { owner: "owner-a", thread: "thread-a" };
+    const source = makeSourceRecord("src-a", { rows: [{ v: 1 }] });
+    const submission1 = { blocks: [{ text: "First answer." }], artifacts: [{ kind: "table", title: "T1", columns: [{ key: "v", label: "V" }], rows: Array.from({ length: 30 }, (_, i) => ({ v: i })) }] };
+    const submission2 = { blocks: [{ text: "Second answer." }] };
+    store.saveSources("run-" + "a".repeat(32), [source], [source], submission1);
+    store.append(identity, "Q1", "A1", "run-" + "a".repeat(32));
+    store.saveSources("run-" + "b".repeat(32), [source], [source]);
+    store.append(identity, "Q2", "A2", "run-" + "b".repeat(32));
+    store.saveSources("run-" + "c".repeat(32), [source], [source], submission2);
+    store.append(identity, "Q3", "A3", "run-" + "c".repeat(32));
+
+    const priors = store.priorSubmissions(identity);
+    assert.equal(priors.length, 2);
+    assert.equal(priors[0].run_id, "run-" + "a".repeat(32));
+    assert.equal(priors[1].run_id, "run-" + "c".repeat(32));
+    assert.equal(priors[0].submission.blocks[0].text, "First answer.");
+    assert.deepEqual(store.priorSubmissions({ owner: "other", thread: "thread-a" }), []);
+
+    const { compactPriorSubmissions } = await import("./dist/pi-execution.js");
+    const compact = compactPriorSubmissions(priors);
+    assert.equal(compact.length, 2);
+    assert.equal(compact[0].run_id, "run-" + "c".repeat(32));
+    assert.equal(compact[1].run_id, "run-" + "a".repeat(32));
+    const table = compact[1].artifacts[0];
+    assert.equal(table.kind, "table");
+    assert.equal(table.rows.length, 25);
+    assert.equal(table.rows[24], "…6 more");
+    const longText = compactPriorSubmissions([{ run_id: "run-x", submission: { blocks: [{ text: "t".repeat(800) }] } }]);
+    assert.equal(longText[0].blocks[0].text.length, 501);
+    assert(longText[0].blocks[0].text.endsWith("…"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+test("memo artifacts validate section anchors like block anchors", () => {
+  const sources = new Map([
+    ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],
+  ]);
+  const memo = {
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [
+      { heading: "Cap position", body: "Orlando sits under the first apron.", anchors: [{ ref: "cap-source", row: 0, columns: ["team", "payroll"] }] },
+      { heading: "Options", body: "Aggregate mid-tier salary." },
+    ],
+  };
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [memo] }, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].kind, "memo");
+  assert.equal(validated.artifacts[0].sections[0].anchors[0].ref, "cap-source");
+});
+
+test("memo artifacts reject anchors to unknown refs, bad rows and missing columns", () => {
+  const source = makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] });
+  const memo = anchors => ({
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [{ heading: "Cap position", body: "Body.", anchors }],
+  });
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, ref => ref === "cap-source" ? source : undefined);
+  assert.throws(() => validate(memo([{ ref: "ghost", row: 0, columns: ["team"] }])), /Unknown source ref/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
+});
+});
+
+test("unknown and empty artifact kinds are dropped with a warning the agent sees", async () => {
+  const source = makeSourceRecord("src-1", { rows: [{ stat: "reb", value: 10 }] });
+  let accepted = null;
+  const tool = createSubmitAnswerTool(
+    () => [source],
+    sub => { accepted = sub; }
+  );
+  const submission = {
+    blocks: [{ text: "Done." }],
+    artifacts: [
+      { kind: "pie", title: "Playstyle pie" },
+      { kind: "chart", title: "Empty trend" },
+      { kind: "memo", title: "No sections", sections: [] },
+      { kind: "table", title: "Rebounds", columns: [{ key: "stat", label: "Stat" }], rows: [["reb", 10]] },
+    ],
+  };
+  const result = await tool.execute("call-2", submission);
+  assert.equal(accepted.artifacts.length, 1);
+  assert.equal(accepted.artifacts[0].kind, "table");
+  const text = result.content[0].text;
+  assert.match(text, /unknown artifact kind "pie"/);
+  assert.match(text, /"chart" artifact has no series/);
+  assert.match(text, /"memo" artifact has no sections/);
+  assert.match(text, /Supported kinds: .*memo/);
+});
+
+test("validateAnswerSubmission drops rejected artifacts but keeps valid ones", () => {
+  const warnings = [];
+  const validated = validateAnswerSubmission(
+    { blocks: [{ text: "x" }], artifacts: [{ kind: "mystery", title: "?" }, { kind: "scatter", title: "ok", points: [{ label: "p", x: 1, y: 2 }] }] },
+    () => undefined,
+    undefined,
+    warnings,
+  );
+  assert.equal(validated.artifacts.length, 1);
+  assert.equal(validated.artifacts[0].kind, "scatter");
+  assert.deepEqual(warnings, ['dropped artifact: unknown artifact kind "mystery"']);
+});
+test("memo artifacts validate section anchors like block anchors", () => {
+  const sources = new Map([
+    ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],
+  ]);
+  const memo = {
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [
+      { heading: "Cap position", body: "Orlando sits under the first apron.", anchors: [{ ref: "cap-source", row: 0, columns: ["team", "payroll"] }] },
+      { heading: "Options", body: "Aggregate mid-tier salary." },
+    ],
+  };
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [memo] }, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].kind, "memo");
+  assert.equal(validated.artifacts[0].sections[0].anchors[0].ref, "cap-source");
+});
+
+test("memo artifacts reject anchors to unknown refs, bad rows and missing columns", () => {
+  const source = makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] });
+  const memo = anchors => ({
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [{ heading: "Cap position", body: "Body.", anchors }],
+  });
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, ref => ref === "cap-source" ? source : undefined);
+  assert.throws(() => validate(memo([{ ref: "ghost", row: 0, columns: ["team"] }])), /Unknown source ref/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
+});

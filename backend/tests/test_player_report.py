@@ -6,7 +6,7 @@ import pytest
 from shared import store
 from shared.tools import TOOL_NAMES, get_player_report
 from shared.tools import _core as core_mod
-from v2.adapters import coverage as coverage_mod
+from shared import coverage as coverage_mod
 
 @pytest.fixture()
 def warehouse(monkeypatch, tmp_path):
@@ -37,13 +37,11 @@ def warehouse(monkeypatch, tmp_path):
 
 def test_registered(): assert "get_player_report" in TOOL_NAMES
 
-def test_lebron_report_names_the_absent_season_table():
-    pytest = __import__("pytest")
-    with pytest.raises(store.TableAbsent) as info:
-        get_player_report.invoke({"player": "LeBron James"})
-    assert info.value.table == "silver_player_season"
-    assert str(store.DB_PATH) == info.value.warehouse
-    assert store.DB_PATH.name in str(info.value)
+@pytest.mark.canonical_warehouse
+def test_lebron_report_serves_the_current_season_line():
+    res = get_player_report.invoke({"player": "LeBron James"})
+    assert res["ok"] is True
+    assert res["rows"]["season_line"]["PLAYER"] == "LeBron James"
 
 def test_historical_report_stays_warehouse_bounded(monkeypatch):
     from shared.tools import player as module

@@ -185,7 +185,7 @@ def _classify_scoreboard_rows(
 def _load_scoreboard(
     season: str,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    season = resolve_season(season)
+    season = resolve_season(season, "silver_scoreboard")
     from .. import store as _store
 
     con = _store.connect(read_only=True)
@@ -225,7 +225,7 @@ def _game_row(g: TeamGame) -> dict[str, Any]:
 def get_rest_advantage(team: str = "league", season: str | None = None,
                        season_type: str = "all", date: str = "",
                        opponent: str = "") -> dict[str, Any]:
-    season = resolve_season(season)
+    season = resolve_season(season, "silver_scoreboard")
     season = clamp_season(season)
     args, err = _rest_args(team, season_type, date, opponent)
     if err is not None:

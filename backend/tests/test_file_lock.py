@@ -11,8 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import file_lock
 from shared import store
-from v2.runtime import ledger as ledger_module
-from v2.runtime.ledger import FileLedger, LedgerKind
 
 _HOLDER_SOURCE = (
     "import sys, time\n"
@@ -221,41 +219,3 @@ def test_store_state_write_guard_releases_the_lock_when_the_body_raises(tmp_path
             raise RuntimeError("injected")
     with store.state_write_guard(timeout_s=1.0):
         pass
-
-
-def test_ledger_append_times_out_while_another_process_holds_the_ledger_lock(tmp_path, monkeypatch):
-    path = tmp_path / "run.jsonl"
-    FileLedger(path, "run")
-    lock_path = path.with_name(path.name + ".lock")
-    proc = _start_holder(tmp_path, lock_path, 30)
-    monkeypatch.setattr(ledger_module, "_LEDGER_LOCK_TIMEOUT_S", 0.4)
-    try:
-        with pytest.raises(TimeoutError):
-            FileLedger(path, "run")
-    finally:
-        monkeypatch.setattr(ledger_module, "_LEDGER_LOCK_TIMEOUT_S", 60.0)
-        proc.terminate()
-        proc.wait(timeout=_SUBPROCESS_TIMEOUT_S)
-    monkeypatch.setattr(ledger_module, "_LEDGER_LOCK_TIMEOUT_S", 5.0)
-    recovered = FileLedger(path, "run")
-    entry = recovered.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
-    assert entry.sequence == 1
-    assert [x.sequence for x in recovered.entries] == [1]
-    assert path.read_bytes().count(b"\n") == 1
-
-
-def test_ledger_append_serializes_behind_another_process_and_leaves_no_truncation(tmp_path):
-    path = tmp_path / "run.jsonl"
-    ledger = FileLedger(path, "run")
-    lock_path = path.with_name(path.name + ".lock")
-    proc = _start_holder(tmp_path, lock_path, 1.0)
-    original_timeout = ledger_module._LEDGER_LOCK_TIMEOUT_S
-    ledger_module._LEDGER_LOCK_TIMEOUT_S = 30.0
-    try:
-        entry = ledger.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
-    finally:
-        ledger_module._LEDGER_LOCK_TIMEOUT_S = original_timeout
-        proc.wait(timeout=_SUBPROCESS_TIMEOUT_S)
-    assert entry.sequence == 1
-    assert proc.returncode == 0
-    assert [x.sequence for x in FileLedger(path, "run").entries] == [1]

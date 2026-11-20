@@ -207,6 +207,8 @@ def _check(sql: str, allowed: set[str]) -> str:
             raise ValueError("blocked: table functions are not allowed; "
                              "query the warehouse tables")
     for fn in tree.find_all(exp.Func):
+        if isinstance(fn, exp.Connector):
+            continue
         fname = _func_name(fn)
         if fname not in _SAFE_FUNCTIONS:
             raise ValueError("blocked: function not allowed: " + fname)
@@ -237,6 +239,19 @@ def _run_with_timeout(con, sql: str, timeout_s: float,
     if "error" in out:
         raise out["error"]
     return out["result"]
+
+def _duplicate_output_name(names: list[str]) -> str | None:
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            return name
+        seen.add(name)
+    return None
+
+def _duplicate_output_error(duplicate: str) -> str:
+    return (f"duplicate output column name {duplicate!r}; "
+            "give every SELECT column a unique alias so no "
+            "value is silently overwritten")
 
 def query_warehouse(sql: str, max_rows: int = ROW_CAP,
                     timeout_s: float = STATEMENT_TIMEOUT_S) -> dict:
@@ -274,6 +289,10 @@ def query_warehouse(sql: str, max_rows: int = ROW_CAP,
             con.close()
         except Exception:
             pass
+    duplicate = _duplicate_output_name(cols)
+    if duplicate is not None:
+        return {"tool": "query_warehouse", "ok": False,
+                "error": _duplicate_output_error(duplicate)}
     ms = int((time.monotonic() - t0) * 1000)
     kept = rows[:cap]
     return {
