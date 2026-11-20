@@ -150,3 +150,51 @@ def test_steals_leader_matches_warehouse():
     first = res["rows"][0]
     assert first["PLAYER"] == expected[0]
     assert int(first["STL"]) == int(expected[1])
+
+_ABBREVS = [
+    "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW",
+    "HOU", "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN", "NOP", "NYK",
+    "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS",
+]
+
+
+def _example_sql(prompt_fragment: str) -> str:
+    from shared.tools.league.sql_schema import _TEXT_TO_SQL_EXAMPLES
+
+    marker = prompt_fragment + "\n"
+    start = _TEXT_TO_SQL_EXAMPLES.index(marker) + len(marker)
+    sql = _TEXT_TO_SQL_EXAMPLES[start:].split("SQL: ", 1)[1]
+    return sql.split("\n", 1)[0].strip()
+
+
+def test_payroll_example_uses_real_salary_column():
+    sql = _example_sql("highest total payroll?")
+    assert "SALARY_2025_26" in sql
+    assert "_season" in sql
+    assert "SUM(SALARY)" not in sql
+
+
+def test_payroll_wins_example_keeps_every_team():
+    sql = _example_sql("pays the most per win this season?")
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries "
+            "(PLAYER_NAME TEXT, TEAM TEXT, SALARY_2025_26 BIGINT, _season TEXT)")
+        con.execute(
+            "CREATE TABLE silver_team_games "
+            "(MATCHUP TEXT, WL TEXT, _season TEXT)")
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?, ?, ?, '2026-27')",
+            [(f"P{i}", team, 1000 + i) for i, team in enumerate(_ABBREVS)])
+        others = [t for t in _ABBREVS if t != "WAS"]
+        con.executemany(
+            "INSERT INTO silver_team_games VALUES (?, 'W', '2025-26')",
+            [(f"{t} vs. OKC",) for t in others])
+        rows = con.execute(sql).fetchall()
+    finally:
+        con.close()
+    assert len(rows) == 30
+    by_team = {r[0]: r for r in rows}
+    assert by_team["WAS"][3] == 0
+    assert by_team["WAS"][2] == 0
