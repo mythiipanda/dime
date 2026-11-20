@@ -28,7 +28,11 @@ def last_completed_season() -> str | None:
         seasons = store.completed_seasons_across_tables()
     except Exception:
         return None
-    value = seasons[-1] if seasons else None
+    if not seasons:
+        return None
+    cal = calendar_last_completed_season()
+    done = [s for s in seasons if s <= cal] if cal else seasons
+    value = done[-1] if done else seasons[-1]
     _LAST_SEASON_KEY = key
     _LAST_SEASON_VALUE = value
     return value
