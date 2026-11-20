@@ -27,27 +27,43 @@ def _completed_season_totals(stat_category, season, order="DESC"):
     con = pkg.store.connect(read_only=True)
     try:
         tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
-        if "silver_boxscores" not in tables:
-            return None
-        columns = {
-            row[1]
-            for row in con.execute(
-                "PRAGMA table_info(silver_boxscores)").fetchall()
-        }
-        if not {"PLAYER_ID", "firstName", "familyName", "GAME_ID",
-                "teamTricode", column, "comment", "_season"} <= columns:
-            return None
-        raw = con.execute(
-            "SELECT PLAYER_ID, firstName || ' ' || familyName AS PLAYER, "
-            "MODE(teamTricode) AS TEAM, "
-            "COUNT(DISTINCT GAME_ID) AS GP, "
-            f"SUM({column}) AS TOTAL "
-            "FROM silver_boxscores WHERE _season = ? "
-            "AND (comment IS NULL OR comment = '') "
-            "GROUP BY PLAYER_ID, firstName, familyName "
-            f"ORDER BY TOTAL {order}",
-            [season],
-        ).fetchall()
+        raw = []
+        if "silver_boxscores" in tables:
+            columns = {
+                row[1]
+                for row in con.execute(
+                    "PRAGMA table_info(silver_boxscores)").fetchall()
+            }
+            if {"PLAYER_ID", "firstName", "familyName", "GAME_ID",
+                    "teamTricode", column, "comment", "_season"} <= columns:
+                raw = con.execute(
+                    "SELECT PLAYER_ID, firstName || ' ' || familyName AS PLAYER, "
+                    "MODE(teamTricode) AS TEAM, "
+                    "COUNT(DISTINCT GAME_ID) AS GP, "
+                    f"SUM({column}) AS TOTAL "
+                    "FROM silver_boxscores WHERE _season = ? "
+                    "AND (comment IS NULL OR comment = '') "
+                    "GROUP BY PLAYER_ID, firstName, familyName "
+                    f"ORDER BY TOTAL {order}",
+                    [season],
+                ).fetchall()
+        if not raw and {"silver_player_gamelogs",
+                        "silver_player_season"} <= tables:
+            try:
+                raw = con.execute(
+                    "SELECT g.Player_ID, s.PLAYER, MODE(s.TEAM) AS TEAM, "
+                    "COUNT(DISTINCT g.Game_ID) AS GP, "
+                    f"SUM(g.{stat_category}) AS TOTAL "
+                    "FROM silver_player_gamelogs g "
+                    "JOIN silver_player_season s "
+                    "  ON s.PLAYER_ID = g.Player_ID AND s._season = g._season "
+                    "WHERE g._season = ? "
+                    "GROUP BY g.Player_ID, s.PLAYER "
+                    f"ORDER BY TOTAL {order}",
+                    [season],
+                ).fetchall()
+            except duckdb.Error:
+                raw = []
     finally:
         con.close()
     if not raw:
@@ -112,17 +128,26 @@ def _qualified_rate_board(
         qualification = QualificationFloor(
             "total_minutes", floor_value, f"{floor_value:,}+ total minutes",
             "TOTAL_MINUTES")
+        probe = _floor_rows(
+            con,
+            "SELECT MAX(MIN) FROM silver_advanced WHERE _season = ?",
+            [season], "silver_advanced", qualification)
+        probe_value = probe[0][0] if probe else None
+        per_game = probe_value is not None and probe_value <= 60.0
+        total_expr = "MIN * GP" if per_game else "MIN"
         raw = _floor_rows(
             con,
             "SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, TS_PCT "
             "FROM silver_advanced WHERE _season = ? "
-            f"AND MIN >= ? ORDER BY TS_PCT {order}, MIN DESC",
+            f"AND {total_expr} >= ? "
+            f"ORDER BY TS_PCT {order}, {total_expr} DESC",
             [season, floor_value], "silver_advanced", qualification)
         rows = [
             {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
              "GP": row[2],
-             "MPG": (row[3] / row[2]) if row[2] else 0,
-             "TOTAL_MINUTES": row[3],
+             "MPG": row[3] if per_game
+                  else (row[3] / row[2] if row[2] else 0),
+             "TOTAL_MINUTES": row[3] * row[2] if per_game else row[3],
              "TS_PCT": round(float(row[4]) * 100, 1)}
             for index, row in enumerate(raw, 1)
         ]
@@ -226,12 +251,25 @@ def _leaders_rate_board(stat_category: str, season: str, order: str,
 def _leaders_table_board(stat_category: str, season: str, order: str):
     pkg = _pkg()
     table = f"silver_leaders_{stat_category.lower()}"
+    if pkg.season_static(season):
+        totals = pkg._completed_season_totals(stat_category, season, order)
+        if totals is not None:
+            return totals
     rows, meta = pkg._warehouse_or_live(
         table, "_season = ?",
         [season], lambda: pkg.nba_stats.leaders(stat_category, season), season,
     )
     meta["stat_category"] = stat_category
     meta.setdefault("season", season)
+    if rows:
+        meta.setdefault(
+            "qualification",
+            "Season totals summed from warehouse game logs; "
+            "games not played are left out.")
+        meta.setdefault(
+            "coverage",
+            "Full player population in warehouse game logs "
+            "for the season, ordered by total.")
     needs_id_fallback = bool(rows) and not any(
         "PLAYER_ID" in row or "player_id" in row for row in rows
     )

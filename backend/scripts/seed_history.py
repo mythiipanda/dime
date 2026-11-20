@@ -28,6 +28,26 @@ FILES = {
 def season_label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[2:]}"
 
+def full_name_map() -> dict[int, str]:
+    from nba_api.stats.static import players
+
+    return {int(p["id"]): str(p["full_name"])
+            for p in players.get_players()
+            if p.get("id") is not None and p.get("full_name")}
+
+def normalize_shot_names(frame):
+    if "person_id" not in frame.columns or "player_name" not in frame.columns:
+        return frame
+    names = full_name_map()
+    if not names:
+        return frame
+    mapped = frame["person_id"].map_elements(
+        lambda pid: names.get(int(pid)) if pid is not None else None,
+        return_dtype=pl.String)
+    return frame.with_columns(
+        pl.when(mapped.is_not_null()).then(mapped)
+        .otherwise(frame["player_name"]).alias("player_name"))
+
 def fetch(url: str, dest: Path) -> bool:
     if dest.exists() and dest.stat().st_size > 0:
         return True
@@ -93,6 +113,8 @@ def main() -> None:
         if not staged:
             continue
         unified = unify([f for _, f in staged])
+        if table == "silver_hist_shots":
+            unified = [normalize_shot_names(f) for f in unified]
         for (y, _), frame in zip(staged, unified):
             res = FetchResult(
                 frame=frame,

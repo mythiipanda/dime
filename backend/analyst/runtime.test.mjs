@@ -9,8 +9,9 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./dist/runtime.js";
 import { loadSkillTool, priorSourceTool } from "./dist/pi-context.js";
-import { connectPythonTools, sourceResult } from "./dist/python-tools.js";
+import { connectPythonTools, sourceResult, ANALYST_TOOL_NAMES } from "./dist/python-tools.js";
 import { validateAnswerSubmission } from "./dist/submit-tool.js";
+import { analystEventFrom } from "./dist/pi-execution.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -198,6 +199,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "sql_exec",
       "warehouse_schema",
       "get_rapm",
+      "get_impact_rank",
       "get_game_prediction",
       "get_wpa_leaders",
       "get_comps",
@@ -210,6 +212,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_competitive_ratings",
       "get_hustle",
       "get_injuries",
+      "get_news_feed",
       "get_award_results",
       "get_briefing",
       "get_standings",
@@ -230,6 +233,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_contract_value",
       "get_trade_check",
       "get_trade_value",
+      "get_trade_partners",
       "get_situational_splits",
       "get_playoff_sim",
       "get_playoff_team_ratings",
@@ -365,7 +369,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 93);
+    assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
+    assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1190,6 +1195,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       sql_exec: { sql: "SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS" },
       warehouse_schema: {},
       get_rapm: { player: "NonexistentPlayer", season: "2024-25" },
+      get_impact_rank: { player: "Jaylen Brown", season: "2025-26" },
       get_game_prediction: { a: "BOS", b: "MIA", n_sims: 100 },
       get_wpa_leaders: { season: 2025, limit: 5 },
       get_comps: { player_id: 2544, season: "2023-24", k: 3 },
@@ -1202,6 +1208,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_competitive_ratings: { team: "BOS" },
       get_hustle: { scope: "player" },
       get_injuries: { team: "BOS" },
+      get_news_feed: { team: "BOS", limit: 5 },
       get_award_results: { view: "winner", award: "mvp" },
       get_briefing: { game_date: "10/24/2023" },
       get_standings: { season: "2023-24" },
@@ -1222,6 +1229,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_contract_value: { player: "NonexistentPlayer" },
       get_trade_check: { team_a: "BOS", team_b: "MIA" },
       get_trade_value: { team_a: "BOS", team_b: "MIA" },
+      get_trade_partners: { player: "Jaylen Brown", season: "2026-27" },
       get_situational_splits: { entity: "LeBron James" },
       get_playoff_sim: { season: "2023-24", sims: 100 },
       get_playoff_team_ratings: { season: "2023-24", limit: 5 },
@@ -1480,4 +1488,11 @@ test("loadSkillTool reports each successful skill load", async () => {
   await tool.execute("c1", { name: "CBA-Trade-Analysis" });
   await tool.execute("c2", { name: "missing" });
   assert.deepEqual(loaded, ["cba-trade-analysis"]);
+});
+
+test("analystEventFrom traces provider retries in the run event stream", () => {
+  assert.deepEqual(analystEventFrom({ type: "auto_retry_start", attempt: 1, maxAttempts: 6, delayMs: 5000, errorMessage: "429" }), { type: "tool_call", name: "provider_retry" });
+  assert.deepEqual(analystEventFrom({ type: "auto_retry_end", success: false, attempt: 6, finalError: "429" }), { type: "tool_result", name: "provider_retry", status: "fail", error: "429" });
+  assert.deepEqual(analystEventFrom({ type: "auto_retry_end", success: true, attempt: 2 }), { type: "tool_result", name: "provider_retry", status: "ok", error: undefined });
+  assert.equal(analystEventFrom({ type: "agent_start" }), undefined);
 });

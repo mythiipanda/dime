@@ -13,6 +13,7 @@ export type {
   FinalEvent,
   ProvenanceEvidence,
   ProvenanceOrigin,
+  PlayerCardArtifactPayload,
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   StreamFailure,

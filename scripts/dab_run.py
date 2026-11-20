@@ -41,6 +41,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--judge-base-url", default="https://generativelanguage.googleapis.com/v1beta/openai/")
     parser.add_argument("--split", default="dev")
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--tasks", default=None, help="Comma-separated dev task IDs for a spot check")
+    parser.add_argument("--workers", type=int, default=1, help="Run DAB adapter tasks concurrently")
+    parser.add_argument("--no-llm-judge", action="store_true", help="Score deterministic anchors/artifacts only")
+    parser.add_argument("--save-history", action="store_true", help="Save the judged run into dime-internal DAB history")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--timeout-s", type=float, default=420.0)
     parser.add_argument("--out-name", default=None)
@@ -180,12 +184,20 @@ def eval_command(args: argparse.Namespace) -> list[str]:
     ]
     if args.limit is not None:
         cmd.extend(["--limit", str(args.limit)])
+    if args.tasks:
+        cmd.extend(["--tasks", args.tasks])
+    cmd.extend(["--workers", str(args.workers)])
     cmd.extend([
         "--timeout-s", str(args.timeout_s),
-        "--judge-model", args.judge_model,
-        "--judge-base-url", args.judge_base_url,
         "--out-dir", f"runs/{args.out_name}",
     ])
+    if args.no_llm_judge:
+        cmd.append("--no-llm-judge")
+    else:
+        cmd.extend([
+            "--judge-model", args.judge_model,
+            "--judge-base-url", args.judge_base_url,
+        ])
     return cmd
 
 
@@ -213,6 +225,28 @@ def dab_root() -> Path:
     if sibling.is_dir():
         return sibling
     return Path("C:/Users/15980/Downloads/dime/dime-internal/benchmarks/dab-v1")
+
+
+def save_history(args: argparse.Namespace) -> bool:
+    root = dab_root()
+    saver = root / "save_run.py"
+    run_dir = root / "runs" / args.out_name
+    if not saver.is_file():
+        print(f"DAB save_run.py not found: {saver}", file=sys.stderr)
+        return False
+    proc = subprocess.run(
+        [sys.executable, str(saver), str(run_dir), "--name", args.out_name],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        print(redact(proc.stderr.strip()), file=sys.stderr)
+        return False
+    print(proc.stdout.strip())
+    return True
 
 
 def report_results(args: argparse.Namespace) -> bool:
@@ -293,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
             print("eval subprocess failed", file=sys.stderr)
             ok = False
         if not report_results(args):
+            ok = False
+        elif args.save_history and not save_history(args):
             ok = False
     finally:
         terminate_host(host, args.keep_host)

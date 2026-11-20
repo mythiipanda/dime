@@ -5,7 +5,10 @@ import { ArrowRight, Book, ChatBubble, Search } from "iconoir-react";
 import WarehouseView from "../dime/views/WarehouseView";
 import { Button } from "../ds/Button";
 import { Chip } from "../ds/Chip";
-import { PageHeader } from "../ds/Panel";
+import { PageHeader, Surface } from "../ds/Panel";
+import { listBoards, type Board } from "../../lib/boards";
+import { SegmentedControl } from "../ds/SegmentedControl";
+import { TextField } from "../ds/TextField";
 import { BACKEND } from "../../lib/chat";
 import { getClientId, getThreads, type ThreadInfo } from "../../lib/api";
 import { getHomeSnapshot, type HomeSnapshot } from "../../lib/warehouse";
@@ -39,14 +42,20 @@ export function HomeView({ onAsk }: { onAsk: () => void }) {
   }, [attempt]);
   return <div className="workspace-page">
     <PageHeader eyebrow="Your daily read" title="Around the league" description="The cached schedule and a warehouse-backed league snapshot. Evidence first, with coverage and freshness in view." actions={<Chip>Warehouse snapshot</Chip>} />
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-inset px-5 py-4"><div><p className="text-[13px] font-medium">Turn a question into a decision.</p><p className="mt-1 text-[12px] text-ink-3">Scouting, matchup analysis, and roster evaluation — start with a question.</p></div><Button size="sm" onClick={onAsk}>Ask Dime <ArrowRight width={13} height={13} /></Button></div>
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-inset px-5 py-4"><div><p className="text-[13px] font-medium">Turn a question into a decision.</p><p className="mt-1 text-[12px] text-ink-3">Scouting, matchup analysis, and roster evaluation — start with a guided workflow.</p></div><Button size="sm" onClick={onAsk}>Explore workflows <ArrowRight width={13} height={13} /></Button></div>
     {error ? <div role="alert" className="rounded-xl border border-line p-6"><p className="mb-4 text-[13px] text-red">Could not load the warehouse snapshot. No sample data is substituted.</p><Button size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button></div> : data ? <HomeContent data={data} /> : <p role="status" className="py-12 text-[13px] text-ink-3">Loading the warehouse snapshot…</p>}
   </div>;
 }
 
-type LibraryItem = { id: string; title: string; updated: string; meta: string; kind: "thread" | "project" };
+type LibraryItem = { id: string; title: string; updated: string; meta: string; kind: "thread" | "project" | "board" };
 type Project = { id: string; goal: string; status: string; updated_at: string };
-export function LibraryView({ onThread }: { onThread: (id: string) => void }) {
+export function LibraryView({ onThread, onBoard }: { onThread: (id: string) => void; onBoard?: (id: string) => void }) {
+  const [boards, setBoards] = useState<Board[]>([]);
+  useEffect(() => {
+    const update = () => setBoards(listBoards());
+    update(); window.addEventListener("storage", update); window.addEventListener("dime:boards", update);
+    return () => { window.removeEventListener("storage", update); window.removeEventListener("dime:boards", update); };
+  }, []);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
@@ -77,20 +86,22 @@ export function LibraryView({ onThread }: { onThread: (id: string) => void }) {
       }).catch(() => { if (!cancelled) setError(true); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [attempt]);
-  const visible = useMemo(() => items.filter(item => (filter === "all" || item.kind === filter) && `${item.title} ${item.meta}`.toLowerCase().includes(query.toLowerCase())), [items, query, filter]);
+  const allItems = useMemo(() => [...items, ...boards.map((board): LibraryItem => ({ id: board.id, title: board.title, updated: board.updated_at, meta: `${board.season} · ${board.rows.length} players · Saved in this browser`, kind: "board" }))].sort((a, b) => b.updated.localeCompare(a.updated)), [items, boards]);
+  const visible = useMemo(() => allItems.filter(item => (filter === "all" || item.kind === filter) && `${item.title} ${item.meta}`.toLowerCase().includes(query.toLowerCase())), [allItems, query, filter]);
+  const failed = error && !boards.length;
   return <div className="workspace-page">
-    <PageHeader eyebrow="Your research, organized" title="Library" description="Saved conversations and analyst projects. Pick up a question where you left off." actions={<Chip>{items.length} saved</Chip>} />
+    <PageHeader eyebrow="Your research, organized" title="Library" description="Conversations, analyst projects and boards saved in this browser. Pick up where you left off." actions={<Chip>{allItems.length} saved</Chip>} />
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex gap-1 rounded-lg border border-line bg-inset p-1" aria-label="Library filters">{[["all", "All research"], ["thread", "Conversations"], ["project", "Projects"]].map(([id, label]) => <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id} className={`rounded-md px-3 py-1.5 text-[12px] ${filter === id ? "bg-surface text-ink shadow-sm" : "text-ink-3 hover:text-ink"}`}>{label}</button>)}</div>
-      <label className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2"><Search width={14} height={14} className="text-ink-3" /><input aria-label="Search library" placeholder="Search your research…" value={query} onChange={event => setQuery(event.target.value)} className="min-w-0 bg-transparent text-[12px] outline-none" /></label>
+      <SegmentedControl options={["all", "thread", "project", "board"]} value={filter} onChange={setFilter} label="Library filters" labels={{ all: "All research", thread: "Conversations", project: "Projects", board: "Boards" }} />
+      <div className="relative w-full sm:w-64"><Search aria-hidden="true" width={14} height={14} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-3" /><TextField type="search" aria-label="Search library" placeholder="Search your research…" value={query} onChange={event => setQuery(event.target.value)} className="pl-9" /></div>
     </div>
-    {!loading && !error && projectsError && <p role="status" className="mb-4 text-[12px] text-ink-3">Projects could not be loaded. Conversations are still available. <button className="underline" onClick={() => setAttempt(value => value + 1)}>Retry projects</button></p>}
-    {!loading && !error && threadsError && <p role="status" className="mb-4 text-[12px] text-ink-3">Conversations could not be loaded from the server.{cachedThreads ? " Showing cached conversations." : ""} <button className="underline" onClick={() => setAttempt(value => value + 1)}>Retry conversations</button></p>}
-    {loading ? <p role="status" className="py-16 text-center text-[13px] text-ink-3">Loading your library…</p> : error ? <div role="alert" className="rounded-xl border border-line bg-surface p-8"><p className="mb-4 text-[13px] text-red">Could not load your library.</p><Button size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button></div> : !visible.length ? <div className="rounded-xl border border-dashed border-line-strong bg-surface px-6 py-20 text-center"><Book width={24} height={24} className="mx-auto mb-4 text-ink-3" /><h2 className="mb-2 text-[16px] font-medium">{items.length ? "No matching research" : "Your research starts here"}</h2><p className="text-[13px] text-ink-3">{items.length ? "Try a different search or filter." : "Conversations and projects will appear here as you work with Dime."}</p></div> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{visible.map(item => <article key={`${item.kind}-${item.id}`} className="flex flex-col rounded-xl border border-line bg-surface p-5">
-      <div className="mb-5 flex items-center justify-between">{item.kind === "thread" ? <ChatBubble width={19} height={19} className="text-ink-3" /> : <Book width={19} height={19} className="text-ink-3" />}<Chip>{item.kind === "thread" ? "Conversation" : "Project"}</Chip></div>
+    {!loading && !failed && projectsError && <p role="status" className="mb-4 text-[12px] text-ink-3">Projects could not be loaded. Conversations are still available. <button className="underline" onClick={() => setAttempt(value => value + 1)}>Retry projects</button></p>}
+    {!loading && !failed && threadsError && <p role="status" className="mb-4 text-[12px] text-ink-3">Conversations could not be loaded from the server.{cachedThreads ? " Showing cached conversations." : ""} <button className="underline" onClick={() => setAttempt(value => value + 1)}>Retry conversations</button></p>}
+    {loading && !boards.length ? <p role="status" className="py-16 text-center text-[13px] text-ink-3">Loading your library…</p> : failed ? <div role="alert" className="rounded-xl border border-line bg-surface p-8"><p className="mb-4 text-[13px] text-red">Could not load your library.</p><Button size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button></div> : !visible.length ? <div className="rounded-xl border border-dashed border-line-strong bg-surface px-6 py-20 text-center"><Book width={24} height={24} className="mx-auto mb-4 text-ink-3" /><h2 className="mb-2 text-[16px] font-medium">{allItems.length ? "No matching research" : "Your research starts here"}</h2><p className="text-[13px] text-ink-3">{allItems.length ? "Try a different search or filter." : "Conversations, projects and boards will appear here as you work with Dime."}</p></div> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{visible.map(item => <Surface key={`${item.kind}-${item.id}`} className="flex flex-col">
+      <div className="mb-5 flex items-center justify-between">{item.kind === "thread" ? <ChatBubble width={19} height={19} className="text-ink-3" /> : <Book width={19} height={19} className="text-ink-3" />}<Chip>{item.kind === "thread" ? "Conversation" : item.kind === "board" ? "Board" : "Project"}</Chip></div>
       <h2 className="mb-2 text-[14px] font-medium leading-relaxed">{item.title}</h2><p className="mb-5 text-[11px] text-ink-3">{item.meta} · {new Date(item.updated).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
-      {item.kind === "thread" && <button className="mt-auto flex items-center justify-between border-t border-line pt-3 text-[12px] text-ink-2 hover:text-ink" onClick={() => onThread(item.id)}>Open conversation <ArrowRight width={13} height={13} /></button>}
-    </article>)}</div>}
+      {item.kind !== "project" && <Button variant="quiet" size="sm" className="mt-auto justify-between" onClick={() => item.kind === "board" ? onBoard?.(item.id) : onThread(item.id)}>Open {item.kind === "board" ? "board" : "conversation"} <ArrowRight width={13} height={13} /></Button>}
+    </Surface>)}</div>}
   </div>;
 }
 

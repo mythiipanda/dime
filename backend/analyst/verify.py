@@ -70,6 +70,8 @@ def run():
         owned_warehouse(env)
         node_suite(env, suite, "--test")
 
+    node_suite(environment("boards-routes"), "boards-route.test.mjs", "--test")
+
     env = environment("persistence")
     subprocess.run([sys.executable, "-B", str(module / "persistence_fixture.py"), "prepare"],
                    cwd=env["DIME_PI_TEST_ROOT"], env=env, check=True)

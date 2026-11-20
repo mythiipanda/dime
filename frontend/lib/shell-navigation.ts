@@ -1,6 +1,8 @@
 export const shellNavigation = [
   { id: "today", label: "Home" },
   { id: "chat", label: "Ask" },
+  { id: "workflows", label: "Workflows" },
+  { id: "boards", label: "Boards" },
   { id: "briefs", label: "Library" },
   { id: "data", label: "Data" },
   { id: "trades", label: "Trades", group: "Tools" },
@@ -19,5 +21,6 @@ export function shellUrl(href: string, tab: ShellTab, thread: string): URL {
   url.searchParams.set("tab", tab);
   url.searchParams.set("thread", thread);
   url.searchParams.delete("replay");
+  if (tab !== "boards") url.searchParams.delete("board");
   return url;
 }

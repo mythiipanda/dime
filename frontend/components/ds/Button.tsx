@@ -1,33 +1,32 @@
 "use client";
 
-import { ButtonHTMLAttributes } from "react";
+import { Slot } from "@radix-ui/react-slot";
+import { LoaderCircle } from "lucide-react";
+import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-const filledShadow = "shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]";
-
-
 export const buttonVariants = cva(
-  `inline-flex items-center justify-center font-medium select-none
-   transition-[transform,background-color,opacity] duration-150 ease-out
-   active:scale-[0.96] disabled:opacity-50 disabled:pointer-events-none`,
+  "ds-button",
   {
     variants: {
       variant: {
-        primary: `bg-ink text-canvas hover:opacity-90 dark:bg-ink dark:text-canvas ${filledShadow}`,
+        primary: "bg-ink text-canvas hover:opacity-90",
         secondary: "bg-surface text-ink shadow-btn hover:bg-inset aria-expanded:bg-hover",
         ghost: "bg-hover-2 text-ink hover:bg-line-strong",
-        accent: `bg-accent text-white hover:bg-accent-ink ${filledShadow}`,
-        success: `bg-green text-white hover:brightness-95 ${filledShadow}`,
+        accent: "bg-accent-ink text-page hover:opacity-90",
+        success: "bg-green text-page hover:opacity-90",
+        destructive: "bg-red text-page hover:opacity-90",
 
         quiet: "text-ink hover:bg-hover",
       },
       size: {
 
-        xs: "h-7 rounded-full px-2.5 text-[12px] font-normal leading-none gap-1",
+        xs: "ds-button-xs",
 
-        sm: "h-[27px] px-3 text-[13px] leading-none rounded-full gap-1.5",
-        md: "px-4 py-[9px] text-sm leading-none rounded-full gap-2",
+        sm: "ds-button-sm",
+        md: "ds-button-md",
+        icon: "ds-button-icon",
       },
     },
     defaultVariants: { variant: "secondary", size: "md" },
@@ -36,11 +35,27 @@ export const buttonVariants = cva(
 
 export type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>["variant"]>;
 
-export function Button({
+export const Button = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button"> & VariantProps<typeof buttonVariants> & { asChild?: boolean; loading?: boolean }>(function Button({
   variant,
   size,
   className,
+  loading = false,
+  disabled,
+  asChild = false,
+  children,
+  type = "button",
+  onClick,
+  onClickCapture,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & VariantProps<typeof buttonVariants>) {
-  return <button className={cn(buttonVariants({ variant, size }), className)} {...props} />;
-}
+}, ref) {
+  const Component = asChild ? Slot : "button";
+  return <Component {...props} ref={ref} {...(!asChild && { type, disabled })} aria-disabled={disabled || loading || undefined} aria-busy={loading || undefined} data-loading={loading || undefined} onClickCapture={event => {
+    if (disabled || loading) { event.preventDefault(); event.stopPropagation(); return; }
+    onClickCapture?.(event);
+  }} onClick={event => {
+    if (disabled || loading) { event.preventDefault(); event.stopPropagation(); return; }
+    onClick?.(event);
+  }} className={cn(buttonVariants({ variant, size }), className)}>
+    {asChild ? children : <><span className={cn("inline-flex items-center justify-center gap-[inherit]", loading && "opacity-0")}>{children}</span>{loading && <LoaderCircle aria-hidden="true" className="absolute size-4 animate-spin motion-reduce:animate-none" />}</>}
+  </Component>;
+});

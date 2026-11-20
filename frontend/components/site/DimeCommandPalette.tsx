@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
 
 export type PaletteEntry = {
   id: string;
@@ -32,8 +33,8 @@ export default function DimeCommandPalette({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const prevFocus = useRef<Element | null>(null);
 
   const results = useMemo(() => {
     const views = entries.filter((e) => e.kind === "view" && fuzzy(e.label, query));
@@ -43,14 +44,8 @@ export default function DimeCommandPalette({
 
   useEffect(() => {
     if (!open) return;
-    prevFocus.current = document.activeElement;
     setQuery("");
     setActive(0);
-    const t = window.setTimeout(() => inputRef.current?.focus(), 0);
-    return () => {
-      window.clearTimeout(t);
-      (prevFocus.current as HTMLElement | null)?.focus?.();
-    };
   }, [open ]);
 
   useEffect(() => {
@@ -62,18 +57,14 @@ export default function DimeCommandPalette({
     row?.scrollIntoView({ block: "nearest" });
   }, [active]);
 
-  if (!open) return null;
-
   const run = (e: PaletteEntry) => {
     onClose();
     e.run();
   };
 
   const onKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      onClose();
-    } else if (e.key === "ArrowDown") {
+    if (e.target !== inputRef.current) return;
+    if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((a) => (results.length ? (a + 1) % results.length : 0));
     } else if (e.key === "ArrowUp") {
@@ -89,22 +80,18 @@ export default function DimeCommandPalette({
   const firstAction = results.findIndex((r) => r.kind === "action");
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-center overflow-y-auto overscroll-contain px-4 pt-[16dvh]">
-      <button
-        type="button"
-        aria-label="Close command palette"
-        onClick={onClose}
-        className="fixed inset-0 cursor-default bg-black/45 transition-opacity duration-150"
-        style={{ animation: "fade-in 150ms ease-out both" }}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command palette"
-        onKeyDown={onKey}
-        className="relative mb-8 h-fit w-full max-w-[560px] overflow-hidden rounded-card border border-line bg-surface shadow-overlay"
-        style={{ animation: "pop-in 150ms cubic-bezier(0.23,1,0.32,1) both" }}
-      >
+    <Dialog open={open} onOpenChange={next => { if (!next) onClose(); }}>
+      <DialogContent onOpenAutoFocus={event => {
+        returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        event.preventDefault();
+        inputRef.current?.focus();
+      }} onCloseAutoFocus={event => {
+        if (!returnFocusRef.current?.isConnected) return;
+        event.preventDefault();
+        returnFocusRef.current.focus({ preventScroll: true });
+      }} onKeyDown={onKey} className="overflow-x-hidden">
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <DialogDescription className="sr-only">Search views and actions. Use arrow keys to navigate and Enter to open.</DialogDescription>
         <div className="flex h-12 items-center gap-2 border-b border-line px-3.5">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeLinecap="round" className="shrink-0">
             <circle cx="11" cy="11" r="7" />
@@ -122,9 +109,7 @@ export default function DimeCommandPalette({
             aria-activedescendant={results.length ? `dime-palette-${active}` : undefined}
             className="min-w-0 flex-1 bg-transparent text-[13.5px] text-ink outline-none placeholder:text-ink-3 [@media(pointer:coarse)]:text-base"
           />
-          <kbd className="shrink-0 rounded-[6px] bg-field px-1.5 py-0.5 font-mono text-[11px] text-ink-3 shadow-hairline">
-            esc
-          </kbd>
+          <DialogClose aria-label="Close command palette" className="shrink-0 rounded-md bg-field px-2 py-1 font-mono text-[11px] text-ink-2 shadow-hairline [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11">esc</DialogClose>
         </div>
         <div ref={listRef} id="dime-palette-list" role="listbox" aria-label="Views and actions" className="max-h-[46dvh] overflow-y-auto overscroll-contain p-1.5">
           {results.length === 0 && (
@@ -144,6 +129,7 @@ export default function DimeCommandPalette({
               )}
               <button
                 type="button"
+                tabIndex={-1}
                 role="option"
                 id={`dime-palette-${i}`}
                 aria-selected={i === active}
@@ -167,7 +153,7 @@ export default function DimeCommandPalette({
           <span>↵ open</span>
           <span>esc close</span>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

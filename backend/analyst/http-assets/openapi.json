@@ -5,6 +5,118 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/boards/metrics": {
+      "get": {
+        "tags": [
+          "boards"
+        ],
+        "operationId": "boards_metrics",
+        "summary": "List 25 warehouse-backed board metrics",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "metrics": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BoardMetric"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid board request or unknown seed metric"
+          },
+          "503": {
+            "description": "Boards warehouse unavailable"
+          }
+        }
+      }
+    },
+    "/api/boards/fill": {
+      "post": {
+        "tags": [
+          "boards"
+        ],
+        "operationId": "boards_fill",
+        "summary": "Fill a bounded player board with cited values",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoardFillBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardFillResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid board request or unknown seed metric"
+          },
+          "503": {
+            "description": "Boards warehouse unavailable"
+          }
+        }
+      }
+    },
+    "/api/boards/seed": {
+      "post": {
+        "tags": [
+          "boards"
+        ],
+        "operationId": "boards_seed",
+        "summary": "Seed a board deterministically from a metric",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoardSeedBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardFillResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid board request or unknown seed metric"
+          },
+          "503": {
+            "description": "Boards warehouse unavailable"
+          }
+        }
+      }
+    },
     "/api/home": {
       "get": {
         "summary": "Cached schedule and latest warehouse team ratings",
@@ -1529,6 +1641,206 @@
   },
   "components": {
     "schemas": {
+      "BoardFillBody": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "player_ids",
+          "metric_ids"
+        ],
+        "properties": {
+          "season": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}$",
+            "default": "2025-26"
+          },
+          "player_ids": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "metric_ids": {
+            "type": "array",
+            "maxItems": 30,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        }
+      },
+      "BoardSeedBody": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "metric_id"
+        ],
+        "properties": {
+          "season": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}$",
+            "default": "2025-26"
+          },
+          "metric_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "n": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 25,
+            "default": 10
+          },
+          "min_gp": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "min_mpg": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "BoardFillResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "cells",
+          "players"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "cells": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/BoardCell"
+              }
+            }
+          },
+          "players": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "team": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "player_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "filters": {
+            "type": "object"
+          }
+        }
+      },
+      "BoardCell": {
+        "type": "object",
+        "required": [
+          "value",
+          "citation"
+        ],
+        "properties": {
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "citation": {
+            "type": "object",
+            "description": "Replayable table, column, season, SQL, params, row_key, source, fetched_at, and salary vintage / identity resolution where applicable."
+          }
+        }
+      },
+      "BoardMetric": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "category",
+          "unit",
+          "table",
+          "column",
+          "definition",
+          "higher_is_better"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "label": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "per_game",
+              "pct",
+              "rating",
+              "usd",
+              "count"
+            ]
+          },
+          "table": {
+            "type": "string"
+          },
+          "column": {
+            "type": "string"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "higher_is_better": {
+            "type": "boolean"
+          }
+        }
+      },
       "ConversationTurn": {
         "properties": {
           "role": {

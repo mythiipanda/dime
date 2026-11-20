@@ -21,6 +21,9 @@ The chat route now uses the Pi analyst session. Python exposes read-only SQL and
 
 ## Features
 
+Frontend contributors: read the [Dime design system](frontend/DESIGN_SYSTEM.md).
+The live component reference is available at `/design-system`.
+
 - Chat that answers with numbers, not vibes. Every stat comes
   out of the warehouse and the reply shows the tables, charts,
   and shot maps behind it.
@@ -111,12 +114,16 @@ image time, and pushes
 (`dime-data-20260930`, checksum-verified) and exits 1 on
 failure. The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
 
-The current pack holds 54 tables. A fresh backfill covers
+The current pack holds 58 tables. A fresh backfill covers
 2015-16 through 2024-25 with 330,485 boxscore rows and 40,000
 lineup rows. The pack also carries the historical tables:
 RAPTOR, RAPM, shots, advanced stats, on/off splits, clutch
-splits, leaders, salaries, zone splits, and the `hist_*`
-tables.
+splits, leaders, salaries, zone splits, transactions, and
+the `hist_*` tables — game logs back to 1996-97 and shots to
+2009-10, both through 2025-26. Derived tables
+(four factors, draft capital, injury entries, team season
+summaries) are rebuilt by `backend/scripts/refresh_warehouse.py`
+and published with `backend/scripts/publish_warehouse.py`.
 
 ## Evals and tests
 
@@ -129,7 +136,7 @@ dime-internal checkout:
 python evals/benchmark-pack/runner.py --url http://127.0.0.1:8010 --out reports/run.json
 ```
 
-The pytest suite (`backend/tests/`, 118 test files) covers
+The pytest suite (`backend/tests/`, 173 test files) covers
 routing, the pinned lanes, warehouse contracts, and
 streaming:
 
