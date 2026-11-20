@@ -9,7 +9,7 @@ _FA_COLS = ["PLAYER_NAME", "TEAM", "FA_TYPE", "PRIOR_SALARY",
             "CAP_HOLD_EST", "BREF_SLUG", "_fetched_at"]
 _ROOM_COLS = ["TEAM", "COMMITTED_SALARY", "PENDING_OPTION_SALARY",
               "FA_HOLDS_EST", "INCOMPLETE_ROSTER_CHARGES",
-              "PROJECTED_ROOM", "PROJECTED_CAP", "PROJECTED_TAX",
+              "PROJECTED_ROOM", "MAX_ROOM", "PROJECTED_CAP", "PROJECTED_TAX",
               "PROJECTED_APRON1", "PROJECTED_APRON2", "NTMLE_EST",
               "BAE_EST", "ROOM_EST", "PLAYERS_UNDER_CONTRACT",
               "PENDING_OPTIONS", "ESTIMATED"]
@@ -57,7 +57,8 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                                      'SELECT "TEAM", "COMMITTED_SALARY",'
                                      ' "PENDING_OPTION_SALARY", "FA_HOLDS_EST",'
                                      ' "INCOMPLETE_ROSTER_CHARGES",'
-                                     ' "PROJECTED_ROOM", "PROJECTED_CAP",'
+                                     ' "PROJECTED_ROOM", "MAX_ROOM",'
+                                     ' "PROJECTED_CAP",'
                                      ' "PROJECTED_TAX", "PROJECTED_APRON1",'
                                      ' "PROJECTED_APRON2", "NTMLE_EST",'
                                      ' "BAE_EST", "ROOM_EST",'
@@ -70,7 +71,8 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                                      'SELECT "TEAM", "COMMITTED_SALARY",'
                                      ' "PENDING_OPTION_SALARY", "FA_HOLDS_EST",'
                                      ' "INCOMPLETE_ROSTER_CHARGES",'
-                                     ' "PROJECTED_ROOM", "PROJECTED_CAP",'
+                                     ' "PROJECTED_ROOM", "MAX_ROOM",'
+                                     ' "PROJECTED_CAP",'
                                      ' "PROJECTED_TAX", "PROJECTED_APRON1",'
                                      ' "PROJECTED_APRON2", "NTMLE_EST",'
                                      ' "BAE_EST", "ROOM_EST",'

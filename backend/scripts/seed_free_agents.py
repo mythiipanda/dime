@@ -28,6 +28,7 @@ FA_COLS = ["PLAYER_NAME", "TEAM", "BREF_SLUG", "FA_YEAR", "FA_TYPE",
 ROOM_COLS = ["TEAM", "CAP_SEASON", "COMMITTED_SALARY",
              "PENDING_OPTION_SALARY", "FA_HOLDS_EST",
              "INCOMPLETE_ROSTER_CHARGES", "PROJECTED_ROOM",
+             "MAX_ROOM",
              "PROJECTED_CAP", "PROJECTED_TAX", "PROJECTED_APRON1",
              "PROJECTED_APRON2", "NTMLE_EST", "BAE_EST", "ROOM_EST",
              "PLAYERS_UNDER_CONTRACT", "PENDING_OPTIONS",
@@ -124,16 +125,20 @@ def build_frames(frame: pl.DataFrame, fa_season_key: str,
     room_rows = []
     cap = int(CAP_2026_27["cap"] * CAP_GROWTH)
     for team, e in sorted(room.items()):
-        open_spots = max(0, ROSTER_SPOTS - e["under_contract"]
-                         - e["options"])
-        roster_charges = open_spots * MIN_SALARY
+        open_exercised = max(0, ROSTER_SPOTS - e["under_contract"])
+        open_declined = max(0, ROSTER_SPOTS
+                          - (e["under_contract"] - e["options"]))
+        roster_charges = open_exercised * MIN_SALARY
+        declined_charges = open_declined * MIN_SALARY
         room_rows.append({
             "TEAM": team, "CAP_SEASON": CAP_SEASON,
             "COMMITTED_SALARY": e["committed"],
             "PENDING_OPTION_SALARY": e["option_salary"],
             "FA_HOLDS_EST": e["holds"],
             "INCOMPLETE_ROSTER_CHARGES": roster_charges,
-            "PROJECTED_ROOM": cap - e["committed"] - roster_charges,
+            "PROJECTED_ROOM": cap - e["committed"] - e["option_salary"]
+            - roster_charges,
+            "MAX_ROOM": cap - e["committed"] - declined_charges,
             "PROJECTED_CAP": cap,
             "PROJECTED_TAX": int(CAP_2026_27["tax"] * CAP_GROWTH),
             "PROJECTED_APRON1": int(CAP_2026_27["apron1"] * CAP_GROWTH),

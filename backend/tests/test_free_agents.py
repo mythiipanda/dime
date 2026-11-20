@@ -56,10 +56,28 @@ def test_build_frames():
     assert row["PENDING_OPTION_SALARY"] == 16_000_000
     assert row["PLAYERS_UNDER_CONTRACT"] == 2
     assert row["PENDING_OPTIONS"] == 1
-    expected_room = int(sf.CAP_2026_27["cap"] * sf.CAP_GROWTH) \
-        - 21_000_000 - 12 * sf.MIN_SALARY
+    cap = int(sf.CAP_2026_27["cap"] * sf.CAP_GROWTH)
+    expected_room = cap - 21_000_000 - 16_000_000 - 13 * sf.MIN_SALARY
     assert row["PROJECTED_ROOM"] == expected_room
+    assert row["MAX_ROOM"] == cap - 21_000_000 - 14 * sf.MIN_SALARY
+    assert row["PROJECTED_ROOM"] < row["MAX_ROOM"]
     assert row["ESTIMATED"] is True
+
+
+def test_implausible_room_flag():
+    frame = pl.DataFrame({
+        "PLAYER_NAME": [f"P{i}" for i in range(5)] + [f"O{i}" for i in range(5)],
+        "TEAM": ["BOS"] * 10,
+        "BREF_SLUG": [f"p{i}" for i in range(5)] + [f"o{i}" for i in range(5)],
+        "SALARY_2026_27": [15_000_000] * 5 + [20_000_000] * 5,
+        "SALARY_2027_28": [15_000_000] * 5 + [20_000_000] * 5,
+        "OPTION_2027_28": [None] * 5 + ["player"] * 3 + ["team"] * 2,
+    })
+    _, room = sf.build_frames(frame, "2026_27", "2027_28")
+    row = room.to_dicts()[0]
+    assert row["PENDING_OPTION_SALARY"] == 100_000_000
+    assert row["PROJECTED_ROOM"] <= 0.10 * row["PROJECTED_CAP"]
+    assert row["PROJECTED_ROOM"] < row["MAX_ROOM"]
 
 
 def test_tool_on_scratch(scratch):
