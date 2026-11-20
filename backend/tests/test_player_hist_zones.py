@@ -128,7 +128,34 @@ def test_multi_season_history():
         assert out["meta"]["player_shots"] == expected
         assert sum(r["FGA"] for r in out["rows"]) == expected
 
+
+def test_low_volume_dataset_keeps_all_attempted_zones():
+    from v2.api.routes import dataset
+
+    player_id = 2748
+    mine = _fold(_season_rows(2016), player_id)
+    expected = sum(a for _, a in mine.values())
+    assert expected == 10
+    default = get_shot_zones.invoke({"player_id": player_id, "season": "2015-16"})
+    assert default["meta"]["min_attempts"] == 50
+    assert default["rows"] == []
+
+    out = dataset(name="zone_splits", season="2015-16", player_id=player_id, fmt="json")
+    assert out["ok"] is True
+    assert out["meta"]["min_attempts"] == 0
+    assert out["meta"]["player_shots"] == expected
+    by_zone = {r["zone"]: r for r in out["data"]}
+    assert set(by_zone) == {z for z, (_, a) in mine.items() if a}
+    assert sum(r["FGA"] for r in by_zone.values()) == expected
+    for zone, row in by_zone.items():
+        assert (row["FGM"], row["FGA"]) == tuple(mine[zone])
+        assert row["share"] == round(row["FGA"] / expected, 3)
+        assert row["FG_PCT"] == round(row["FGM"] / row["FGA"], 3)
+
+
+=======
 @pytest.mark.canonical_warehouse
+>>>>>>> origin/dev
 def test_unknown_player_stays_honest():
     res = get_shot_zones.invoke({"player_id": 999999999, "season": "2024-25"})
     assert res["ok"] is False

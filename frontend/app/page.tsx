@@ -1,3 +1,8 @@
+import { DimeShell } from "../components/shell/DimeShell";
+
+export default function Home() {
+  return <DimeShell />;
+=======
 import type { Metadata } from "next";
 import { DimeShell } from "@/components/shell/DimeShell";
 import styles from "./scrollbars.module.css";
@@ -13,4 +18,5 @@ export default function DimePage() {
       <DimeShell />
     </div>
   );
+>>>>>>> origin/dev
 }
