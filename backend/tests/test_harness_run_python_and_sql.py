@@ -183,6 +183,23 @@ def test_sql_exec_refusal_hints_steer_to_warehouse_schema(warehouse):
     assert res_guess["ok"] is False
     assert "declared silver" in res_guess["recovery_hint"]
     assert "warehouse_schema" in res_guess["recovery_hint"]
+def test_run_python_relative_connect_hint_points_at_con(warehouse, tmp_path, monkeypatch):
+    ws = tmp_path / "ws_scratch"
+    ws.mkdir()
+    monkeypatch.setenv("DIME_THREAD_WORKSPACE", str(ws))
+    res = shared_mod.run_python.invoke({"code": """
+import duckdb
+fresh = duckdb.connect("warehouse.duckdb")
+rows = fresh.execute("SELECT * FROM silver_boxscores LIMIT 5").fetchall()
+out = rows
+"""})
+    assert res["ok"] is False
+    assert "does not exist" in res["error"]
+    assert "preloaded `con`" in res["recovery_hint"]
+    assert "silver_standings" in res["recovery_hint"]
+    assert (ws / "warehouse.duckdb").exists()
+
+
 def test_sql_exec_binder_hint_names_column_and_candidates(warehouse):
     res = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
         {"sql": "SELECT team_abbreviation FROM silver_standings"}))

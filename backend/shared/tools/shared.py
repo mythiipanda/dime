@@ -242,6 +242,12 @@ def _main():
         elif any(h in msg for h in hints):
             col_hint, valid_hint = _table_hint(con, code)
             recovery = f"Unknown table or column.{col_hint} Valid tables: {valid_hint}"
+            if "sqlite_" in msg and re.search(r"\\bduckdb\\.connect\\s*\\(", code):
+                recovery = ("duckdb.connect with a relative or new file path "
+                            "(including ':memory:') opens an empty database, so "
+                            "no warehouse tables exist on that connection; use "
+                            "the preloaded `con` for the warehouse instead of "
+                            f"opening a new file. Valid tables: {valid_hint}")
         lineno = _exc_lineno(exc)
         context = _code_context(code, lineno)
         error_text = f"{type(exc).__name__}: {msg}"
