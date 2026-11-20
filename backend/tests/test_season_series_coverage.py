@@ -151,11 +151,11 @@ def test_an_uncovered_playoff_phase_publishes_no_series_record():
     _require_warehouse()
     with _warehouse() as con:
         for table in PLAYOFF_TABLES:
-            assert _rows(con, table, "2019-20") == 0, table
-    out = _series("CLE", "MIL", "2019-20")
+            assert _rows(con, table, "2004-05") == 0, table
+    out = _series("CLE", "MIL", "2004-05")
     assert out["ok"] is True
     summary = out["rows"]["summary"]
-    assert summary["games"] == 3
+    assert summary["games"] == 4
     assert summary["series_played"] is None
     assert summary["series_won"] is None
     assert summary["series"] is None

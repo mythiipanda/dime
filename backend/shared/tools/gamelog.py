@@ -1,5 +1,6 @@
 
 import datetime as _dt
+import re
 from collections import Counter
 from decimal import Decimal
 from typing import Any
@@ -265,6 +266,14 @@ def _game_signature(g: dict[str, Any]) -> tuple:
         g.get("ftm"), g.get("fta"), g.get("plus_minus"),
     )
 
+_TEAM_KEY_ALIASES = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX"}
+
+
+def _norm_matchup(matchup: Any) -> str:
+    tokens = re.split(r"[^A-Z]+", str(matchup or "").upper())
+    return " ".join(_TEAM_KEY_ALIASES.get(t, t) for t in tokens if t)
+
+
 def _game_key(g: dict[str, Any]) -> tuple:
     date = g.get("date")
     if isinstance(date, _dt.datetime):
@@ -272,7 +281,7 @@ def _game_key(g: dict[str, Any]) -> tuple:
     return (
         g.get("player_id"),
         date.isoformat() if isinstance(date, _dt.date) else date,
-        g.get("matchup"),
+        _norm_matchup(g.get("matchup")),
     )
 
 def _fetch_rank(value: object) -> tuple[int, _dt.datetime]:

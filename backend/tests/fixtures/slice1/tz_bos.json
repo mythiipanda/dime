@@ -1,7 +1,7 @@
 {
   "meta": {
     "data_note": "Historical shot-level data from sportsdataverse nba_stats_shots, backfilled 2026-09-10. Warehouse coverage: completed seasons 2009-10 through 2025-26 (hustle tracking from 2015-16), regular season and playoffs. Zones are derived geometrically from shot x/y coordinates (not source labels): rim=shots within 8 ft of the hoop, short_mid=2pt shots 8-14 ft out, long_mid=2pt shots 14 ft+ out, corner_3=3pt shots with |x| >= 22 ft (corner region), atb_3=3pt shots above the break. League baselines are pooled across all 30 teams for 2025-26. Deltas are in percentage points vs the league baseline. Current-season data is not available in the warehouse; do not present 2025-26 numbers as live or current-week.",
-    "fetched_at": "2026-09-07T22:26:22.225691+00:00",
+    "fetched_at": "2026-11-20T07:27:43.676403+00:00",
     "season": "2025-26",
     "source": "warehouse silver_hist_shots",
     "teams_requested": "BOS",
@@ -18,7 +18,7 @@
   "rows": [
     {
       "atb_3_efg": 0.5227,
-      "atb_3_share": 0.2894,
+      "atb_3_share": 0.2895,
       "corner_3_efg": 0.5746,
       "corner_3_share": 0.125,
       "is_atb_3_share_leader": false,
@@ -29,10 +29,10 @@
       "long_mid_efg": 0.4104,
       "long_mid_share": 0.0751,
       "rim_efg": 0.6018,
-      "rim_share": 0.4003,
-      "short_mid_efg": 0.4478,
+      "rim_share": 0.4002,
+      "short_mid_efg": 0.4477,
       "short_mid_share": 0.1102,
-      "shots": 233632,
+      "shots": 234876,
       "team": "LEAGUE",
       "team_id": 0
     },
@@ -40,7 +40,7 @@
       "atb_3_efg": 0.5318,
       "atb_3_efg_delta_pp": 0.91,
       "atb_3_share": 0.3753,
-      "atb_3_share_delta_pp": 8.59,
+      "atb_3_share_delta_pp": 8.58,
       "corner_3_efg": 0.6043,
       "corner_3_efg_delta_pp": 2.97,
       "corner_3_share": 0.0963,
@@ -57,9 +57,9 @@
       "rim_efg": 0.6286,
       "rim_efg_delta_pp": 2.68,
       "rim_share": 0.3155,
-      "rim_share_delta_pp": -8.48,
+      "rim_share_delta_pp": -8.47,
       "short_mid_efg": 0.4739,
-      "short_mid_efg_delta_pp": 2.61,
+      "short_mid_efg_delta_pp": 2.62,
       "short_mid_share": 0.1122,
       "short_mid_share_delta_pp": 0.2,
       "shots": 8013,
@@ -71,7 +71,7 @@
   "zone_leaders": {
     "atb_3": {
       "share": 0.3753,
-      "share_delta_pp": 8.59,
+      "share_delta_pp": 8.58,
       "shots": 8013,
       "team": "BOS",
       "team_id": 1610612738
@@ -92,7 +92,7 @@
     },
     "rim": {
       "share": 0.3155,
-      "share_delta_pp": -8.48,
+      "share_delta_pp": -8.47,
       "shots": 8013,
       "team": "BOS",
       "team_id": 1610612738

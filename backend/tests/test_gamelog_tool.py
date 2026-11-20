@@ -46,7 +46,7 @@ def test_suffix_name_keeps_bound_identity_label():
     from shared.tools import gamelog
     out = gamelog.search_game_logs.invoke({"player": "Tim Hardaway Jr.", "season": "2025-26"})
     assert out["ok"]
-    assert out["rows"]["player_id"] == 896
+    assert out["rows"]["player_id"] == 203501
     assert out["rows"]["player"] == "Tim Hardaway Jr."
     assert out["rows"]["total"] == 80
 

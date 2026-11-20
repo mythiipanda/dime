@@ -3,18 +3,20 @@
     "blowout_rule": "flagged at 50% of shared possessions with a 20+ point margin",
     "lineups_meta": {
       "team_a": {
-        "error": "no seeded rows for silver_lineups (2025-26); season complete, live refetch disabled",
-        "source": "warehouse",
-        "static_season": true,
+        "cached": true,
+        "fetched_at": "2026-11-20T07:27:49.811757+00:00",
+        "rows": 544,
+        "source": "nba_api",
         "warehouse_id": "frozen-eval",
-        "warehouse_sha256": "8d3c9a18366ce6992b7b04c587a07e175d67a9e1fa790871c93ec66e37aaa672"
+        "warehouse_sha256": "4ddb90e92946f4bc8494d104f986788057f97bab592878b08ac2ef0731efed81"
       },
       "team_b": {
-        "error": "no seeded rows for silver_lineups (2025-26); season complete, live refetch disabled",
-        "source": "warehouse",
-        "static_season": true,
+        "cached": true,
+        "fetched_at": "2026-11-20T07:28:17.149009+00:00",
+        "rows": 594,
+        "source": "nba_api",
         "warehouse_id": "frozen-eval",
-        "warehouse_sha256": "8d3c9a18366ce6992b7b04c587a07e175d67a9e1fa790871c93ec66e37aaa672"
+        "warehouse_sha256": "4ddb90e92946f4bc8494d104f986788057f97bab592878b08ac2ef0731efed81"
       }
     },
     "matchup_games": 4,
@@ -60,7 +62,7 @@
         1630202,
         1641775
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - N. Queta - P. Pritchard - J. Walsh",
       "team_b_ids": [
         1626157,
         1628404,
@@ -68,7 +70,7 @@
         1628973,
         1630540
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - J. Hart - M. Bridges - J. Brunson - M. McBride"
     },
     {
       "DEF_RATING_A": 155.6,
@@ -91,7 +93,7 @@
         1630573,
         1641775
       ],
-      "team_a_lineup": "unit 162836\u2026",
+      "team_a_lineup": "J. Tatum - D. White - N. Queta - S. Hauser - J. Walsh",
       "team_b_ids": [
         1626157,
         1628384,
@@ -99,7 +101,7 @@
         1628969,
         1628973
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - J. Hart - M. Bridges - J. Brunson"
     },
     {
       "DEF_RATING_A": 105.9,
@@ -122,7 +124,7 @@
         1630568,
         1631248
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - N. Queta - L. Garza - B. Scheierman",
       "team_b_ids": [
         1626157,
         1628404,
@@ -130,7 +132,7 @@
         1628973,
         1629013
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - J. Hart - M. Bridges - J. Brunson - L. Shamet"
     },
     {
       "DEF_RATING_A": 105.6,
@@ -153,7 +155,7 @@
         1630202,
         1630573
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - N. Queta - P. Pritchard - S. Hauser",
       "team_b_ids": [
         1626157,
         1628384,
@@ -161,7 +163,7 @@
         1628973,
         1630540
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - M. Bridges - J. Brunson - M. McBride"
     },
     {
       "DEF_RATING_A": 110.0,
@@ -185,7 +187,7 @@
         1630202,
         1642864
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - A. Simons - N. Queta - P. Pritchard - H. Gonz\u00e1lez",
       "team_b_ids": [
         203903,
         1626157,
@@ -193,7 +195,7 @@
         1630540,
         1642278
       ],
-      "team_b_lineup": "unit 203903\u2026"
+      "team_b_lineup": "J. Clarkson - K. Towns - J. Hart - M. McBride - T. Kolek"
     },
     {
       "DEF_RATING_A": 155.6,
@@ -217,7 +219,7 @@
         1630202,
         1631248
       ],
-      "team_a_lineup": "unit 162836\u2026",
+      "team_a_lineup": "J. Tatum - D. White - N. Queta - P. Pritchard - B. Scheierman",
       "team_b_ids": [
         1626157,
         1628384,
@@ -225,7 +227,7 @@
         1628969,
         1628973
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - J. Hart - M. Bridges - J. Brunson"
     },
     {
       "DEF_RATING_A": 175.0,
@@ -249,7 +251,7 @@
         1631169,
         1641775
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - S. Hauser - J. Minott - J. Walsh",
       "team_b_ids": [
         1626157,
         1628404,
@@ -257,7 +259,7 @@
         1628973,
         1630540
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - J. Hart - M. Bridges - J. Brunson - M. McBride"
     },
     {
       "DEF_RATING_A": 112.5,
@@ -281,7 +283,7 @@
         1630573,
         1631248
       ],
-      "team_a_lineup": "unit 202696\u2026",
+      "team_a_lineup": "N. Vu\u010devi\u0107 - J. Tatum - P. Pritchard - S. Hauser - B. Scheierman",
       "team_b_ids": [
         203903,
         1628384,
@@ -289,7 +291,7 @@
         1629013,
         1630540
       ],
-      "team_b_lineup": "unit 203903\u2026"
+      "team_b_lineup": "J. Clarkson - O. Anunoby - M. Robinson - L. Shamet - M. McBride"
     },
     {
       "DEF_RATING_A": 200.0,
@@ -313,7 +315,7 @@
         1630214,
         1630573
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - A. Simons - P. Pritchard - X. Tillman - S. Hauser",
       "team_b_ids": [
         1626157,
         1628384,
@@ -321,7 +323,7 @@
         1628969,
         1628973
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - J. Hart - M. Bridges - J. Brunson"
     },
     {
       "DEF_RATING_A": 183.3,
@@ -345,7 +347,7 @@
         1630573,
         1642864
       ],
-      "team_a_lineup": "unit 162901\u2026",
+      "team_a_lineup": "A. Simons - N. Queta - P. Pritchard - S. Hauser - H. Gonz\u00e1lez",
       "team_b_ids": [
         203903,
         1626157,
@@ -353,7 +355,7 @@
         1629011,
         1642278
       ],
-      "team_b_lineup": "unit 203903\u2026"
+      "team_b_lineup": "J. Clarkson - K. Towns - J. Hart - M. Robinson - T. Kolek"
     },
     {
       "DEF_RATING_A": 100.0,
@@ -378,7 +380,7 @@
         1630214,
         1630573
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - A. Simons - X. Tillman - S. Hauser",
       "team_b_ids": [
         1626157,
         1628384,
@@ -386,7 +388,7 @@
         1628973,
         1630540
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - M. Bridges - J. Brunson - M. McBride"
     },
     {
       "DEF_RATING_A": 83.3,
@@ -410,7 +412,7 @@
         1630202,
         1642864
       ],
-      "team_a_lineup": "unit 162840\u2026",
+      "team_a_lineup": "D. White - C. Boucher - A. Simons - P. Pritchard - H. Gonz\u00e1lez",
       "team_b_ids": [
         203903,
         1626157,
@@ -418,7 +420,7 @@
         1630540,
         1642278
       ],
-      "team_b_lineup": "unit 203903\u2026"
+      "team_b_lineup": "J. Clarkson - K. Towns - M. Bridges - M. McBride - T. Kolek"
     },
     {
       "DEF_RATING_A": 133.3,
@@ -442,7 +444,7 @@
         1630202,
         1642864
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - N. Queta - P. Pritchard - H. Gonz\u00e1lez",
       "team_b_ids": [
         1626157,
         1628404,
@@ -450,7 +452,7 @@
         1628973,
         1630540
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - J. Hart - M. Bridges - J. Brunson - M. McBride"
     },
     {
       "DEF_RATING_A": 50.0,
@@ -474,7 +476,7 @@
         1631248,
         1641775
       ],
-      "team_a_lineup": "unit 162840\u2026",
+      "team_a_lineup": "D. White - N. Queta - P. Pritchard - B. Scheierman - J. Walsh",
       "team_b_ids": [
         1626157,
         1628384,
@@ -482,7 +484,7 @@
         1628973,
         1629013
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - J. Hart - J. Brunson - L. Shamet"
     },
     {
       "DEF_RATING_A": 83.3,
@@ -506,7 +508,7 @@
         1630202,
         1630573
       ],
-      "team_a_lineup": "unit 162836\u2026",
+      "team_a_lineup": "J. Tatum - D. White - N. Queta - P. Pritchard - S. Hauser",
       "team_b_ids": [
         1626157,
         1628384,
@@ -514,7 +516,7 @@
         1628969,
         1628973
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - J. Hart - M. Bridges - J. Brunson"
     },
     {
       "DEF_RATING_A": 183.3,
@@ -538,7 +540,7 @@
         1629674,
         1631169
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - A. Simons - N. Queta - J. Minott",
       "team_b_ids": [
         1626157,
         1628404,
@@ -546,7 +548,7 @@
         1628973,
         1630540
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - J. Hart - M. Bridges - J. Brunson - M. McBride"
     },
     {
       "DEF_RATING_A": 120.0,
@@ -570,7 +572,7 @@
         1631199,
         1642864
       ],
-      "team_a_lineup": "unit 202696\u2026",
+      "team_a_lineup": "N. Vu\u010devi\u0107 - J. Brown - P. Pritchard - R. Harper Jr. - H. Gonz\u00e1lez",
       "team_b_ids": [
         203903,
         1628969,
@@ -578,7 +580,7 @@
         1629011,
         1642885
       ],
-      "team_b_lineup": "unit 203903\u2026"
+      "team_b_lineup": "J. Clarkson - M. Bridges - J. Brunson - M. Robinson - M. Diawara"
     },
     {
       "DEF_RATING_A": 120.0,
@@ -602,7 +604,7 @@
         1630202,
         1630573
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - N. Queta - P. Pritchard - S. Hauser",
       "team_b_ids": [
         1626157,
         1628384,
@@ -610,7 +612,7 @@
         1629013,
         1630540
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - J. Brunson - L. Shamet - M. McBride"
     },
     {
       "DEF_RATING_A": 80.0,
@@ -634,7 +636,7 @@
         1631169,
         1631248
       ],
-      "team_a_lineup": "unit 162901\u2026",
+      "team_a_lineup": "A. Simons - P. Pritchard - S. Hauser - J. Minott - B. Scheierman",
       "team_b_ids": [
         203903,
         1627824,
@@ -642,7 +644,7 @@
         1629011,
         1630540
       ],
-      "team_b_lineup": "unit 203903\u2026"
+      "team_b_lineup": "J. Clarkson - G. Yabusele - J. Brunson - M. Robinson - M. McBride"
     },
     {
       "DEF_RATING_A": 60.0,
@@ -666,7 +668,7 @@
         1631169,
         1642864
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - P. Pritchard - J. Minott - H. Gonz\u00e1lez",
       "team_b_ids": [
         1627824,
         1628969,
@@ -674,7 +676,7 @@
         1629011,
         1642278
       ],
-      "team_b_lineup": "unit 162782\u2026"
+      "team_b_lineup": "G. Yabusele - M. Bridges - J. Brunson - M. Robinson - T. Kolek"
     },
     {
       "DEF_RATING_A": 100.0,
@@ -698,7 +700,7 @@
         1630202,
         1631248
       ],
-      "team_a_lineup": "unit 202696\u2026",
+      "team_a_lineup": "N. Vu\u010devi\u0107 - J. Brown - D. White - P. Pritchard - B. Scheierman",
       "team_b_ids": [
         1626157,
         1628969,
@@ -706,7 +708,7 @@
         1630631,
         1642885
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - M. Bridges - L. Shamet - J. Alvarado - M. Diawara"
     },
     {
       "DEF_RATING_A": 180.0,
@@ -730,7 +732,7 @@
         1631248,
         1641775
       ],
-      "team_a_lineup": "unit 162836\u2026",
+      "team_a_lineup": "J. Tatum - N. Queta - P. Pritchard - B. Scheierman - J. Walsh",
       "team_b_ids": [
         1628384,
         1628969,
@@ -738,7 +740,7 @@
         1629011,
         1630540
       ],
-      "team_b_lineup": "unit 162838\u2026"
+      "team_b_lineup": "O. Anunoby - M. Bridges - J. Brunson - M. Robinson - M. McBride"
     },
     {
       "DEF_RATING_A": 80.0,
@@ -762,7 +764,7 @@
         1630573,
         1631248
       ],
-      "team_a_lineup": "unit 202696\u2026",
+      "team_a_lineup": "N. Vu\u010devi\u0107 - J. Tatum - P. Pritchard - S. Hauser - B. Scheierman",
       "team_b_ids": [
         1626157,
         1628384,
@@ -770,7 +772,7 @@
         1628973,
         1629011
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - O. Anunoby - M. Bridges - J. Brunson - M. Robinson"
     },
     {
       "DEF_RATING_A": 0.0,
@@ -794,7 +796,7 @@
         1631248,
         1641775
       ],
-      "team_a_lineup": "unit 162775\u2026",
+      "team_a_lineup": "J. Brown - D. White - N. Queta - B. Scheierman - J. Walsh",
       "team_b_ids": [
         1628969,
         1628973,
@@ -802,7 +804,7 @@
         1630631,
         1642885
       ],
-      "team_b_lineup": "unit 162896\u2026"
+      "team_b_lineup": "M. Bridges - J. Brunson - M. Robinson - J. Alvarado - M. Diawara"
     },
     {
       "DEF_RATING_A": 125.0,
@@ -826,7 +828,7 @@
         1631199,
         1642864
       ],
-      "team_a_lineup": "unit 202696\u2026",
+      "team_a_lineup": "N. Vu\u010devi\u0107 - J. Brown - P. Pritchard - R. Harper Jr. - H. Gonz\u00e1lez",
       "team_b_ids": [
         1626157,
         1628404,
@@ -834,7 +836,7 @@
         1628973,
         1629013
       ],
-      "team_b_lineup": "unit 162615\u2026"
+      "team_b_lineup": "K. Towns - J. Hart - M. Bridges - J. Brunson - L. Shamet"
     }
   ],
   "tool": "get_lineup_matchup_matrix"
