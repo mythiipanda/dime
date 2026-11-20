@@ -2,11 +2,11 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { objectValue, sourceResult, type SourceRecord } from "./python-tools.js";
 
-const field = Type.String({ minLength: 1, maxLength: 160 });
+export const field = Type.String({ minLength: 1, maxLength: 160 });
 
-const selector = Type.Object({ column: field, label: field }, { additionalProperties: false });
+export const selector = Type.Object({ column: field, label: field }, { additionalProperties: false });
 
-const sectionSchema = Type.Object({
+export const sectionSchema = Type.Object({
     label: field,
     ref: field,
     row: Type.Integer({ minimum: 0 }),
@@ -27,7 +27,7 @@ export const playerCardSchema = Type.Object({
 
 type SourceRow = { record: SourceRecord; row: Record<string, unknown>; data: Record<string, unknown> };
 
-function resolveSourceRow(ref: string, rowIndex: number, getSource: (ref: string) => SourceRecord | undefined, kind: string): SourceRow {
+export function resolveSourceRow(ref: string, rowIndex: number, getSource: (ref: string) => SourceRecord | undefined, kind: string): SourceRow {
     const record = getSource(ref);
     if (!record)
         throw new Error(`Unknown ${kind} source ref: ${ref}`);
@@ -39,7 +39,7 @@ function resolveSourceRow(ref: string, rowIndex: number, getSource: (ref: string
     return { record, row, data };
 }
 
-function resolveMetrics(row: Record<string, unknown>, data: Record<string, unknown>, selectors: { column: string; label: string }[], kind: string) {
+export function resolveMetrics(row: Record<string, unknown>, data: Record<string, unknown>, selectors: { column: string; label: string }[], kind: string) {
     const semantics = objectValue(data?.declared_column_semantics);
     const units = objectValue(data?.units);
     return selectors.map(metric => {
@@ -51,7 +51,7 @@ function resolveMetrics(row: Record<string, unknown>, data: Record<string, unkno
     });
 }
 
-function resolveFields(row: Record<string, unknown>, selectors: { column: string; label: string }[], kind: string) {
+export function resolveFields(row: Record<string, unknown>, selectors: { column: string; label: string }[], kind: string) {
     return selectors.map(item => {
         const value = row[item.column];
         if (!Object.hasOwn(row, item.column) || (value !== null && typeof value !== "string"))
@@ -60,7 +60,7 @@ function resolveFields(row: Record<string, unknown>, selectors: { column: string
     });
 }
 
-function resolveProvenance(record: SourceRecord, data: Record<string, unknown>) {
+export function resolveProvenance(record: SourceRecord, data: Record<string, unknown>) {
     const meta = objectValue(data?.meta);
     return {
         capability: record.tool, origin: "undeclared",

@@ -215,3 +215,64 @@ test("a player_card section with forged or malformed values is dropped with the 
     assert.deepEqual(chunks, []);
   }
 });
+
+test("a team_card with sections resolves per-section rows, fields and provenance", () => {
+  const chunks = reduceBackendEvent("custom_data", {
+    tables: [],
+    artifacts: [
+      {
+        kind: "team_card",
+        title: "Team snapshot",
+        teamName: "Example City Club",
+        sourceRef: "ref-team",
+        sourceRow: 0,
+        nameColumn: "team_name",
+        metrics: [{ column: "net_rating", label: "Net Rtg", value: 4.1, unit: "points/100 possessions" }],
+        sections: [
+          {
+            label: "Payroll",
+            sourceRef: "ref-cap",
+            sourceRow: 0,
+            metrics: [{ column: "total_salary", label: "Payroll", value: 187000000 }],
+            fields: [{ column: "cap_status", label: "Cap status", value: "Above first apron" }],
+            provenance: { capability: "sql_exec", origin: "undeclared", dataset: "bref_cap", season: "2026-27" },
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.equal(chunks.length, 1);
+  const only = chunks[0];
+  if (only.type !== "artifact" || only.artifact.kind !== "team_card") assert.fail("expected team_card artifact");
+  const card = only.artifact;
+  assert.equal(card.teamName, "Example City Club");
+  assert.equal(card.metrics[0].unit, "points/100 possessions");
+  assert.equal(card.sections?.length, 1);
+  assert.equal(card.sections?.[0].label, "Payroll");
+  assert.equal(card.sections?.[0].fields?.[0].value, "Above first apron");
+  assert.equal(card.sections?.[0].provenance?.dataset, "bref_cap");
+});
+
+test("a team_card with forged or malformed values is dropped with the artifact", () => {
+  const base = {
+    kind: "team_card",
+    title: "Team snapshot",
+    teamName: "Example City Club",
+    sourceRef: "ref-team",
+    sourceRow: 0,
+    nameColumn: "team_name",
+    metrics: [{ column: "net_rating", label: "Net Rtg", value: 4.1 }],
+  };
+  for (const artifact of [
+    { ...base, teamName: 42 },
+    { ...base, metrics: [] },
+    { ...base, metrics: [{ column: "v", label: "V", value: "forged" }] },
+    { ...base, sections: [{ label: "S", sourceRef: "r", sourceRow: 0 }] },
+    { ...base, sections: [{ label: "S", sourceRef: "r", sourceRow: -1, metrics: [{ column: "v", label: "V", value: 1 }] }] },
+    { ...base, sections: [{ label: "S", sourceRef: "r", sourceRow: 0, fields: [{ column: "f", label: "F", value: 5 }] }] },
+  ]) {
+    const chunks = reduceBackendEvent("custom_data", { tables: [], artifacts: [artifact] });
+    assert.deepEqual(chunks, []);
+  }
+});

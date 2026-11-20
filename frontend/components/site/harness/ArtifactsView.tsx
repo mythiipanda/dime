@@ -8,6 +8,7 @@ import ArtifactShell from "@/components/dime/ArtifactShell";
 import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
 import ArtifactTable from "@/components/dime/ArtifactTable";
 import ArtifactPlayerCard from "@/components/dime/ArtifactPlayerCard";
+import ArtifactTeamCard from "@/components/dime/ArtifactTeamCard";
 import {
   originPhrase,
   undeclaredProvenance,
@@ -29,6 +30,7 @@ function toChartSeries(series: ChartSeriesPayload[]): ChartSeries[] {
 
 export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
   if (artifact.kind === "player_card") return <ArtifactPlayerCard artifact={artifact} />;
+  if (artifact.kind === "team_card") return <ArtifactTeamCard artifact={artifact} />;
   if (artifact.kind === "table") {
     return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} />;
   }
@@ -162,6 +164,11 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
   if (artifact.kind === "player_card") {
     return ["Player,Team,Metric,Value,Unit,Source,Row,Column", ...artifact.metrics.map(metric =>
       [artifact.playerName, artifact.team, metric.label, metric.value, metric.unit, artifact.sourceRef, artifact.sourceRow, metric.column].map(escapeCsvCell).join(",")
+    )].join("\n");
+  }
+  if (artifact.kind === "team_card") {
+    return ["Team,Metric,Value,Unit,Source,Row,Column", ...artifact.metrics.map(metric =>
+      [artifact.teamName, metric.label, metric.value, metric.unit, artifact.sourceRef, artifact.sourceRow, metric.column].map(escapeCsvCell).join(",")
     )].join("\n");
   }
   if (artifact.kind === "table") {
