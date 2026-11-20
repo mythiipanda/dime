@@ -76,11 +76,11 @@ $$\hat{\theta}_{\text{shrunk}} = \frac{\text{FGM} + \alpha_0}{\text{FGA} + \alph
 When a question asks for an empirical-Bayes estimate rather than a hand-picked prior, fit $\mu$ and $M$ from the warehouse instead of assuming them. On `silver_hist_shots` (3PA per player from `shot_value = 3` rows, `game_id LIKE '002%'` for the regular season):
 
 1. Restrict the reference pool to high-volume shooters (e.g. `FG3A >= 100`, optionally joined to `silver_player_season` with `GP >= 20`) so MLE noise doesn't dominate the variance estimate.
-2. Pooled mean: $\mu = \frac{\sum \text{FG3M}}{\sum \text{FG3A}}$ over that pool (verified 2024-25: $\mu = 0.3652$).
+2. Pooled mean: $\mu = \frac{\sum \text{FG3M}}{\sum \text{FG3A}}$ over that pool.
 3. Attempt-weighted sample variance $s^2 = \frac{\sum n_i (p_i - \mu)^2}{\sum n_i}$ with $\bar n$ the mean attempts; then
 $$M = \frac{\mu(1-\mu) - s^2}{s^2 - \mu(1-\mu)/\bar n}$$
-(verified 2024-25: $M \approx 348.6$). A negative numerator means the pool has less spread than binomial noise — fall back to the fixed prior above.
-4. Shrink each player on the full qualifying cohort ($\text{FG3A} \ge 40$): $\hat\theta = \frac{\text{FG3M} + M\mu}{\text{FG3A} + M}$. Report the shift, not just the shrunk value — the biggest movers are the low-volume players (2024-25: a 40–120-FG3A cohort sees shifts of ±0.06–0.17 around $\mu$).
+A negative numerator means the pool has less spread than binomial noise — fall back to the fixed prior above.
+4. Shrink each player on the full qualifying cohort ($\text{FG3A} \ge 40$): $\hat\theta = \frac{\text{FG3M} + M\mu}{\text{FG3A} + M}$. Report the shift, not just the shrunk value — the biggest movers are the low-volume players, and stating who moved most carries more meaning than a re-sorted leaderboard.
 
 ---
 
@@ -136,8 +136,8 @@ The output can then be directly cited in `submit_answer` and visualized in a `ta
 Shots within a game are correlated, so resample the **game cluster**, not the shot row, when the statistic involves shot outcomes from `silver_hist_shots`.
 
 1. Aggregate each cluster first (per `game_id`: corner-3 makes/attempts, arc-3 makes/attempts, or whatever the statistic needs — corner 3s are `ABS(x_legacy) >= 220 AND y_legacy <= 92.5`).
-2. Seed with the **legacy** generator for reproducibility: `np.random.seed(seed)` then draw cluster indices with `np.random.randint(0, K, K)` (or `np.random.choice(K, K, replace=True)` — identical stream). `np.random.default_rng(seed)` produces a different draw stream and will not replicate published estimates that used a seed.
-3. For each of `B = 1000` resamples, sum the resampled cluster aggregates and compute the statistic on the pooled totals (e.g. `1.5 * corner_3pm/corner_3pa - 1.5 * arc_3pm/arc_3pa`).
-4. Report `std(ddof=1)` as the standard error and `np.percentile(stats, [2.5, 97.5])` as the 95% CI. Verified on 2025-26 (`seed=42`, `K=1230` games): corner-3 eFG 0.5793 vs arc eFG 0.5252, diff 0.0541, SE 0.0056, CI [0.0434, 0.0651].
+2. Pick a seed and a generator and say which you used: the legacy `np.random.seed(seed)` stream and `np.random.default_rng(seed)` produce different draws, so the two are not interchangeable when someone re-runs your numbers.
+3. For each of `B` resamples (1000 is conventional), sum the resampled cluster aggregates and compute the statistic on the pooled totals (e.g. `1.5 * corner_3pm/corner_3pa - 1.5 * arc_3pm/arc_3pa`).
+4. Report `std(ddof=1)` as the standard error and `np.percentile(stats, [2.5, 97.5])` as the 95% CI.
 
-State the cluster unit, the seed, and `B` alongside the estimate so the number is reproducible.
+State the cluster unit, the seed, the generator, and `B` alongside the estimate so the number is reproducible.
