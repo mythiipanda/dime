@@ -82,7 +82,11 @@ export function canonicalArgsKey(value: unknown): string {
     return "{" + parts.join(",") + "}";
 }
 
-const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String() });
+const turnSchema = Type.Object({
+    role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+    content: Type.String(),
+    reasoning: Type.Optional(Type.String())
+});
 export const analystContextSchema = Type.Object({
     q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
     sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),
@@ -108,6 +112,7 @@ export type AnalystEvent = {
     type: "answer";
     text: string;
     submission?: AnswerSubmission;
+    reasoning?: string;
 } | {
     type: "custom_data";
     tables?: Array<Record<string, unknown>>;
@@ -150,15 +155,20 @@ function safeFailureMessage(kind: string, error: unknown, apiKey?: string): stri
 }
 
 function toHistoryMessages(history: AnalystContext["history"], model: { api: AssistantMessage["api"]; provider: string; id: string; compat?: object }): Message[] {
-    if (history.length > 0 && model.compat && "requiresReasoningContentOnAssistantMessages" in model.compat && model.compat.requiresReasoningContentOnAssistantMessages)
-        return [{ role: "user", content: "Earlier turns of this conversation, replayed as a transcript because their reasoning was not retained:\n\n" + history.map(turn => (turn.role === "user" ? "User: " : "Analyst: ") + turn.content).join("\n\n"), timestamp: Date.now() }];
-    return history.map(turn => turn.role === "user"
-        ? { role: "user", content: turn.content, timestamp: Date.now() }
-        : {
-            role: "assistant", content: [{ type: "text", text: turn.content }], api: model.api, provider: model.provider, model: model.id,
+    const requiresReasoning = !!(model.compat && "requiresReasoningContentOnAssistantMessages" in model.compat && model.compat.requiresReasoningContentOnAssistantMessages);
+    return history.map(turn => {
+        if (turn.role === "user")
+            return { role: "user", content: turn.content, timestamp: Date.now() };
+        const content: AssistantMessage["content"] = [];
+        if (requiresReasoning)
+            content.push({ type: "thinking", thinking: turn.reasoning?.trim() || "Reasoning was not retained for this earlier turn.", thinkingSignature: "reasoning_content" });
+        content.push({ type: "text", text: turn.content });
+        return {
+            role: "assistant", content, api: model.api, provider: model.provider, model: model.id,
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
             stopReason: "stop", timestamp: Date.now()
-        });
+        };
+    });
 }
 
 function buildLoopRecord(
@@ -332,13 +342,15 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         throw new Error(detail || "Model failed");
                     }
                     const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
+                    const reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
+                    const replayReasoning = reasoning ? { reasoning } : {};
                     if (acceptedSubmission) {
                         const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
-                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
                     } else {
                         if (!text.trim())
                             throw new Error("Model returned no answer");
-                        emit({ type: "answer", text });
+                        emit({ type: "answer", text, ...replayReasoning });
                     }
                 }
                 catch (error) {

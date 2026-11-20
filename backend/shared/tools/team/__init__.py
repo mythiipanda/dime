@@ -67,6 +67,7 @@ from .scouting import (
     _rating_card,
     get_injury_impact,
     get_matchup_brief,
+    get_opponent_scout,
     get_scout_pack,
     get_scouting_report,
 )
