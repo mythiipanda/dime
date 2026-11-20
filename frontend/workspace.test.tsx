@@ -12,6 +12,7 @@ import { ShotsExplorer } from "./components/shell/ShotsExplorer";
 import TradesView from "./components/dime/views/TradesView";
 import MorningPage from "./components/dime/views/MorningPage";
 import CompareView from "./components/dime/views/CompareView";
+import DraftView from "./components/dime/views/DraftView";
 import type { HomeSnapshot } from "./lib/warehouse";
 import { clearEnvelopeCache } from "./lib/api";
 
@@ -212,6 +213,72 @@ test("Compare view surfaces the backend error", async () => {
   ];
   await mount(<CompareView initialPicks={picks} />, async () => Response.json({ ok: false, error: "warehouse_unreachable" }, { status: 422 }), async host => {
     assert.match(host.textContent!, /warehouse_unreachable/);
+    assert.match(host.textContent!, /No sample data is substituted/);
+  });
+});
+
+const draftFixture = {
+  ok: true, team: "NYK", season: "",
+  blocks: {
+    board: { ok: true, season: "2027-28", rows: [
+      { pick: 1, name: "AJ Dybantsa", position: "F", school: "BYU", gp: 30, pts: 24.1, reb: 6.8, ast: 3.2, ts_pct: 0.61, usg: 0.31 },
+      { pick: 2, name: "Darryn Peterson", position: "G", school: "Kansas", gp: 28, pts: 21.4, reb: 4.0, ast: 4.8, ts_pct: 0.58, usg: 0.28 },
+    ], provenance: { table: "silver_draft_boards + silver_prospect_stats", as_of: "2026-09-10T04:00:00Z" } },
+    free_agents: { ok: true, rows: [
+      { name: "Trae Young", team: "ATL", fa_type: "ufa", prior_salary: 45999600, cap_hold: 59799480 },
+      { name: "Jalen Williams", team: "OKC", fa_type: "rfa", prior_salary: 6580000, cap_hold: 8554000 },
+    ], provenance: { table: "silver_free_agents", as_of: "2026-09-10T05:00:00Z" } },
+    cap_room: { ok: true, rows: [
+      { team: "NYK", committed: 178000000, option_salary: 12000000, fa_holds: 30000000, roster_charges: 6000000, projected_room: -32000000 },
+      { team: "DET", committed: 80000000, option_salary: 0, fa_holds: 9000000, roster_charges: 12000000, projected_room: 75000000 },
+    ], provenance: { table: "silver_cap_room", as_of: "2026-09-10T05:10:00Z" } },
+    fit: { ok: true, team: "NYK",
+      gaps: [{ factor: "ball_security", label: "Ball security", value: 0.139, rank: 22, of: 30 }, { factor: "shooting", label: "Shooting", value: 0.557, rank: 18, of: 30 }],
+      cap: { committed: 178000000, option_salary: 12000000, fa_holds: 30000000, projected_room: -32000000 },
+      targets: [{ name: "Trae Young", team: "ATL", fa_type: "ufa", prior_salary: 45999600, cap_hold: 59799480, ppg: 25.4, rpg: 2.9, apg: 11.2, spg: 1.1, bpg: 0.1, fg3_pct: 0.354, gp: 76 }],
+      errors: [],
+      provenance: { table: "silver_team_ratings + silver_cap_room + silver_free_agents + silver_player_season", as_of: "2026-09-08T16:57:36Z" } },
+  },
+};
+
+test("Draft view renders prospect board, free agents, cap room and fit with provenance", async () => {
+  await mount(<DraftView initialTeam="NYK" />, async input => {
+    const url = String(input);
+    if (url.includes("/draft")) {
+      assert.match(url, /team=NYK/);
+      return Response.json(draftFixture);
+    }
+    return Response.json({ ok: true });
+  }, async host => {
+    assert.match(host.textContent!, /AJ Dybantsa/);
+    assert.match(host.textContent!, /BYU/);
+    assert.match(host.textContent!, /Trae Young/);
+    assert.match(host.textContent!, /\$46\.0M/);
+    assert.match(host.textContent!, /\$75\.0M/);
+    assert.match(host.textContent!, /Ball security · #22 of 30/);
+    assert.match(host.textContent!, /silver_draft_boards/);
+    assert.match(host.textContent!, /silver_free_agents/);
+    assert.match(host.textContent!, /silver_cap_room/);
+    assert.match(host.textContent!, /silver_team_ratings/);
+  });
+});
+
+test("Draft view degrades per block when tables are missing", async () => {
+  const degraded = { ...draftFixture, blocks: { ...draftFixture.blocks,
+    board: { ok: false, rows: [], error: "silver_draft_boards not in warehouse", provenance: { table: "silver_draft_boards", as_of: null } },
+    free_agents: { ok: false, rows: [], error: "silver_free_agents not in warehouse", provenance: { table: "silver_free_agents", as_of: null } },
+  } };
+  await mount(<DraftView initialTeam="NYK" />, async () => Response.json(degraded), async host => {
+    assert.match(host.textContent!, /silver_draft_boards not in warehouse/);
+    assert.match(host.textContent!, /silver_free_agents not in warehouse/);
+    assert.match(host.textContent!, /Trae Young/);
+    assert.match(host.textContent!, /Ball security · #22 of 30/);
+  });
+});
+
+test("Draft view surfaces the backend error", async () => {
+  await mount(<DraftView initialTeam="NYK" />, async () => Response.json({ ok: false, error: "warehouse unreachable" }, { status: 422 }), async host => {
+    assert.match(host.textContent!, /warehouse unreachable/);
     assert.match(host.textContent!, /No sample data is substituted/);
   });
 });

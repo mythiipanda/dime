@@ -70,6 +70,10 @@ export type DirectOperations = {
         team: string;
         season: string;
     };
+    product_draft: {
+        team: string;
+        season: string;
+    };
     product_debate: {
         a: string;
         b: string;

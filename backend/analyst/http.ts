@@ -280,6 +280,10 @@ export function createProductServer(options: {
         const result = await data.call("product_morning", { team: (url.searchParams.get("team") ?? "").slice(0, 12), season: url.searchParams.get("season") ?? "" });
         json(res, result, result.ok === false ? 422 : 200);
     });
+    route("GET", /^\/api\/draft$/, async ({ res, url }) => {
+        const result = await data.call("product_draft", { team: (url.searchParams.get("team") ?? "").slice(0, 12), season: url.searchParams.get("season") ?? "" });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
     route("GET", /^\/api\/debate-card$/, async ({ res, url }) => {
         const a = (url.searchParams.get("a") ?? "").trim().slice(0, 80), b = (url.searchParams.get("b") ?? "").trim().slice(0, 80);
         if (!a || !b) {

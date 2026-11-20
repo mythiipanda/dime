@@ -521,12 +521,170 @@ def product_compare(players: str = '', season: str = '2025-26') -> dict:
         con.close()
     return {"ok": True, "season": season, "players": out}
 
+def _draft_as_of(con, table: str) -> str | None:
+    try:
+        row = con.execute(f"SELECT MAX(_fetched_at) FROM {table}").fetchone()
+        return str(row[0]) if row and row[0] else None
+    except Exception:
+        return None
+
+def _draft_board(con, tables: set, season: str) -> dict:
+    if "silver_draft_boards" not in tables:
+        return {"ok": False, "error": "silver_draft_boards not in warehouse",
+                "provenance": {"table": "silver_draft_boards", "as_of": None}}
+    use = season
+    if not use:
+        latest = con.execute("SELECT MAX(_season) FROM silver_draft_boards").fetchone()
+        use = str(latest[0]) if latest and latest[0] else ""
+    cite = {"table": "silver_draft_boards" + (" + silver_prospect_stats" if "silver_prospect_stats" in tables else ""),
+            "as_of": _draft_as_of(con, "silver_draft_boards")}
+    if "silver_prospect_stats" in tables:
+        rows = con.execute(
+            'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL, s.GP, s.PTS, s.REB, s.AST, s.TS_PCT, s.USG '
+            'FROM silver_draft_boards b '
+            'LEFT JOIN silver_prospect_stats s ON lower(s.PLAYER_NAME) = lower(b.PLAYER_NAME) AND s._season = b._season '
+            'WHERE b._season = ? ORDER BY b."ORDER" LIMIT 60', [use]).fetchall()
+    else:
+        rows = [r[:4] + (None,) * 6 for r in con.execute(
+            'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL FROM silver_draft_boards '
+            'WHERE _season = ? ORDER BY "ORDER" LIMIT 60', [use]).fetchall()]
+    board = [{"pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
+              "gp": r[4], "pts": r[5], "reb": r[6], "ast": r[7], "ts_pct": r[8], "usg": r[9]}
+             for r in rows]
+    return {"ok": bool(board), "season": use, "rows": board, "provenance": cite,
+            **({"error": "no board rows for season"} if not board else {})}
+
+def _draft_free_agents(con, tables: set) -> dict:
+    if "silver_free_agents" not in tables:
+        return {"ok": False, "error": "silver_free_agents not in warehouse",
+                "provenance": {"table": "silver_free_agents", "as_of": None}}
+    rows = con.execute(
+        "SELECT PLAYER_NAME, TEAM, FA_TYPE, PRIOR_SALARY, CAP_HOLD_EST FROM silver_free_agents "
+        "ORDER BY PRIOR_SALARY DESC LIMIT 40").fetchall()
+    agents = [{"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3], "cap_hold": r[4]}
+              for r in rows]
+    return {"ok": bool(agents), "rows": agents,
+            "provenance": {"table": "silver_free_agents", "as_of": _draft_as_of(con, "silver_free_agents")},
+            **({"error": "no free agent rows"} if not agents else {})}
+
+def _draft_cap_room(con, tables: set) -> dict:
+    if "silver_cap_room" not in tables:
+        return {"ok": False, "error": "silver_cap_room not in warehouse",
+                "provenance": {"table": "silver_cap_room", "as_of": None}}
+    rows = con.execute(
+        "SELECT TEAM, COMMITTED_SALARY, PENDING_OPTION_SALARY, FA_HOLDS_EST, "
+        "INCOMPLETE_ROSTER_CHARGES, PROJECTED_ROOM FROM silver_cap_room ORDER BY PROJECTED_ROOM DESC").fetchall()
+    room = [{"team": str(r[0]), "committed": r[1], "option_salary": r[2],
+             "fa_holds": r[3], "roster_charges": r[4], "projected_room": r[5]}
+            for r in rows]
+    return {"ok": bool(room), "rows": room,
+            "provenance": {"table": "silver_cap_room", "as_of": _draft_as_of(con, "silver_cap_room")},
+            **({"error": "no cap room rows"} if not room else {})}
+
+_DRAFT_GAP_FACTORS = [
+    ("off_rating", "Offense", "OFF_RATING", True),
+    ("def_rating", "Defense", "DEF_RATING", False),
+    ("rebounding", "Rebounding", "REB_PCT", True),
+    ("shooting", "Shooting", "EFG_PCT", True),
+    ("ball_security", "Ball security", "TM_TOV_PCT", False),
+]
+_DRAFT_GAP_STAT = {
+    "off_rating": "s.PPG", "def_rating": "(s.SPG + s.BPG)", "rebounding": "s.RPG",
+    "shooting": "s.FG3_PCT", "ball_security": "s.APG",
+}
+
+def _draft_fit(con, tables: set, abbr: str) -> dict:
+    errors = []
+    gaps = []
+    ratings_as_of = None
+    if "silver_team_ratings" in tables:
+        ratings_as_of = _draft_as_of(con, "silver_team_ratings")
+        full = _team_full_name(abbr)
+        row = con.execute(
+            "SELECT TEAM_NAME, OFF_RATING, DEF_RATING, REB_PCT, EFG_PCT, TM_TOV_PCT "
+            "FROM silver_team_ratings WHERE TEAM_NAME = ? LIMIT 1", [full]).fetchone() if full else None
+        total = con.execute("SELECT COUNT(*) FROM silver_team_ratings").fetchone()[0]
+        if row:
+            for key, label, col, high_is_good in _DRAFT_GAP_FACTORS:
+                value = float(row[{c: i + 1 for i, c in enumerate(
+                    ["OFF_RATING", "DEF_RATING", "REB_PCT", "EFG_PCT", "TM_TOV_PCT"])}[col]])
+                better = ">" if high_is_good else "<"
+                rank = con.execute(
+                    f"SELECT COUNT(*) + 1 FROM silver_team_ratings WHERE {col} {better} ?",
+                    [value]).fetchone()[0]
+                gaps.append({"factor": key, "label": label, "value": value, "rank": int(rank), "of": int(total)})
+            gaps.sort(key=lambda gap: -gap["rank"])
+            gaps = gaps[:2]
+        else:
+            errors.append("no team ratings row")
+    else:
+        errors.append("silver_team_ratings not in warehouse")
+    cap = None
+    if "silver_cap_room" in tables:
+        crow = con.execute(
+            "SELECT COMMITTED_SALARY, PENDING_OPTION_SALARY, FA_HOLDS_EST, PROJECTED_ROOM "
+            "FROM silver_cap_room WHERE TEAM = ? LIMIT 1", [abbr]).fetchone()
+        if crow:
+            cap = {"committed": crow[0], "option_salary": crow[1], "fa_holds": crow[2], "projected_room": crow[3]}
+        else:
+            errors.append("no cap room row")
+    else:
+        errors.append("silver_cap_room not in warehouse")
+    targets = []
+    if "silver_free_agents" in tables and "silver_player_season" in tables:
+        metric = _DRAFT_GAP_STAT.get(gaps[0]["factor"] if gaps else "", "s.PPG")
+        latest = con.execute("SELECT MAX(_season) FROM silver_player_season").fetchone()[0]
+        rows = con.execute(
+            f"SELECT f.PLAYER_NAME, f.TEAM, f.FA_TYPE, f.PRIOR_SALARY, f.CAP_HOLD_EST, "
+            f"s.PPG, s.RPG, s.APG, s.SPG, s.BPG, s.FG3_PCT, s.GP "
+            f"FROM silver_free_agents f JOIN silver_player_season s "
+            f"ON lower(s.PLAYER) = lower(f.PLAYER_NAME) AND s._season = ? "
+            f"ORDER BY ({metric}) DESC NULLS LAST LIMIT 12", [latest]).fetchall()
+        targets = [{"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3],
+                    "cap_hold": r[4], "ppg": r[5], "rpg": r[6], "apg": r[7],
+                    "spg": r[8], "bpg": r[9], "fg3_pct": r[10], "gp": r[11]} for r in rows]
+        if not targets:
+            errors.append("no free agent rows joined to current season")
+    elif "silver_free_agents" not in tables:
+        errors.append("silver_free_agents not in warehouse")
+    else:
+        errors.append("silver_player_season not in warehouse")
+    tables_used = [t for t in ("silver_team_ratings", "silver_cap_room", "silver_free_agents", "silver_player_season") if t in tables]
+    ok = bool(gaps or cap or targets)
+    return {"ok": ok, "team": abbr, "gaps": gaps, "cap": cap, "targets": targets,
+            "errors": errors, "provenance": {"table": " + ".join(tables_used), "as_of": ratings_as_of},
+            **({} if ok else {"error": "; ".join(errors)})}
+
+@tool(description='Aggregate the draft and free-agency workspace: prospect board, 2027 free agent class, cap room, and team fit targets.')
+def product_draft(team: str, season: str = '') -> dict:
+    from shared import store
+    abbr = str(team or '').strip().upper()
+    try:
+        con = store.connect(read_only=True)
+    except Exception:
+        return {"ok": False, "error": "warehouse unreachable"}
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        blocks = {
+            "board": _draft_board(con, tables, str(season or '').strip()),
+            "free_agents": _draft_free_agents(con, tables),
+            "cap_room": _draft_cap_room(con, tables),
+            "fit": _draft_fit(con, tables, abbr) if abbr else {"ok": False, "error": "team needed",
+                "gaps": [], "cap": None, "targets": [], "errors": ["team needed"],
+                "provenance": {"table": "", "as_of": None}},
+        }
+        return {"ok": True, "team": abbr, "season": str(season or ''), "blocks": blocks}
+    except Exception as error:
+        return {"ok": False, "error": str(error)[:200]}
+    finally:
+        con.close()
+
 def internal_catalogue():
     operations = (product_board_metrics, product_board_fill, product_board_seed, product_save_chat, product_save_run, product_threads, product_runs,
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
-        product_compare)
+        product_compare, product_draft)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description

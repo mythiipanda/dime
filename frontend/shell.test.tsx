@@ -18,7 +18,7 @@ import { getClientId, getThreads } from "./lib/api";
 import { LibraryView } from "./components/shell/WorkspaceViews";
 
 test("navigation exposes only this port's destinations, with Tools grouped", () => {
-  assert.deepEqual(shellNavigation.map(item => item.label), ["Home", "Ask", "Workflows", "Boards", "Notebooks", "Library", "Data", "Trades", "Compare", "Matchups", "Awards"]);
+  assert.deepEqual(shellNavigation.map(item => item.label), ["Home", "Ask", "Workflows", "Boards", "Notebooks", "Library", "Data", "Trades", "Compare", "Draft", "Matchups", "Awards"]);
   assert.ok(shellNavigation.slice(7).every(item => "group" in item && item.group === "Tools"));
   for (const item of shellNavigation) assert.equal(parseShellTab(item.id), item.id);
   for (const invalid of [null, "explore", "lineups", "props", "invalid"]) assert.equal(parseShellTab(invalid), "chat");
