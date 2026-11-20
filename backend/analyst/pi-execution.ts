@@ -303,6 +303,37 @@ function buildLoopRecord(
     return { record, payload };
 }
 
+const CONSECUTIVE_FAILURE_LIMIT = 5;
+
+function buildBreakerRecord(
+    toolName: string,
+    callId: string,
+    failures: number,
+    lastError?: string
+) {
+    const error = `${toolName} disabled for this run after ${failures} consecutive failed calls`;
+    const payload = {
+        ok: false,
+        circuit_open: true,
+        error,
+        summary: `${toolName} failed ${failures} calls in a row; it is blocked for the rest of this run.`,
+        ...(lastError ? { last_error: lastError } : {}),
+        recovery_hint: "Repeated failures mean a data or source limitation, not a transient error. Move on: answer from warehouse tools (sql_exec, run_python, domain tools), note the gap, or call submit_answer with what you have.",
+        next_actions: ["Use a different tool", "Note the data gap in the answer", "Call submit_answer"]
+    };
+    const record: SourceRecord = {
+        ref: `breaker_${failures}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
     results: Map<string, SourceRecord>,
@@ -311,17 +342,26 @@ function wrapBridgeTools(
 ) {
     const callCounts = new Map<string, { count: number; lastRef?: string }>();
     const lastErrors = new Map<string, { error: string; count: number }>();
+    const failStreaks = new Map<string, number>();
+    const tripped = new Set<string>();
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
             tracker.toolCalls += 1;
             emit({ type: "tool_call", name: tool.name });
+            const callId = typeof args[0] === "string" && args[0] ? args[0] : `call_${tracker.toolCalls}`;
+            if (tripped.has(tool.name)) {
+                const { record, payload } = buildBreakerRecord(tool.name, callId, failStreaks.get(tool.name) ?? 0, lastErrors.get(tool.name)?.error);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
+                return sourceResult(record);
+            }
             const key = `${tool.name}:${canonicalArgsKey(args[1] ?? {})}`;
             const entry = callCounts.get(key) ?? { count: 0 };
             entry.count += 1;
             callCounts.set(key, entry);
             if (entry.count >= 3) {
-                const callId = typeof args[0] === "string" && args[0] ? args[0] : `loop_${entry.count}`;
                 const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef);
                 results.set(record.ref, record);
                 emit({ type: "source", record });
@@ -340,6 +380,20 @@ function wrapBridgeTools(
                 const domain = objectValue(result.structuredContent.result);
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
+                if (failed) {
+                    const streak = (failStreaks.get(tool.name) ?? 0) + 1;
+                    failStreaks.set(tool.name, streak);
+                    if (streak >= CONSECUTIVE_FAILURE_LIMIT) {
+                        tripped.add(tool.name);
+                        const { record, payload } = buildBreakerRecord(tool.name, callId, streak, typeof error === "string" ? error : undefined);
+                        results.set(record.ref, record);
+                        emit({ type: "source", record });
+                        emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
+                        return sourceResult(record);
+                    }
+                }
+                else
+                    failStreaks.delete(tool.name);
                 if (failed && domain) {
                     const errorText = typeof error === "string" ? error : "Tool failed";
                     const previous = lastErrors.get(tool.name);
@@ -361,6 +415,10 @@ function wrapBridgeTools(
                 return result;
             }
             catch (error) {
+                const streak = (failStreaks.get(tool.name) ?? 0) + 1;
+                failStreaks.set(tool.name, streak);
+                if (streak >= CONSECUTIVE_FAILURE_LIMIT)
+                    tripped.add(tool.name);
                 emit({ type: "tool_result", name: tool.name, status: "fail", error: error instanceof Error ? error.message : String(error) });
                 throw error;
             }

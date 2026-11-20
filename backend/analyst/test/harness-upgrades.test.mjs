@@ -813,6 +813,86 @@ test("repeated identical tool errors carry a data-limitation hint", async () => 
   }
 });
 
+test("consecutive tool failures trip a per-run circuit breaker", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-breaker-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    turn++;
+    seenContexts.push(structuredClone(context));
+    const content = turn === 1
+      ? [{ type: "toolCall", id: "call-storm", name: "codemode", arguments: { code: `
+          const out = [];
+          for (let i = 0; i < 8; i++) { try { out.push(await tools.web_fetch({ url: "https://example.com/" + i })); } catch (e) { out.push(String(e)); } }
+          return out;` } }]
+      : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn === 1 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason, message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  let execCount = 0;
+  const mockBridge = {
+    tools: [{
+      name: "web_fetch",
+      label: "web_fetch",
+      description: "Fetch a URL",
+      parameters: Type.Object({ url: Type.String() }),
+      async execute(callId) {
+        execCount++;
+        const ref = `src-fetch-${execCount}`;
+        const payload = { ok: false, error: "404 Not Found" };
+        const record = { ref, callId, tool: "web_fetch", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: true } };
+        resultsMap.set(ref, record);
+        return { content: [{ type: "text", text: JSON.stringify(payload) }], details: undefined, structuredContent: { ref, tool: "web_fetch", result: payload, isError: true }, isError: true };
+      },
+    }],
+    results: resultsMap,
+    pid: 1006,
+    close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Storm a failing fetch",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) events.push(event);
+    assert.equal(execCount, 5);
+    const transcript = seenContexts.map((context) => context.messages.map((message) => messageText(message.content)).join("\n")).join("\n");
+    assert.match(transcript, /circuit_open/);
+    assert.match(transcript, /blocked for the rest of this run/);
+    assert.ok(resultsMap.has("breaker_5_web_fetch"));
+    const breakerSources = events.filter((e) => e.type === "source" && String(e.record.ref).startsWith("breaker_"));
+    assert.ok(breakerSources.length >= 1);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
 test("submit_answer accepts and reports omitted parts", async () => {
   const accepted = [];
   const tool = createSubmitAnswerTool(() => [], (submission) => accepted.push(submission));
