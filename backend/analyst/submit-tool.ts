@@ -23,7 +23,8 @@ export type AnswerBlock = Static<typeof answerBlockSchema>;
 
 export const submitAnswerSchema = Type.Object({
     blocks: Type.Array(answerBlockSchema, { minItems: 1 }),
-    artifacts: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown())))
+    artifacts: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()))),
+    omitted: Type.Optional(Type.Array(Type.String({ minLength: 1 })))
 }, { additionalProperties: false });
 
 export type AnswerSubmission = Static<typeof submitAnswerSchema>;
@@ -91,7 +92,12 @@ export function validateAnswerSubmission(
     const artifacts = input.artifacts ? structuredClone(input.artifacts).map(artifact =>
         artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource) : normalizeShotChart(artifact)
     ) : undefined;
-    return artifacts !== undefined ? { blocks, artifacts } : { blocks };
+    const omitted = input.omitted?.map(item => String(item));
+    return {
+        blocks,
+        ...(artifacts !== undefined ? { artifacts } : {}),
+        ...(omitted !== undefined ? { omitted } : {})
+    };
 }
 
 export function createSubmitAnswerTool(
@@ -101,15 +107,18 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
-        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. Validates selector traceability, not semantic correctness.",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const sources = getContextSources();
             const sourceMap = new Map(sources.map(s => [s.ref, s]));
             const validated = validateAnswerSubmission(args, ref => sourceMap.get(ref), [...sourceMap.keys()]);
             onAccept(validated);
+            const omittedNote = validated.omitted && validated.omitted.length > 0
+                ? ` ${validated.omitted.length} omitted part(s) recorded.`
+                : "";
             return {
-                content: [{ type: "text", text: `Answer submitted with ${validated.blocks.length} block(s).` }],
+                content: [{ type: "text", text: `Answer submitted with ${validated.blocks.length} block(s).${omittedNote}` }],
                 details: undefined
             };
         }

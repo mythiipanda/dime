@@ -35,8 +35,10 @@ def entity_for(season: str) -> str:
 
 def load_progress(progress_file: Path = PROGRESS_FILE) -> dict:
     if progress_file.exists():
-        return json.loads(progress_file.read_text())
-    return {"done": [], "failed": {}}
+        state = json.loads(progress_file.read_text())
+        state.setdefault("gaps", {})
+        return state
+    return {"done": [], "failed": {}, "gaps": {}}
 
 def mark_done(progress_file: Path, season: str) -> None:
     state = load_progress(progress_file)
@@ -49,12 +51,21 @@ def mark_failed(progress_file: Path, season: str, reason: str) -> None:
     state = load_progress(progress_file)
     state["failed"][season] = str(reason)[:300]
     state["done"] = [done for done in state["done"] if done != season]
+    state["gaps"].pop(season, None)
+    progress_file.write_text(json.dumps(state, indent=1))
+
+def mark_gap(progress_file: Path, season: str, reason: str) -> None:
+    state = load_progress(progress_file)
+    state["gaps"][season] = str(reason)[:300]
+    state["done"] = [done for done in state["done"] if done != season]
+    state["failed"].pop(season, None)
     progress_file.write_text(json.dumps(state, indent=1))
 
 def pending_seasons(seasons: list[str],
                     progress_file: Path = PROGRESS_FILE) -> list[str]:
-    done = set(load_progress(progress_file)["done"])
-    return [season for season in seasons if season not in done]
+    state = load_progress(progress_file)
+    closed = set(state["done"]) | set(state["gaps"])
+    return [season for season in seasons if season not in closed]
 
 def warehouse_seasons(con) -> list[str]:
     found: set[str] = set()
@@ -162,6 +173,10 @@ def main(argv: list[str]) -> int:
             done_rows += seed_season(season, transport=transport,
                                      progress_file=progress_file,
                                      winners=winners)
+        except src.AwardsPageError as exc:
+            mark_gap(progress_file, season, f"{type(exc).__name__}: {exc}")
+            log(f"{season}: gap ({exc})")
+            continue
         except Exception as exc:
             consecutive_failures += 1
             mark_failed(progress_file, season, f"{type(exc).__name__}: {exc}")
@@ -179,9 +194,13 @@ def main(argv: list[str]) -> int:
 
     state = load_progress(progress_file)
     failed = sorted(state["failed"])
-    log(f"DONE rows={done_rows} done={len(state['done'])} failed={len(failed)}")
+    gaps = sorted(state["gaps"])
+    log(f"DONE rows={done_rows} done={len(state['done'])} "
+        f"gaps={len(gaps)} failed={len(failed)}")
+    for season in gaps:
+        log(f"  gap {season}: {state['gaps'][season]}")
     for season in failed:
-        log(f"  gap {season}: {state['failed'][season]}")
+        log(f"  failed {season}: {state['failed'][season]}")
     if failed:
         print(f"{len(failed)} seasons failed: {', '.join(failed)}", file=sys.stderr)
         return 1
