@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     nvidia_nim_api_key: str = ""
-    nvidia_nim_model: str = "z-ai/glm-5.3-flash"
+    nvidia_nim_model: str = "minimaxai/minimax-m3.1-flash"
     gemini_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("GEMINI_API_KEY", "GOOGLE_API_KEY"))

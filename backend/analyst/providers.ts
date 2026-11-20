@@ -5,7 +5,7 @@ import { Value } from "typebox/value";
 
 const policies = {
     gemini: { models: ["gemini-3.5-flash", "gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash-lite", "gemini-4-hydrogen"], key: "GEMINI_API_KEY", url: "https://generativelanguage.googleapis.com/v1beta" },
-    nvidia: { models: ["z-ai/glm-5.3-flash", "deepseek-ai/deepseek-v4.1-flash"], key: "NVIDIA_NIM_API_KEY", url: "https://integrate.api.nvidia.com/v1" },
+    nvidia: { models: ["minimaxai/minimax-m3.1-flash", "nvidia/nemotron-3-ultra-550b-a55b"], key: "NVIDIA_NIM_API_KEY", url: "https://integrate.api.nvidia.com/v1" },
     openrouter: { models: ["nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3-super-120b-a12b:free", "dots-studio/dots-3-note-preview:free", "openrouter/free"], key: "OPENROUTER_API_KEY", url: "https://openrouter.ai/api/v1" },
     mistral: { models: ["ministral-8b-2512"], key: "MISTRAL_API_KEY", url: "https://api.mistral.ai/v1" },
     cerebras: { models: ["gpt-oss-120b", "qwen-3.8-27b"], key: "CEREBRAS_API_KEY", url: "https://api.cerebras.ai/v1" },
@@ -36,7 +36,7 @@ function isProvider(name: string): name is Provider { return Object.hasOwn(polic
 
 const order: Provider[] = ["groq", "agnes", "zai", "cerebras", "nvidia", "openrouter", "mistral", "gemini", "inception"];
 const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception"]);
-const reasoningReplay = new Set<Provider>(["reflection"]);
+const reasoningReplay = new Set<Provider>(["reflection", "nvidia"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
 const limitSchema = Type.Object({ contextWindow: Type.Integer(), maxTokens: Type.Integer() }, { additionalProperties: true });
 
@@ -107,11 +107,14 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
             const { provider, model } = selection(id);
             if (!available(provider))
                 throw new Error("Selected provider is unavailable");
-            if (provider === "nvidia")
-                throw new Error("Provider requires request options not yet supported by Pi adapter");
             const limits = resolveLimits(provider, model);
             const headers: Record<string, string> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : {};
-            return { provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers, contextWindow: limits.contextWindow, maxTokens: limits.maxTokens, ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}) };
+            return {
+                provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers,
+                contextWindow: limits.contextWindow, maxTokens: limits.maxTokens,
+                ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}),
+                ...(provider === "nvidia" ? { reasoning: true, compat: { requiresReasoningContentOnAssistantMessages: true, thinkingFormat: "qwen-chat-template" } } : {}),
+            };
         }
     };
 }
