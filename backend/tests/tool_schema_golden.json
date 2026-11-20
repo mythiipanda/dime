@@ -4067,6 +4067,29 @@
         "title": "product_compare",
         "type": "object"
       }
+    },
+    "product_draft": {
+      "name": "product_draft",
+      "description": "Aggregate the draft and free-agency workspace: prospect board, 2027 free agent class, cap room, and team fit targets.",
+      "args_schema": {
+        "description": "Aggregate the draft and free-agency workspace: prospect board, 2027 free agent class, cap room, and team fit targets.",
+        "properties": {
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "product_draft",
+        "type": "object"
+      }
     }
   },
   "shared": {

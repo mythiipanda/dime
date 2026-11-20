@@ -8,6 +8,7 @@ export const shellNavigation = [
   { id: "data", label: "Data" },
   { id: "trades", label: "Trades", group: "Tools" },
   { id: "compare", label: "Compare", group: "Tools" },
+  { id: "draft", label: "Draft", group: "Tools" },
   { id: "matchups", label: "Matchups", group: "Tools" },
   { id: "awards", label: "Awards", group: "Tools" },
 ] as const;
