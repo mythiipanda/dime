@@ -1,4 +1,6 @@
+import difflib as _difflib
 import os as _os
+import re as _re
 from typing import Any
 
 from langchain_core.tools import tool
@@ -17,6 +19,52 @@ TOOL = "sql_exec"
 TABLES = tuple(sorted(_SQL_TABLES))
 SOURCE = "warehouse"
 MAX_SQL_CHARS = 32000
+
+_MISSING_COL = _re.compile(
+    r"(?:referenced column|does not have a column named|column)\s+\"?([A-Za-z_][\w.]*)\"?",
+    _re.IGNORECASE)
+_FUNC_MISMATCH = _re.compile(
+    r"no function matches the given name and argument types\s+'?([a-z_]+)",
+    _re.IGNORECASE)
+
+
+def _binder_hint(query: str, error: str) -> str:
+    generic = ("Call warehouse_schema to verify exact table names, "
+               "column names, and season encodings.")
+    error = error or ""
+    missing = _MISSING_COL.search(error)
+    func = _FUNC_MISMATCH.search(error)
+    if not missing and not func:
+        return generic
+    try:
+        _present, columns = _get_warehouse_schema()
+    except Exception:
+        columns = {}
+    referenced = [
+        t for t in columns
+        if _re.search(rf"\b{_re.escape(t)}\b", query, _re.IGNORECASE)]
+    hints = []
+    if missing:
+        name = missing.group(1).split(".")[-1]
+        candidates = [c for t in referenced for c in columns.get(t, {})]
+        close = _difflib.get_close_matches(
+            name, candidates, n=3, cutoff=0.5)
+        hint = f"Column '{name}' was not found."
+        if close:
+            hint += f" Did you mean: {', '.join(close)}?"
+        hints.append(hint)
+    if func:
+        hints.append(
+            f"'{func.group(1)}' has no overload for the argument type "
+            "passed; CAST the column to a numeric type "
+            "(e.g. CAST(x AS DOUBLE)) or check its type first.")
+    if referenced:
+        shown = "; ".join(
+            f"{t}: {', '.join(columns[t])}" for t in referenced[:3])
+        hints.append(f"Columns on queried tables — {shown}")
+    hints.append(generic)
+    return " ".join(hints)
+
 
 def _failure(query: str, message: str, recovery_hint: str | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {
@@ -49,7 +97,7 @@ async def sql_exec(sql: str) -> dict[str, Any]:
         return _failure(
             query,
             f"{out.get('error', 'query failed')}; sql: {query[:500]}",
-            "Call warehouse_schema to verify exact table names, column names, and season encodings.",
+            _binder_hint(query, out.get("error", "")),
         )
     rows = out.get("rows") or []
     if not rows and _os.environ.get("DIME_STRICT_NONEMPTY_SQL") == "1":
