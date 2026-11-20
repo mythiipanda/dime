@@ -20,7 +20,9 @@
     },
     "warehouse_schema": {
       "name": "warehouse_schema",
+      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_cap_room, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_free_agents, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
       "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
+      "description": "Read declared warehouse columns, source units and season encodings. Pass tables to return only those declared tables (avoiding full catalog payloads). Declared table allowlist: silver_advanced, silver_bbref_awards, silver_boxscores, silver_cap_players, silver_clutch, silver_combine, silver_contracts, silver_draft_boards, silver_four_factors, silver_four_factors_team, silver_hist_draft, silver_hist_gamelogs, silver_hist_lineups, silver_hist_player_seasons, silver_hist_possessions, silver_hist_shots, silver_hist_standings, silver_hist_team_seasons, silver_hustle_player, silver_hustle_team, silver_impact, silver_injuries, silver_injury_entries, silver_leaders_ast, silver_leaders_blk, silver_leaders_pts, silver_leaders_reb, silver_leaders_stl, silver_lineups, silver_news, silver_on_off, silver_player_gamelogs, silver_player_season, silver_playoff_gamelogs, silver_playoffs, silver_preseason_projections, silver_prospect_stats, silver_rapm, silver_rapm_prior, silver_raptor_player, silver_raptor_team, silver_rosters, silver_salaries, silver_schedule, silver_shots, silver_standings, silver_stints, silver_team_games, silver_team_ratings, silver_transactions. This allowlist names declared tables, not proof of actual table content, complete warehouse inventory or data freshness. catalog_scope covers the returned declared tables and columns only, not the full warehouse inventory; a name absent here is not evidence it is absent everywhere.",
       "args_schema": {
         "description": "Read declared warehouse columns, source units and season encodings.",
         "properties": {
@@ -463,6 +465,39 @@
           "player_id"
         ],
         "title": "get_shot_zones",
+        "type": "object"
+      }
+    },
+    "get_phase_shot_splits": {
+      "name": "get_phase_shot_splits",
+      "description": "Regular season vs playoffs shooting splits for one player or team in one season: zone diet and eFG plus shot-family splits (catch-and-shoot vs pull-up vs rim) with playoff-minus-regular deltas in percentage points. Warehouse-first from silver_hist_shots; measured tracking splits appear when seeded. Give exactly one of player or team.",
+      "args_schema": {
+        "description": "Regular season vs playoffs shooting splits for one player or team: zone eFG/share plus catch-and-shoot vs pull-up family splits with deltas and cited warehouse sources.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_phase_shot_splits",
         "type": "object"
       }
     },
@@ -2404,6 +2439,49 @@
         "type": "object"
       }
     },
+    "get_shot_chart": {
+      "name": "get_shot_chart",
+      "description": "Half-court shot chart data from the warehouse silver shots table for one\nplayer or one team: per-region attempt counts, makes, FG% and the\nleague-average FG% delta for the same season, plus court-center\ncoordinates ready for the shot_chart artifact. Supply player or team\n(name or abbreviation). season is the _season label (e.g. \"2025-26\").\nplayoffs restricts to playoff games (regular season otherwise).\nopponent restricts to games vs that team (name or abbreviation).\nRegions split by shot zone and court side; each row carries x/y in\nfeet, att, makes, pct, league_pct and delta_pp. Always pair this tool\nwith the shot_chart artifact, passing these zones through with\nprovenance, and keep full names in the title.",
+      "args_schema": {
+        "description": "Half-court shot chart data for one player or team: per-region attempts, makes, FG% and league-average delta with court coordinates for the shot_chart artifact.",
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season"
+          },
+          "playoffs": {
+            "default": false,
+            "title": "Playoffs",
+            "type": "boolean"
+          },
+          "opponent": {
+            "default": "",
+            "title": "Opponent",
+            "type": "string"
+          }
+        },
+        "title": "get_shot_chart",
+        "type": "object"
+      }
+    },
     "get_stint_timeline": {
       "name": "get_stint_timeline",
       "description": "Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings.",
@@ -3818,6 +3896,74 @@
           "team_id"
         ],
         "title": "get_scouting_report",
+        "type": "object"
+      }
+    },
+    "get_free_agents": {
+      "name": "get_free_agents",
+      "description": "Free agency and cap planning: the upcoming free agent class by team or league-wide (UFA, player/team options, two-way), estimated cap holds, and each team's projected cap room and exceptions for the next cap season. Warehouse only; refresh with seed_free_agents.py. Hold and cap figures are CBA-formula estimates, marked ESTIMATED.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "fa_year": {
+            "default": "2027",
+            "title": "Fa Year",
+            "type": "string"
+          }
+        },
+        "title": "get_free_agents",
+        "type": "object"
+      }
+    },
+    "get_prospect": {
+      "name": "get_prospect",
+      "description": "Prospect lookup for the upcoming draft: public big-board/mock placement, current college production stats, pick-slot comps from historical drafts, and nearest historical combine measurables. Player name; draft_year defaults to the current class (2027). Warehouse only; refresh with seed_prospects.py. International prospects carry board/physical data without college stats.",
+      "args_schema": {
+        "properties": {
+          "player": {
+            "default": "",
+            "title": "Player",
+            "type": "string"
+          },
+          "draft_year": {
+            "default": "2027",
+            "title": "Draft Year",
+            "type": "string"
+          },
+          "position": {
+            "default": "",
+            "title": "Position",
+            "type": "string"
+          }
+        },
+        "title": "get_prospect",
+        "type": "object"
+      }
+    },
+    "get_roster_fit": {
+      "name": "get_roster_fit",
+      "description": "Roster gap and fit profile for one team and season (default current): rotation shares by skill archetype (spacing, creation, rim protection, defense, bench depth) versus league and top-8 contender baselines, returning the biggest gaps. Reads silver_leaders_pts and standings; warehouse only.",
+      "args_schema": {
+        "properties": {
+          "team_id": {
+            "default": null,
+            "title": "Team Id"
+          },
+          "team": {
+            "default": "",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": null,
+            "title": "Season"
+          }
+        },
+        "title": "get_roster_fit",
         "type": "object"
       }
     },

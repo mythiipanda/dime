@@ -182,6 +182,22 @@ test("streamed shot chart artifacts support court feet coordinates", () => {
   assert.ok(html.includes('cx="250"'), html);
 });
 
+test("streamed shot chart artifacts color zones by league delta and show makes", () => {
+  const html = render({
+    kind: "shot_chart",
+    title: "Zone efficiency",
+    zones: [
+      { x: 0, y: 2, att: 120, pct: 64, makes: 77, delta: 5.2, label: "rim-C" },
+      { x: 22, y: 4, att: 60, pct: 30, makes: 18, delta: -6.1, label: "corner_3-R" },
+      { x: -14, y: 20, att: 45, pct: 40 },
+    ],
+  });
+  assert.ok(html.includes("var(--green)"), html);
+  assert.ok(html.includes("var(--orange)"), html);
+  assert.ok(html.includes("77/120 · 64"), html);
+  assert.ok(html.includes("vs league fg%"), html);
+});
+
 test("chart and shot artifacts with no data render nothing", () => {
   assert.equal(
     render({ kind: "chart", title: "empty", series: [] }),

@@ -150,3 +150,45 @@ test("deriveArtifacts still derives the table and compare from evidence rows", (
   assert.equal(derived.length, 1);
   assert.equal(derived[0].kind, "table");
 });
+
+test("a memo the agent submitted resolves with sections and citations", () => {
+  const chunks = reduceBackendEvent("custom_data", {
+    tables: [],
+    artifacts: [
+      {
+        kind: "memo",
+        title: "Cap & roster strategy",
+        subtitle: "Owner briefing",
+        sections: [
+          { heading: "Cap position", body: "Under the first apron.", anchors: [{ ref: "src-1", row: 0, columns: ["payroll"] }] },
+          { heading: "Trade options", body: "Aggregate mid-tier salary." },
+        ],
+        footnote: "Sources: silver_salaries",
+      },
+    ],
+  });
+
+  assert.equal(chunks.length, 1);
+  const only = chunks[0];
+  assert.equal(only.type, "artifact");
+  if (only.type !== "artifact") return;
+  assert.equal(only.artifact.kind, "memo");
+  if (only.artifact.kind !== "memo") return;
+  assert.equal(only.artifact.title, "Cap & roster strategy");
+  assert.equal(only.artifact.subtitle, "Owner briefing");
+  assert.equal(only.artifact.sections?.length, 2);
+  assert.equal(only.artifact.sections?.[0].anchors?.[0].ref, "src-1");
+  assert.equal(only.artifact.footnote, "Sources: silver_salaries");
+});
+
+test("a memo with no valid sections is dropped", () => {
+  const chunks = reduceBackendEvent("custom_data", {
+    tables: [],
+    artifacts: [
+      { kind: "memo", title: "empty", sections: [{ heading: "", body: "x" }] },
+      { kind: "memo", title: "none" },
+    ],
+  });
+
+  assert.deepEqual(chunks, []);
+});

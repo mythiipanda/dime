@@ -183,3 +183,18 @@ def test_sql_exec_refusal_hints_steer_to_warehouse_schema(warehouse):
     assert res_guess["ok"] is False
     assert "declared silver" in res_guess["recovery_hint"]
     assert "warehouse_schema" in res_guess["recovery_hint"]
+||||||| 002e08dd
+
+
+def test_sql_exec_binder_hint_names_column_and_candidates(warehouse):
+    res = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT team_abbreviation FROM silver_standings"}))
+    assert res["ok"] is False
+    hint = res["recovery_hint"]
+    assert "'team_abbreviation'" in hint
+    assert "silver_standings" in hint
+
+    res_func = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT sum(TEAM) FROM silver_standings"}))
+    assert res_func["ok"] is False
+    assert "CAST" in res_func["recovery_hint"]

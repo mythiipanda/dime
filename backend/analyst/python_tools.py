@@ -59,6 +59,7 @@ _TOOL_ORDER = (
     "get_win_prob",
     "get_on_off",
     "get_shot_zones",
+    "get_phase_shot_splits",
     "get_four_factors",
     "get_clutch_stats",
     "get_competitive_ratings",
@@ -112,6 +113,7 @@ _TOOL_ORDER = (
     "get_team_game_log",
     "get_zone_deltas",
     "search_shots",
+    "get_shot_chart",
     "get_stint_timeline",
     "get_possession_log",
     "get_elo",
@@ -146,6 +148,9 @@ _TOOL_ORDER = (
     "get_splits",
     "get_recap",
     "get_scouting_report",
+    "get_free_agents",
+    "get_prospect",
+    "get_roster_fit",
     "get_expectations",
 )
 

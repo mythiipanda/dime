@@ -208,7 +208,7 @@ export function applyPinRerun(artifact: DimeArtifact, rows: Map<PinRequery["key"
       ...(section.metrics ? { metrics: section.metrics.map(metric => ({ ...metric, ...number(index, metric.column) })) } : {}),
       ...(section.fields ? { fields: section.fields.map(item => ({ ...item, ...text(index, item.column) })) } : {}),
     })) } : {}),
-  };
+  } as DimeArtifact;
 }
 export function boardPrompt(board: Board, metrics: BoardMetric[]): string {
   return `Analyze my board "${board.title}" for ${board.season}.\nPlayers: ${board.rows.map((r) => `${r.name} (${r.team || "team unknown"}, player_id ${r.player_id})`).join("; ") || "None selected"}.\nMetrics: ${board.columns.map((c) => metrics.find((m) => m.id === c.metric_id)?.label || c.metric_id).join(", ") || "None selected"}.\nCompare trade-offs and identify the most promising targets. Source numbers from the warehouse with citations; state when data is missing. Salary, if requested, is the 2026-27 vintage.`;
