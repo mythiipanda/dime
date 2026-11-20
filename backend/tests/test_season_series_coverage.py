@@ -20,7 +20,7 @@ REGULAR_TABLES = ("silver_team_games", "silver_hist_gamelogs")
 PLAYOFF_TABLES = ("silver_playoffs", "silver_playoff_gamelogs")
 SERIES_TABLES = REGULAR_TABLES + PLAYOFF_TABLES
 
-UNCOVERED_SEASON = "2005-06"
+UNCOVERED_SEASON = "1995-96"
 
 @contextmanager
 def _warehouse():
