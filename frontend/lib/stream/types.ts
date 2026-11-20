@@ -43,6 +43,8 @@ export interface DimeProvenance {
   warehouseId?: string;
   season?: string;
   asOf?: string;
+  as_of?: string;
+  sql?: string;
   liveSources: string[];
   liveSourceIds?: string[];
   evidence?: ProvenanceEvidence[];
@@ -149,13 +151,22 @@ export interface PlayerCardArtifactPayload {
   metrics: { column: string; label: string; value: number | null; unit?: string }[];
 }
 
+export interface MemoArtifactPayload {
+  kind: "memo";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  text: string;
+}
+
 export type DimeArtifact =
   | TableArtifactPayload
   | CompareArtifactPayload
   | ChartArtifactPayload
   | ShotChartArtifactPayload
   | ScatterArtifactPayload
-  | PlayerCardArtifactPayload;
+  | PlayerCardArtifactPayload
+  | MemoArtifactPayload;
 
 export interface ArtifactEvent {
   type: "artifact";

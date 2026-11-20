@@ -15,16 +15,19 @@ _SQL_TABLES = [
     "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
     "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
     "silver_lineups", "silver_shots", "silver_hustle_player",
-    "silver_hustle_team", "silver_injuries", "silver_hist_gamelogs",
+    "silver_hustle_team", "silver_injuries", "silver_injury_entries",
+    "silver_hist_gamelogs",
     "silver_hist_standings", "silver_hist_possessions",
     "silver_hist_shots", "silver_hist_lineups", "silver_salaries",
-    "silver_hist_draft", "silver_raptor_player", "silver_raptor_team",
+    "silver_hist_draft", "silver_hist_team_seasons", "silver_raptor_player",
+    "silver_raptor_team",
     "silver_hist_player_seasons", "silver_player_season", "silver_advanced",
     "silver_on_off", "silver_four_factors", "silver_four_factors_team",
-    "silver_cap_players",
-    "silver_rapm", "silver_rapm_prior",
+    "silver_cap_players", "silver_news",
+    "silver_rapm", "silver_rapm_prior", "silver_impact",
     "silver_bbref_awards", "silver_combine", "silver_rosters",
     "silver_schedule", "silver_stints", "silver_playoff_gamelogs",
+    "silver_transactions", "silver_contracts", "silver_preseason_projections",
 ]
 
 RERUN_ROW_CAP = 25
@@ -286,6 +289,7 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]
         statement = _parse_one(sql, read="duckdb")
     except _ParseError as exc:
         raise ValueError("invalid SQL syntax") from exc
+    present_by_lower = {name.lower(): name for name in present}
     used = set()
     for scope in _traverse_scope(statement):
         for source in scope.sources.values():
@@ -294,9 +298,11 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]
             if (not isinstance(source, _sql_exp.Table) or source.db
                     or source.catalog or not source.name):
                 raise ValueError("unknown or unavailable tables")
-            used.add(source.name)
+            used.add(present_by_lower.get(source.name.lower(), source.name))
     if not used or not used.issubset(present):
-        raise ValueError("unknown or unavailable tables")
+        rejected = sorted(used - present) if used else sorted(set())
+        suffix = f": {', '.join(rejected)}" if rejected else ""
+        raise ValueError(f"unknown or unavailable tables{suffix}")
     return sql, sorted(used)
 
 

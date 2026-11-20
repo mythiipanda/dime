@@ -9,7 +9,7 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./dist/runtime.js";
 import { loadSkillTool, priorSourceTool } from "./dist/pi-context.js";
-import { connectPythonTools, sourceResult } from "./dist/python-tools.js";
+import { connectPythonTools, sourceResult, ANALYST_TOOL_NAMES } from "./dist/python-tools.js";
 import { validateAnswerSubmission } from "./dist/submit-tool.js";
 import { analystEventFrom } from "./dist/pi-execution.js";
 
@@ -199,6 +199,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "sql_exec",
       "warehouse_schema",
       "get_rapm",
+      "get_impact_rank",
       "get_game_prediction",
       "get_wpa_leaders",
       "get_comps",
@@ -211,6 +212,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_competitive_ratings",
       "get_hustle",
       "get_injuries",
+      "get_news_feed",
       "get_award_results",
       "get_briefing",
       "get_standings",
@@ -231,6 +233,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_contract_value",
       "get_trade_check",
       "get_trade_value",
+      "get_trade_partners",
       "get_situational_splits",
       "get_playoff_sim",
       "get_playoff_team_ratings",
@@ -275,6 +278,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_matchup_splits",
       "get_regression_check",
       "get_scout_pack",
+      "get_opponent_scout",
       "get_rotation_check",
       "get_injury_impact",
       "get_matchup_brief",
@@ -289,6 +293,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_splits",
       "get_recap",
       "get_scouting_report",
+      "get_expectations",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -366,7 +371,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 93);
+    assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
+    assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
@@ -1191,6 +1197,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       sql_exec: { sql: "SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS" },
       warehouse_schema: {},
       get_rapm: { player: "NonexistentPlayer", season: "2024-25" },
+      get_impact_rank: { player: "Jaylen Brown", season: "2025-26" },
       get_game_prediction: { a: "BOS", b: "MIA", n_sims: 100 },
       get_wpa_leaders: { season: 2025, limit: 5 },
       get_comps: { player_id: 2544, season: "2023-24", k: 3 },
@@ -1203,6 +1210,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_competitive_ratings: { team: "BOS" },
       get_hustle: { scope: "player" },
       get_injuries: { team: "BOS" },
+      get_news_feed: { team: "BOS", limit: 5 },
       get_award_results: { view: "winner", award: "mvp" },
       get_briefing: { game_date: "10/24/2023" },
       get_standings: { season: "2023-24" },
@@ -1223,6 +1231,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_contract_value: { player: "NonexistentPlayer" },
       get_trade_check: { team_a: "BOS", team_b: "MIA" },
       get_trade_value: { team_a: "BOS", team_b: "MIA" },
+      get_trade_partners: { player: "Jaylen Brown", season: "2026-27" },
       get_situational_splits: { entity: "LeBron James" },
       get_playoff_sim: { season: "2023-24", sims: 100 },
       get_playoff_team_ratings: { season: "2023-24", limit: 5 },
@@ -1255,6 +1264,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_historical_leaders: { category: "pts", start_season: 2023, end_season: 2024, limit: 5 },
       get_today: { season: "2024-25" },
       get_morning_briefing: { season: "2024-25" },
+      get_team_daily_brief: { team: "BOS", since: "2025-10-01" },
       get_tracking_profile: { player: "LeBron James", measure_type: "Drives" },
       get_rest_advantage: { team: "BOS", season: "2025-26" },
       get_rapm_prior: { player: "Nikola Jokić" },
@@ -1267,6 +1277,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_matchup_splits: { player: "LeBron James" },
       get_regression_check: { player: "LeBron James" },
       get_scout_pack: { team: "BOS", opponent: "MIA" },
+      get_opponent_scout: { team: "BOS", opponent: "MIA" },
       get_rotation_check: { team: "BOS" },
       get_injury_impact: { team: "BOS" },
       get_matchup_brief: { a: "BOS", b: "MIA" },
@@ -1280,7 +1291,8 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_lineups: { team_id: 1610612747, season: "2024-25" },
       get_splits: { player_id: 2544, season: "2024-25" },
       get_recap: { game_id: "0022300001", season: "2024-25" },
-      get_scouting_report: { team_id: 1610612747, season: "2024-25" }
+      get_scouting_report: { team_id: 1610612747, season: "2024-25" },
+      get_expectations: { team: "BOS", season: "2024-25" }
     };
     let wrapperInvocations = 0;
     let toolsExercised = 0;
@@ -1455,8 +1467,9 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
     const cba = await tools.load_skill({ name: "cba-trade-analysis" });
     const recon = await tools.load_skill({ name: "warehouse-reconciliation" });
     const lineup = await tools.load_skill({ name: "lineups-and-rotations" });
+    const historical = await tools.load_skill({ name: "historical-grain-and-time" });
     const missing = await tools.load_skill({ name: "nonexistent-skill-xyz" });
-    return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
+    return { cbaOk: cba.ok, hasApron: cba.content.includes("First Apron"), reconOk: recon.ok, lineupOk: lineup.ok, historicalOk: historical.ok, missingOk: missing.ok, validCount: (missing.available_skills || []).length };
   `, []);
   try {
     await session.prompt("Load bundled skills inside codemode");
@@ -1464,11 +1477,13 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
     assert(session.systemPrompt.includes("cba-trade-analysis"));
     assert(session.systemPrompt.includes("warehouse-reconciliation"));
     assert(session.systemPrompt.includes("lineups-and-rotations"));
+    assert(session.systemPrompt.includes("historical-grain-and-time"));
     const toolTexts = session.messages.filter(m => m.role === "toolResult").flatMap(m => m.content).map(c => c.text ?? "").join("\n");
     assert(toolTexts.includes('"cbaOk":true'));
     assert(toolTexts.includes('"hasApron":true'));
     assert(toolTexts.includes('"reconOk":true'));
     assert(toolTexts.includes('"lineupOk":true'));
+    assert(toolTexts.includes('"historicalOk":true'));
     assert(toolTexts.includes('"missingOk":false'));
   } finally {
     session.dispose();

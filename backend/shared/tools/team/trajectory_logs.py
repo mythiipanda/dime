@@ -240,6 +240,19 @@ _SERIES_SOURCES = (
              AND g.season_type = 'regular-season'""",
         lambda q: [f"%{q.b}%", q.season, q.id_a, q.a]),
     _SeriesSource(
+        "silver_hist_gamelogs", "playoffs", True,
+        """SELECT g.game_id,
+                  UPPER(STRFTIME(CAST(g.game_date AS DATE), '%b %d, %Y')),
+                  g.matchup, g.wl, g.pts, o.pts,
+                  (g.matchup ILIKE ?) AS is_meeting
+           FROM silver_hist_gamelogs g
+           LEFT JOIN silver_hist_gamelogs o
+             ON o._season = g._season AND o.game_id = g.game_id
+            AND o.team_id != g.team_id AND o.season_type = 'playoffs'
+           WHERE g._season = ? AND (g.team_id = ? OR g.team_abbreviation = ?)
+             AND g.season_type = 'playoffs' AND g.game_id LIKE '004%'""",
+        lambda q: [f"%{q.b}%", q.season, q.id_a, q.a]),
+    _SeriesSource(
         "silver_playoffs", "playoffs", True,
         """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS, o.PTS,
                   (g.MATCHUP ILIKE ?) AS is_meeting

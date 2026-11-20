@@ -60,8 +60,9 @@ def _season_points_pg(con, team_city, season):
 def _playoff_round_wins(con, team, opponent, season, round_code):
     return con.execute(
         "SELECT COUNT(*) FILTER (WHERE wl = 'W'), COUNT(DISTINCT game_id)"
-        " FROM silver_playoffs"
-        " WHERE _season = ? AND team_abbreviation = ? AND MATCHUP ILIKE ?"
+        " FROM silver_hist_gamelogs"
+        " WHERE _season = ? AND season_type = 'playoffs'"
+        "   AND team_abbreviation = ? AND matchup ILIKE ?"
         "   AND SUBSTR(game_id, 8, 1) = ?",
         [season, team, f"%{opponent}%", round_code],
     ).fetchone()
