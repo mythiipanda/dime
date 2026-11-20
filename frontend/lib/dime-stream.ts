@@ -19,6 +19,9 @@ export type {
   PlayerCardArtifactPayload,
   PlayerCardSectionPayload,
   TeamCardArtifactPayload,
+=======
+  PlayerCardSectionPayload,
+>>>>>>> origin/dev
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   StreamFailure,
