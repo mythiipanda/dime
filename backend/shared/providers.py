@@ -47,10 +47,10 @@ GEMINI_MODELS: tuple[str, ...] = (
 )
 GEMINI_ALLOWLIST = frozenset(GEMINI_MODELS)
 NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NVIDIA_NIM_DEFAULT = "z-ai/glm-5.3-flash"
+NVIDIA_NIM_DEFAULT = "minimaxai/minimax-m3.1-flash"
 NVIDIA_NIM_MODELS: tuple[str, ...] = (
     NVIDIA_NIM_DEFAULT,
-    "deepseek-ai/deepseek-v4.1-flash",
+    "nvidia/nemotron-3-ultra-550b-a55b",
 )
 NVIDIA_NIM_TIMEOUT_S = 20
 NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
