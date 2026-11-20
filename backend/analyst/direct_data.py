@@ -367,11 +367,166 @@ def product_briefing(season: str = '2025-26') -> dict:
     from shared.tools.today import get_morning_briefing
     return _decoded(get_morning_briefing.invoke({'season':season}))
 
+def _compare_tables(con) -> set:
+    return {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+
+def _compare_as_of(con, table: str):
+    try:
+        value = con.execute(f"SELECT MAX(_fetched_at) FROM {table}").fetchone()[0]
+        return str(value) if value is not None else None
+    except Exception:
+        return None
+
+def _compare_name(con, pid: int) -> str:
+    try:
+        row = con.execute("SELECT player_name FROM silver_hist_player_seasons WHERE player_id = ? ORDER BY season DESC LIMIT 1", [pid]).fetchone()
+        if row and row[0]:
+            return str(row[0])
+    except Exception:
+        pass
+    try:
+        row = con.execute("SELECT PLAYER FROM silver_player_season WHERE PLAYER_ID = ? LIMIT 1", [pid]).fetchone()
+        if row and row[0]:
+            return str(row[0])
+    except Exception:
+        pass
+    try:
+        from nba_api.stats.static import players as _sp
+        info = _sp.find_player_by_id(pid)
+        if info and info.get("full_name"):
+            return str(info["full_name"])
+    except Exception:
+        pass
+    return str(pid)
+
+def _hist_year(season: str) -> int:
+    try:
+        return int(str(season).split("-")[0])
+    except Exception:
+        return 0
+
+def _compare_season_line(con, pid: int, season: str) -> dict:
+    if "silver_hist_player_seasons" not in _compare_tables(con):
+        return {"ok": False, "error": "silver_hist_player_seasons not in warehouse"}
+    year = _hist_year(season)
+    row = con.execute(
+        """SELECT season, age, team_abbreviation, gp, min, pts, reb, ast, stl, blk,
+                  fg_pct, fg3_pct, ft_pct, ts_pct, efg_pct, usg_pct, off_rating, def_rating, net_rating
+           FROM silver_hist_player_seasons WHERE player_id = ? AND season = ? LIMIT 1""",
+        [pid, year]).fetchone()
+    if not row:
+        return {"ok": False, "error": f"no season line for {season}", "provenance": {"table": "silver_hist_player_seasons", "as_of": _compare_as_of(con, "silver_hist_player_seasons")}}
+    keys = ["season", "age", "team", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg", "fg_pct", "fg3_pct", "ft_pct", "ts_pct", "efg_pct", "usg_pct", "off_rating", "def_rating", "net_rating"]
+    return {"ok": True, "row": dict(zip(keys, row)), "provenance": {"table": "silver_hist_player_seasons", "as_of": _compare_as_of(con, "silver_hist_player_seasons")}}
+
+def _compare_impact(con, pid: int, season: str) -> dict:
+    if "silver_raptor_player" not in _compare_tables(con):
+        return {"ok": False, "error": "silver_raptor_player not in warehouse"}
+    cite = {"table": "silver_raptor_player", "as_of": _compare_as_of(con, "silver_raptor_player")}
+    row = con.execute(
+        "SELECT RAPTOR_TOTAL, WAR_TOTAL, MP FROM silver_raptor_player WHERE PLAYER_ID = ? AND _season = ? LIMIT 1",
+        [pid, season]).fetchone()
+    if not row:
+        return {"ok": False, "error": f"no impact row for {season}", "provenance": cite}
+    total = float(row[0])
+    rank = con.execute(
+        "SELECT COUNT(*) + 1 FROM silver_raptor_player WHERE _season = ? AND RAPTOR_TOTAL > ?",
+        [season, row[0]]).fetchone()[0]
+    of = con.execute("SELECT COUNT(*) FROM silver_raptor_player WHERE _season = ?", [season]).fetchone()[0]
+    return {"ok": True, "raptor_total": total, "war_total": float(row[1]), "mp": float(row[2]), "rank": int(rank), "of": int(of), "provenance": cite}
+
+def _compare_zones(con, pid: int, season: str) -> dict:
+    if "silver_shots" not in _compare_tables(con):
+        return {"ok": False, "error": "silver_shots not in warehouse"}
+    cite = {"table": "silver_shots", "as_of": _compare_as_of(con, "silver_shots")}
+    rows = con.execute(
+        """SELECT SHOT_ZONE_BASIC AS zone, AVG(LOC_X) / 10.0 AS x, AVG(LOC_Y) / 10.0 AS y,
+                  COUNT(*) AS att, SUM(CASE WHEN SHOT_MADE_FLAG = '1' THEN 1 ELSE 0 END) AS makes
+           FROM silver_shots WHERE PLAYER_ID = ? AND _season = ? AND SHOT_ZONE_BASIC IS NOT NULL
+           GROUP BY 1""", [pid, season]).fetchall()
+    if not rows:
+        return {"ok": False, "error": f"no shots for {season}", "provenance": cite}
+    league = {r[0]: (r[1], r[2]) for r in con.execute(
+        """SELECT SHOT_ZONE_BASIC, COUNT(*), SUM(CASE WHEN SHOT_MADE_FLAG = '1' THEN 1 ELSE 0 END)
+           FROM silver_shots WHERE _season = ? AND SHOT_ZONE_BASIC IS NOT NULL GROUP BY 1""",
+        [season]).fetchall()}
+    zones = []
+    for zone, x, y, att, makes in rows:
+        att = int(att); makes = int(makes or 0)
+        pct = round(100.0 * makes / att, 1)
+        lg_att, lg_makes = league.get(str(zone), (0, 0))
+        league_pct = round(100.0 * int(lg_makes) / int(lg_att), 1) if int(lg_att) else None
+        zones.append({"zone": str(zone), "x": round(float(x or 0), 1), "y": round(float(y or 0), 1),
+                      "att": att, "makes": makes, "pct": pct, "league_pct": league_pct,
+                      "delta_pp": round(pct - league_pct, 1) if league_pct is not None else None})
+    return {"ok": True, "zones": zones, "provenance": cite}
+
+def _compare_contract(con, pid: int, name: str) -> dict:
+    if "silver_cap_players" not in _compare_tables(con):
+        return {"ok": False, "error": "silver_cap_players not in warehouse"}
+    cite = {"table": "silver_cap_players", "as_of": _compare_as_of(con, "silver_cap_players")}
+    row = con.execute(
+        """SELECT team, salary, contract_type, guaranteed, player_option, team_option
+           FROM silver_cap_players WHERE lower(player) = lower(?) ORDER BY _season DESC LIMIT 1""",
+        [name]).fetchone()
+    if not row:
+        return {"ok": False, "error": "no cap row for player", "provenance": cite}
+    return {"ok": True, "row": {"team": row[0], "salary": row[1], "contract_type": row[2], "guaranteed": row[3],
+                                "player_option": row[4], "team_option": row[5]},
+            "season": con.execute("SELECT MAX(_season) FROM silver_cap_players").fetchone()[0],
+            "provenance": cite}
+
+def _compare_arc(con, pid: int) -> dict:
+    if "silver_hist_player_seasons" not in _compare_tables(con):
+        return {"ok": False, "error": "silver_hist_player_seasons not in warehouse"}
+    rows = con.execute(
+        """SELECT season, age, gp, pts, ts_pct, usg_pct FROM silver_hist_player_seasons
+           WHERE player_id = ? ORDER BY season""", [pid]).fetchall()
+    if not rows:
+        return {"ok": False, "error": "no career rows", "provenance": {"table": "silver_hist_player_seasons", "as_of": _compare_as_of(con, "silver_hist_player_seasons")}}
+    return {"ok": True,
+            "rows": [{"season": int(r[0]), "age": float(r[1]) if r[1] is not None else None, "gp": int(r[2]),
+                      "pts": float(r[3]), "ts_pct": float(r[4]), "usg_pct": float(r[5])} for r in rows],
+            "provenance": {"table": "silver_hist_player_seasons", "as_of": _compare_as_of(con, "silver_hist_player_seasons")}}
+
+@tool(description='Compare 2-4 players across season line, impact, shot zones, contract and age curve.')
+def product_compare(players: str = '', season: str = '2025-26') -> dict:
+    from shared import store
+    specs = [part.strip() for part in (players or '').split(',') if part.strip()]
+    if not 2 <= len(specs) <= 4:
+        return {"ok": False, "error": "compare needs 2-4 players"}
+    parsed = []
+    for spec in specs:
+        pid_text, _, own = spec.partition(":")
+        if not pid_text.isdigit():
+            return {"ok": False, "error": f"unrecognized player spec {spec!r}"}
+        parsed.append((int(pid_text), own.strip() or season))
+    try:
+        con = store.connect(read_only=True)
+    except Exception:
+        return {"ok": False, "error": "warehouse_unreachable"}
+    try:
+        out = []
+        for pid, useason in parsed:
+            name = _compare_name(con, pid)
+            out.append({
+                "player_id": pid, "name": name, "season": useason,
+                "season_line": _compare_season_line(con, pid, useason),
+                "impact": _compare_impact(con, pid, useason),
+                "zones": _compare_zones(con, pid, useason),
+                "contract": _compare_contract(con, pid, name),
+                "arc": _compare_arc(con, pid),
+            })
+    finally:
+        con.close()
+    return {"ok": True, "season": season, "players": out}
+
 def internal_catalogue():
     operations = (product_board_metrics, product_board_fill, product_board_seed, product_save_chat, product_save_run, product_threads, product_runs,
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
-        product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing)
+        product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
+        product_compare)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description

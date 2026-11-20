@@ -323,6 +323,10 @@ export function createProductServer(options: {
     });
     route("GET", /^\/api\/movers$/, async ({ res, url }) => json(res, await data.call("product_movers", { season: url.searchParams.get("season") ?? "2025-26", days: integer(url, "days", 7, 1, 30) })));
     route("GET", /^\/api\/briefing$/, async ({ res, url }) => json(res, await data.call("product_briefing", { season: url.searchParams.get("season") ?? "2025-26" })));
+    route("GET", /^\/api\/compare$/, async ({ res, url }) => {
+        const result = await data.call("product_compare", { players: url.searchParams.get("players") ?? "", season: url.searchParams.get("season") ?? "2025-26" });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
     const chat: Handler = async ({ req, res, url }) => {
         const rawInput = req.method === "POST" ? await body(req) : { q: url.searchParams.get("q") ?? "", model: url.searchParams.get("model"), thread: url.searchParams.get("thread"), client: url.searchParams.get("client") ?? (url.searchParams.has("thread") ? req.headers["x-dime-client"] ?? null : null), diagnostics: queryBoolean(url, "diagnostics") };
         if (req.method === "GET" && !Value.Check(analystRequestSchema, rawInput))

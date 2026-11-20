@@ -4046,6 +4046,27 @@
         "title": "product_briefing",
         "type": "object"
       }
+    },
+    "product_compare": {
+      "name": "product_compare",
+      "description": "Compare 2-4 players across season line, impact, shot zones, contract and age curve.",
+      "args_schema": {
+        "description": "Compare 2-4 players across season line, impact, shot zones, contract and age curve.",
+        "properties": {
+          "players": {
+            "default": "",
+            "title": "Players",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "product_compare",
+        "type": "object"
+      }
     }
   },
   "shared": {

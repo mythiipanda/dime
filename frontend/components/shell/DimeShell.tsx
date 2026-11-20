@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Award, BookOpen, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, ArrowLeftRight, Workflow, Table2 } from "lucide-react";
+import { Award, BookOpen, Columns3, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, ArrowLeftRight, Workflow, Table2 } from "lucide-react";
 import { SidebarNav } from "../ds/SidebarNav";
 import DimeCommandPalette, { type PaletteEntry } from "../site/DimeCommandPalette";
 import TradesView from "../dime/views/TradesView";
+import CompareView from "../dime/views/CompareView";
 import MatchupsView from "../dime/views/MatchupsView";
 import AwardsView from "../dime/views/AwardsView";
 import { ChatView } from "./ChatView";
@@ -18,7 +19,7 @@ import { replayName } from "../../lib/replay";
 import { createWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
 export { parseShellTab, shellNavigation } from "../../lib/shell-navigation";
-const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, matchups: Swords, awards: Award };
+const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, compare: Columns3, matchups: Swords, awards: Award };
 const navigation = shellNavigation.map(item => { const Icon = icons[item.id]; return { ...item, icon: <Icon size={17} strokeWidth={1.5} /> }; });
 
 export function DimeShell() {
@@ -115,6 +116,7 @@ export function DimeShell() {
         {tab === "briefs" && <LibraryView onThread={pick} onBoard={openBoard} />}
         {tab === "data" && <DataView />}
         {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} /></div>}
+        {tab === "compare" && <div className="tools-view"><CompareView onAsk={askBoard} /></div>}
         {tab === "matchups" && <div className="tools-view"><MatchupsView /></div>}
         {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
       </div>
