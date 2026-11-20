@@ -215,8 +215,6 @@ test("a player_card section with forged or malformed values is dropped with the 
     assert.deepEqual(chunks, []);
   }
 });
-||||||| e0b2e945
-
 test("a memo the agent submitted resolves with sections and citations", () => {
   const chunks = reduceBackendEvent("custom_data", {
     tables: [],

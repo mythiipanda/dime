@@ -199,7 +199,6 @@ rows exactly like block anchors and are validated the same way; cite the rows a
 section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
 as a document card that downloads as Markdown or PDF; keep it to one memo per answer.
 
-||||||| 5eb4de42
 ### `memo`
 ```typescript
 {
