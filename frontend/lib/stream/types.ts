@@ -155,7 +155,8 @@ export interface MemoArtifactPayload {
   source?: string;
   provenance?: DimeProvenance;
   subtitle?: string;
-  sections: MemoSectionPayload[];
+  text: string;
+  sections?: MemoSectionPayload[];
   footnote?: string;
 }
 
@@ -171,14 +172,6 @@ export interface PlayerCardArtifactPayload {
   nameColumn: string;
   teamColumn?: string;
   metrics: { column: string; label: string; value: number | null; unit?: string }[];
-}
-
-export interface MemoArtifactPayload {
-  kind: "memo";
-  title: string;
-  source?: string;
-  provenance?: DimeProvenance;
-  text: string;
 }
 
 export type DimeArtifact =

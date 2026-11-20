@@ -307,6 +307,7 @@ function resolveMemo(
   return {
     kind: "memo",
     title,
+    text: sections.map(s => `${s.heading}\n${s.body}`).join("\n\n"),
     sections,
     source: provenanceSource(provenance),
     provenance,
@@ -328,7 +329,8 @@ const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
 export function memoToMarkdown(artifact: MemoArtifactPayload): string {
   const lines: string[] = [`# ${artifact.title}`];
   if (artifact.subtitle) lines.push(`\n_${artifact.subtitle}_`);
-  for (const section of artifact.sections) {
+  if (!artifact.sections?.length) lines.push("", artifact.text);
+  for (const section of artifact.sections ?? []) {
     lines.push("", `## ${section.heading}`, "", section.body);
     if (section.anchors?.length) {
       const refs = [...new Set(section.anchors.map(a => `${a.ref} row ${a.row}`))];

@@ -31,9 +31,8 @@ function toChartSeries(series: ChartSeriesPayload[]): ChartSeries[] {
 }
 
 export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
-  if (artifact.kind === "memo") return <div className="p-4"><p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{artifact.text}</p></div>;
+  if (artifact.kind === "memo") return artifact.sections ? <ArtifactMemo artifact={artifact} /> : <div className="p-4"><p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{artifact.text}</p></div>;
   if (artifact.kind === "player_card") return <ArtifactPlayerCard artifact={artifact} />;
-  if (artifact.kind === "memo") return <ArtifactMemo artifact={artifact} />;
   if (artifact.kind === "table") {
     return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} />;
   }

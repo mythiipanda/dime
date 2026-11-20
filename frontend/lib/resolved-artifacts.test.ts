@@ -176,8 +176,8 @@ test("a memo the agent submitted resolves with sections and citations", () => {
   if (only.artifact.kind !== "memo") return;
   assert.equal(only.artifact.title, "Cap & roster strategy");
   assert.equal(only.artifact.subtitle, "Owner briefing");
-  assert.equal(only.artifact.sections.length, 2);
-  assert.equal(only.artifact.sections[0].anchors?.[0].ref, "src-1");
+  assert.equal(only.artifact.sections?.length, 2);
+  assert.equal(only.artifact.sections?.[0].anchors?.[0].ref, "src-1");
   assert.equal(only.artifact.footnote, "Sources: silver_salaries");
 });
 

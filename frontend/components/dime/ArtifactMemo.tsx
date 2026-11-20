@@ -22,7 +22,7 @@ export default function ArtifactMemo({ artifact }: { artifact: MemoArtifactPaylo
   return <div className="p-4">
     {artifact.subtitle && <p className="mb-4 text-xs text-ink-3">{artifact.subtitle}</p>}
     <div className="flex flex-col gap-4">
-      {artifact.sections.map((section, i) => <section key={i} className="min-w-0">
+      {(artifact.sections ?? []).map((section, i) => <section key={i} className="min-w-0">
         <h3 className="break-words text-[15px] font-medium tracking-tight text-ink">{section.heading}</h3>
         <p className="mt-1.5 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink-2">{section.body}</p>
         {section.anchors && section.anchors.length > 0 && (
