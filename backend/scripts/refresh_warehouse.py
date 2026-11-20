@@ -24,6 +24,7 @@ SEEDERS = [
     ("injury_entries", "normalize_injuries.py", [], True),
     ("tracking", "seed_tracking.py", [], True),
     ("playoffs", "seed_historical_playoffs.py", ["--season"], False),
+    ("playoff_gamelogs", "seed_playoff_gamelogs.py", [], True),
     ("team_ratings", "seed_team_ratings.py", [], True),
     ("impact", "seed_bref_impact.py", [], True),
     ("awards", "seed_bbref_awards.py", [], False),
