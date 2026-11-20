@@ -155,3 +155,31 @@ def test_sql_exec_zero_rows_and_long_sql_and_recovery_hint(warehouse, monkeypatc
     res_typo = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "SELECT WINSX FROM silver_standings"}))
     assert res_typo["ok"] is False
     assert "silver_standings.WINS" in res_typo["recovery_hint"]
+
+
+def test_sql_exec_refusal_hints_steer_to_warehouse_schema(warehouse):
+    res_describe = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "DESCRIBE silver_standings"}))
+    assert res_describe["ok"] is False
+    assert "SELECT or WITH" in res_describe["recovery_hint"]
+    assert "warehouse_schema" in res_describe["recovery_hint"]
+
+    res_show = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "SHOW TABLES"}))
+    assert res_show["ok"] is False
+    assert "warehouse_schema" in res_show["recovery_hint"]
+
+    res_info = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT table_name FROM information_schema.tables"}))
+    assert res_info["ok"] is False
+    assert "information_schema" in res_info["recovery_hint"]
+    assert "warehouse_schema" in res_info["recovery_hint"]
+
+    res_catalog_fn = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT * FROM warehouse_schema()"}))
+    assert res_catalog_fn["ok"] is False
+    assert "warehouse_schema" in res_catalog_fn["recovery_hint"]
+
+    res_guess = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT * FROM silver_bbref_gamelogs_2024_25"}))
+    assert res_guess["ok"] is False
+    assert "declared silver" in res_guess["recovery_hint"]
+    assert "warehouse_schema" in res_guess["recovery_hint"]

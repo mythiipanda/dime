@@ -32,6 +32,30 @@ def _failure(query: str, message: str, recovery_hint: str | None = None) -> dict
         out["recovery_hint"] = recovery_hint
     return out
 
+_INTROSPECT_RE = re.compile(
+    r"information_schema|warehouse_schema\s*\(|\bDESCRIBE\b|\bSHOW\b|\bEXPLAIN\b|\bPRAGMA\b",
+    re.I)
+_NON_SELECT_RE = re.compile(r"only SELECT/WITH queries are allowed", re.I)
+_UNKNOWN_TABLES_RE = re.compile(r"unknown or unavailable tables", re.I)
+_GENERIC_HINT = "Call warehouse_schema to verify exact table names, column names, and season encodings."
+
+
+def _refusal_hint(query: str, error: str) -> str:
+    if _NON_SELECT_RE.search(error):
+        return ("sql_exec runs one SELECT or WITH statement over declared silver "
+                "tables. DESCRIBE, SHOW TABLES, EXPLAIN and PRAGMA are refused; "
+                "call warehouse_schema for table and column listings.")
+    if _UNKNOWN_TABLES_RE.search(error):
+        if _INTROSPECT_RE.search(query):
+            return ("information_schema and catalog functions are not in the "
+                    "declared table set; call warehouse_schema for the exact "
+                    "table and column names instead.")
+        return ("Every table in the query must come from the declared silver "
+                "set; call warehouse_schema for the exact names rather than "
+                "guessing schema-qualified variants.")
+    return _GENERIC_HINT
+
+
 _TABLE_ERROR_RE = re.compile(r"(?:no such table|table with name)\s*[:=]?\s*[`\"]?([A-Za-z0-9_]+)", re.I)
 _COLUMN_ERROR_RE = re.compile(r"(?:does not have a column|no such column|column)\s*(?:named\s+|called\s+)?[`\"]?([A-Za-z0-9_]+)", re.I)
 
@@ -56,7 +80,7 @@ def _error_suggestions(query: str, error: str) -> list[str]:
         return [f"{mentioned[0]}.{name}" for name in matches]
     return matches
 
-@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
+@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. DESCRIBE, SHOW TABLES,\ninformation_schema and catalog functions are refused as well; call\nwarehouse_schema for table and column listings. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
 async def sql_exec(sql: str) -> dict[str, Any]:
     query = (sql or "").strip()
     if not query:
@@ -72,7 +96,7 @@ async def sql_exec(sql: str) -> dict[str, Any]:
         )
     out = await rerun_sql(query)
     if not out.get("ok"):
-        hint = "Call warehouse_schema to verify exact table names, column names, and season encodings."
+        hint = _refusal_hint(query, str(out.get("error", "")))
         matches = _error_suggestions(query, str(out.get("error", "")))
         if matches:
             hint += " Closest declared matches: " + ", ".join(matches) + "."
