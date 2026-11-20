@@ -202,6 +202,7 @@ from .playoffs_sim import (
     get_playoffs,
     get_win_prob,
 )
+from .roster_fit import get_roster_fit
 from .ratings import (
     _RATINGS_KEEP,
     _RankingDirection,
