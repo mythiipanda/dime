@@ -117,8 +117,14 @@ def run_seeders(warehouse: Path, season: str, only: set[str] | None,
         if dry_run and supports_dry:
             cmd.append("--dry-run")
         print(f"=== seeder {name}: {' '.join(cmd)}", flush=True)
-        proc = subprocess.run(cmd, env=env, cwd=str(SCRIPTS_DIR.parent),
-                              capture_output=True, text=True, timeout=3600)
+        try:
+            proc = subprocess.run(cmd, env=env, cwd=str(SCRIPTS_DIR.parent),
+                                  capture_output=True, text=True,
+                                  timeout=3600)
+        except subprocess.TimeoutExpired:
+            print(f"seeder {name} timed out after 3600s")
+            failures.append(name)
+            continue
         tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-8:])
         print(tail)
         if proc.returncode != 0:

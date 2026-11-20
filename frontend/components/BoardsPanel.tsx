@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowUpRight, Copy, Download, Plus, RefreshCw, X } from "lucide-react";
-import { resolvePlayers, type PlayerHit } from "../lib/api";
+import { resolvePlayers, rerunSql, type PlayerHit } from "../lib/api";
 import { fillBoardCells, getBoardMetrics, seedBoardRows } from "../lib/boards-api";
 import { addColumn, addRow, boardCsv, boardPrompt, boardTemplates, boardsArePersistent, duplicateBoard, getBoard, newBoard, removeColumn, removeRow, reorderColumns, reorderRows, saveBoard, sortByColumn, type Board, type BoardMetric, type BoardTemplate } from "../lib/boards";
+import { boardReportHtml, boardReportMarkdown, buildBoardReport, refreshBoardPins } from "../lib/board-report";
 import { BoardsTable } from "./BoardsTable";
 import { SavedBoards } from "./SavedBoards";
 import BoardPins from "./BoardPins";
@@ -60,6 +61,7 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
   const [retry, setRetry] = useState(0);
   const [sort, setSort] = useState<{ id: string; best: boolean } | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
+  const [exporting, setExporting] = useState(false);
   const latest = useRef<Board | null>(null);
   const seedAbort = useRef<AbortController | null>(null);
   const commit = useCallback((next: Board) => { const saved = saveBoard(next, metrics); latest.current = saved; setBoard(saved); }, [metrics]);
@@ -97,6 +99,26 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
   const template = boardTemplates.find((t) => t.id === board?.template_id);
   function refresh() { if (board && !board.rows.length && template?.seed) void populate(board, template); else setRetry((n) => n + 1); }
   function exportCsv() { if (!board) return; const url = URL.createObjectURL(new Blob([boardCsv(board, metrics)], { type: "text/csv;charset=utf-8;" })); const a = document.createElement("a"); a.href = url; a.download = `${board.title.replace(/[^a-z0-9-]/gi, "-")}.csv`; a.click(); URL.revokeObjectURL(url); }
+  async function exportReport(pdf: boolean) {
+    const current = latest.current;
+    if (!current) return;
+    setExporting(true); setError("");
+    try {
+      const { board: refreshed, failed } = await refreshBoardPins(current, sql => rerunSql(sql));
+      if (refreshed !== current) commit(refreshed);
+      if (failed.length) setError(`Re-run failed for ${failed.join(", ")}; pinned values exported.`);
+      const report = buildBoardReport(refreshed, metrics);
+      const base = current.title.replace(/[^a-z0-9-]/gi, "-");
+      if (pdf) {
+        const win = window.open("", "_blank");
+        if (!win) { setError("Pop-up blocked. Allow pop-ups to export the PDF report."); return; }
+        win.document.write(boardReportHtml(report)); win.document.close(); win.print();
+      } else {
+        const url = URL.createObjectURL(new Blob([boardReportMarkdown(report)], { type: "text/markdown;charset=utf-8;" }));
+        const a = document.createElement("a"); a.href = url; a.download = `${base}-report.md`; a.click(); URL.revokeObjectURL(url);
+      }
+    } finally { setExporting(false); }
+  }
   const notice = catalogError || error;
   if (!boardId) return <div className="workspace-page">
     <PageHeader eyebrow="Your shortlist, with evidence" title="Boards" description="Compare players, inspect every source, and keep the work that moves a decision forward." actions={<Button variant="primary" onClick={() => create(boardTemplates[4])}><Plus size={14} />New board</Button>} />
@@ -113,7 +135,7 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
     <div className="mb-6 flex flex-wrap items-end justify-between gap-5"><div className="w-full max-w-sm"><label htmlFor="board-title" className="mb-2 block text-xs text-ink-3">Board title</label><TextField id="board-title" value={titleDraft} maxLength={160} onChange={event => setTitleDraft(event.target.value)} onBlur={() => { const title = titleDraft.trim() || "Untitled board"; setTitleDraft(title); commit({ ...board, title }); }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /></div>
       <div><p className="mb-2 text-xs text-ink-3">Season</p><SegmentedControl label="Board season" options={[...new Set([board.season, "2025-26", "2024-25", "2023-24"])]} value={board.season} onChange={season => { seedAbort.current?.abort(); setSeeding(false); setError(""); commit({ ...board, season, cells: {} }); }} /></div>
     </div>
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2"><AddPlayer board={board} onAdd={player => commit(addRow(board, { player_id: player.id, name: player.name, team: "" }))} /><MetricPicker metrics={metrics} board={board} onAdd={id => commit(addColumn(board, id))} /></div><div className="flex flex-wrap gap-2"><Button size="sm" loading={busy || seeding} onClick={refresh}><RefreshCw size={13} />Refresh</Button><Button size="sm" onClick={exportCsv}><Download size={13} />Export CSV</Button><Button size="sm" onClick={() => onOpen(saveBoard(duplicateBoard(board)).id)}><Copy size={13} />Duplicate</Button></div></div>
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2"><AddPlayer board={board} onAdd={player => commit(addRow(board, { player_id: player.id, name: player.name, team: "" }))} /><MetricPicker metrics={metrics} board={board} onAdd={id => commit(addColumn(board, id))} /></div><div className="flex flex-wrap gap-2"><Button size="sm" loading={busy || seeding} onClick={refresh}><RefreshCw size={13} />Refresh</Button><Button size="sm" onClick={exportCsv}><Download size={13} />Export CSV</Button><Button size="sm" loading={exporting} onClick={() => void exportReport(false)}>Report (.md)</Button><Button size="sm" loading={exporting} onClick={() => void exportReport(true)}>Report (PDF)</Button><Button size="sm" onClick={() => onOpen(saveBoard(duplicateBoard(board)).id)}><Copy size={13} />Duplicate</Button></div></div>
     {notice && <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-red">{notice}{board.rows.length > 0 && " Cached values have not been refreshed."}</p><Button size="sm" onClick={() => catalogError ? setCatalogAttempt(value => value + 1) : refresh()}>Retry</Button></div>}
     {(busy || seeding) && <p role="status" className="mb-4 text-xs text-ink-3">{seeding ? "Finding the starting player pool…" : "Filling from the warehouse…"}</p>}
     {board.rows.length && board.columns.length ? <BoardsTable board={board} metrics={metrics} loading={busy} sort={sort} onSort={metric => { const best = sort?.id === metric.id ? !sort.best : true; setSort({ id: metric.id, best }); commit(sortByColumn(board, metric, best)); }} onRemoveRow={id => commit(removeRow(board, id))} onRemoveColumn={id => commit(removeColumn(board, id))} onMoveRow={(from, to) => { setSort(null); commit(reorderRows(board, from, to)); }} onMoveColumn={(from, to) => commit(reorderColumns(board, from, to))} /> : <Panel title={seeding ? "Building your starting pool" : !board.rows.length ? "Make room for a better decision." : "Choose what to compare."} description={!board.rows.length ? "Add a player, then choose your metrics. Dime fills the grid from the warehouse." : "Add a metric to see warehouse-backed values."}>{!seeding && !board.rows.length && template?.seed && <Button onClick={() => void populate(board, template)}>Populate template</Button>}</Panel>}

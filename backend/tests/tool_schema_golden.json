@@ -3820,6 +3820,85 @@
         "type": "object"
       }
     },
+    "product_trade_partners": {
+      "name": "product_trade_partners",
+      "description": "Find salary-matching packages for a player via the existing domain implementation.",
+      "args_schema": {
+        "description": "Find salary-matching packages for a player via the existing domain implementation.",
+        "properties": {
+          "player": {
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "default": "2026-27",
+            "title": "Season",
+            "type": "string"
+          },
+          "teams": {
+            "default": "",
+            "title": "Teams",
+            "type": "string"
+          },
+          "max_packages": {
+            "default": 3,
+            "title": "Max Packages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "title": "product_trade_partners",
+        "type": "object"
+      }
+    },
+    "product_trade_assets": {
+      "name": "product_trade_assets",
+      "description": "List one team's trade assets: roster salaries and owned draft picks.",
+      "args_schema": {
+        "description": "List one team's trade assets: roster salaries and owned draft picks.",
+        "properties": {
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "2026-27",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "product_trade_assets",
+        "type": "object"
+      }
+    },
+    "product_morning": {
+      "name": "product_morning",
+      "description": "Aggregate one team's morning page: last result, next game, opponent form, injuries, news, standings vs projection and cap status.",
+      "args_schema": {
+        "description": "Aggregate one team's morning page: last result, next game, opponent form, injuries, news, standings vs projection and cap status.",
+        "properties": {
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "product_morning",
+        "type": "object"
+      }
+    },
     "product_debate": {
       "name": "product_debate",
       "description": "Build the current debate card with the domain season clamp.",
@@ -3965,6 +4044,50 @@
           }
         },
         "title": "product_briefing",
+        "type": "object"
+      }
+    },
+    "product_compare": {
+      "name": "product_compare",
+      "description": "Compare 2-4 players across season line, impact, shot zones, contract and age curve.",
+      "args_schema": {
+        "description": "Compare 2-4 players across season line, impact, shot zones, contract and age curve.",
+        "properties": {
+          "players": {
+            "default": "",
+            "title": "Players",
+            "type": "string"
+          },
+          "season": {
+            "default": "2025-26",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "product_compare",
+        "type": "object"
+      }
+    },
+    "product_draft": {
+      "name": "product_draft",
+      "description": "Aggregate the draft and free-agency workspace: prospect board, 2027 free agent class, cap room, and team fit targets.",
+      "args_schema": {
+        "description": "Aggregate the draft and free-agency workspace: prospect board, 2027 free agent class, cap room, and team fit targets.",
+        "properties": {
+          "team": {
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "product_draft",
         "type": "object"
       }
     }
