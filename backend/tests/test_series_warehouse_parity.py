@@ -163,10 +163,25 @@ def _fingerprint(path):
     stat = path.stat()
     return (stat.st_mtime_ns, stat.st_size)
 
-def _baseline_questions():
-    questions = _supported_questions(BASELINE)
+def _shared_seasons(paths):
+    shared = None
+    for path in paths:
+        with _read_only_file(path) as con:
+            try:
+                seasons = {row[0] for row in con.execute(
+                    "SELECT DISTINCT _season FROM silver_hist_gamelogs"
+                    " WHERE _season IS NOT NULL").fetchall()}
+            except duckdb.CatalogException:
+                seasons = set()
+        shared = seasons if shared is None else shared & seasons
+    return shared or set()
+
+def _baseline_questions(paths):
+    shared = _shared_seasons(paths)
+    questions = [q for q in _supported_questions(BASELINE)
+                 if q[2] in shared]
     if not questions:
-        pytest.skip(f"no covered pair derived from {BASELINE}")
+        pytest.skip(f"no pair covered by every warehouse under {DATA_DIR}")
     return questions
 
 def test_the_same_covered_question_answers_the_same_from_every_warehouse(
@@ -174,7 +189,7 @@ def test_the_same_covered_question_answers_the_same_from_every_warehouse(
     paths = _require_several_warehouses()
     _no_writes(monkeypatch)
     before = {path: _fingerprint(path) for path in paths}
-    for a, b, season in _baseline_questions():
+    for a, b, season in _baseline_questions(paths):
         answers = {path.name: _comparable(
             _answer(path, a, b, season, monkeypatch)) for path in paths}
         for name, answer in answers.items():
@@ -194,7 +209,7 @@ def test_a_season_no_table_holds_is_refused_the_same_from_every_warehouse(
         pytest.skip("no season boundary to probe")
     for path in paths:
         assert _holds_no_rows(path, season), (path.name, season)
-    a, b, _ = _baseline_questions()[0]
+    a, b, _ = _baseline_questions(paths)[0]
     answers = {path.name: _comparable(
         _answer(path, a, b, season, monkeypatch)) for path in paths}
     for name, answer in answers.items():
@@ -209,7 +224,7 @@ def test_a_covered_season_is_answered_without_any_network_call(monkeypatch):
     paths = _require_several_warehouses()
     _no_writes(monkeypatch)
     _no_network(monkeypatch)
-    a, b, season = _baseline_questions()[0]
+    a, b, season = _baseline_questions(paths)[0]
     for path in paths:
         out = _answer(path, a, b, season, monkeypatch)
         assert out["ok"] is True, (path.name, out.get("error"))
@@ -219,7 +234,7 @@ def test_every_warehouse_reports_a_covered_season_it_reads_rows_for(
         monkeypatch):
     paths = _require_several_warehouses()
     _no_writes(monkeypatch)
-    for a, b, season in _baseline_questions():
+    for a, b, season in _baseline_questions(paths):
         for path in paths:
             with _read_only_file(path) as con:
                 rows = con.execute(
