@@ -67,6 +67,9 @@ function systemPrompt(): string {
 =======
 >>>>>>> origin/dev
     "- Call await tools.submit_answer({ blocks, artifacts }) to deliver structured visuals ('compare', 'table', 'chart', 'shot_chart', 'scatter', 'player_card') and prose. Load visual-artifacts for the component catalog; player_card selects one source row and the host supplies its values and declared units.",
+    "- Before submit_answer, check the exact draft with await tools.verify_answer_numbers({ blocks, artifacts }) and use the audit to correct unsupported numbers, recompute derived metrics with run_python/sql_exec, or keep a literal when it is a prompt/scope constant; you decide which flagged literals are real errors.",
+=======
+>>>>>>> origin/dev
 >>>>>>> origin/dev
     "- Include anchors: [{ ref, row, columns }] when citing exact query rows, and omit anchors (or pass anchors: []) for Python model outputs, derived math, CBA rule analysis, or qualitative synthesis.",
     "- Artifact shapes: 'compare' ({ kind: 'compare', title, aName, bName, rows: [{ label, a, b }] }), 'table' ({ kind: 'table', title, columns: [{ key, label, numeric? }], rows }), 'chart' ({ kind: 'chart', title, series: [{ name, values, tone?: 'accent' | 'good' | 'warn' }], unit?, xLabels?, footnote? }), 'shot_chart' ({ kind: 'shot_chart', title, zones: [{ x, y, att, pct }], footnote? } with pct on 0-100 scale), and 'scatter' ({ kind: 'scatter', title, xLabel, yLabel, points: [{ label, x, y, highlight? }], xMid?, yMid?, footnote? }).",

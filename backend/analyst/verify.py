@@ -70,7 +70,8 @@ def run():
 
     for name, suite in (("runtime", "runtime.test.mjs"), ("policy", "policy.test.mjs"),
                         ("analyst", "analyst.test.mjs"), ("host", "host.test.mjs"),
-                        ("submit-answer", "submit-answer.test.mjs")):
+                        ("submit-answer", "submit-answer.test.mjs"),
+                        ("verify-answer", "verify-answer.test.mjs")):
         env = environment(name)
         owned_warehouse(env)
         node_suite(env, suite, "--test")
