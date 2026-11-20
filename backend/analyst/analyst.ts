@@ -124,6 +124,7 @@ async function prepareRunWorkspace(paths: ReturnType<typeof productPaths>, ident
 
 type RunState = {
     answer?: string;
+    reasoning?: string;
     failed: boolean;
     streamed: boolean;
     submission?: AnswerSubmission;
@@ -140,6 +141,7 @@ function mapExecutionEvent(event: AnalystEvent, state: RunState): ProductEvent |
         case "answer":
             state.answer = event.text;
             state.submission = event.submission;
+            state.reasoning = event.reasoning;
             return undefined;
         case "custom_data":
             return {
@@ -197,7 +199,7 @@ async function persistCompletedRun(
     if (!state.failed && state.answer && identity) {
         await options.saveChat(identity.thread, "ai", state.answer, identity.owner.slice(0, 80));
         await options.saveRun(identity.thread, question.slice(0, MAX_TURN_CHARS), state.answer, identity.owner.slice(0, 80), run);
-        store.append(identity, question, state.answer, run);
+        store.append(identity, question, state.answer, run, state.reasoning);
     }
 }
 
