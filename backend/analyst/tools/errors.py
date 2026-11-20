@@ -74,6 +74,11 @@ def _recovery_guidance(tool_name: str, error_text: str) -> tuple[str, list[str]]
             "Inspect exact declared table and column names with warehouse_schema(tables=[...]) before retrying sql_exec.",
             ["warehouse_schema", "get_dataset_freshness"],
         )
+    if tool_name == "run_python":
+        return (
+            "Fix the error on the marked line of the submitted code and rerun run_python; verify table and column names with warehouse_schema() if the code queries the warehouse.",
+            ["warehouse_schema"],
+        )
     if _has_any(low, _SEASON_TOKENS):
         return (
             "Pass a valid season format such as '2024-25' or '2025-26' and verify available seasons via get_warehouse_freshness().",
