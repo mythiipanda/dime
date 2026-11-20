@@ -402,7 +402,6 @@ const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   scatter: resolveScatter,
   player_card: resolvePlayerCard,
   team_card: resolveTeamCard,
-||||||| e0b2e945
   memo: resolveMemo,};
 
 export function memoToMarkdown(artifact: MemoArtifactPayload): string {

@@ -909,8 +909,6 @@ test("team cards reject forged values, bad rows and invalid selectors", () => {
     { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V", unit: "%" }] }] },
   ]) assert.throws(() => validate(teamCardInput(overrides)));
 });
-||||||| e0b2e945
-
 test("priorSubmissions returns thread submissions in order and compactPriorSubmissions bounds them", async () => {
   const dir = await mkdtemp(join(tmpdir(), "prior-subs-"));
   try {
@@ -949,8 +947,6 @@ test("priorSubmissions returns thread submissions in order and compactPriorSubmi
     await rm(dir, { recursive: true, force: true });
   }
 });
-||||||| 154f211e
-
 test("memo artifacts validate section anchors like block anchors", () => {
   const sources = new Map([
     ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],
@@ -980,8 +976,6 @@ test("memo artifacts reject anchors to unknown refs, bad rows and missing column
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
-});
-||||||| 2a98f96f
 });
 });
 
@@ -1023,8 +1017,6 @@ test("validateAnswerSubmission drops rejected artifacts but keeps valid ones", (
   assert.equal(validated.artifacts[0].kind, "scatter");
   assert.deepEqual(warnings, ['dropped artifact: unknown artifact kind "mystery"']);
 });
-||||||| 5eb4de42
-
 test("memo artifacts validate section anchors like block anchors", () => {
   const sources = new Map([
     ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],

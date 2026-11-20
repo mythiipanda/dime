@@ -49,7 +49,6 @@ export default function ArtifactMemo({ artifact }: { artifact: MemoArtifactPaylo
     </div>
   </div>;
 }
-||||||| 5eb4de42
 "use client";
 
 import { Download } from "lucide-react";

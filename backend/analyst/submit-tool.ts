@@ -149,8 +149,6 @@ export function validateAnswerSubmission(
         }
         return [normalizeShotChart(artifact)];
     }) : undefined;
-||||||| 5eb4de42
-    const artifacts = input.artifacts ? structuredClone(input.artifacts).map(artifact =>
         artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource)
             : artifact.kind === "team_card" ? resolveTeamCard(artifact, getSource)
             : normalizeShotChart(artifact)
@@ -187,12 +185,7 @@ export function createSubmitAnswerTool(
         label: "Submit answer",
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, team_card). Load visual-artifacts for schemas. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",
         parameters: submitAnswerSchema,
-||||||| e0b2e945
-        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. Validates selector traceability, not semantic correctness.",
-        parameters: submitAnswerSchema,
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, memo). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. memo sections may carry anchors validated like block anchors. Artifacts with unknown kinds or no usable data are dropped and reported back as warnings. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",
-||||||| 5eb4de42
-        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, memo). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. memo sections may carry anchors validated like block anchors. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",        parameters: submitAnswerSchema,        async execute(_callId, args) {
             const sources = getContextSources();
             const sourceMap = new Map(sources.map(s => [s.ref, s]));

@@ -6,8 +6,6 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-||||||| 154f211e
-import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -150,9 +148,6 @@ export const analystContextSchema = Type.Object({
     sources: Type.Optional(Type.Array(sourceRecordSchema)),
     submissions: Type.Optional(Type.Array(Type.Object({ run_id: Type.String(), submission: submitAnswerSchema }, { additionalProperties: false }), { maxItems: 8 })),
     cwd: Type.String(), agentDir: Type.String(),
-||||||| 154f211e
-    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
-    sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),
     q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(), runTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
     sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),    bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
 });
@@ -485,7 +480,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         session.sessionManager.appendMessage(submissionsContext);
                         session.agent.state.messages.push(submissionsContext);
                     }
-||||||| 154f211e
                     const restoredStore = readStoredSnapshot(start.bridge.cwd);
                     if (restoredStore)
                         session.sessionManager.appendCustomEntry(CODEMODE_STORE_ENTRY_TYPE, { set: restoredStore, delete: [] });                    const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);

@@ -147,7 +147,6 @@ export interface PlayerCardSectionPayload {
   provenance?: DimeProvenance;
 }
 
-||||||| e0b2e945
 export interface MemoAnchor {
   ref: string;
   row: number;

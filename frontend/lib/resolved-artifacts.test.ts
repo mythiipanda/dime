@@ -276,8 +276,6 @@ test("a team_card with forged or malformed values is dropped with the artifact",
     assert.deepEqual(chunks, []);
   }
 });
-||||||| e0b2e945
-
 test("a memo the agent submitted resolves with sections and citations", () => {
   const chunks = reduceBackendEvent("custom_data", {
     tables: [],
