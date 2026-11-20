@@ -112,6 +112,7 @@ _TOOL_ORDER = (
     "get_team_game_log",
     "get_zone_deltas",
     "search_shots",
+    "get_shot_chart",
     "get_stint_timeline",
     "get_possession_log",
     "get_elo",

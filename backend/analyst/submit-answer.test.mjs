@@ -714,6 +714,27 @@ test("validateAnswerSubmission permits omitted anchors and normalizes shot_chart
   assert.equal(validated.artifacts[0].zones[1].pct, 42.5);
 });
 
+test("shot_chart zones carry optional label, makes and league-delta fields", () => {
+  const validated = validateAnswerSubmission({
+    blocks: [{ text: "Shot diet" }],
+    artifacts: [
+      {
+        kind: "shot_chart",
+        title: "Zone efficiency vs league",
+        zones: [
+          { x: 0, y: 4, att: 380, makes: 260, pct: 68.4, delta: 8.1, label: "rim-C" },
+          { x: -14, y: 14, att: 120, makes: 56, pct: 46.5, delta: -3.4, label: "long_mid-L" },
+        ],
+      },
+    ],
+  }, () => undefined);
+  const zone = validated.artifacts[0].zones[0];
+  assert.equal(zone.label, "rim-C");
+  assert.equal(zone.makes, 260);
+  assert.equal(zone.delta, 8.1);
+  assert.equal(zone.pct, 68.4);
+});
+
 function playerCardInput(overrides = {}) {
   return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
     metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
