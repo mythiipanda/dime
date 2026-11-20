@@ -76,8 +76,9 @@ def _actuals(con, season_str: str, team_id: int) -> dict[str, Any]:
     if "silver_standings" in _warehouse_tables(con):
         row = con.execute(
             """SELECT "WINS", "LOSSES", "WinPCT"
-               FROM silver_standings WHERE "TeamID" = ?""",
-            [team_id]).fetchone()
+               FROM silver_standings
+               WHERE "TeamID" = ? AND _season = ?""",
+            [team_id, season_str]).fetchone()
         if row and row[0] is not None:
             gp = (row[0] or 0) + (row[1] or 0)
             out = {"actual_wins": row[0], "actual_losses": row[1],
@@ -87,7 +88,8 @@ def _actuals(con, season_str: str, team_id: int) -> dict[str, Any]:
             if "silver_team_ratings" in _warehouse_tables(con):
                 rt = con.execute(
                     """SELECT NET_RATING FROM silver_team_ratings
-                       WHERE TEAM_ID = ?""", [team_id]).fetchone()
+                       WHERE TEAM_ID = ? AND _season = ?""",
+                    [team_id, season_str]).fetchone()
                 if rt:
                     out["net_rating"] = rt[0]
     return out
