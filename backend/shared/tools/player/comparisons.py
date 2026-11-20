@@ -1,4 +1,6 @@
 import asyncio as _asyncio
+import datetime as _dt
+import re
 import sys
 from typing import Any
 
@@ -119,6 +121,32 @@ def _format_h2h_note(
     return f"Different teams; {ta} and {tb} did not meet this season."
 
 
+_CANONICAL_GID = re.compile(r"^\d{10}$")
+
+
+def _meeting_date(raw) -> str:
+    s = str(raw or "").strip()
+    for fmt in ("%b %d, %Y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return _dt.datetime.strptime(s, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return s
+
+
+def _games_by_meeting_date(games) -> dict[str, Any]:
+    by_date: dict[str, Any] = {}
+    for g in games:
+        key = _meeting_date(g.get("GAME_DATE"))
+        cur = by_date.get(key)
+        if cur is None or (
+            _CANONICAL_GID.match(str(g.get("Game_ID") or ""))
+            and not _CANONICAL_GID.match(str(cur.get("Game_ID") or ""))
+        ):
+            by_date[key] = g
+    return by_date
+
+
 def _different_teams_pair(left: dict[str, Any], right: dict[str, Any], season: str) -> dict[str, Any]:
     season = _pkg().resolve_season(season)
     from ..headtohead import HeadToHeadSchemaError, _load_player_games, vs_opponent
@@ -143,12 +171,13 @@ def _different_teams_pair(left: dict[str, Any], right: dict[str, Any], season: s
     except Exception:
         base["note"] = "Different teams; meeting logs unavailable."
         return base
-    a_by_id = {str(g.get("Game_ID")): g for g in a_games}
-    b_by_id = {str(g.get("Game_ID")): g for g in b_games}
-    shared = sorted(set(a_by_id) & set(b_by_id))
+    a_by_date = _games_by_meeting_date(a_games)
+    b_by_date = _games_by_meeting_date(b_games)
+    shared = sorted(set(a_by_date) & set(b_by_date))
     meetings = []
-    for gid in shared:
-        ga, gb = a_by_id[gid], b_by_id[gid]
+    for day in shared:
+        ga, gb = a_by_date[day], b_by_date[day]
+        gid = str(ga.get("Game_ID"))
         meetings.append(
             {
                 "game_id": gid,
