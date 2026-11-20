@@ -181,13 +181,11 @@ def _contract_fitted(cap: list, by_name: dict, min_gp: int,
         gp = gp or 0
         if gp < min_gp or gp <= 0:
             continue
-        vals = {"PTS": pts or 0, "REB": reb or 0, "AST": ast or 0,
-                "STL": stl or 0, "BLK": blk or 0, "TOV": tov or 0}
         fitted.append({
             **contract_details(contract),
             "PLAYER": player, "TEAM": team or lteam,
             "SALARY": salary or 0, "GP": gp,
-            "SCORE": sum(vals[c] / gp * use_w[c] for c in use_w)})
+            "SCORE": _contract_score(match['production'], use_w)})
     return fitted
 
 
@@ -244,6 +242,78 @@ def _contract_rows(fitted: list[dict], player_arg: str, team_scope: str):
     return _contract_over_under(fitted, 10), None
 
 
+def _contract_score(row: tuple, use_w: dict) -> float | None:
+    gp = row[2] or 0
+    if gp <= 0:
+        return None
+    vals = {"PTS": row[3] or 0, "REB": row[4] or 0, "AST": row[5] or 0,
+            "STL": row[6] or 0, "BLK": row[7] or 0, "TOV": row[8] or 0}
+    return sum(vals[c] / gp * use_w[c] for c in use_w)
+
+
+def _last_qualified_row(con, want: str, min_gp: int, season: str,
+                        have: set[str]):
+    pid = 'PLAYER_ID' if 'PLAYER_ID' in have else 'NULL'
+    seasons = [r[0] for r in con.execute(
+        "SELECT DISTINCT _season FROM silver_leaders_pts").fetchall()]
+    seasons = sorted((s for s in seasons if str(s) != str(season)),
+                     key=lambda s: str(s)[:4], reverse=True)
+    for s in seasons:
+        for r in con.execute(
+                f"""SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV,
+                {pid} FROM silver_leaders_pts WHERE _season = ?""",
+                [s]).fetchall():
+            if _contract_norm(r[0]) == want and (r[2] or 0) >= min_gp:
+                return s, r
+    return None, None
+
+
+def _contract_low_sample(player_arg: str, prod: list, cap: list,
+                         have: set[str], use_w: dict, min_gp: int,
+                         season: str, slope: float, intercept: float):
+    want = _contract_norm(player_arg)
+    cur = next((r for r in prod if _contract_norm(r[0]) == want), None)
+    gp_current = (cur[2] or 0) if cur else 0
+    with _owned_connection(None) as con:
+        last_season, last_row = _last_qualified_row(con, want, min_gp,
+                                                  season, have)
+    if gp_current <= 0 and last_row is None:
+        return None, None
+    if gp_current > 0:
+        source_row, source_season, stale = cur, season, False
+    else:
+        source_row, source_season, stale = last_row, last_season, True
+    score = _contract_score(source_row, use_w)
+    if score is None:
+        return None, None
+    contract = match_record(cap, player_arg,
+                            source_row[9] if len(source_row) > 9 else None,
+                            str(source_row[1] or ""))
+    salary = (contract or {}).get('salary')
+    predicted = int(round(slope * score + intercept))
+    row = {
+        **contract_details(contract),
+        "PLAYER": source_row[0], "TEAM": source_row[1],
+        "SALARY": salary, "GP": source_row[2] or 0,
+        "SCORE": round(score, 2), "PREDICTED": predicted,
+        "RESIDUAL": (int(salary) - predicted) if salary is not None else None,
+        "PRODUCTION_SEASON": source_season,
+    }
+    if stale:
+        row["FALLBACK_PRODUCTION"] = True
+    elif 0 < gp_current < min_gp:
+        row["LOW_SAMPLE"] = True
+    return row, {
+        "estimate": ("fallback_season" if stale
+                     else ("low_sample" if gp_current < min_gp
+                           else "unqualified")),
+        "games_played": gp_current,
+        "min_gp_threshold": min_gp,
+        "production_season": source_season,
+        "last_qualified_season": last_season,
+    }
+
+
 @tool(description="Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.")
 def get_contract_value(season: str | None = None, min_gp: int = 20,
                        team: str = "", player: str = "") -> dict[str, Any]:
@@ -277,13 +347,19 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
     except ValueError as exc:
         return {"tool": "get_contract_value", "ok": False, "error": str(exc)}
     team_scope = _contract_team_scope(str(team or "").strip())
-    rows, row_error = _contract_rows(fitted, str(player or "").strip(),
-                                     team_scope)
+    player_arg = str(player or "").strip()
+    rows, row_error = _contract_rows(fitted, player_arg, team_scope)
+    estimate_meta = None
+    if rows is None and player_arg:
+        est_row, estimate_meta = _contract_low_sample(
+            player_arg, prod, cap, have, use_w, min_gp, season,
+            slope, intercept)
+        if est_row is not None:
+            rows = [est_row]
     if rows is None:
         return {"tool": "get_contract_value", "ok": False, "error": row_error}
     prod_date, cap_date = dates
-    return {"tool": "get_contract_value", "ok": True, "rows": rows,
-            "meta": {"formula": (
+    meta = {"formula": (
                           "score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - "
                           "1.5*TOV (per game); salary_hat = slope*score + "
                           "intercept (OLS by hand); residual = salary - "
@@ -296,7 +372,20 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
                      "salary_season": _salary_vintage()[0] or "2026-27",
                      "production_date": prod_date, "salary_date": cap_date,
                      "overpaid_first": True,
-                     "team_scope": team_scope or None}}
+                     "team_scope": team_scope or None}
+    if estimate_meta:
+        meta["production_season"] = estimate_meta["production_season"]
+        meta["estimate"] = estimate_meta
+        meta["estimate_note"] = (
+            f"unqualified sample: {estimate_meta['games_played']} GP in "
+            f"{season} (threshold {min_gp}); PREDICTED uses "
+            f"{estimate_meta['production_season']} production against the "
+            f"{season} salary fit"
+            + (f"; last qualified season "
+               f"{estimate_meta['last_qualified_season']}"
+               if estimate_meta.get('last_qualified_season') else ""))
+    return {"tool": "get_contract_value", "ok": True, "rows": rows,
+            "meta": meta}
 
 
 @tool(description='Star-probability classifier from college production (honest proxy).')
