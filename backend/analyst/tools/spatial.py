@@ -163,6 +163,10 @@ def register() -> dict[str, Any]:
         from shared.tools.zone import get_team_shot_zones as _orig_get_team_shot_zones
     except ImportError:
         from backend.shared.tools.zone import get_team_shot_zones as _orig_get_team_shot_zones
+    try:
+        from shared.tools.phases import get_phase_shot_splits as _orig_get_phase_shot_splits
+    except ImportError:
+        from backend.shared.tools.phases import get_phase_shot_splits as _orig_get_phase_shot_splits
 
     @tool("get_shot_zones", description=_orig_get_shot_zones.description)
     def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts: int = 50) -> dict:
@@ -226,6 +230,19 @@ def register() -> dict[str, Any]:
         res = call_sync(_orig_get_team_shot_zones, "get_team_shot_zones", {"teams": teams, "season": season})
         return finish_strict_rows(res, "get_team_shot_zones", cols, "Team shot zones query failed", _team_shot_zones_rows, fixed_cols=True)
 
+    @tool("get_phase_shot_splits", description=_orig_get_phase_shot_splits.description)
+    def get_phase_shot_splits(player: str = "", team: str = "", season: str | None = None) -> dict:
+        cols = ["kind", "bucket", "rs_fga", "rs_fgm", "rs_efg", "rs_share",
+                "po_fga", "po_fgm", "po_efg", "po_share",
+                "efg_delta_pp", "share_delta_pp"]
+        res = call_sync(_orig_get_phase_shot_splits, "get_phase_shot_splits", {
+            "player": player, "team": team, "season": season,
+        })
+        return finish_strict_rows(res, "get_phase_shot_splits", cols,
+                                  "Phase shot splits lookup failed",
+                                  lambda r: [dict(x) for x in r.get("rows", [])],
+                                  fixed_cols=True)
+
     return {
         "get_shot_zones": get_shot_zones,
         "get_shot_compare": get_shot_compare,
@@ -233,4 +250,5 @@ def register() -> dict[str, Any]:
         "search_shots": search_shots,
         "get_shot_chart": get_shot_chart,
         "get_team_shot_zones": get_team_shot_zones,
+        "get_phase_shot_splits": get_phase_shot_splits,
     }
