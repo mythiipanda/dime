@@ -137,6 +137,29 @@ export interface ScatterArtifactPayload {
   footnote?: string;
 }
 
+export interface MemoAnchor {
+  ref: string;
+  row: number;
+  columns: string[];
+}
+
+export interface MemoSectionPayload {
+  heading: string;
+  body: string;
+  anchors?: MemoAnchor[];
+}
+
+export interface MemoArtifactPayload {
+  kind: "memo";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  subtitle?: string;
+  text: string;
+  sections?: MemoSectionPayload[];
+  footnote?: string;
+}
+
 export interface PlayerCardArtifactPayload {
   kind: "player_card";
   title: string;
@@ -149,14 +172,6 @@ export interface PlayerCardArtifactPayload {
   nameColumn: string;
   teamColumn?: string;
   metrics: { column: string; label: string; value: number | null; unit?: string }[];
-}
-
-export interface MemoArtifactPayload {
-  kind: "memo";
-  title: string;
-  source?: string;
-  provenance?: DimeProvenance;
-  text: string;
 }
 
 export type DimeArtifact =
