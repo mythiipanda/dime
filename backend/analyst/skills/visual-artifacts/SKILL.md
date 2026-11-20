@@ -1,7 +1,7 @@
 ---
 name: visual-artifacts
-description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart, memo).
----
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, team_card, scatter, shot_chart, compare, table, chart).
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart, memo).---
 
 # Dime Visual Artifacts & Multimodal Output Guide
 
@@ -12,6 +12,7 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 | Query Intent / Data Shape | Optimal Artifact | Key Features & Attributes |
 |---|---|---|
 | **One Player at a Glance** | `player_card` | Select identity and up to six metrics from a single actual source row. The host supplies values and declared units; no invented statistics, team names or portraits. |
+| **One Team at a Glance** | `team_card` | Team name plus up to six headline metrics from one row; optional sections each resolve their own source row for roster, payroll vs cap/aprons, four factors, lineups, injuries or picks, with per-section provenance. |
 | **Two Continuous Variables** (e.g., TS% vs USG%, ORAPM vs DRAPM) | `scatter` | Quadrant divisions via `xMid` & `yMid`, point labels, `highlight` flag for focal players, CSV export. |
 | **Court Location & Shooting Profiles** | `shot_chart` | Court zones with attempt counts (`att`) and shooting percentages (`pct`). |
 | **Head-to-Head Showdowns** (2 players or 2 teams) | `compare` | Visual bars comparing normalized metrics between entity `a` and entity `b`. |
@@ -86,6 +87,45 @@ OpenUI programs. Dime's allowlisted components render in the existing answer
 stream; choose only the components that make this question clearer, not every
 component on every answer. Existing chart/table artifacts still require explicit
 grounding in the prose: unlike player-card values, they are not source-resolved.
+
+### `team_card`
+
+Use for a compact team overview — record, net rating, cap sheet status — not a
+standings list or roster dump (use `table` for those). Same selector contract as
+`player_card`: `nameColumn` selects the team name from the header `ref`/`row`,
+`metrics` selects up to six headline numbers, and optional `sections` extend the
+card across sources — roster size, payroll vs cap and aprons, four factors and
+rank, top lineup, injuries, future picks — each citing its own `ref`/`row` with
+per-section provenance. One `ref`/`row` selects one source row, so multi-row
+sections like a roster or pick list belong in `table`, not `fields`.
+
+```typescript
+{
+  kind: "team_card",
+  title: "Team snapshot",
+  ref: "ref-team",
+  row: 0,
+  nameColumn: "team_name",
+  metrics: [
+    { column: "wins", label: "W" }, { column: "losses", label: "L" },
+    { column: "net_rating", label: "Net Rtg" }
+  ],
+  sections: [
+    { label: "Payroll", ref: "ref-cap", row: 0,
+      metrics: [{ column: "total_salary", label: "Payroll" },
+                { column: "first_apron_room", label: "Apron room" }] },
+    { label: "Four factors", ref: "ref-4f", row: 0,
+      metrics: [{ column: "efg_pct", label: "eFG%" },
+                { column: "tov_pct", label: "TOV%" },
+                { column: "orb_pct", label: "ORB%" },
+                { column: "ftr", label: "FTr" }] },
+    { label: "Injuries", ref: "ref-inj", row: 0,
+      fields: [{ column: "injury_summary", label: "Out/DTD" }] },
+    { label: "Draft capital", ref: "ref-picks", row: 0,
+      fields: [{ column: "pick_summary", label: "Picks" }] }
+  ]
+}
+```
 
 ### `scatter`
 ```typescript

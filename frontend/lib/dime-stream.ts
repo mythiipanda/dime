@@ -18,6 +18,10 @@ export type {
   ProvenanceOrigin,
   PlayerCardArtifactPayload,
   PlayerCardSectionPayload,
+  TeamCardArtifactPayload,
+=======
+  PlayerCardSectionPayload,
+>>>>>>> origin/dev
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   StreamFailure,

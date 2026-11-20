@@ -184,6 +184,22 @@ export interface PlayerCardArtifactPayload {
   sections?: PlayerCardSectionPayload[];
 }
 
+export interface TeamCardArtifactPayload {
+  kind: "team_card";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  teamName: string;
+  sourceRef: string;
+  sourceRow: number;
+  nameColumn: string;
+  metrics: { column: string; label: string; value: number | null; unit?: string }[];
+  sections?: PlayerCardSectionPayload[];
+=======
+  sections?: PlayerCardSectionPayload[];
+>>>>>>> origin/dev
+}
+
 export type DimeArtifact =
   | TableArtifactPayload
   | CompareArtifactPayload
@@ -191,6 +207,7 @@ export type DimeArtifact =
   | ShotChartArtifactPayload
   | ScatterArtifactPayload
   | PlayerCardArtifactPayload
+  | TeamCardArtifactPayload
   | MemoArtifactPayload;
 
 export interface ArtifactEvent {

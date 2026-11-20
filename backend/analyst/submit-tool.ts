@@ -3,6 +3,7 @@ import { Value } from "typebox/value";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { objectValue, sourceResult, sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 import { resolvePlayerCard } from "./player-card.js";
+import { resolveTeamCard } from "./team-card.js";
 
 export { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 
@@ -148,6 +149,12 @@ export function validateAnswerSubmission(
         }
         return [normalizeShotChart(artifact)];
     }) : undefined;
+        artifact.kind === "player_card" ? resolvePlayerCard(artifact, getSource)
+            : artifact.kind === "team_card" ? resolveTeamCard(artifact, getSource)
+            : normalizeShotChart(artifact)
+    ) : undefined;
+=======
+>>>>>>> origin/dev
     const artifacts = input.artifacts ? structuredClone(input.artifacts).map(artifact => {
         if (artifact.kind === "player_card") return resolvePlayerCard(artifact, getSource);
         if (artifact.kind === "memo" && Array.isArray(artifact.sections)) {
@@ -178,8 +185,12 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
+        description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, team_card). Load visual-artifacts for schemas. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",
+        parameters: submitAnswerSchema,
+=======
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. Validates selector traceability, not semantic correctness.",
         parameters: submitAnswerSchema,
+>>>>>>> origin/dev
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, memo). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. memo sections may carry anchors validated like block anchors. Artifacts with unknown kinds or no usable data are dropped and reported back as warnings. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",
         description: "Submit final prose blocks with optional source selectors and visual artifacts (table, compare, chart, shot_chart, scatter, player_card, memo). Load visual-artifacts for schemas. player_card uses ref/row/nameColumn and metrics [{column,label}]; the host resolves values and units from one source row. memo sections may carry anchors validated like block anchors. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out. Validates selector traceability, not semantic correctness.",        parameters: submitAnswerSchema,        async execute(_callId, args) {
 =======
