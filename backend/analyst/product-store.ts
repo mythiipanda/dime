@@ -171,6 +171,19 @@ export class ProductStore {
                 SourceRecord
             ]))).values()];
     }
+    priorSubmissions(input: Identity) {
+        const artifacts = this.artifacts(input), seen = new Set<string>();
+        const out: { run_id: string; submission: AnswerSubmission }[] = [];
+        for (const { run_id } of this.references(input)) {
+            if (!run_id || seen.has(run_id))
+                continue;
+            seen.add(run_id);
+            const submission = artifacts.get(run_id)?.submission;
+            if (submission)
+                out.push({ run_id, submission });
+        }
+        return out;
+    }
     readSources(input: Identity, run: string) {
         const artifacts = this.artifacts(input), artifact = artifacts.get(run);
         if (!artifact)
