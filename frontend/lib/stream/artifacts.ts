@@ -7,6 +7,7 @@ import type {
   DimeArtifact,
   DimeProvenance,
   PlayerCardArtifactPayload,
+  PlayerCardSectionPayload,
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   TableArtifactPayload,
@@ -265,11 +266,52 @@ function resolvePlayerCard(entry: Record<string, unknown>, title: string, proven
     metrics.push({ column: metric.column, label: metric.label, value: metric.value as number | null,
       ...(typeof metric.unit === "string" ? { unit: metric.unit } : {}) });
   }
+  let sections: PlayerCardArtifactPayload["sections"];
+  if (entry.sections !== undefined) {
+    if (!Array.isArray(entry.sections) || entry.sections.length === 0 || entry.sections.length > 6) return null;
+    sections = [];
+    for (const rawSection of entry.sections) {
+      if (!rawSection || typeof rawSection !== "object") return null;
+      const section = rawSection as Record<string, unknown>;
+      if (typeof section.label !== "string" || !section.label ||
+          typeof section.sourceRef !== "string" || !section.sourceRef ||
+          typeof section.sourceRow !== "number" || !Number.isInteger(section.sourceRow) || section.sourceRow < 0 ||
+          (section.metrics === undefined && section.fields === undefined)) return null;
+      const resolved: PlayerCardSectionPayload = { label: section.label, sourceRef: section.sourceRef, sourceRow: section.sourceRow };
+      if (section.metrics !== undefined) {
+        if (!Array.isArray(section.metrics) || section.metrics.length === 0 || section.metrics.length > 6) return null;
+        resolved.metrics = [];
+        for (const rawMetric of section.metrics) {
+          if (!rawMetric || typeof rawMetric !== "object") return null;
+          const metric = rawMetric as Record<string, unknown>;
+          if (typeof metric.column !== "string" || !metric.column || typeof metric.label !== "string" || !metric.label ||
+              (metric.value !== null && finiteNumber(metric.value) === undefined)) return null;
+          resolved.metrics.push({ column: metric.column, label: metric.label, value: metric.value as number | null,
+            ...(typeof metric.unit === "string" ? { unit: metric.unit } : {}) });
+        }
+      }
+      if (section.fields !== undefined) {
+        if (!Array.isArray(section.fields) || section.fields.length === 0 || section.fields.length > 6) return null;
+        resolved.fields = [];
+        for (const rawField of section.fields) {
+          if (!rawField || typeof rawField !== "object") return null;
+          const item = rawField as Record<string, unknown>;
+          if (typeof item.column !== "string" || !item.column || typeof item.label !== "string" || !item.label ||
+              (item.value !== null && typeof item.value !== "string")) return null;
+          resolved.fields.push({ column: item.column, label: item.label, value: item.value as string | null });
+        }
+      }
+      if (typeof section.provenance === "object" && section.provenance !== null)
+        resolved.provenance = section.provenance as DimeProvenance;
+      sections.push(resolved);
+    }
+  }
   return { kind: "player_card", title, playerName: entry.playerName,
     ...(typeof entry.team === "string" ? { team: entry.team } : {}),
     sourceRef: entry.sourceRef, sourceRow: entry.sourceRow, nameColumn: entry.nameColumn,
     ...(typeof entry.teamColumn === "string" ? { teamColumn: entry.teamColumn } : {}),
-    metrics, source: provenanceSource(provenance), provenance };
+    metrics, ...(sections ? { sections } : {}),
+    source: provenanceSource(provenance), provenance };
 }
 
 const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {

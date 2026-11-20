@@ -41,6 +41,7 @@ export interface DimeProvenance {
   origin: ProvenanceOrigin;
   capability?: string;
   warehouseId?: string;
+  dataset?: string;
   season?: string;
   asOf?: string;
   as_of?: string;
@@ -137,6 +138,15 @@ export interface ScatterArtifactPayload {
   footnote?: string;
 }
 
+export interface PlayerCardSectionPayload {
+  label: string;
+  sourceRef: string;
+  sourceRow: number;
+  metrics?: { column: string; label: string; value: number | null; unit?: string }[];
+  fields?: { column: string; label: string; value: string | null }[];
+  provenance?: DimeProvenance;
+}
+
 export interface PlayerCardArtifactPayload {
   kind: "player_card";
   title: string;
@@ -149,6 +159,7 @@ export interface PlayerCardArtifactPayload {
   nameColumn: string;
   teamColumn?: string;
   metrics: { column: string; label: string; value: number | null; unit?: string }[];
+  sections?: PlayerCardSectionPayload[];
 }
 
 export interface MemoArtifactPayload {
