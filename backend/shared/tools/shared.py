@@ -159,6 +159,32 @@ def _table_hint(con, code):
     return col_hint, hint
 
 
+def _exc_lineno(exc):
+    lineno = getattr(exc, "lineno", None)
+    if lineno is not None:
+        return lineno
+    tb = exc.__traceback__
+    found = None
+    while tb is not None:
+        if tb.tb_frame.f_code.co_filename == "<dime>":
+            found = tb.tb_lineno
+        tb = tb.tb_next
+    return found
+
+
+def _code_context(code, lineno):
+    lines = code.splitlines()
+    if lineno is None or not (1 <= lineno <= len(lines)):
+        return None
+    lo = max(1, lineno - 2)
+    hi = min(len(lines), lineno + 2)
+    out = []
+    for n in range(lo, hi + 1):
+        mark = ">>" if n == lineno else "  "
+        out.append(f"{mark} {n:4d}| {lines[n - 1][:160]}")
+    return "\\n".join(out)
+
+
 def _serialize_out(out):
     if isinstance(out, pl.DataFrame):
         return _json_safe(out.head(500).to_dicts()), None
@@ -211,15 +237,28 @@ def _main():
         msg = str(exc) or type(exc).__name__
         hints = ("does not exist", "Catalog", "Referenced column", "Binder")
         recovery = "Check Python syntax, variable names, and warehouse column names via warehouse_schema."
-        if any(h in msg for h in hints):
+        if isinstance(exc, SyntaxError):
+            recovery = "Fix the syntax on the marked line of the submitted code, then rerun run_python."
+        elif any(h in msg for h in hints):
             col_hint, valid_hint = _table_hint(con, code)
             recovery = f"Unknown table or column.{col_hint} Valid tables: {valid_hint}"
-        result_path.write_text(json.dumps({
+        lineno = _exc_lineno(exc)
+        context = _code_context(code, lineno)
+        error_text = f"{type(exc).__name__}: {msg}"
+        if context:
+            error_text += "\\ncode around line " + str(lineno) + ":\\n" + context
+        payload = {
             "ok": False,
-            "error": msg[:500],
+            "error": error_text[:1200],
+            "error_type": type(exc).__name__,
             "stdout": buf.getvalue()[:16000],
             "recovery_hint": recovery,
-        }), encoding="utf-8")
+        }
+        if lineno is not None:
+            payload["error_line"] = lineno
+        if context:
+            payload["code_context"] = context
+        result_path.write_text(json.dumps(payload), encoding="utf-8")
         return
     finally:
         sys.stdout = old_stdout
@@ -291,8 +330,11 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {
             "tool": "run_python",
             "ok": False,
-            "error": str(payload.get("error") or "Python execution failed")[:500],
+            "error": str(payload.get("error") or "Python execution failed")[:1200],
         }
+        for key in ("error_type", "error_line", "code_context"):
+            if payload.get(key) is not None:
+                out[key] = payload[key]
         if payload.get("recovery_hint"):
             out["recovery_hint"] = str(payload["recovery_hint"])
         if payload.get("stdout"):

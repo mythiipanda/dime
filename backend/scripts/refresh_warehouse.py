@@ -33,6 +33,8 @@ SEEDERS = [
     ("shots", "seed_shots_2025_26.py", [], False),
     ("repair_shot_names", "repair_shot_names.py", [], False),
     ("draft_capital", "seed_draft_capital.py", [], False),
+    ("free_agents", "seed_free_agents.py", [], True),
+    ("prospects", "seed_prospects.py", [], True),
     ("four_factors_team", "build_team_four_factors.py", [], False),
 ]
 
@@ -201,6 +203,13 @@ def main(argv: list[str] | None = None) -> int:
             return 4
     else:
         print("dry-run: row-count check skipped (seeders ran dry)")
+
+    from build_data_dictionary import write_dictionary
+    dictionary_path = write_dictionary(warehouse)
+    if warehouse.parent != LOCAL_WAREHOUSE.parent and LOCAL_WAREHOUSE.parent.is_dir():
+        local_dict = LOCAL_WAREHOUSE.parent / dictionary_path.name
+        shutil.copy2(dictionary_path, local_dict)
+        print(f"dictionary also staged at {local_dict}")
 
     if args.skip_publish:
         print("skip-publish: done, warehouse staged at", warehouse)

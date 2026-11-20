@@ -84,7 +84,7 @@ function resolveChart(
 
 function parseShotZone(
   line: unknown,
-): { x: number; y: number; att: number; pct: number } | null {
+): { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number } | null {
   if (typeof line !== "object" || line === null) return null;
   const z = line as Record<string, unknown>;
   const x = finiteNumber(z.x);
@@ -94,7 +94,13 @@ function parseShotZone(
   if (x === undefined || y === undefined || att === undefined || pct === undefined) {
     return null;
   }
-  return { x, y, att, pct };
+  const parsed: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number } = { x, y, att, pct };
+  if (typeof z.label === "string" && z.label) parsed.label = z.label;
+  const makes = finiteNumber(z.makes);
+  if (makes !== undefined) parsed.makes = makes;
+  const delta = finiteNumber(z.delta);
+  if (delta !== undefined) parsed.delta = delta;
+  return parsed;
 }
 
 function resolveShotChart(
@@ -102,7 +108,7 @@ function resolveShotChart(
   title: string,
   provenance: DimeProvenance | undefined,
 ): ShotChartArtifactPayload {
-  const zones: { x: number; y: number; att: number; pct: number }[] = [];
+  const zones: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number }[] = [];
   for (const line of Array.isArray(entry.zones) ? entry.zones : []) {
     const parsed = parseShotZone(line);
     if (parsed) zones.push(parsed);

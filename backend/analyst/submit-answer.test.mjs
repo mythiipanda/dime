@@ -714,6 +714,27 @@ test("validateAnswerSubmission permits omitted anchors and normalizes shot_chart
   assert.equal(validated.artifacts[0].zones[1].pct, 42.5);
 });
 
+test("shot_chart zones carry optional label, makes and league-delta fields", () => {
+  const validated = validateAnswerSubmission({
+    blocks: [{ text: "Shot diet" }],
+    artifacts: [
+      {
+        kind: "shot_chart",
+        title: "Zone efficiency vs league",
+        zones: [
+          { x: 0, y: 4, att: 380, makes: 260, pct: 68.4, delta: 8.1, label: "rim-C" },
+          { x: -14, y: 14, att: 120, makes: 56, pct: 46.5, delta: -3.4, label: "long_mid-L" },
+        ],
+      },
+    ],
+  }, () => undefined);
+  const zone = validated.artifacts[0].zones[0];
+  assert.equal(zone.label, "rim-C");
+  assert.equal(zone.makes, 260);
+  assert.equal(zone.delta, 8.1);
+  assert.equal(zone.pct, 68.4);
+});
+
 function playerCardInput(overrides = {}) {
   return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
     metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
@@ -839,4 +860,36 @@ test("validateAnswerSubmission drops rejected artifacts but keeps valid ones", (
   assert.equal(validated.artifacts.length, 1);
   assert.equal(validated.artifacts[0].kind, "scatter");
   assert.deepEqual(warnings, ['dropped artifact: unknown artifact kind "mystery"']);
+});
+||||||| 5eb4de42
+
+test("memo artifacts validate section anchors like block anchors", () => {
+  const sources = new Map([
+    ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],
+  ]);
+  const memo = {
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [
+      { heading: "Cap position", body: "Orlando sits under the first apron.", anchors: [{ ref: "cap-source", row: 0, columns: ["team", "payroll"] }] },
+      { heading: "Options", body: "Aggregate mid-tier salary." },
+    ],
+  };
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [memo] }, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].kind, "memo");
+  assert.equal(validated.artifacts[0].sections[0].anchors[0].ref, "cap-source");
+});
+
+test("memo artifacts reject anchors to unknown refs, bad rows and missing columns", () => {
+  const source = makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] });
+  const memo = anchors => ({
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [{ heading: "Cap position", body: "Body.", anchors }],
+  });
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, ref => ref === "cap-source" ? source : undefined);
+  assert.throws(() => validate(memo([{ ref: "ghost", row: 0, columns: ["team"] }])), /Unknown source ref/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
 });

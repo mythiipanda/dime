@@ -120,7 +120,7 @@ export interface ShotChartArtifactPayload {
   title: string;
   source?: string;
   provenance?: DimeProvenance;
-  zones: { x: number; y: number; att: number; pct: number }[];
+  zones: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number }[];
   footnote?: string;
 }
 
