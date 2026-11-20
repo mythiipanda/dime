@@ -11,6 +11,7 @@ import { PromptBar } from "./components/ds/PromptBar";
 import { ShotsExplorer } from "./components/shell/ShotsExplorer";
 import TradesView from "./components/dime/views/TradesView";
 import MorningPage from "./components/dime/views/MorningPage";
+import CompareView from "./components/dime/views/CompareView";
 import type { HomeSnapshot } from "./lib/warehouse";
 import { clearEnvelopeCache } from "./lib/api";
 
@@ -147,6 +148,71 @@ test("Morning page shows the backend error without substituting data", async () 
     assert.match(host.textContent!, /warehouse unreachable/);
     assert.match(host.textContent!, /No sample data is substituted/);
     assert.ok(host.querySelector('[role="alert"]'));
+  });
+});
+
+const compareFixture = {
+  ok: true, season: "2025-26",
+  players: [
+    {
+      player_id: 2544, name: "LeBron James", season: "2025-26",
+      season_line: { ok: true, row: { season: 2025, age: 40, team: "LAL", gp: 70, mpg: 34.9, ppg: 24.4, rpg: 7.8, apg: 8.2, spg: 1.0, bpg: 0.6, fg_pct: 0.513, fg3_pct: 0.376, ft_pct: 0.782, ts_pct: 0.604, usg_pct: 0.291, off_rating: 112.7, def_rating: 114.0, net_rating: -1.3 }, provenance: { table: "silver_hist_player_seasons", as_of: "2026-09-10T04:33:35Z" } },
+      impact: { ok: false, error: "no impact row for 2025-26", provenance: { table: "silver_raptor_player", as_of: "2026-09-09T18:15:44Z" } },
+      zones: { ok: true, zones: [{ zone: "Restricted Area", x: 0, y: 1.4, att: 680, makes: 514, pct: 75.6, league_pct: 76.7, delta_pp: -1.1 }], provenance: { table: "silver_shots", as_of: "2026-09-10T19:46:39Z" } },
+      contract: { ok: true, row: { team: "LAL", salary: 52000000, contract_type: "MAX", guaranteed: true, player_option: false, team_option: false }, season: "2026-27", provenance: { table: "silver_cap_players", as_of: "2026-09-08T08:05:24Z" } },
+      arc: { ok: true, rows: [{ season: 2024, age: 39, gp: 71, pts: 25.7, ts_pct: 0.63, usg_pct: 0.285 }, { season: 2025, age: 40, gp: 70, pts: 24.4, ts_pct: 0.604, usg_pct: 0.291 }], provenance: { table: "silver_hist_player_seasons", as_of: "2026-09-10T04:33:35Z" } },
+    },
+    {
+      player_id: 1628983, name: "Shai Gilgeous-Alexander", season: "2025-26",
+      season_line: { ok: true, row: { season: 2025, age: 27, team: "OKC", gp: 76, mpg: 34.2, ppg: 32.7, rpg: 5.0, apg: 6.4, spg: 1.7, bpg: 1.0, fg_pct: 0.519, fg3_pct: 0.375, ft_pct: 0.897, ts_pct: 0.637, usg_pct: 0.339, off_rating: 125.0, def_rating: 106.0, net_rating: 19.0 }, provenance: { table: "silver_hist_player_seasons", as_of: "2026-09-10T04:33:35Z" } },
+      impact: { ok: true, raptor_total: 8.4, war_total: 17.2, mp: 2600, rank: 1, of: 450, provenance: { table: "silver_raptor_player", as_of: "2026-09-09T18:15:44Z" } },
+      zones: { ok: true, zones: [{ zone: "Restricted Area", x: 0.2, y: 1.9, att: 412, makes: 250, pct: 60.7, league_pct: 76.7, delta_pp: -16.0 }], provenance: { table: "silver_shots", as_of: "2026-09-10T19:46:39Z" } },
+      contract: { ok: true, row: { team: "OKC", salary: 40806150, contract_type: "DRK-EXT", guaranteed: true, player_option: false, team_option: false }, season: "2026-27", provenance: { table: "silver_cap_players", as_of: "2026-09-08T08:05:24Z" } },
+      arc: { ok: true, rows: [{ season: 2024, age: 26, gp: 75, pts: 30.1, ts_pct: 0.653, usg_pct: 0.33 }, { season: 2025, age: 27, gp: 76, pts: 32.7, ts_pct: 0.637, usg_pct: 0.339 }], provenance: { table: "silver_hist_player_seasons", as_of: "2026-09-10T04:33:35Z" } },
+    },
+  ],
+};
+
+test("Compare view renders cited sections for two players", async () => {
+  const picks = [
+    { id: 2544, name: "LeBron James", season: "2025-26" },
+    { id: 1628983, name: "Shai Gilgeous-Alexander", season: "2025-26" },
+  ];
+  await mount(<CompareView initialPicks={picks} />, async input => {
+    const url = String(input);
+    if (url.includes("/compare")) {
+      assert.match(url, /players=2544%3A2025-26%2C1628983%3A2025-26/);
+      return Response.json(compareFixture);
+    }
+    return Response.json({ ok: true });
+  }, async host => {
+    assert.match(host.textContent!, /LeBron James/);
+    assert.match(host.textContent!, /Shai Gilgeous-Alexander/);
+    assert.match(host.textContent!, /24\.4/);
+    assert.match(host.textContent!, /32\.7/);
+    assert.match(host.textContent!, /RAPTOR 8\.4 · #1 of 450 · WAR 17\.2/);
+    assert.match(host.textContent!, /no impact row for 2025-26/);
+    assert.match(host.textContent!, /\$52\.0M · MAX/);
+    assert.match(host.textContent!, /silver_hist_player_seasons/);
+    assert.match(host.textContent!, /silver_shots/);
+    assert.match(host.textContent!, /Points per game by age/);
+  });
+});
+
+test("Compare view requires at least two players", async () => {
+  await mount(<CompareView initialPicks={[]} />, async () => Response.json({ ok: true }), async host => {
+    assert.match(host.textContent!, /Add at least two players to compare/);
+  });
+});
+
+test("Compare view surfaces the backend error", async () => {
+  const picks = [
+    { id: 2544, name: "LeBron James", season: "2025-26" },
+    { id: 1628983, name: "Shai Gilgeous-Alexander", season: "2025-26" },
+  ];
+  await mount(<CompareView initialPicks={picks} />, async () => Response.json({ ok: false, error: "warehouse_unreachable" }, { status: 422 }), async host => {
+    assert.match(host.textContent!, /warehouse_unreachable/);
+    assert.match(host.textContent!, /No sample data is substituted/);
   });
 });
 

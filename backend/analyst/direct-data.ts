@@ -97,6 +97,10 @@ export type DirectOperations = {
         season: string;
         days: number;
     };
+    product_compare: {
+        players: string;
+        season: string;
+    };
 };
 export async function connectDirectData(options: PythonToolsOptions) {
     const transport = new StdioTransport({ command: options.python, args: ["-B", fileURLToPath(new URL("../python_tools.py", import.meta.url))], cwd: options.cwd, env: options.env, inheritEnv: false, maxStderrBytes: 65536 });
