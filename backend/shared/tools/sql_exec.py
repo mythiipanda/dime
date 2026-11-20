@@ -59,9 +59,9 @@ def _binder_hint(query: str, error: str) -> str:
             "passed; CAST the column to a numeric type "
             "(e.g. CAST(x AS DOUBLE)) or check its type first.")
     if referenced:
-        shown = "; ".join(
-            f"{t}: {', '.join(columns[t])}" for t in referenced[:3])
-        hints.append(f"Columns on queried tables — {shown}")
+        hints.append(
+            "Inspect the queried tables with warehouse_schema: "
+            + ", ".join(referenced[:3]))
     hints.append(generic)
     return " ".join(hints)
 

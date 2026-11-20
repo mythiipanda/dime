@@ -159,7 +159,7 @@ def test_sql_exec_binder_hint_names_column_and_candidates(warehouse):
     assert res["ok"] is False
     hint = res["recovery_hint"]
     assert "'team_abbreviation'" in hint
-    assert "silver_standings:" in hint
+    assert "silver_standings" in hint
 
     res_func = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
         {"sql": "SELECT sum(TEAM) FROM silver_standings"}))
