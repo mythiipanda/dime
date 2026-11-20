@@ -23,6 +23,7 @@ const SYSTEM_PROMPT = [
     "Autonomous reasoning & warehouse methodology:",
     "- Distinguish row counts vs distinct player/team entity counts; check warehouse_schema or load_skill({ name: \"warehouse-reconciliation\" }) before guessing column names; verify season format ('2024-25' vs integer depending on season_semantics).",
     "- Use Promise.all / Promise.allSettled in codemode to batch independent queries and filter rows in JS before returning compact summaries (use store(key, val) / load(key) for intermediate results across turns).",
+    "- In follow-up turns, resolve references such as 'these teams', 'both players', or 'the top two' from prior results before querying; preserve the established population and filters, reuse store/load or prior refs, and narrow the next query instead of restarting a broad scan.",
     "- Use run_python for statistical regressions, RAPM/ridge, empirical Bayes shrinkage, bootstrap CIs, clustering, or multi-step Polars/DuckDB pipelines (duckdb, polars, numpy, scipy, scikit-learn, statsmodels, and matplotlib are available, and thread workspace files persist across turns).",
     "- When users ask conceptual, strategic, or qualitative questions, provide clear, insightful domain reasoning directly without forcing unnecessary tool calls.",
     "",
