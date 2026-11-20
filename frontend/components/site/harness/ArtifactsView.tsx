@@ -166,15 +166,19 @@ function escapeCsvCell(val: unknown): string {
 
 export function artifactToCopyText(artifact: DimeArtifact): string {
   if (artifact.kind === "memo") return memoToMarkdown(artifact);
-  if (artifact.kind === "player_card") {
-    return ["Player,Team,Metric,Value,Unit,Source,Row,Column", ...artifact.metrics.map(metric =>
-      [artifact.playerName, artifact.team, metric.label, metric.value, metric.unit, artifact.sourceRef, artifact.sourceRow, metric.column].map(escapeCsvCell).join(",")
-    )].join("\n");
-  }
-  if (artifact.kind === "team_card") {
-    return ["Team,Metric,Value,Unit,Source,Row,Column", ...artifact.metrics.map(metric =>
-      [artifact.teamName, metric.label, metric.value, metric.unit, artifact.sourceRef, artifact.sourceRow, metric.column].map(escapeCsvCell).join(",")
-    )].join("\n");
+  if (artifact.kind === "player_card" || artifact.kind === "team_card") {
+    const name = artifact.kind === "player_card" ? artifact.playerName : artifact.teamName;
+    const team = artifact.kind === "player_card" ? artifact.team : undefined;
+    const lines = artifact.metrics.map(metric =>
+      ["", name, team, metric.label, metric.value, metric.unit, artifact.sourceRef, artifact.sourceRow, metric.column].map(escapeCsvCell).join(",")
+    );
+    for (const section of artifact.sections ?? []) {
+      for (const field of section.fields ?? [])
+        lines.push([section.label, name, team, field.label, field.value, "", section.sourceRef, section.sourceRow, field.column].map(escapeCsvCell).join(","));
+      for (const metric of section.metrics ?? [])
+        lines.push([section.label, name, team, metric.label, metric.value, metric.unit, section.sourceRef, section.sourceRow, metric.column].map(escapeCsvCell).join(","));
+    }
+    return ["Section,Player,Team,Metric,Value,Unit,Source,Row,Column", ...lines].join("\n");
   }
   if (artifact.kind === "table") {
     const header = artifact.columns.map((c) => escapeCsvCell(c.label || c.key)).join(",");
@@ -201,9 +205,9 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
     return [header, ...rows].join("\n");
   }
   if (artifact.kind === "shot_chart") {
-    const header = "X,Y,Attempts,Percentage";
+    const header = "Zone,X,Y,Attempts,Makes,FG%,Delta vs league";
     const rows = artifact.zones.map(
-      (z) => `${escapeCsvCell(z.x)},${escapeCsvCell(z.y)},${escapeCsvCell(z.att)},${escapeCsvCell(z.pct)}`,
+      (z) => [z.label, z.x, z.y, z.att, z.makes, z.pct, z.delta].map(escapeCsvCell).join(","),
     );
     return [header, ...rows].join("\n");
   }

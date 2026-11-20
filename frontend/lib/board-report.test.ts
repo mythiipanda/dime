@@ -34,6 +34,15 @@ test("report carries board grid with citations and each pin's provenance and as-
   assert.match(md, /\| Note \|/);
 });
 
+test("shot chart pins export zone labels and percent on the 0-100 scale", () => {
+  const shot = { kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 120, makes: 79, pct: 65.8, label: "Rim", delta: 3.1 }, { x: -220, y: 230, att: 57, pct: 35.1 }] } as unknown as DimeArtifact;
+  const b = pinArtifact({ ...newBoard(), title: "Shots" }, shot);
+  const md = boardReportMarkdown(buildBoardReport(b, [metric]));
+  assert.match(md, /Rim: 120 attempts, 65\.8%, 79 makes, \+3\.1 pts vs league/);
+  assert.match(md, /\(-220, 230\): 57 attempts, 35\.1%/);
+  assert.ok(!/6580|3510/.test(md), md);
+});
+
 test("report escapes html and renders the same content for pdf", () => {
   const report = buildBoardReport({ ...board(), title: "Board <script>" }, [metric]);
   const html = boardReportHtml(report);
