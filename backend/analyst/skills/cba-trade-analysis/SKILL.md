@@ -7,6 +7,14 @@ description: Evaluate NBA trade feasibility, salary matching brackets, first and
 
 This playbook outlines the structural trade rules, luxury tax apron thresholds, salary matching math, and draft pick restrictions enacted under the 2023 NBA Collective Bargaining Agreement (CBA).
 
+## 0. Mechanism Selection (decide before computing)
+
+Every legality question starts with one branch — pick the mechanism before any math:
+
+1. **Tier each side first.** Compute each team's payroll from `silver_salaries` (`SUM(SALARY)` per `TEAM` for the relevant `_season`) and place it in the tier ladder (Under Cap / Over Cap Non-Tax / Taxpayer / First Apron / Second Apron) using the thresholds stated in the question. Evaluate **both** sides of a proposed trade independently — a deal legal for one side can be illegal for the other.
+2. **Under-cap teams absorb into cap space, not matching bands.** If the team finishes the trade at or under the salary cap, it may take back more salary than it sends out — the ceiling is `outgoing + cap_room` (room = cap − payroll). Do not apply the percentage bands to a team with room; conversely do not claim "cap space" for an over-cap team — it uses the matching rules instead. Absorption trades (sending a player to a team with open room for minimal salary back) are legal whenever the receiving side stays under the cap after.
+3. **Apron and taxpayer teams use salary matching, never cap room.** First Apron teams may take back at most 100% of outgoing; Second Apron teams additionally cannot aggregate multiple salaries for one larger contract. The bands below apply to non-apron over-cap teams.
+
 ## 1. Cap & Apron Structure
 
 The 2023 CBA establishes progressive financial thresholds that impose both monetary tax penalties and severe roster construction restrictions:
@@ -49,6 +57,21 @@ Teams operating at or above the Second Apron face the most punitive roster restr
    - The team's first-round draft pick 7 years in the future is immediately **frozen** and cannot be traded.
    - If a team finishes the season in the Second Apron in 2 of the subsequent 4 years, that frozen pick is automatically demoted to the end of the first round (pick #30 overall), regardless of regular season record.
 5. **Buyout Market Restriction**: Cannot sign a player waived in-season whose pre-waiver salary exceeded the Non-Taxpayer Mid-Level Exception.
+
+---
+
+## 2.5 Solving for Minimum Outgoing Salary
+
+When a question asks for the *smallest* outgoing package that legalizes a target incoming salary, invert the matching bands — work top-down, since each band's range implies its own outgoing floor:
+
+- **100% apron match**: `outgoing ≥ incoming`. The ceiling and floor coincide; any outgoing below incoming fails outright (and a Second Apron team additionally cannot combine contracts to reach it).
+- **High band (> $29M outgoing)**: `outgoing ≥ (incoming − $250,000) / 1.25`. Valid only if the solution lands above $29M.
+- **Mid band ($7.5M–$29M)**: `outgoing ≥ incoming − $7,500,000`. Valid only if the solution lands inside the band.
+- **Low band (≤ $7.5M)**: `outgoing ≥ (incoming − $250,000) / 2`. Valid only if the solution lands at or under $7.5M.
+
+Compute the floor under each band that can contain the answer, then take the smallest valid one — plus the cap-space route: if outgoing can be zero and `incoming ≤ cap_room`, no matching is needed at all. When comparing rule vintages (e.g. historical vs current matching), state which rule set you applied and why the question's stipulated year controls it.
+
+Worked example: to take back $35M as a non-apron over-cap team — high-band floor is $(35.0 − 0.25)/1.25 = $27.8M`, which is *below* $29M so the high band doesn't apply; mid-band floor is $35.0 − 7.5 = $27.5M`, valid inside the band → minimum outgoing is **$27.5M**.
 
 ---
 
