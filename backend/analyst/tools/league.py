@@ -130,6 +130,7 @@ def register() -> dict[str, Any]:
         get_hustle as _orig_get_hustle,
         get_injuries as _orig_get_injuries,
         get_news_feed as _orig_get_news_feed,
+        get_prospect as _orig_get_prospect,
         get_playoff_sim as _orig_get_playoff_sim,
         get_playoff_team_ratings as _orig_get_playoff_team_ratings,
         get_playoffs as _orig_get_playoffs,
@@ -259,6 +260,17 @@ def register() -> dict[str, Any]:
         res = call_sync(_orig_get_news_feed, "get_news_feed", {"team": team, "player": player, "limit": limit})
         return finish_dict_list(res, "get_news_feed", ["headline", "published", "url", "source_feed", "players", "teams"])
 
+    @tool("get_prospect", description=_orig_get_prospect.description)
+    def get_prospect(player: str = "", draft_year: str = "2027", position: str = "") -> dict:
+        res = call_sync(_orig_get_prospect, "get_prospect", {"player": player, "draft_year": draft_year, "position": position})
+        rows = _dict_or_list_rows(res.get("boards") if res.get("ok") else [])
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else ["ORDER", "PLAYER_NAME", "POSITION", "SCHOOL", "AGE", "BOARD"]
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_prospect", res)
+        return sanitize_for_wire(res)
+
     @tool("get_draft_board", description=_orig_get_draft_board.description)
     def get_draft_board(season: str = "2025") -> dict:
         res = _offline_call(_orig_get_draft_board, "get_draft_board", {"season": season})
@@ -294,6 +306,7 @@ def register() -> dict[str, Any]:
         "get_hustle": get_hustle,
         "get_injuries": get_injuries,
         "get_news_feed": get_news_feed,
+        "get_prospect": get_prospect,
         "get_draft_board": get_draft_board,
         "get_combine": get_combine,
         "get_draft_model": get_draft_model,

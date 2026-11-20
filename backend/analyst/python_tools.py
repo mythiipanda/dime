@@ -63,6 +63,7 @@ _TOOL_ORDER = (
     "get_hustle",
     "get_injuries",
     "get_news_feed",
+    "get_team_daily_brief",
     "get_award_results",
     "get_briefing",
     "get_standings",
@@ -142,6 +143,7 @@ _TOOL_ORDER = (
     "get_splits",
     "get_recap",
     "get_scouting_report",
+    "get_prospect",
 )
 
 _REGISTRARS = (

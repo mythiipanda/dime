@@ -292,6 +292,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_splits",
       "get_recap",
       "get_scouting_report",
+      "get_prospect",
     ]);
     assert.deepEqual(bridge.tools[0].parameters.required, ["sql"]);
     const setup = await fixture("python", `
@@ -1224,6 +1225,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_team_compare: { stat_category: "PTS", top: 3, season: "2023-24" },
       get_elo_standings: { season: "2023-24", limit: 5 },
       get_draft_board: { season: "2025" },
+      get_prospect: { player: "Cooper Flagg", draft_year: "2027" },
       get_combine: { season: "2025" },
       get_young_player_usage: { max_age: 22, min_minutes: 1000 },
       get_contract_value: { player: "NonexistentPlayer" },

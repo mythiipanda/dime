@@ -294,7 +294,9 @@ from .standings import (
     get_standings_deep,
     get_team_trajectory,
 )
+from .daily_brief import get_team_daily_brief
 from .news import get_news_feed
+from .prospects import get_prospect
 from .trade_value import (
     PICK_VALUE_M,
     _TRADE_CHECK_UNMODELED,
