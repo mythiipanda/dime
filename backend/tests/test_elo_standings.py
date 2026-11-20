@@ -53,7 +53,7 @@ def test_mov_scales():
     assert blowout > close
 
 def test_empty_season():
-    res = get_elo_standings.invoke({"season": "1999-00"})
+    res = get_elo_standings.invoke({"season": "1995-96"})
     assert res["ok"] is True
     assert res["rows"] == []
 

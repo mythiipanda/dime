@@ -66,6 +66,19 @@ _TRADE_CHECK_UNMODELED = (
 
 
 def _trade_guard_vintage_error(con, season: str) -> str | None:
+    if season and "silver_salaries" in _warehouse_tables(con):
+        columns = {r[1] for r in con.execute(
+            "PRAGMA table_info(silver_salaries)").fetchall()}
+        if "SALARY_" + season.replace("-", "_") in columns:
+            return None
+        vintages = sorted(
+            c[len("SALARY_"):].replace("_", "-") for c in columns
+            if _re.fullmatch(r"SALARY_\d{4}_\d{2}", c))
+        if vintages:
+            label = vintages[0] if len(vintages) == 1 else (
+                f"{vintages[0]}..{vintages[-1]}")
+            return (f"salary data covers {label}, not {season}; "
+                    "trade math was not calculated")
     salary_season, salary_rows, _ = _salary_vintage(con)
     if not (salary_rows and salary_season and salary_season != season):
         return None

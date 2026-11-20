@@ -105,6 +105,26 @@ def _search_shots_rows(res: dict[str, Any]) -> list[dict[str, Any]]:
     return [_shot_row(r) for r in raw_list]
 
 
+def _shot_chart_rows(res: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = res.get("rows") if isinstance(res.get("rows"), list) else res.get("zones")
+    if not isinstance(raw, list):
+        return []
+    return [
+        {
+            "zone": r.get("zone"),
+            "label": r.get("label"),
+            "x": r.get("x"),
+            "y": r.get("y"),
+            "att": r.get("att"),
+            "makes": r.get("makes"),
+            "pct": r.get("pct"),
+            "league_pct": r.get("league_pct"),
+            "delta_pp": r.get("delta_pp"),
+        }
+        for r in raw if isinstance(r, dict)
+    ]
+
+
 def _team_shot_zone_row(r: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "team", "team_id", "shots",
@@ -135,12 +155,18 @@ def register() -> dict[str, Any]:
         from backend.shared.tools.zonedelta import get_zone_deltas as _orig_get_zone_deltas
     try:
         from shared.tools.shots import search_shots as _orig_search_shots
+        from shared.tools.shots import get_shot_chart as _orig_get_shot_chart
     except ImportError:
         from backend.shared.tools.shots import search_shots as _orig_search_shots
+        from backend.shared.tools.shots import get_shot_chart as _orig_get_shot_chart
     try:
         from shared.tools.zone import get_team_shot_zones as _orig_get_team_shot_zones
     except ImportError:
         from backend.shared.tools.zone import get_team_shot_zones as _orig_get_team_shot_zones
+    try:
+        from shared.tools.phases import get_phase_shot_splits as _orig_get_phase_shot_splits
+    except ImportError:
+        from backend.shared.tools.phases import get_phase_shot_splits as _orig_get_phase_shot_splits
 
     @tool("get_shot_zones", description=_orig_get_shot_zones.description)
     def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts: int = 50) -> dict:
@@ -179,6 +205,18 @@ def register() -> dict[str, Any]:
         })
         return finish_strict_rows(res, "search_shots", cols, "Shot search failed", _search_shots_rows, fixed_cols=True)
 
+    @tool("get_shot_chart", description=_orig_get_shot_chart.description)
+    def get_shot_chart(
+        player: str = "", team: str = "", season: str | None = None,
+        playoffs: bool = False, opponent: str = "",
+    ) -> dict:
+        cols = ["zone", "label", "x", "y", "att", "makes", "pct", "league_pct", "delta_pp"]
+        res = call_sync(_orig_get_shot_chart, "get_shot_chart", {
+            "player": player, "team": team, "season": season,
+            "playoffs": playoffs, "opponent": opponent,
+        })
+        return finish_strict_rows(res, "get_shot_chart", cols, "Shot chart query failed", _shot_chart_rows, fixed_cols=True)
+
     @tool("get_team_shot_zones", description=_orig_get_team_shot_zones.description)
     def get_team_shot_zones(teams: str = "league", season: str | None = None) -> dict:
         cols = [
@@ -192,10 +230,25 @@ def register() -> dict[str, Any]:
         res = call_sync(_orig_get_team_shot_zones, "get_team_shot_zones", {"teams": teams, "season": season})
         return finish_strict_rows(res, "get_team_shot_zones", cols, "Team shot zones query failed", _team_shot_zones_rows, fixed_cols=True)
 
+    @tool("get_phase_shot_splits", description=_orig_get_phase_shot_splits.description)
+    def get_phase_shot_splits(player: str = "", team: str = "", season: str | None = None) -> dict:
+        cols = ["kind", "bucket", "rs_fga", "rs_fgm", "rs_efg", "rs_share",
+                "po_fga", "po_fgm", "po_efg", "po_share",
+                "efg_delta_pp", "share_delta_pp"]
+        res = call_sync(_orig_get_phase_shot_splits, "get_phase_shot_splits", {
+            "player": player, "team": team, "season": season,
+        })
+        return finish_strict_rows(res, "get_phase_shot_splits", cols,
+                                  "Phase shot splits lookup failed",
+                                  lambda r: [dict(x) for x in r.get("rows", [])],
+                                  fixed_cols=True)
+
     return {
         "get_shot_zones": get_shot_zones,
         "get_shot_compare": get_shot_compare,
         "get_zone_deltas": get_zone_deltas,
         "search_shots": search_shots,
+        "get_shot_chart": get_shot_chart,
         "get_team_shot_zones": get_team_shot_zones,
+        "get_phase_shot_splits": get_phase_shot_splits,
     }
