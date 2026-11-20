@@ -33,3 +33,12 @@ In player-season tables, a traded player often has one combined row (`TEAM_ABBRE
 `sql_exec` returns `ok: true, rows: [], row_count: 0, meta: { empty_observation: true }` when a valid query matches zero rows:
 - Do **not** treat a 0-row result as a tool crash. First verify your filter literals (spelling, case, season encoding) against `warehouse_schema` or a broader `SELECT DISTINCT` probe.
 - Once filters are verified, a 0-row observation is affirmative evidence that no entity or event satisfied those criteria in the covered warehouse scope (e.g., resolving a false-premise question). Report the exact verified scope and the 0-row finding transparently.
+
+## 5. Call Economy: Fewer Turns, Faster Answers
+
+Every codemode turn costs model latency, so spend calls deliberately:
+
+- Inspect schema once per table with `warehouse_schema({ tables: [...] })` and reuse the result via `store`/`load`; never re-fetch the full catalog or repeat a freshness check within a run.
+- `get_warehouse_freshness` and `get_dataset_freshness` report overlapping coverage; one freshness check per run is enough unless you specifically need Data Engine ingestion timestamps.
+- When `sql_exec` fails, read the error's candidate bindings and `schema_hint` (the referenced tables' real columns, and which tables actually contain a missing column) and correct the query on the next call; call `warehouse_schema` again only when no hint was returned.
+- Prefer one comprehensive `run_python` script (loops and intermediate variables inside Python) over many small one-row probe calls, and batch independent `sql_exec`/`run_python` calls with `Promise.all` inside codemode.
