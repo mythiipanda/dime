@@ -39,6 +39,19 @@
             "default": null,
             "description": "Comma-separated table names to describe; omit for all. Default: None.",
             "title": "Tables"
+          },
+          "table": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Warehouse table name to inspect. Default: None.",
+            "title": "Table"
           }
         },
         "title": "warehouse_schema",
