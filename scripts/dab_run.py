@@ -1,6 +1,7 @@
 import argparse
 import ast
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -253,6 +254,21 @@ def verify_runtime_warehouse() -> tuple[list[str], int]:
     return [], len(present)
 
 
+def warehouse_metadata() -> dict[str, object]:
+    digest = hashlib.sha256()
+    with WAREHOUSE.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    stat = WAREHOUSE.stat()
+    return {
+        "warehouse_file": WAREHOUSE.name,
+        "warehouse_sha256": digest.hexdigest(),
+        "warehouse_size_bytes": stat.st_size,
+        "warehouse_mtime_utc": datetime.datetime.fromtimestamp(
+            stat.st_mtime, datetime.timezone.utc).isoformat(),
+    }
+
+
 def dab_root() -> Path:
     from_env = os.environ.get("DIME_DAB_ROOT")
     if from_env:
@@ -346,6 +362,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"FAILED: {problem}", file=sys.stderr)
         return 1
     print(f"runtime warehouse ok: {WAREHOUSE} ({warehouse_tables} tables)")
+    run_metadata = {
+        "model": model,
+        "judge_model": args.judge_model,
+        "split": args.split,
+        "recorded_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        **warehouse_metadata(),
+    }
 
     manifest_dir = Path(tempfile.mkdtemp(prefix="dab-manifest-"))
     manifest_path = manifest_dir / "asset-manifest.json"
@@ -369,6 +392,10 @@ def main(argv: list[str] | None = None) -> int:
         if run_eval(eval_command(args), env) != 0:
             print("eval subprocess failed", file=sys.stderr)
             ok = False
+        run_dir = dab_root() / "runs" / args.out_name
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "run-metadata.json").write_text(
+            json.dumps(run_metadata, indent=2) + "\n", encoding="utf-8")
         if not report_results(args):
             ok = False
         elif args.save_history and not save_history(args):
