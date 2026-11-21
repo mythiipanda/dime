@@ -11,11 +11,13 @@ export default function ArtifactTable<T extends (string | number | null)[]>({
   rows,
   renderCell,
   title = "Evidence table",
+  footnote,
 }: {
   columns: ArtifactColumn[];
   rows: T[];
   renderCell?: (row: T, col: number) => ReactNode;
   title?: string;
+  footnote?: string;
 }) {
   const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
   const regionRef = useRef<HTMLDivElement>(null);
@@ -116,7 +118,10 @@ export default function ArtifactTable<T extends (string | number | null)[]>({
         ))}
       </tbody>
     </table></div>
-    <p className="border-t border-line px-4 py-2 text-xs text-ink-3">{rows.length} {rows.length === 1 ? "record" : "records"}{rows.length === 0 && ". No records available. Adjust the query or choose another season."}</p>
+    <div className="border-t border-line px-4 py-2 text-xs text-ink-3">
+      {footnote && <p className="break-words leading-relaxed">{footnote}</p>}
+      <p>{rows.length} {rows.length === 1 ? "record" : "records"}{rows.length === 0 && ". No records available. Adjust the query or choose another season."}</p>
+    </div>
     </div>
   );
 }

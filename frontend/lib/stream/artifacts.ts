@@ -170,6 +170,8 @@ function resolveTable(
   const columns = parseTableColumns(entry.columns);
   const rows = parseTableRows(entry.rows, columns);
   if (columns.length === 0 || rows.length === 0) return null;
+  const footnote =
+    typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined;
   return {
     kind: "table",
     title,
@@ -177,6 +179,7 @@ function resolveTable(
     rows,
     source: provenanceSource(provenance),
     provenance,
+    ...(footnote ? { footnote } : {}),
   };
 }
 

@@ -728,6 +728,7 @@ test("validateAnswerSubmission accepts valid typed artifacts for every known kin
         { player: "Player One", ppg: 30.1, gp: 72 },
         { player: "Player Two", ppg: null, gp: 68 },
       ],
+      footnote: "n=2 fixture rows · season 2025-26",
     },
     {
       kind: "table",
@@ -799,7 +800,7 @@ test("validateAnswerSubmission rejects malformed typed artifacts with actionable
     [{ kind: "table", title: "Bad", columns: [{ key: "player", label: "Player" }], rows: [{ other: "x" }] }, /missing column 'player'/],
     [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [[1, 2]] }, /expected 1 cell\(s\)/],
     [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [[{}]] }, /string, number or null/],
-    [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [{ ppg: {} }], footnote: "x" }, /must not have additional properties|additional propert/i],
+    [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [{ ppg: 30 }], subtitle: "x" }, /must not have additional properties|additional propert/i],
     [{ kind: "compare", title: "Bad", aName: "A", bName: "B", rows: [] }, /Invalid compare artifact/],
     [{ kind: "compare", title: "Bad", aName: "A", bName: "B", rows: [{ label: "PPG", a: "30", b: 27 }] }, /\/rows\/0\/a: must be number/i],
     [{ kind: "chart", title: "Bad", series: [] }, /Invalid chart artifact.*\/series: must not have fewer than 1 items/i],
