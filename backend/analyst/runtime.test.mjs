@@ -1456,7 +1456,7 @@ test("real Python warehouse_schema executes cleanly without unhandled exceptions
     assert.equal(scoped.catalog_scope.returned_table_count, 1);
 
     // Clean execution with unknown table: structured failure, no unhandled exception
-    const unknownRes = await tool.execute("call-schema-unknown", { tables: ["nonexistent_table"] }, undefined);
+    const unknownRes = await tool.execute("call-schema-unknown", { tables: ["nonexistent_table", "silver_leaders_pt"] }, undefined);
     assert(unknownRes.structuredContent, "Structured content expected for unknown table");
     const unknown = unknownRes.structuredContent.result;
     assert.equal(unknown.tool, "warehouse_schema");
@@ -1464,6 +1464,8 @@ test("real Python warehouse_schema executes cleanly without unhandled exceptions
     assert(typeof unknown.error === "string" && unknown.error.includes("unknown declared table"));
     assert.deepEqual(unknown.tables, {});
     assert.deepEqual(unknown.columns, []);
+    assert(unknown.did_you_mean && typeof unknown.did_you_mean === "object");
+    assert(unknown.did_you_mean.silver_leaders_pt.includes("silver_leaders_pts"));
 
     // Clean execution with empty table selection: structured failure, no unhandled exception
     const emptyRes = await tool.execute("call-schema-empty", { tables: [] }, undefined);

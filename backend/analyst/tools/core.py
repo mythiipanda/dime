@@ -1,3 +1,4 @@
+import difflib
 from typing import Any
 
 from langchain_core.tools import tool
@@ -51,6 +52,11 @@ def _select_schema_tables(columns: dict[str, Any], tables: list[str] | None) -> 
         else:
             unknown.append(name)
     if unknown:
+        suggestions = {
+            name: difflib.get_close_matches(name, list(columns), n=3, cutoff=0.5)
+            for name in unknown
+        }
+        suggestions = {k: v for k, v in suggestions.items() if v}
         return [], sanitize_for_wire(enrich_error("warehouse_schema", {
             "tool": "warehouse_schema",
             "ok": False,
@@ -60,6 +66,7 @@ def _select_schema_tables(columns: dict[str, Any], tables: list[str] | None) -> 
             ),
             "tables": {},
             "columns": [],
+            "did_you_mean": suggestions,
         }))
     if not selected:
         return [], sanitize_for_wire(enrich_error("warehouse_schema", {
