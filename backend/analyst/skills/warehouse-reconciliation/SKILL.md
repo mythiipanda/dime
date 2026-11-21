@@ -27,6 +27,7 @@ Different `silver_*` tables encode seasons differently:
 In player-season tables, a traded player often has one combined row (`TEAM_ABBREVIATION IN ('TOT', '2TM', '3TM')`) PLUS one row per stint team:
 - **Counting distinct players**: Use `COUNT(DISTINCT player_id)` (or `COUNT(DISTINCT PLAYER_NAME)` if ID is absent), never `COUNT(*)`.
 - **Avoiding double-counting totals**: When summing across the league, exclude `TOT`/`2TM`/`3TM` summary rows (or keep ONLY `TOT`/`2TM`/`3TM` for single-row player-season leaderboards, falling back to single-team rows when a player was not traded).
+- **Stint rows vs season rows**: `silver_hist_player_seasons` is already one row per player-season; `silver_player_season` is not — it has no `TOT` marker rows, and traded players carry one row per team stint (hundreds of multi-row players across seasons). A season-level aggregate or ranking on `silver_player_season` must `GROUP BY PLAYER_ID` and sum the stints, or a traded player's partial rows can both enter a top-N and undersell their total. Never read a stint row as a full-season stat line.
 - **Weighted vs unweighted averages**: Compute player, team, or league efficiency from summed numerators and denominators, never by averaging percentages. For player PPG and TS%, use a `player_games` CTE filtered to the requested scope, with one row per player and game:
 
 ```sql
