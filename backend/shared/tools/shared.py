@@ -257,7 +257,7 @@ def _main():
                         "call, so keep intermediate results in Python "
                         "variables within the call or write them to files "
                         "under the workspace dir.")
-        elif ("Cannot open database" in msg or "duckdb" in msg.lower()) and re.search(r"\bduckdb\.connect\s*\(", code):
+        elif ("Cannot open database" in msg or "duckdb" in msg.lower()) and re.search(r"\\bduckdb\\.connect\\s*\\(", code):
             recovery = ("Do not open warehouse files by guessed path — the "
                         "warehouse is reachable only through the preloaded "
                         "`con` (con.execute(...)). Re-run without "
