@@ -78,3 +78,17 @@ out = [{"player": r[0], "rating": r[1]} for r in rows]
     assert len(res["rows"]) == 1
     assert res["rows"][0]["player"] == "Jokic"
     assert res["rows"][0]["rating"] == 99.5
+    assert "warning" not in res
+
+def test_run_python_warns_when_con_rebound(tmp_path, monkeypatch):
+    db_file = tmp_path / "test_wh.duckdb"
+    con = duckdb.connect(str(db_file))
+    con.execute("CREATE TABLE silver_test (name VARCHAR)")
+    con.close()
+
+    monkeypatch.setattr(store, "DB_PATH", db_file)
+    res = run_python.invoke({"code": "import duckdb\ncon = duckdb.connect()\nout = 1"})
+    assert res["ok"] is True
+    assert "warning" in res
+    assert "rebound" in res["warning"]
+    assert "preloaded `con`" in res["warning"]

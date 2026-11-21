@@ -298,13 +298,22 @@ def _main():
         for p in Path(".").rglob("*")
         if p.is_file()
     )[:200]
-    result_path.write_text(json.dumps({
+    payload = {
         "ok": True,
         "structured_rows": structured_rows,
         "out_val": out_val,
         "stdout": text,
         "workspace_files": workspace_files,
-    }), encoding="utf-8")
+    }
+    if con is not None and ns.get("con") is not con:
+        payload["warning"] = (
+            "Your code rebound `con` to a different DuckDB connection; a bare "
+            "duckdb.connect() (or ':memory:'/new file) opens an empty database "
+            "with no warehouse tables. The warehouse is only reachable through "
+            "the preloaded `con`: do not reassign it, re-run with con.execute(...) "
+            "against the provided connection."
+        )
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 _main()
@@ -375,7 +384,7 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
             "out": payload.get("out_val"),
             "workspace_files": workspace_files,
         }
-    return {
+    out_ok: dict[str, Any] = {
         "tool": "run_python",
         "ok": True,
         "rows": rows_payload,
@@ -383,6 +392,9 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
         "workspace_files": workspace_files,
         "meta": {"source": "warehouse", "workspace_files": workspace_files},
     }
+    if payload.get("warning"):
+        out_ok["warning"] = str(payload["warning"])
+    return out_ok
 
 @tool(description='Run isolated Python in the thread workspace with read-only DuckDB warehouse access.\n\nPreloaded: con (read-only DuckDB connection), pl (polars), np (numpy), math, statistics. Standard scientific imports (scipy, statsmodels, sklearn, matplotlib, duckdb, polars, json, pathlib) are allowed and workspace files persist across turns for identified threads. Print to stdout or assign `out`.')
 def run_python(code: str) -> dict[str, Any]:
