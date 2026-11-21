@@ -9,6 +9,14 @@ Live demo: [dime-fawn.vercel.app](https://dime-fawn.vercel.app)
 
 <video src="assets/readme/dime-motion-demo.mp4" controls muted loop playsinline width="100%"></video>
 
+Ask → streamed answer with sources:
+
+<video src="assets/readme/dime-ask-demo.mp4" controls muted loop playsinline width="100%"></video>
+
+Trade check → salary resolution, apron rules, pin to board:
+
+<video src="assets/readme/dime-trade-demo.mp4" controls muted loop playsinline width="100%"></video>
+
 ![Dime chat in the dark theme](assets/readme/chat-dark.png)
 
 ![Dime Explore tab](assets/readme/explore.png)
