@@ -20,6 +20,7 @@ Different `silver_*` tables encode seasons differently:
 - **`season` (`end_year_numeric`)** in historical tables (`silver_hist_standings`, `silver_hist_gamelogs`, `silver_hist_player_seasons`): 4-digit integer end year (`2025` means the `2024-25` season).
 - **`season_id` (`nba_season_id_start_year`)**: `'2' + start_year` (e.g., `'22024'` means regular-season `2024-25`).
 - **`season_type` (`season_phase`)**: Filter explicitly between `'regular-season'` and `'playoffs'` (or `GAME_ID` prefixes `'002'` regular season vs `'004'` playoffs vs `'001'` preseason). Never mix preseason or playoff rows into regular-season totals unless requested.
+- **`silver_hist_gamelogs` is team-grain**: every game produces two rows — one per team — so `COUNT(*)` doubles game counts. Deduplicate with `GROUP BY game_id` (or `COUNT(DISTINCT game_id)`) for game-level questions, resolve venue with `matchup LIKE '%vs.%'` (home) vs `'@'` (away) — pair them via `h.game_id = a.game_id AND h.team_abbreviation <> a.team_abbreviation` — and pin a team whenever you join per-game event tables on `game_id`, or the join fans out 2×.
 
 ## 3. Traded Players & Entity-Level Deduplication
 
