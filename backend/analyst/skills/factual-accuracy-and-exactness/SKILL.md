@@ -19,6 +19,8 @@ Before the first warehouse query, write down the requested scope as a checklist:
 
 Every SQL filter, Python aggregation, and submitted figure must map back to one checklist item. If a later answer changes scope, restart the checklist instead of blending populations.
 
+Scope qualifiers are WHERE clauses, not prose decoration. When the request names a phase or prefix (`002% regular-season`, `season_type='regular-season'`, preseason vs playoffs), the executed query must apply it literally — a season filter alone does not exclude playoff games on tables that hold both.
+
 ## 2. Use Canonical Warehouse Semantics
 
 - Call `warehouse_schema` and use `warehouse-reconciliation` guidance before inventing columns, season encodings, team codes, or phase filters.
@@ -60,5 +62,6 @@ Before `submit_answer`, check every requested deliverable:
 - Every ratio names its denominator and uses the requested one.
 - Every ranking/delta names the recomputed endpoints.
 - Methods/caveats disclose filters, sample size, and any custom classification.
+- Every scope qualifier echoed in prose or artifacts corresponds to a filter the executed query actually applied. Re-read the last query before claiming `regular season`, `002%`, or a denominator it never restricted — a claimed-but-unimplemented filter is fabricated methodology, not a rounding issue.
 
 If any item fails, fix the query or disclose the limitation before submitting.
