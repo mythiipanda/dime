@@ -8,7 +8,7 @@ const policies = {
     nvidia: { models: ["minimaxai/minimax-m3.1-flash", "nvidia/nemotron-3-ultra-550b-a55b"], key: "NVIDIA_NIM_API_KEY", url: "https://integrate.api.nvidia.com/v1" },
     openrouter: { models: ["nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3-super-120b-a12b:free", "dots-studio/dots-3-note-preview:free", "openrouter/free"], key: "OPENROUTER_API_KEY", url: "https://openrouter.ai/api/v1" },
     mistral: { models: ["ministral-8b-2512"], key: "MISTRAL_API_KEY", url: "https://api.mistral.ai/v1" },
-    cerebras: { models: ["gpt-oss-120b", "qwen-3.8-27b"], key: "CEREBRAS_API_KEY", url: "https://api.cerebras.ai/v1" },
+    cerebras: { models: ["gpt-oss-120b", "qwen-3.8-27b", "kimi-k3.1-pro"], key: "CEREBRAS_API_KEY", url: "https://api.cerebras.ai/v1" },
     groq: { models: ["openai/gpt-oss-120b", "openai/gpt-oss-20b"], key: "GROQ_API_KEY", url: "https://api.groq.com/openai/v1" },
     agnes: { models: ["agnes-3.0-flash", "agnes-2.5-flash"], key: "AGNES_API_KEY", url: "https://apihub.agnes-ai.com/v1" },
     reflection: { models: ["Beam-1.0-501B-A23B"], key: "REFLECTION_API_KEY", url: "https://api.reflection.ai/openai/v1" },
@@ -25,6 +25,7 @@ const EXTRA_LIMITS: Partial<Record<Provider, Record<string, TokenLimits>>> = {
         "agnes-3.0-flash": { contextWindow: 262144, maxTokens: 32768 },
         "agnes-2.5-flash": { contextWindow: 262144, maxTokens: 32768 },
     },
+    cerebras: { "kimi-k3.1-pro": { contextWindow: 262144, maxTokens: 32768 } },
     inception: { "mercury-2.5": { contextWindow: 131072, maxTokens: 16384 } },
     zai: { "glm-4.7-flash": { contextWindow: 200000, maxTokens: 32768 } },
     gemini: { "gemini-4-hydrogen": { contextWindow: 1048576, maxTokens: 65536 } },
@@ -37,6 +38,7 @@ function isProvider(name: string): name is Provider { return Object.hasOwn(polic
 const order: Provider[] = ["groq", "agnes", "zai", "cerebras", "nvidia", "openrouter", "mistral", "gemini", "inception"];
 const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception"]);
 const reasoningReplay = new Set<Provider>(["reflection", "nvidia"]);
+const reasoningReplayModels = new Set<string>(["cerebras:kimi-k3.1-pro"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
 const limitSchema = Type.Object({ contextWindow: Type.Integer(), maxTokens: Type.Integer() }, { additionalProperties: true });
 
@@ -112,7 +114,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
             return {
                 provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers,
                 contextWindow: limits.contextWindow, maxTokens: limits.maxTokens,
-                ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}),
+                ...(reasoningReplay.has(provider) || reasoningReplayModels.has(provider + ":" + model) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}),
                 ...(provider === "nvidia" ? { reasoning: true, compat: { requiresReasoningContentOnAssistantMessages: true, thinkingFormat: "qwen-chat-template" } } : {}),
             };
         }
