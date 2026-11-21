@@ -37,6 +37,14 @@ use tabular figures and right alignment, not a mono paragraph. The shared scale 
 12px metadata, 13px interface, 14px body, 28px page titles. The component-reference
 hero can use the 40px display role; ordinary app panels cannot.
 
+Rails, panels and menus share a small set of vertical edges, not per-item
+margins: leading icons sit on one column inside a fixed icon box, labels on one
+text line after it, and trailing badges or counts end on one trailing edge. Fix
+alignment in the container's padding, not with `mr-*` on the last child.
+Section headers put their leading glyph in the same icon box so their label
+lands on the shared text line. Elements that truncate inside a flex row need
+`min-w-0`.
+
 New color literals belong only in the foundation palette. `line` separates regions;
 `control-edge` identifies a field against its surface at 3:1 contrast. Do not use
 the low-contrast divider token as the only indication that an input exists.
@@ -62,7 +70,8 @@ empty, error, long-content and narrow-width states. Field labels are persistent;
 placeholders are examples, not labels. `FormField` inside `Form` composes Radix's label,
 description and error associations around `TextField`; standalone inputs still
 need explicit accessible names. A loading button keeps its label and geometry and
-blocks repeat activation. Status uses words as well as color.
+blocks repeat activation. Status uses words as well as color. On touch layouts,
+text inputs are at least 16px so iOS does not zoom the page on focus.
 
 ## Motion policy
 
