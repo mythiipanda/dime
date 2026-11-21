@@ -36,7 +36,7 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
   if (artifact.kind === "player_card") return <ArtifactPlayerCard artifact={artifact} />;
   if (artifact.kind === "team_card") return <ArtifactTeamCard artifact={artifact} />;
   if (artifact.kind === "table") {
-    return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} />;
+    return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} footnote={artifact.footnote} />;
   }
   if (artifact.kind === "compare") {
     return (

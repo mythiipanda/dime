@@ -180,7 +180,8 @@ sections like a roster or pick list belong in `table`, not `fields`.
   rows: [
     { rank: 1, player: "Victor Wembanyama", team: "SAS", drapm: 4.82, possessions: 3450 },
     { rank: 2, player: "Rudy Gobert", team: "MIN", drapm: 3.91, possessions: 3820 }
-  ]
+  ],
+  footnote: "Source: silver_rapm. n=5 leaders shown of 12 qualified."
 }
 ```
 
@@ -294,9 +295,11 @@ cohort sizes, first/last endpoint values — every emitted artifact must carry
 them inside its own payload. A number stated only in prose blocks, or only in
 the series it is derived from, does not count as delivered inside the artifact.
 
-- `table`: include summary and denominator rows (e.g. `Months: 7`,
-  `Season games: 82`, first/last rows) alongside the detail rows. If the request
-  asks for a count, give it a row.
+- `table`: put scope counts and endpoint values in `footnote` (e.g.
+  `"n=11 eligible · 14625.2 min · mean AST/36 3.62 · mean TOV/36 1.93"`), and/or
+  include summary and denominator rows (e.g. `Months: 7`, `Season games: 82`,
+  first/last rows) alongside the detail rows. `title` is the wrong home — a
+  number that only lives in the title is not part of the payload.
 - `chart`: put scope counts and endpoint values in `footnote` — it renders and
   stays inside the payload (e.g.
   `"7 months · 82 games · eFG 0.464 → 0.502 · TOV/g 16.5 → 13.0"`).

@@ -55,7 +55,8 @@ const artifactSchemas = {
         kind: Type.Literal("table"),
         title: label,
         columns: Type.Array(tableColumnSchema, { minItems: 1 }),
-        rows: Type.Array(Type.Unknown(), { minItems: 1 })
+        rows: Type.Array(Type.Unknown(), { minItems: 1 }),
+        footnote: optionalLabel
     }, { additionalProperties: false }),
     compare: Type.Object({
         kind: Type.Literal("compare"),

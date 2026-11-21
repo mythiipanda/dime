@@ -85,6 +85,7 @@ export interface TableArtifactPayload {
   provenance?: DimeProvenance;
   columns: { key: string; label: string; numeric?: boolean }[];
   rows: (string | number)[][];
+  footnote?: string;
 }
 
 export interface CompareArtifactPayload {
