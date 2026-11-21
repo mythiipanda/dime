@@ -1,4 +1,5 @@
 import argparse
+import ast
 import datetime
 import json
 import os
@@ -217,6 +218,41 @@ def run_eval(cmd: list[str], env: dict[str, str]) -> int:
     return proc.wait()
 
 
+def declared_tables() -> list[str]:
+    path = ROOT / "backend" / "shared" / "tools" / "league" / "sql_schema.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", "") == "_SQL_TABLES" for t in node.targets):
+            return list(ast.literal_eval(node.value))
+    return []
+
+
+def verify_runtime_warehouse() -> tuple[list[str], int]:
+    if not WAREHOUSE.is_file():
+        return [f"runtime warehouse missing: {WAREHOUSE}"], 0
+    try:
+        import duckdb
+        con = duckdb.connect(str(WAREHOUSE), read_only=True)
+        try:
+            present = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        finally:
+            con.close()
+    except Exception as exc:
+        return [f"runtime warehouse unreadable: {exc}"], 0
+    declared = set(declared_tables())
+    missing = sorted(declared - present)
+    if missing:
+        shown = ", ".join(missing[:10])
+        more = f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""
+        return [
+            f"runtime warehouse lacks {len(missing)} declared table(s): "
+            f"{shown}{more}; refresh backend/data/warehouse.duckdb via "
+            "scripts/fetch-data.sh and relink warehouse-runtime.duckdb"
+        ], len(present)
+    return [], len(present)
+
+
 def dab_root() -> Path:
     from_env = os.environ.get("DIME_DAB_ROOT")
     if from_env:
@@ -303,6 +339,13 @@ def main(argv: list[str] | None = None) -> int:
     if held_by is not None:
         print(f"port {args.port} already listening, held by pid {held_by}", file=sys.stderr)
         return 1
+
+    warehouse_errors, warehouse_tables = verify_runtime_warehouse()
+    if warehouse_errors:
+        for problem in warehouse_errors:
+            print(f"FAILED: {problem}", file=sys.stderr)
+        return 1
+    print(f"runtime warehouse ok: {WAREHOUSE} ({warehouse_tables} tables)")
 
     manifest_dir = Path(tempfile.mkdtemp(prefix="dab-manifest-"))
     manifest_path = manifest_dir / "asset-manifest.json"
