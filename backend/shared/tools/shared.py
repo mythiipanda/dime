@@ -251,6 +251,12 @@ def _main():
                 recovery = ("run_python executes Python code; raw SQL is not "
                             "valid here. Pass the query as a string to "
                             "con.execute or call sql_exec instead.")
+        elif isinstance(exc, NameError) and re.search(r"\\b(store|load)\\s*\\(", code):
+            recovery = ("store()/load() exist only in codemode, not in "
+                        "run_python: run_python is Python executed fresh per "
+                        "call, so keep intermediate results in Python "
+                        "variables within the call or write them to files "
+                        "under the workspace dir.")
         elif any(h in msg for h in hints):
             col_hint, valid_hint = _table_hint(con, code)
             recovery = f"Unknown table or column.{col_hint} Valid tables: {valid_hint}"

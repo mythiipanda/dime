@@ -226,6 +226,16 @@ def test_run_python_syntax_hints_for_js_and_raw_sql(warehouse, tmp_path, monkeyp
     assert res_plain["ok"] is False
     assert "syntax" in res_plain["recovery_hint"].lower()
 
+    res_store = shared_mod.run_python.invoke({"code":
+        "store('cohort', [1, 2, 3])"})
+    assert res_store["ok"] is False
+    assert "codemode" in res_store["recovery_hint"]
+
+    res_load = shared_mod.run_python.invoke({"code":
+        "vals = load('cohort')\nout = vals"})
+    assert res_load["ok"] is False
+    assert "codemode" in res_load["recovery_hint"]
+
 
 def test_sql_exec_binder_hint_names_column_and_candidates(warehouse):
     res = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
