@@ -1,6 +1,6 @@
 ---
 name: warehouse-reconciliation
-description: Inspect warehouse_schema, reconcile season encodings, regular-season vs playoff scope, traded-player TOT/2TM row deduplication, and empty/0-row warehouse evidence.
+description: Inspect warehouse_schema, reconcile season encodings, regular-season vs playoff scope, traded-player TOT/2TM row deduplication, player-name join normalization, and empty/0-row warehouse evidence.
 ---
 
 # Warehouse SQL Reconciliation & Data Integrity Playbook
@@ -42,7 +42,23 @@ GROUP BY player_id
 
 - **Comparable rates**: Use the same formula, scale, and grain for both sides. If only a stored rate is available on one side, verify its definition and scope before comparing it with a derived rate. Subtract the fractions, then multiply by 100 for a percentage-point delta. TS% above 100% can occur in a small sample; check the `2.0 *` denominator, fraction vs 0–100 scale, and that points and attempts cover the same player, games, and phase. Do not clamp the result.
 
-## 4. Handling 0-Row Observations & False Premises
+## 4. Person-Name Joins: Normalize Before Matching
+
+Player-name spellings differ across `silver_*` tables: stat/tracking tables carry accented forms (`Hugo González`, `Moussa Diabaté`, `Nikola Jokić`) while `silver_salaries` and box-score tables often store ASCII (`Hugo Gonzalez`). An exact `name = PLAYER_NAME` join silently drops those rows — and in a filtered top-N ranking the dropped players can be exactly the ones that matter, so a result can look verified while a slice of the population is missing.
+
+- Join on `player_id`/`PLAYER_ID` when both sides carry one; IDs skip name normalization entirely.
+- Otherwise normalize both sides before comparing: strip diacritics, lowercase, drop punctuation, collapse whitespace, and remove generational suffixes:
+
+```sql
+STRIP_ACCENTS(REPLACE(LOWER(name_col), '.', ''))
+```
+
+In Python: `unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()` plus punctuation/suffix cleanup.
+
+- After any name join, audit the match count (matched vs total rows on each side) and skim the unmatched names before trusting ranked output. If the join drops qualifying rows, fix the normalization; if some remain unmatched after normalization, disclose the shortfall rather than presenting a partial ranking as complete.
+- Exploring normalization and then shipping the exact join anyway is a known failure: once you have seen unmatched names, the partial result is not the answer — apply the normalized join or state explicitly that coverage excludes those entities.
+
+## 5. Handling 0-Row Observations & False Premises
 
 `sql_exec` returns `ok: true, rows: [], row_count: 0, meta: { empty_observation: true }` when a valid query matches zero rows:
 - Do **not** treat a 0-row result as a tool crash. First verify your filter literals (spelling, case, season encoding) against `warehouse_schema` or a broader `SELECT DISTINCT` probe.
@@ -57,7 +73,7 @@ Warehouse coverage lags the calendar: production and game tables (`silver_leader
 - **Team attribution is season-dependent**: a player who changed teams has one team in past-season production rows and another in the current salary sheet (for example a star traded in the offseason). Resolve "who is on team X" against the season the question is about before answering.
 - **Stale premise handling**: when a tool reports that a player's team differs from the question's premise (trade guard errors name the season and the listed team), say the premise is stale, then answer for the player's current team or re-run with the historical season the user meant. Do not force the question's teams through.
 
-## 5. Call Economy: Fewer Turns, Faster Answers
+## 6. Call Economy: Fewer Turns, Faster Answers
 
 Every codemode turn costs model latency, so spend calls deliberately:
 
