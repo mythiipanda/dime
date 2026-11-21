@@ -136,7 +136,11 @@ def register() -> dict[str, Any]:
         return _normalize_sql_result(res)
 
     @tool("warehouse_schema", description=schema_description)
-    def warehouse_schema(tables: list[str] | None = None) -> dict:
+    def warehouse_schema(tables: list[str] | None = None, table: str | None = None) -> dict:
+        if table is not None and not tables:
+            tables = [table]
+        elif table is not None and isinstance(tables, list):
+            tables = tables + [table]
         try:
             _, columns = _get_warehouse_schema()
         except Exception as exc:
