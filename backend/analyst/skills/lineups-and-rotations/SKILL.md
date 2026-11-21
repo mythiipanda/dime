@@ -51,3 +51,10 @@ Regular-season depth often masks playoff vulnerabilities:
 - Top rotations compress from 9–10 players in the regular season to **7–8 core players** in competitive playoff series, with star minutes rising from ~34–36 MPG to ~39–43 MPG.
 - Compare regular-season vs playoff lineup concentration (top-3 lineup share of total minutes, starter vs bench minute split) using `get_lineup_stats`, `get_stint_timeline`, and `get_rotation_check`.
 - Present 5-man lineup comparisons in a `table` artifact (including `MIN`, `POSS`, `ORTG`, `DRTG`, `NET_RTG`) and 2-man WOWY splits in a `compare` or `table` artifact.
+
+## 5. Canonical `group_id` Keys
+
+`group_id` strings in `silver_lineups` and `silver_hist_lineups` often carry leading or trailing dashes (`-201950-202083-...-`), so `string_split(group_id, '-')` produces empty elements that break `CAST` to int and corrupt dedupe keys:
+
+- Canonicalize in Python: `tuple(sorted(int(p) for p in group_id.split('-') if p))`.
+- In SQL, filter before casting: `list_filter(string_split(group_id, '-'), x -> x <> '')` — DuckDB evaluates a list comprehension's transform for every element before applying its `IF`, so `[CAST(x AS BIGINT) FOR x IN string_split(...) IF x <> '']` still casts `''` and errors.
