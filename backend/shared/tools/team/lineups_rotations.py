@@ -208,7 +208,11 @@ def _apply_competitive_nets(rows, comp):
 def get_lineups(team_id: str | int, season: str | None = None, season_type: SeasonType = 'regular-season', measure_type: MeasureType = 'base', per_mode: PerMode = 'totals') -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    team_id = pkg.coerce_team_id(team_id)
+    try:
+        season = pkg.clamp_season(season)
+        team_id = pkg.coerce_team_id(team_id)
+    except (pkg.InvalidSeasonError, ValueError) as exc:
+        return {"tool": "get_lineups", "ok": False, "error": str(exc)[:240]}
     rows, meta = pkg._warehouse_or_live(
         "silver_lineups", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],

@@ -124,6 +124,64 @@ export function listWorkspaceArtifacts(cwd: string): WorkspaceArtifact[] {
     return items.slice(0, WORKSPACE_ARTIFACT_LIMIT);
 }
 
+const TEAM_ABBREV_TO_ID: Record<string, number> = {
+    atl: 1610612737, bos: 1610612738, bkn: 1610612751, cha: 1610612766,
+    chi: 1610612741, cle: 1610612739, dal: 1610612742, den: 1610612743,
+    det: 1610612765, gsw: 1610612744, hou: 1610612745, ind: 1610612754,
+    lac: 1610612746, lal: 1610612747, mem: 1610612763, mia: 1610612748,
+    mil: 1610612749, min: 1610612750, nop: 1610612740, nyk: 1610612752,
+    okc: 1610612760, orl: 1610612753, phi: 1610612755, phx: 1610612756,
+    por: 1610612757, sac: 1610612758, sas: 1610612759, tor: 1610612761,
+    uta: 1610612762, was: 1610612764,
+};
+
+const TEAM_ARG_KEYS = new Set(["team", "team_id", "team_abbr", "teams", "opponent", "opponent_team", "home_team", "away_team"]);
+
+const TEAM_KEY_CANON: Record<string, string> = { team_id: "team", team_abbr: "team" };
+
+function normalizeTeamArgValue(raw: string): string | undefined {
+    const lower = raw.trim().toLowerCase();
+    if (!lower) return "";
+    const single = TEAM_ABBREV_TO_ID[lower];
+    if (single) return `tid:${single}`;
+    if (/^\d{10}$/.test(lower)) return `tid:${Number(lower)}`;
+    const parts = lower.split(",").map(part => part.trim()).filter(Boolean);
+    if (parts.length > 1) {
+        const ids = parts.map(part => TEAM_ABBREV_TO_ID[part]);
+        if (ids.every(id => id !== undefined))
+            return `tid:${(ids as number[]).sort((a, b) => a - b).join("+")}`;
+    }
+    return lower;
+}
+
+function normalizeLoopArgValue(key: string | null, value: unknown): unknown {
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (key && TEAM_ARG_KEYS.has(key))
+            return normalizeTeamArgValue(trimmed);
+        return trimmed.toLowerCase();
+    }
+    if (typeof value === "number" && key && TEAM_ARG_KEYS.has(key) && value > 1e9)
+        return `tid:${value}`;
+    if (Array.isArray(value))
+        return value.map(item => normalizeLoopArgValue(null, item));
+    if (value !== null && typeof value === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            const normalized = normalizeLoopArgValue(k, v);
+            if (normalized === "" || normalized === null || normalized === undefined)
+                continue;
+            out[TEAM_KEY_CANON[k] ?? k] = normalized;
+        }
+        return out;
+    }
+    return value;
+}
+
+export function normalizeLoopArgs(args: unknown): unknown {
+    return normalizeLoopArgValue(null, args);
+}
+
 export function canonicalArgsKey(value: unknown): string {
     if (value === null || typeof value !== "object")
         return JSON.stringify(value) ?? "null";
@@ -278,13 +336,13 @@ function buildLoopRecord(
     rawArgs: unknown,
     lastRef?: string
 ) {
-    const error = "Identical tool call repeated 3 times in this run";
+    const error = `Already called ${toolName} ${count} times with equivalent arguments in this run — already called, pivot or finish.`;
     const parsedArgs = objectValue(rawArgs);
     const payload = {
         ok: false,
         loop_detected: true,
         error,
-        summary: `Blocked repeated ${toolName} call (#${count}) with identical arguments.`,
+        summary: `Blocked repeated ${toolName} call (#${count}) with equivalent arguments — pivot to a different tool/args or call submit_answer.`,
         args: parsedArgs ? JSON.parse(canonicalArgsKey(parsedArgs)) : {},
         recovery_hint: lastRef
             ? `Reuse prior ref ${lastRef} via tools.read_source, change parameters/SQL, or call submit_answer.`
@@ -359,7 +417,7 @@ function wrapBridgeTools(
                 emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
                 return sourceResult(record);
             }
-            const key = `${tool.name}:${canonicalArgsKey(args[1] ?? {})}`;
+            const key = `${tool.name}:${canonicalArgsKey(normalizeLoopArgs(args[1] ?? {}))}`;
             const entry = callCounts.get(key) ?? { count: 0 };
             entry.count += 1;
             callCounts.set(key, entry);
