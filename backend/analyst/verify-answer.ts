@@ -17,6 +17,7 @@ export type NumericAudit = {
     uncovered_asks: string[];
     no_artifacts_on_artifact_ask: string[];
     metric_value_gaps: string[];
+    unsupported_claims: string[];
 };
 
 const SEASON_RE = /\b(?:19|20)\d{2}\s*[-/–—]\s*\d{2,4}\b/g;
@@ -24,6 +25,7 @@ const MONEY_RE = /\$\s*([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*([MBKmbk](?
 const PERCENT_RE = /([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)?\.\d+|[-+]?\d+)\s*%/g;
 const NUMBER_RE = /(?<![\w.])[-+]?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)(?!\w|\.\d)/g;
 const NUMERIC_STRING_RE = /^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
+const META_CONTEXT_RE = /\b(?:budget|timed out|timeout|retr(?:y|ies|ied)|backoff|rate[ -]?limit|latency|429|exhaustion)\b/i;
 const ARTIFACT_SKIP_KEYS = new Set([
     "kind", "title", "subtitle", "description", "name", "label", "labels", "columns", "legend",
     "source", "units", "unit", "format", "encoding", "x_axis", "y_axis", "x_label", "y_label",
@@ -99,10 +101,12 @@ function addEvidenceValue(values: number[], value: unknown) {
             values.push(value);
         return;
     }
-    if (typeof value === "string" && NUMERIC_STRING_RE.test(value.trim())) {
-        const num = Number(value.trim().replace(/,/g, ""));
-        if (Number.isFinite(num))
-            values.push(num);
+    if (typeof value === "string") {
+        for (const match of value.replace(SEASON_RE, " ").matchAll(NUMBER_RE)) {
+            const num = Number(match[0].replace(/,/g, ""));
+            if (Number.isFinite(num))
+                values.push(num);
+        }
     }
 }
 
@@ -330,14 +334,25 @@ export function auditAnswerNumbers(
     const no_artifacts_on_artifact_ask = question && (input.artifacts ?? []).length === 0
         ? [...new Set((question.match(ARTIFACT_ASK_RE) ?? []).map(token => token.toLowerCase()))]
         : [];
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps };
+    const questionValues = (() => {
+        const questionClaims: NumericClaim[] = [];
+        addTextClaims(question ?? "", questionClaims, new Set<string>());
+        return questionClaims.flatMap(claim => claim.values);
+    })();
+    const unsupported_claims = unsupported
+        .filter(claim => !META_CONTEXT_RE.test(claim.context))
+        .filter(claim => !claim.values.every(value => questionValues.some(asked => numbersClose(value, asked))))
+        .filter(claim => /%|\$/.test(claim.raw) || claim.values.some(value => !Number.isInteger(value) || Math.abs(value) >= 100))
+        .slice(0, 8)
+        .map(claim => `${claim.raw} (near "${claim.context.slice(0, 80)}")`);
+    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[], question?: string) {
     return defineTool({
         name: "verify_answer_numbers",
         label: "Verify answer numbers",
-        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, and asks for tables/compares/charts with zero artifacts; it does not submit the answer.",
+        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, asks for tables/compares/charts with zero artifacts, and stat-shaped figures tracing to no tool output (unsupported_claims); it does not submit the answer.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const audit = auditAnswerNumbers(args, getContextSources(), question);
