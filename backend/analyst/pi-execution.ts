@@ -470,20 +470,18 @@ function loopArgsKey(toolName: string, rawArgs: unknown): string {
     return `${toolName}:${canonicalArgsKey(normalizeLoopArgs(plain))}`;
 }
 
-const PROVIDER_RETRY_STORM_LIMIT = 12;
-
 export function createProviderRetryStormGuard(
     emit: (event: AnalystEvent) => void,
     stopRun: (reason: string) => void
 ) {
-    let attempts = 0;
+    let exhausted = 0;
     return (event: AgentSessionEvent) => {
-        if (event.type !== "auto_retry_start")
+        if (event.type !== "auto_retry_end" || event.success)
             return;
-        attempts += 1;
-        if (attempts === PROVIDER_RETRY_STORM_LIMIT) {
-            const detail = typeof event.errorMessage === "string" && event.errorMessage ? event.errorMessage : "provider unavailable";
-            stopRun(`Run stopped: provider retry storm — ${attempts} retry attempts against a saturated lane (${detail}). Retry the task when the provider recovers.`);
+        exhausted += 1;
+        if (exhausted === 1) {
+            const detail = typeof event.finalError === "string" && event.finalError ? event.finalError : "provider unavailable";
+            stopRun(`Run stopped: provider call exhausted all retries against a saturated lane (${detail}). Retry the task when the provider recovers.`);
         }
     };
 }
