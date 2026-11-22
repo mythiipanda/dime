@@ -158,6 +158,19 @@ const TEAM_ARG_KEYS = new Set(["team", "team_id", "team_abbr", "teams", "opponen
 
 const TEAM_KEY_CANON: Record<string, string> = { team_id: "team", team_abbr: "team" };
 
+function isSeasonKey(key: string): boolean {
+    return key === "season" || key === "seasons" || key.endsWith("_season");
+}
+
+function normalizeSeasonArgValue(value: number | string): string | number {
+    const text = typeof value === "number" && Number.isInteger(value) ? String(value) : typeof value === "string" ? value.trim() : null;
+    if (text && /^\d{4}(-\d{4})?$/.test(text)) {
+        const start = text.slice(0, 4);
+        return `${start}-${String(Number(start) + 1).slice(2)}`;
+    }
+    return value;
+}
+
 function normalizeTeamArgValue(raw: string): string | undefined {
     const lower = raw.trim().toLowerCase();
     if (!lower) return "";
@@ -178,12 +191,18 @@ function normalizeLoopArgValue(key: string | null, value: unknown): unknown {
         const trimmed = value.trim();
         if (key && TEAM_ARG_KEYS.has(key))
             return normalizeTeamArgValue(trimmed);
+        if (key && isSeasonKey(key)) {
+            const season = normalizeSeasonArgValue(trimmed);
+            return typeof season === "string" ? season.toLowerCase() : season;
+        }
         return trimmed.toLowerCase();
     }
     if (typeof value === "number" && key && TEAM_ARG_KEYS.has(key) && value > 1e9)
         return `tid:${value}`;
+    if (typeof value === "number" && key && isSeasonKey(key))
+        return normalizeSeasonArgValue(value);
     if (Array.isArray(value))
-        return value.map(item => normalizeLoopArgValue(null, item));
+        return value.map(item => normalizeLoopArgValue(key, item));
     if (value !== null && typeof value === "object") {
         const out: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
@@ -417,11 +436,46 @@ function buildBreakerRecord(
     return { record, payload };
 }
 
+const LOOP_STOP_AFTER_INJECTIONS = 3;
+
+function buildLoopStopRecord(
+    toolName: string,
+    callId: string,
+    count: number
+) {
+    const error = `Run stopped: ${toolName} called ${count} times with equivalent arguments after repeated pivot warnings.`;
+    const payload = {
+        ok: false,
+        loop_terminated: true,
+        stop_reason: "tool_call_loop",
+        error,
+        summary: `${toolName} kept re-calling with equivalent arguments after ${LOOP_STOP_AFTER_INJECTIONS} pivot warnings — the run is being terminated so it does not burn the remaining budget.`,
+        next_actions: ["Call submit_answer with verified partial work"]
+    };
+    const record: SourceRecord = {
+        ref: `loop_stop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
+function loopArgsKey(toolName: string, rawArgs: unknown): string {
+    const plain = rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? rawArgs : {};
+    return `${toolName}:${canonicalArgsKey(normalizeLoopArgs(plain))}`;
+}
+
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
     results: Map<string, SourceRecord>,
     emit: (event: AnalystEvent) => void,
-    tracker: RunStatusTracker
+    tracker: RunStatusTracker,
+    stopRun: (reason: string) => void
 ) {
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
     const callCounts = new Map<string, { count: number; lastRef?: string }>();
@@ -441,11 +495,19 @@ function wrapBridgeTools(
                 emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
                 return sourceResult(record);
             }
-            const key = `${tool.name}:${canonicalArgsKey(normalizeLoopArgs(args[1] ?? {}))}`;
+            const key = loopArgsKey(tool.name, args[1]);
             const entry = callCounts.get(key) ?? { count: 0 };
             entry.count += 1;
             callCounts.set(key, entry);
             if (entry.count >= 3) {
+                if (entry.count >= 3 + LOOP_STOP_AFTER_INJECTIONS) {
+                    const { record, payload } = buildLoopStopRecord(tool.name, callId, entry.count);
+                    results.set(record.ref, record);
+                    emit({ type: "source", record });
+                    emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                    stopRun(payload.error);
+                    return sourceResult(record);
+                }
                 const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef);
                 results.set(record.ref, record);
                 emit({ type: "source", record });
@@ -585,7 +647,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
                         tools: [
-                            ...wrapBridgeTools(bridge.tools, connected.results, emit, tracker),
+                            ...wrapBridgeTools(bridge.tools, connected.results, emit, tracker, (reason: string) => {
+                                emit({ type: "failure", kind: "loop_stop", message: reason });
+                                controller.abort();
+                            }),
                             countToolCall(priorSourceTool(start.sources ?? []), tracker),
                             verifyTool,
                             countToolCall(submitTool, tracker),

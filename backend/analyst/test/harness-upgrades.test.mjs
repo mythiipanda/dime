@@ -430,6 +430,26 @@ test("normalizeLoopArgs folds empty, case, and team id/abbrev variants into one 
   );
 });
 
+test("normalizeLoopArgs canonicalizes season years to YYYY-YY", () => {
+  const keyOf = (args) => canonicalArgsKey(normalizeLoopArgs(args));
+  assert.equal(
+    keyOf({ player: "Shake Milton", season: 2021 }),
+    keyOf({ player: "Shake Milton", season: "2021-22" })
+  );
+  assert.equal(
+    keyOf({ season: "2021" }),
+    keyOf({ season: "2021-22" })
+  );
+  assert.equal(
+    keyOf({ start_season: "2021-2022" }),
+    keyOf({ start_season: "2021-22" })
+  );
+  assert.equal(
+    keyOf({ seasons: [2021, "2022"] }),
+    keyOf({ seasons: ["2021-22", "2022-23"] })
+  );
+});
+
 test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-circuits 3rd identical call", async () => {
   assert.equal(
     canonicalArgsKey({ b: 2, a: { z: true, y: [1, { d: 4, c: 3 }] } }),
@@ -596,6 +616,134 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
       events.find((e) => e.type === "answer")?.text,
       "Recovered after loop warning."
     );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("wrapBridgeTools terminates the run on the 6th equivalent-args call", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-loop-stop-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let execCount = 0;
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    if (turn <= 7) {
+      const code = `return await tools.sql_exec({ sql: "SELECT 1", params: { a: 1 } });`;
+      const msg = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content: [
+          { type: "toolCall", id: `call-loop-stop-${turn}`, name: "codemode", arguments: { code } },
+        ],
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+        usage: {
+          input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: "toolUse", message: msg });
+      stream.end();
+      return stream;
+    }
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [{ type: "text", text: "should not reach" }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: {
+        input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [
+      {
+        name: "sql_exec",
+        label: "sql_exec",
+        description: "Run SQL",
+        parameters: Type.Object({}),
+        async execute(callId) {
+          execCount++;
+          const ref = `src-stop-${execCount}`;
+          const payload = { rows: [{ val: 1 }] };
+          const record = {
+            ref,
+            callId,
+            tool: "sql_exec",
+            response: {
+              content: [{ type: "text", text: JSON.stringify(payload) }],
+              structuredContent: payload,
+              isError: false,
+            },
+          };
+          resultsMap.set(ref, record);
+          return {
+            content: [],
+            details: undefined,
+            structuredContent: { ref, tool: "sql_exec", result: payload, isError: false },
+            isError: false,
+          };
+        },
+      },
+    ],
+    results: resultsMap,
+    pid: 1003,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Test loop stop",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    assert.equal(execCount, 2);
+    const toolResults = events.filter((e) => e.type === "tool_result" && e.name === "sql_exec");
+    assert.equal(toolResults.length, 6);
+    assert.equal(toolResults[0].status, "ok");
+    assert.equal(toolResults[1].status, "ok");
+    for (const result of toolResults.slice(2))
+      assert.equal(result.status, "fail");
+    assert.match(toolResults[5].error, /Run stopped: sql_exec called 6 times/);
+    const stopSource = events.find(
+      (e) => e.type === "source" && e.record.ref === "loop_stop_6_sql_exec"
+    );
+    assert.ok(stopSource, "loop-stop source record should be emitted");
+    assert.equal(stopSource.record.response.structuredContent.loop_terminated, true);
+    assert.equal(stopSource.record.response.structuredContent.stop_reason, "tool_call_loop");
+    const failure = events.find((e) => e.type === "failure");
+    assert.ok(failure, "run should terminate with a failure event");
+    assert.equal(failure.kind, "loop_stop");
+    assert.match(failure.message, /Run stopped: sql_exec called 6 times/);
+    assert.equal(turn, 6, "model should not get another turn after the loop stop");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
