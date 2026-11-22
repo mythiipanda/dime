@@ -746,7 +746,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
-                        () => [...(start.sources ?? []), ...connected.results.values()]
+                        () => [...(start.sources ?? []), ...connected.results.values()],
+                        start.q
                     );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,

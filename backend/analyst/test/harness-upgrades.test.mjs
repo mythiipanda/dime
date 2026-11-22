@@ -1755,3 +1755,29 @@ test("verify_answer_numbers flags prose figures missing from artifact payloads",
   );
   assert.equal(noArtifacts.missing_in_artifacts.length, 0);
 });
+
+test("verify_answer_numbers flags question clauses with no matching terms in the answer", async () => {
+  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
+  const sources = [makePayloadSourceRecord("src-1", { rows: [{ wins: 56 }] })];
+  const question = "Compare MEM's 2021-22 early-season and late-season win splits. Compute the HHI of the top-8 rotation minutes share.";
+  const partial = auditAnswerNumbers(
+    { blocks: [{ text: "MEM went 56-26 in 2021-22 with a strong late-season stretch." }] },
+    sources,
+    question,
+  );
+  assert.equal(partial.uncovered_asks.length, 1);
+  assert.ok(partial.uncovered_asks[0].includes("HHI"));
+
+  const full = auditAnswerNumbers(
+    { blocks: [{ text: "MEM went 56-26 in 2021-22. The top-8 minutes HHI is 0.097." }] },
+    sources,
+    question,
+  );
+  assert.equal(full.uncovered_asks.length, 0);
+
+  const noQuestion = auditAnswerNumbers(
+    { blocks: [{ text: "Anything at all." }] },
+    sources,
+  );
+  assert.equal(noQuestion.uncovered_asks.length, 0);
+});
