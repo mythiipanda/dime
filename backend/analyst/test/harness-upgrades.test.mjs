@@ -2432,3 +2432,117 @@ test("wrapBridgeTools does not steer a lineup tool used for one team's variants"
     await rm(cwd, { recursive: true, force: true });
   }
 });
+test("cap-ask web_search gets one warehouse steer, never blocks the call", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-cap-steer-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let execCount = 0;
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const code = `await tools.web_search({ q: "nba salary cap rules ${turn}" })`;
+    const msg = turn < 3
+      ? {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "toolCall", id: `call-web-${turn}`, name: "codemode", arguments: { code } }],
+        stopReason: "toolUse", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      }
+      : {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const webTool = {
+    name: "web_search", label: "web_search", description: "search the web",
+    parameters: Type.Object({ q: Type.String() }),
+    async execute(callId) {
+      execCount++;
+      const ref = `src-web-${execCount}`;
+      const payload = { rows: [{ title: "hit" }] };
+      resultsMap.set(ref, { ref, callId, tool: "web_search", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: false } });
+      return { content: [], details: undefined, structuredContent: { ref, tool: "web_search", result: payload, isError: false }, isError: false };
+    },
+  };
+  const mockBridge = { tools: [webTool], results: resultsMap, pid: 1004, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+  try {
+    const events = [];
+    for await (const event of pi.stream({ q: "Is this trade legal under the first apron matching bands?", history: [], model: "fixture:fixture", cwd, agentDir, bridge: { python: "fake", cwd, env: {} } }))
+      events.push(event);
+    assert.equal(execCount, 2);
+    const steers = events.filter((e) => e.type === "tool_result" && e.name === "cap_warehouse_steer");
+    assert.equal(steers.length, 1, "steer fires once per run");
+    const webResults = events.filter((e) => e.type === "tool_result" && e.name === "web_search");
+    assert.equal(webResults.length, 2);
+    assert.ok(webResults.every((e) => e.status === "ok"), "steer never blocks the call");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("cap-ask does not steer web calls on non-cap questions", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-cap-steer-off-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let execCount = 0;
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const msg = turn === 1
+      ? {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "toolCall", id: "call-web", name: "codemode", arguments: { code: 'await tools.web_search({ q: "nba news" })' } }],
+        stopReason: "toolUse", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      }
+      : {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const webTool = {
+    name: "web_search", label: "web_search", description: "search the web",
+    parameters: Type.Object({ q: Type.String() }),
+    async execute(callId) {
+      execCount++;
+      const ref = `src-web-${execCount}`;
+      const payload = { rows: [{ title: "hit" }] };
+      resultsMap.set(ref, { ref, callId, tool: "web_search", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: false } });
+      return { content: [], details: undefined, structuredContent: { ref, tool: "web_search", result: payload, isError: false }, isError: false };
+    },
+  };
+  const mockBridge = { tools: [webTool], results: resultsMap, pid: 1005, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+  try {
+    const events = [];
+    for await (const event of pi.stream({ q: "What did the coach say about the rotation?", history: [], model: "fixture:fixture", cwd, agentDir, bridge: { python: "fake", cwd, env: {} } }))
+      events.push(event);
+    assert.equal(execCount, 1);
+    assert.equal(events.filter((e) => e.name === "cap_warehouse_steer").length, 0, "no steer on non-cap asks");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
