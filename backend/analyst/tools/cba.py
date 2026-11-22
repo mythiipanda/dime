@@ -105,6 +105,7 @@ def register() -> dict[str, Any]:
         get_draft_capital as _orig_get_draft_capital,
         get_trade_check as _orig_get_trade_check,
         get_trade_legality as _orig_get_trade_legality,
+        get_value_contracts as _orig_get_value_contracts,
         get_trade_partners as _orig_get_trade_partners,
         get_trade_value as _orig_get_trade_value,
     )
@@ -227,6 +228,25 @@ def register() -> dict[str, Any]:
         })
         return finish_dict_list(res, "get_draft_capital", ["draft_year", "round", "orig_team", "status", "held_by", "direction", "est_slot", "est_value_m"])
 
+
+    @tool("get_value_contracts", description=_orig_get_value_contracts.description)
+    def get_value_contracts(team: str = "", season: str | None = None,
+                            benchmark_team: str = "") -> dict:
+        res = call_sync(_orig_get_value_contracts, "get_value_contracts", {
+            "team": team, "season": season or None,
+            "benchmark_team": benchmark_team,
+        })
+        cols = ["player", "salary", "cap_share", "cap_band",
+                "mpg", "rotation", "value_score",
+                "value_per_m", "value_rank", "value_flag"]
+        if not isinstance(res, dict) or not res.get("ok"):
+            enrich_error("get_value_contracts", res)
+            if isinstance(res, dict):
+                res.setdefault("rows", [])
+                res.setdefault("columns", cols)
+            return sanitize_for_wire(res)
+        return finish_dict_list(res, "get_value_contracts", cols)
+
     @tool("get_transactions", description=_orig_get_transactions.description)
     def get_transactions(team: str = "", start: str = "", end: str = "", txn_type: str = "") -> dict:
         cols = ["txn_date", "txn_type", "player", "team", "detail"]
@@ -259,6 +279,7 @@ def register() -> dict[str, Any]:
         "get_trade_check": get_trade_check,
         "get_trade_legality": get_trade_legality,
         "get_trade_partners": get_trade_partners,
+        "get_value_contracts": get_value_contracts,
         "get_trade_value": get_trade_value,
         "get_transactions": get_transactions,
     }

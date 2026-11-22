@@ -240,6 +240,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_trade_value",
       "get_draft_capital",
       "get_trade_partners",
+      "get_value_contracts",
       "get_situational_splits",
       "get_playoff_sim",
       "get_playoff_team_ratings",
@@ -383,7 +384,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 110);
+    assert.equal(bridge.tools.length, 111);
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
@@ -1276,6 +1277,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_defensive_matchups: { player: "LeBron James" },
       get_head_to_head: { player: "LeBron James", opponent: "BOS" },
       get_lineup_matchup_matrix: { team_a: "BOS", team_b: "MIA" },
+      get_value_contracts: { team: "OKC", season: "2025-26" },
       get_transactions: { team: "BOS" },
       get_wowy: { player_a: "LeBron James", player_b: "Anthony Davis", season: "2023-24" },
       get_shot_compare: { a: "LeBron James", b: "Stephen Curry", season: "2023-24" },
