@@ -104,6 +104,7 @@ def register() -> dict[str, Any]:
         get_contract_value as _orig_get_contract_value,
         get_draft_capital as _orig_get_draft_capital,
         get_trade_check as _orig_get_trade_check,
+        get_trade_legality as _orig_get_trade_legality,
         get_trade_partners as _orig_get_trade_partners,
         get_trade_value as _orig_get_trade_value,
     )
@@ -169,6 +170,25 @@ def register() -> dict[str, Any]:
         res["ok"] = bool(res.get("ok", False))
         if not res["ok"]:
             enrich_error("get_trade_check", res)
+        return sanitize_for_wire(res)
+
+    @tool("get_trade_legality", description=_orig_get_trade_legality.description)
+    def get_trade_legality(legs: str = "", sign_and_trade: str = "",
+                           cash: str = "", tpe: str = "",
+                           season: str | None = None) -> dict:
+        res = call_sync(_orig_get_trade_legality, "get_trade_legality", {
+            "legs": legs, "sign_and_trade": sign_and_trade,
+            "cash": cash, "tpe": tpe, "season": season,
+        })
+        default_cols = ["team", "payroll_before", "payroll_after", "outgoing",
+                        "incoming", "allowed_incoming", "match_rule",
+                        "matching_ok", "hard_cap", "over_apron2"]
+        rows = [r for r in res.get("rows") or [] if isinstance(r, dict)] if res.get("ok") else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else default_cols
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_trade_legality", res)
         return sanitize_for_wire(res)
 
     @tool("get_trade_partners", description=_orig_get_trade_partners.description)
@@ -237,6 +257,7 @@ def register() -> dict[str, Any]:
         "get_contract_value": get_contract_value,
         "get_draft_capital": get_draft_capital,
         "get_trade_check": get_trade_check,
+        "get_trade_legality": get_trade_legality,
         "get_trade_partners": get_trade_partners,
         "get_trade_value": get_trade_value,
         "get_transactions": get_transactions,

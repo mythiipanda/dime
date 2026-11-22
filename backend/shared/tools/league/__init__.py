@@ -68,6 +68,7 @@ from .cba_cap import (
     get_cap_table,
 )
 from .cap_scenario import get_cap_scenario
+from .trade_legality import get_trade_legality
 from .clutch import (
     _CLUTCH_MARGIN_DEFAULT,
     _CLUTCH_PBP_ALIAS,

@@ -236,6 +236,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_young_player_usage",
       "get_contract_value",
       "get_trade_check",
+      "get_trade_legality",
       "get_trade_value",
       "get_draft_capital",
       "get_trade_partners",
@@ -382,7 +383,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 109);
+    assert.equal(bridge.tools.length, 110);
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
@@ -667,6 +668,14 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     assert(tradeCheckRes.structuredContent);
     assert(Array.isArray(tradeCheckRes.structuredContent.result.rows));
     assert(Array.isArray(tradeCheckRes.structuredContent.result.columns));
+
+    // 32b. get_trade_legality
+    const tradeLegalityTool = toolMap.get("get_trade_legality");
+    assert(tradeLegalityTool);
+    const tradeLegalityRes = await tradeLegalityTool.execute("call-trade-legality", { legs: JSON.stringify([{ from: "BOS", to: "MIA", players: "Jrue Holiday" }, { from: "MIA", to: "BOS", players: "Tyler Herro" }]) }, undefined);
+    assert(tradeLegalityRes.structuredContent);
+    assert(Array.isArray(tradeLegalityRes.structuredContent.result.rows));
+    assert(Array.isArray(tradeLegalityRes.structuredContent.result.columns));
 
     // 33. get_trade_value
     const tradeValueTool = toolMap.get("get_trade_value");
@@ -1246,6 +1255,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_young_player_usage: { max_age: 22, min_minutes: 1000 },
       get_contract_value: { player: "NonexistentPlayer" },
       get_trade_check: { team_a: "BOS", team_b: "MIA" },
+      get_trade_legality: { legs: JSON.stringify([{ from: "BOS", to: "MIA", players: "Jrue Holiday", picks: [{ year: 2029, round: 1 }] }, { from: "MIA", to: "BOS", players: "Tyler Herro" }]) },
       get_trade_value: { team_a: "BOS", team_b: "MIA" },
       get_trade_partners: { player: "Jaylen Brown", season: "2026-27" },
       get_draft_capital: { team: "BOS" },
