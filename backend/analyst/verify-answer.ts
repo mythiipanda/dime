@@ -25,6 +25,7 @@ const MONEY_RE = /\$\s*([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*([MBKmbk](?
 const PERCENT_RE = /([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)?\.\d+|[-+]?\d+)\s*%/g;
 const NUMBER_RE = /(?<![\w.])[-+]?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)(?!\w|\.\d)/g;
 const NUMERIC_STRING_RE = /^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
+const META_CONTEXT_RE = /\b(?:budget|timed out|timeout|retr(?:y|ies|ied)|backoff|rate[ -]?limit|latency|429|exhaustion)\b/i;
 const ARTIFACT_SKIP_KEYS = new Set([
     "kind", "title", "subtitle", "description", "name", "label", "labels", "columns", "legend",
     "source", "units", "unit", "format", "encoding", "x_axis", "y_axis", "x_label", "y_label",
@@ -339,6 +340,7 @@ export function auditAnswerNumbers(
         return questionClaims.flatMap(claim => claim.values);
     })();
     const unsupported_claims = unsupported
+        .filter(claim => !META_CONTEXT_RE.test(claim.context))
         .filter(claim => !claim.values.every(value => questionValues.some(asked => numbersClose(value, asked))))
         .filter(claim => /%|\$/.test(claim.raw) || claim.values.some(value => !Number.isInteger(value) || Math.abs(value) >= 100))
         .slice(0, 8)

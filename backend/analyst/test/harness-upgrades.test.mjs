@@ -1920,6 +1920,12 @@ test("verify_answer_numbers flags stat-shaped figures tracing to no tool output"
     sources,
   );
   assert.equal(supported.unsupported_claims.length, 0);
+
+  const metaNarration = auditAnswerNumbers(
+    { blocks: [{ text: "Partial answer: the host's 360 s budget was already ~110 s into retry backoffs when the run timed out, so the deep splits are omitted." }] },
+    sources,
+  );
+  assert.equal(metaNarration.unsupported_claims.length, 0);
 });
 
 test("flagAcknowledgedByOmissions matches omitted entries to flagged asks", () => {
