@@ -223,6 +223,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_ratings",
       "get_rookie_leaders",
       "get_cap_ledger",
+      "get_cap_scenario",
       "get_cap_table",
       "get_leaders",
       "get_lineup_leaders",
@@ -381,7 +382,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 108);
+    assert.equal(bridge.tools.length, 109);
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
@@ -1230,6 +1231,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_ratings: { team: "BOS" },
       get_rookie_leaders: { stat: "ppg", limit: 5 },
       get_cap_ledger: { team: "BOS" },
+      get_cap_scenario: { team: "BOS", signings: "12000000" },
       get_cap_table: {},
       get_leaders: { stat_category: "PTS" },
       get_lineup_leaders: { min_minutes: 100 },

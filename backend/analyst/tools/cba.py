@@ -99,6 +99,7 @@ def _trade_value_rows(raw_rows: Any) -> list[dict[str, Any]]:
 def register() -> dict[str, Any]:
     from shared.tools.league import (
         get_cap_ledger as _orig_get_cap_ledger,
+        get_cap_scenario as _orig_get_cap_scenario,
         get_cap_table as _orig_get_cap_table,
         get_contract_value as _orig_get_contract_value,
         get_draft_capital as _orig_get_draft_capital,
@@ -131,6 +132,23 @@ def register() -> dict[str, Any]:
     def get_cap_table(season: str | None = None) -> dict:
         res = call_sync(_orig_get_cap_table, "get_cap_table", {"season": season})
         return finish_dict_list(res, "get_cap_table", ["team", "payroll", "cap_room", "room_under_apron2", "over_tax", "over_apron1", "over_apron2"])
+
+    @tool("get_cap_scenario", description=_orig_get_cap_scenario.description)
+    def get_cap_scenario(team: str = "", signings: str = "",
+                         in_players: str = "", out_players: str = "",
+                         season: str | None = None) -> dict:
+        res = call_sync(_orig_get_cap_scenario, "get_cap_scenario", {
+            "team": team, "signings": signings, "in_players": in_players,
+            "out_players": out_players, "season": season,
+        })
+        default_cols = ["step", "kind", "detail", "delta", "payroll"]
+        rows = [r for r in res.get("rows") or [] if isinstance(r, dict)] if res.get("ok") else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else default_cols
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_cap_scenario", res)
+        return sanitize_for_wire(res)
 
     @tool("get_contract_value", description=_orig_get_contract_value.description)
     def get_contract_value(season: str | None = None, min_gp: int = 20, team: str = "", player: str = "") -> dict:
@@ -214,6 +232,7 @@ def register() -> dict[str, Any]:
 
     return {
         "get_cap_ledger": get_cap_ledger,
+        "get_cap_scenario": get_cap_scenario,
         "get_cap_table": get_cap_table,
         "get_contract_value": get_contract_value,
         "get_draft_capital": get_draft_capital,

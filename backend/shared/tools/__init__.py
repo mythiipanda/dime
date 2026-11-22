@@ -7,6 +7,7 @@ from .history import get_historical_leaders
 from .league import (
     get_briefing,
     get_cap_ledger,
+    get_cap_scenario,
     get_clutch,
     get_situational_splits,
     get_combine,
@@ -195,6 +196,7 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_team_season_summary,
     get_injury_impact,
     get_cap_ledger,
+    get_cap_scenario,
     get_draft_capital,
     get_trade_check,
     get_trade_partners,
