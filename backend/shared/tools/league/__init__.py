@@ -65,6 +65,7 @@ from .cba_cap import (
     _unknown_player_hints,
     _unknown_trade_name,
     get_cap_ledger,
+    get_cap_table,
 )
 from .clutch import (
     _CLUTCH_MARGIN_DEFAULT,

@@ -57,6 +57,7 @@ TOOL_SCHEMA_DESCRIPTIONS = {
     "get_award_results": "Historical recorded NBA award voting results.",
     "get_briefing": "Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest.",
     "get_cap_ledger": "Payroll, luxury tax position, and first/second apron room for one team.",
+    "get_cap_table": "League-wide payroll, luxury tax position, and first/second apron room for all 30 teams, ranked by payroll.",
     "get_clutch_stats": "NBA clutch statistics (last 5 min, margin <= 5) for player or team scope.",
     "get_combine": "Anthropometric measurements (height, wingspan, reach, weight) and athletic drills.",
     "get_competitive_ratings": "Competitive Margin of Victory (MOV excluding blowouts).",

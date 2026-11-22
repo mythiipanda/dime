@@ -1029,6 +1029,30 @@
         "type": "object"
       }
     },
+    "get_cap_table": {
+      "name": "get_cap_table",
+      "description": "League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.",
+      "args_schema": {
+        "description": "League-wide payroll, luxury tax position, and first/second apron room for all 30 teams, ranked by payroll.",
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          }
+        },
+        "title": "get_cap_table",
+        "type": "object"
+      }
+    },
     "get_leaders": {
       "name": "get_leaders",
       "description": "Qualified league leaderboard for one stat category.\n\nranking_direction is ``desc`` for highest-first or ``asc`` for\nlowest-first. min_attempts carries an explicit user volume floor for\npercentage metrics; zero keeps the league qualification.\n\nPercentage boards use the NBA minimums carried by the warehouse\ninstead of an arbitrary attempts floor. For 3P%, the qualification is\n82 made threes over an 82-game season. This keeps the board comparable\nto the official league leaderboard and excludes tiny samples. Warehouse-backed with live fallback.",

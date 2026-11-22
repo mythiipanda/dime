@@ -441,6 +441,45 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      **{k: v for k, v in CAP.items()}}}
 
 
+@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.')
+def get_cap_table(season: str | None = None) -> dict[str, Any]:
+    from nba_api.stats.static import teams as _teams
+    con = _pkg().store.connect()
+    try:
+        rows = []
+        missing = []
+        for item in _teams.get_teams():
+            abbr = str(item["abbreviation"]).upper()
+            try:
+                total, _players = _payroll(abbr, con, season)
+            except SalaryColumnError as exc:
+                return {"tool": "get_cap_table", "ok": False,
+                        "reason": exc.reason, "error": str(exc)}
+            except Exception as exc:
+                missing.append({"team": abbr, "error": str(exc)[:200]})
+                continue
+            rows.append({"team": abbr, "payroll": total,
+                         "cap_room": CAP["cap"] - total,
+                         "room_under_apron2": CAP["apron2"] - total,
+                         "over_tax": total > CAP["tax"],
+                         "over_apron1": total > CAP["apron1"],
+                         "over_apron2": total > CAP["apron2"]})
+        source = _payroll_source(con)
+        salary_date = _salary_date(con)
+        season_used, _, _ = _salary_vintage(con)
+    finally:
+        con.close()
+    rows.sort(key=lambda r: r["payroll"], reverse=True)
+    res = {"tool": "get_cap_table", "ok": True,
+           "rows": rows,
+           "meta": {"source": source, "season": season or season_used or "2026-27",
+                    "salary_date": salary_date,
+                    **{k: v for k, v in CAP.items()}}}
+    if missing:
+        res["meta"]["missing_teams"] = missing
+    return res
+
+
 class _RosterIndex:
 
     __slots__ = ("roster", "lows", "by_low", "disp")
