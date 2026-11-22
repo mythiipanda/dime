@@ -346,6 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         "DIME_V2_MODEL": model,
         "DIME_WAREHOUSE": str(WAREHOUSE),
         "DIME_PI_PYTHON": sys.executable,
+        "DIME_TRACE_TOOL_RESULTS": "1",
         "PORT": str(args.port),
     })
     if provider:

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { Type, type Static } from "typebox";
@@ -16,6 +17,24 @@ const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
+const TRACE_RESULT_PREVIEW_CHARS = 4096;
+
+type TracedResult = Pick<Extract<AnalystEvent, { type: "tool_result" }>, "result" | "result_sha256" | "result_bytes" | "result_truncated">;
+
+function tracedResult(payload: unknown): TracedResult {
+    try {
+        const serialized = JSON.stringify(payload ?? null);
+        return {
+            result: serialized.slice(0, TRACE_RESULT_PREVIEW_CHARS),
+            result_sha256: createHash("sha256").update(serialized).digest("hex"),
+            result_bytes: serialized.length,
+            ...(serialized.length > TRACE_RESULT_PREVIEW_CHARS ? { result_truncated: true } : {})
+        };
+    }
+    catch {
+        return {};
+    }
+}
 const CODEMODE_STORE_ENTRY_TYPE = "codemode-store";
 const CODEMODE_STORE_FILE = "codemode-store.json";
 const CODEMODE_STORE_MAX_BYTES = 512 * 1024;
@@ -165,6 +184,10 @@ export type AnalystEvent = {
     status: "ok" | "fail";
     error?: string;
     rows?: number;
+    result?: string;
+    result_sha256?: string;
+    result_bytes?: number;
+    result_truncated?: boolean;
 } | {
     type: "source";
     record: SourceRecord;
@@ -342,6 +365,7 @@ function wrapBridgeTools(
     emit: (event: AnalystEvent) => void,
     tracker: RunStatusTracker
 ) {
+    const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
     const callCounts = new Map<string, { count: number; lastRef?: string }>();
     const lastErrors = new Map<string, { error: string; count: number }>();
     const failStreaks = new Map<string, number>();
@@ -356,7 +380,7 @@ function wrapBridgeTools(
                 const { record, payload } = buildBreakerRecord(tool.name, callId, failStreaks.get(tool.name) ?? 0, lastErrors.get(tool.name)?.error);
                 results.set(record.ref, record);
                 emit({ type: "source", record });
-                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
                 return sourceResult(record);
             }
             const key = `${tool.name}:${canonicalArgsKey(args[1] ?? {})}`;
@@ -367,7 +391,7 @@ function wrapBridgeTools(
                 const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef);
                 results.set(record.ref, record);
                 emit({ type: "source", record });
-                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
                 return sourceResult(record);
             }
             try {
@@ -390,7 +414,7 @@ function wrapBridgeTools(
                         const { record, payload } = buildBreakerRecord(tool.name, callId, streak, typeof error === "string" ? error : undefined);
                         results.set(record.ref, record);
                         emit({ type: "source", record });
-                        emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
+                        emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
                         return sourceResult(record);
                     }
                 }
@@ -412,7 +436,8 @@ function wrapBridgeTools(
                 emit({
                     type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
                     ...(failed ? { error: typeof error === "string" ? error : "Tool failed" } : {}),
-                    ...(Array.isArray(domain?.rows) ? { rows: domain.rows.length } : {})
+                    ...(Array.isArray(domain?.rows) ? { rows: domain.rows.length } : {}),
+                    ...(traceResults ? tracedResult(domain) : {})
                 });
                 return result;
             }

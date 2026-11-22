@@ -1236,3 +1236,127 @@ test("pi execution stream ends after abort even when the run never settles", asy
   }
   assert.equal(events.some((e) => e.type === "answer"), false);
 });
+
+test("tool_result events carry traced payloads only when DIME_TRACE_TOOL_RESULTS is set", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-trace-results-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const payload = { rows: [{ val: 7 }], columns: ["val"] };
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [
+      {
+        name: "sql_exec",
+        label: "sql_exec",
+        description: "Run SQL",
+        parameters: Type.Object({
+          sql: Type.String(),
+          params: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+        }),
+        async execute(callId) {
+          const ref = `src-trace-${callId}`;
+          resultsMap.set(ref, {
+            ref,
+            callId,
+            tool: "sql_exec",
+            response: {
+              content: [{ type: "text", text: JSON.stringify(payload) }],
+              structuredContent: payload,
+              isError: false,
+            },
+          });
+          return {
+            content: [],
+            details: undefined,
+            structuredContent: { ref, tool: "sql_exec", result: payload, isError: false },
+            isError: false,
+          };
+        },
+      },
+    ],
+    results: resultsMap,
+    pid: 1007,
+    close: async () => {},
+  };
+
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const content =
+      turn === 1
+        ? [
+            {
+              type: "toolCall",
+              id: "call-trace",
+              name: "codemode",
+              arguments: { code: `return await tools.sql_exec({ sql: "SELECT 7" });` },
+            },
+          ]
+        : [{ type: "text", text: "Done." }];
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content,
+      stopReason: turn === 1 ? "toolUse" : "stop",
+      timestamp: Date.now(),
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason, message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({
+      runtime,
+      model: runtime.getModel("fixture", "fixture"),
+    }),
+    connectTools: async () => mockBridge,
+  });
+
+  const runOnce = async () => {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Run one query",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    return events.find((e) => e.type === "tool_result" && e.name === "sql_exec");
+  };
+
+  try {
+    delete process.env.DIME_TRACE_TOOL_RESULTS;
+    turn = 0;
+    const untraced = await runOnce();
+    assert.equal(untraced.result, undefined);
+    assert.equal(untraced.result_sha256, undefined);
+
+    process.env.DIME_TRACE_TOOL_RESULTS = "1";
+    turn = 0;
+    const traced = await runOnce();
+    const serialized = JSON.stringify(payload);
+    assert.equal(traced.result, serialized);
+    assert.equal(traced.result_bytes, serialized.length);
+    assert.match(traced.result_sha256, /^[0-9a-f]{64}$/);
+    assert.equal(traced.result_truncated, undefined);
+  } finally {
+    delete process.env.DIME_TRACE_TOOL_RESULTS;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

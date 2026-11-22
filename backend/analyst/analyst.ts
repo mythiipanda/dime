@@ -45,6 +45,10 @@ export type ProductEvent = {
         status: "ok" | "fail";
         rows?: number;
         error?: string;
+        result?: string;
+        result_sha256?: string;
+        result_bytes?: number;
+        result_truncated?: boolean;
     };
 } | {
     type: "failure";
@@ -174,7 +178,13 @@ function mapExecutionEvent(event: AnalystEvent, state: RunState): ProductEvent |
                     name: event.name,
                     status: event.status,
                     ...(event.rows === undefined ? {} : { rows: event.rows }),
-                    ...(event.status === "fail" ? { error: event.error || "Tool failed" } : {})
+                    ...(event.status === "fail" ? { error: event.error || "Tool failed" } : {}),
+                    ...(event.result === undefined ? {} : {
+                        result: event.result,
+                        result_sha256: event.result_sha256,
+                        result_bytes: event.result_bytes,
+                        ...(event.result_truncated ? { result_truncated: true } : {})
+                    })
                 }
             };
     }
