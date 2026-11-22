@@ -265,6 +265,10 @@ PARAM_SCHEMA_DESCRIPTIONS = {
     "region": "Search region code, e.g. 'us-en'. Default: {d}.",
     "safesearch": "'on', 'moderate', or 'off'. Default: {d}.",
     "players": "Comma-separated player full names to compare.",
+    "legs": "JSON array of trade legs: [{'from','to','players','picks'}], players as comma-separated names or array, picks as [{'year','round','swap','protection'}].",
+    "sign_and_trade": "JSON object for a sign-and-trade piece: {'player','new_salary','years'}.",
+    "cash": "JSON array of cash movements: [{'from','to','amount'}].",
+    "tpe": "JSON array of traded player exceptions used: [{'team','amount'}].",
 }
 
 TOOL_PARAM_DESCRIPTIONS = {

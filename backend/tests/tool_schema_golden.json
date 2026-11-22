@@ -1486,21 +1486,25 @@
         "properties": {
           "legs": {
             "default": "",
+            "description": "JSON array of trade legs: [{'from','to','players','picks'}], players as comma-separated names or array, picks as [{'year','round','swap','protection'}]. Default: ''.",
             "title": "Legs",
             "type": "string"
           },
           "sign_and_trade": {
             "default": "",
+            "description": "JSON object for a sign-and-trade piece: {'player','new_salary','years'}. Default: ''.",
             "title": "Sign And Trade",
             "type": "string"
           },
           "cash": {
             "default": "",
+            "description": "JSON array of cash movements: [{'from','to','amount'}]. Default: ''.",
             "title": "Cash",
             "type": "string"
           },
           "tpe": {
             "default": "",
+            "description": "JSON array of traded player exceptions used: [{'team','amount'}]. Default: ''.",
             "title": "Tpe",
             "type": "string"
           },
