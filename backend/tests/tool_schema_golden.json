@@ -1575,9 +1575,9 @@
     },
     "get_draft_capital": {
       "name": "get_draft_capital",
-      "description": "Future draft pick ownership: who holds each team's 2027+ picks, protections, swap rights and forfeits, valued on an empirical draft-value curve. Optional enrichment for trade analysis; warehouse-backed only, requires seeded silver_future_picks.",
+      "description": "Future draft pick ownership and capital audit: who holds each team's 2027+ picks, protections, swap rights and forfeits, valued on an empirical draft-value curve. With team + optional years_ahead horizon: per-year kept/incoming/outgoing inventory, Stepien-rule first-round coverage, and net draft-capital liquidity. Requires seeded silver_future_picks.",
       "args_schema": {
-        "description": "Future draft pick ownership (2027+) with protections, swaps and forfeits, plus empirical pick value.",
+        "description": "Future draft pick ownership (2027+) with protections, swaps and forfeits, plus empirical pick value. With a team: per-year kept/incoming/outgoing inventory, Stepien-rule first-round coverage, and net draft-capital liquidity over an optional years_ahead horizon.",
         "properties": {
           "team": {
             "default": "",
@@ -1590,6 +1590,19 @@
             "description": "Draft class year, e.g. '2027'. Default: .",
             "title": "Draft Year",
             "type": "string"
+          },
+          "years_ahead": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Draft-year horizon, counting forward from the first year in the table. Default: None.",
+            "title": "Years Ahead"
           }
         },
         "title": "get_draft_capital",

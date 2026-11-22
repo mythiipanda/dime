@@ -223,9 +223,11 @@ def register() -> dict[str, Any]:
         return sanitize_for_wire(res)
 
     @tool("get_draft_capital", description=_orig_get_draft_capital.description)
-    def get_draft_capital(team: str = "", draft_year: str = "") -> dict:
+    def get_draft_capital(team: str = "", draft_year: str = "",
+                          years_ahead: int | None = None) -> dict:
         res = call_sync(_orig_get_draft_capital, "get_draft_capital", {
             "team": team, "draft_year": draft_year,
+            "years_ahead": years_ahead,
         })
         return finish_dict_list(res, "get_draft_capital", ["draft_year", "round", "orig_team", "status", "held_by", "direction", "est_slot", "est_value_m"])
 

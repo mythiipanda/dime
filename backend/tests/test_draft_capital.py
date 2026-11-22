@@ -78,6 +78,103 @@ def test_get_draft_capital_seeded_team():
             assert 1 <= r["est_slot"] <= 60
 
 
+_PICKS = [
+    (2027, 1, "CHI", "own", "", None, False, False, "own first", "e1"),
+    (2027, 2, "CHI", "own", "", None, False, False, "own second", "e1"),
+    (2028, 1, "CHI", "traded", "OKC", "Top-10 protected",
+     False, False, "to OKC", "e1"),
+    (2029, 1, "CHI", "traded", "HOU", None, False, False, "to HOU", "e1"),
+    (2029, 1, "SAS", "traded", "CHI", None, False, False, "to CHI", "e1"),
+    (2030, 1, "CHI", "swap", "HOU", None, False, False, "swap w HOU", "e1"),
+    (2031, 2, "CHI", "own", "", None, False, False, "own second", "e1"),
+    (2031, 1, "DEN", "traded", "OKC", None, False, False, "filler", "e1"),
+]
+
+
+def _seed_audit(monkeypatch, tmp_path):
+    from shared import store
+    path = tmp_path / "w.duckdb"
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store.warehouse_tables_cache_clear()
+    store.warehouse_pool_clear()
+    import duckdb
+    con = duckdb.connect(str(path))
+    con.execute(
+        "CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, "
+        "ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, HELD_BY VARCHAR, "
+        "PROTECTION VARCHAR, POOLED BOOLEAN, CONDITIONAL BOOLEAN, "
+        "SUMMARY VARCHAR, LAST_EDITED VARCHAR, _season VARCHAR, "
+        "_fetched_at TIMESTAMP)")
+    for p in _PICKS:
+        con.execute(
+            "INSERT INTO silver_future_picks VALUES "
+            "(?,?,?,?,?,?,?,?,?,?,?,now())",
+            list(p) + ["2026-27"])
+    con.execute(
+        "CREATE TABLE silver_leaders_pts (TEAM_ID INTEGER, TEAM VARCHAR, "
+        "_season VARCHAR, _fetched_at TIMESTAMP)")
+    con.execute(
+        "CREATE TABLE silver_team_ratings (TEAM_ID INTEGER, "
+        "NET_RATING_RANK INTEGER, _season VARCHAR, _fetched_at TIMESTAMP)")
+    con.execute(
+        "CREATE TABLE silver_draft_value_curve (SLOT INTEGER, "
+        "VALUE_INDEX DOUBLE, _season VARCHAR, _fetched_at TIMESTAMP)")
+    for i, abbr in enumerate(["CHI", "OKC", "SAS", "HOU", "DEN"], start=1):
+        con.execute(
+            "INSERT INTO silver_leaders_pts VALUES (?,?,?,now())",
+            [i, abbr, "2025-26"])
+        con.execute(
+            "INSERT INTO silver_team_ratings VALUES (?,?,?,now())",
+            [i, i * 6, "2025-26"])
+    for slot in range(1, 61):
+        con.execute(
+            "INSERT INTO silver_draft_value_curve VALUES (?,?,?,now())",
+            [slot, max(0.05, 1.0 - (slot - 1) * 0.015), "2026-27"])
+    con.close()
+
+
+def test_team_audit(monkeypatch, tmp_path):
+    _seed_audit(monkeypatch, tmp_path)
+    from shared.tools.league import get_draft_capital
+
+    res = get_draft_capital.invoke({"team": "CHI", "years_ahead": 5})
+    assert res["ok"]
+    audit = res["audit"]
+    assert [i["draft_year"] for i in audit["inventory"]] == [
+        2027, 2028, 2029, 2030, 2031]
+    by_year = {i["draft_year"]: i for i in audit["inventory"]}
+    assert by_year[2027]["kept"] == 2
+    assert by_year[2028]["outgoing"] == 1
+    assert by_year[2028]["protected"] == 1
+    assert by_year[2028]["first_available"] is False
+    assert by_year[2029]["incoming"] == 1
+    assert by_year[2029]["first_available"] is True
+    assert by_year[2030]["swap_risk"] == 1
+    assert by_year[2030]["first_available"] is True
+    assert by_year[2031]["first_available"] is False
+    assert audit["stepien"]["years_lacking_first"] == [2028, 2031]
+    assert audit["stepien"]["consecutive_bare_years"] is False
+    assert audit["net_picks"] == 2
+    assert audit["held_value_m"] > 0
+    assert audit["net_capital_m"] == pytest.approx(
+        audit["held_value_m"] - audit["outgoing_value_m"])
+    rules = {c["rule"] for c in res["checks"]}
+    assert {"protections", "conditional conveyance", "stepien margin",
+            "valuation"} <= rules
+
+
+def test_horizon_limits_audit(monkeypatch, tmp_path):
+    _seed_audit(monkeypatch, tmp_path)
+    from shared.tools.league import get_draft_capital
+
+    res = get_draft_capital.invoke({"team": "CHI", "years_ahead": 3})
+    assert res["ok"]
+    assert [i["draft_year"] for i in res["audit"]["inventory"]] == [
+        2027, 2028, 2029]
+    assert res["audit"]["stepien"]["years_lacking_first"] == [2028]
+
+
 def test_trade_value_pick_curve_fallback():
     from shared.tools.league.trade_value import _pick_value_for_slot
 
