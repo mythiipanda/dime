@@ -704,6 +704,7 @@ export interface AnswerBlock {
 
 export interface AnswerSubmission {
   blocks: AnswerBlock[];
+  omitted?: string[];
 }
 
 export function parseAnswerSubmission(raw: unknown): AnswerSubmission | null {
@@ -730,5 +731,8 @@ export function parseAnswerSubmission(raw: unknown): AnswerSubmission | null {
     }
     blocks.push({ text: item.text, anchors });
   }
-  return { blocks };
+  const omitted = Array.isArray(raw.omitted)
+    ? raw.omitted.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  return omitted.length > 0 ? { blocks, omitted } : { blocks };
 }

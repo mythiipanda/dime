@@ -135,6 +135,14 @@ export function AnswerBlocks({
   );
 }
 
+export function OmittedNote({ omitted }: { omitted: string[] }) {
+  return (
+    <p className="mt-2 max-w-[620px] text-[12px] text-orange">
+      Partial answer — not covered: {omitted.join("; ")}
+    </p>
+  );
+}
+
 export function SourceRefDetails({ carry, prefix = "" }: { carry: VerificationCarry; prefix?: string }) {
   return (
     <details className="mt-3 rounded-[10px] border border-line bg-field px-3 py-2">
@@ -368,6 +376,9 @@ export function LiveAssistant({ live }: { live: LiveRun }) {
       ) : (
         <AnswerCopy submission={undefined} text={live.text} />
       )}
+      {live.carry?.submission?.omitted?.length ? (
+        <OmittedNote omitted={live.carry.submission.omitted} />
+      ) : null}
       <AnswerVerification carry={live.carry} artifacts={live.artifacts} />
       {live.failed && <FailureCard failure={live.failed} />}
     </>
@@ -402,6 +413,9 @@ export function AssistantTurn({
       ) : (
         <AnswerCopy submission={undefined} text={text} animate />
       )}
+      {carry?.submission?.omitted?.length ? (
+        <OmittedNote omitted={carry.submission.omitted} />
+      ) : null}
       <AnswerVerification carry={carry} artifacts={artifacts} />
       {failure && <FailureCard failure={failure} />}
       <FollowUpPills items={suggestions} onPick={onFollowUp} />

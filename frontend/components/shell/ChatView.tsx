@@ -9,7 +9,7 @@ import { CitationChip } from "../ds/CitationChip";
 import { ThinkingState } from "../ds/ThinkingState";
 import { ToolChips } from "../ds/ToolChips";
 import { StreamingText } from "../ds/StreamingText";
-import { AnswerVerification } from "../site/harness/AnswerView";
+import { AnswerVerification, OmittedNote } from "../site/harness/AnswerView";
 import { StreamArtifacts } from "../site/harness/ArtifactsView";
 import { useDimeChat } from "../site/harness/useDimeChat";
 import type { ChatMsg } from "../site/harness/types";
@@ -39,6 +39,7 @@ export function AssistantTurn({ message, prefix, onFollowUp }: { message: Extrac
   return <article className="assistant-turn">
     <div className="mb-3 flex items-center gap-2 text-[11px] text-ink-3"><Basketball width={14} height={14} /><span>Dime</span></div>
     <PiAnswer text={message.text} carry={message.carry} prefix={prefix} />
+    {message.carry?.submission?.omitted?.length ? <OmittedNote omitted={message.carry.submission.omitted} /> : null}
     <StreamArtifacts artifacts={message.artifacts} />
     <AnswerVerification carry={message.carry} artifacts={message.artifacts} prefix={prefix} />
     {message.failure && <div role="alert" className="my-4 rounded-lg border border-red/25 bg-red-tint px-4 py-3 text-[12px] text-red">{message.failure.message}</div>}
