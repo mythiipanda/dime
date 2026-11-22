@@ -15,6 +15,7 @@ import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
 const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
+const TURN_END_STEER_MIN_CHARS = 240;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
 const TRACE_RESULT_PREVIEW_CHARS = 4096;
@@ -912,25 +913,30 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                     kind = "model";
                     await session.prompt(start.q);
-                    controller.signal.throwIfAborted();
-                    const last = session.messages.filter(m => m.role === "assistant").at(-1);
-                    if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
-                        const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
-                        throw new Error(detail || "Model failed");
-                    }
-                    const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
-                    const reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
-                    const replayReasoning = reasoning ? { reasoning } : {};
-                    if (acceptedSubmission) {
-                        const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
-                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
-                    } else {
+                    let submitSteerUsed = false;
+                    let text = "";
+                    let reasoning = "";
+                    for (;;) {
+                        controller.signal.throwIfAborted();
                         const last = session.messages.filter(m => m.role === "assistant").at(-1);
                         if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
                             const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
                             throw new Error(detail || "Model failed");
                         }
-                        const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
+                        text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
+                        reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
+                        if (acceptedSubmission || submitSteerUsed || text.trim().length < TURN_END_STEER_MIN_CHARS)
+                            break;
+                        submitSteerUsed = true;
+                        emit({ type: "tool_call", name: "turn_end_steer" });
+                        emit({ type: "tool_result", name: "turn_end_steer", status: "ok" });
+                        await session.prompt("You ended the run with an answer but never called submit_answer. Route it through tools.submit_answer now: put that answer's text into blocks, add the artifacts and source anchors it should carry, list anything left out in omitted, and submit. Do not rewrite the answer.");
+                    }
+                    const replayReasoning = reasoning ? { reasoning } : {};
+                    if (acceptedSubmission) {
+                        const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
+                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
+                    } else {
                         if (!text.trim())
                             throw new Error("Model returned no answer");
                         emit({ type: "answer", text, ...replayReasoning });

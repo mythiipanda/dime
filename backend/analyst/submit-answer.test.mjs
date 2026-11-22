@@ -607,6 +607,131 @@ test("createPiExecution canonical text overrides trailing prose, retains sources
   await rm(cwd, { recursive: true, force: true });
 });
 
+test("createPiExecution steers a substantial unsubmitted answer through submit_answer, once", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-turn-end-steer-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const longText = "MEM went 56-26 in the 2021-22 regular season. The early split was 30-10 and the late split 26-16, with the defensive rating tightening after the deadline and the rotation settling. The roster's top-eight minute share concentrated on the closing five.";
+  const canonical = "MEM's 2021-22 record: 56-26.";
+
+  let execRequests = 0;
+  let submitOnSteer = true;
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      let msg;
+      if (execRequests === 1) {
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "text", text: longText }],
+          stopReason: "stop",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      } else if (execRequests === 2 && submitOnSteer) {
+        const code = `await tools.submit_answer({ blocks: [{ text: ${JSON.stringify(canonical)}, anchors: [] }] }); return { done: true };`;
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "toolCall", id: "call-sub", name: "codemode", arguments: { code } }],
+          stopReason: "toolUse",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      } else {
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "text", text: submitOnSteer ? "Submitted." : longText }],
+          stopReason: "stop",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      }
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = {
+    tools: [],
+    results: new Map(),
+    pid: 12345,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const run = async () => {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "What was MEM's record in 2021-22?",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    return events;
+  };
+
+  let events = await run();
+  assert.equal(execRequests, 3);
+  const steerCall = events.find((e) => e.type === "tool_call" && e.name === "turn_end_steer");
+  assert.ok(steerCall, "turn_end_steer record should be emitted");
+  const answer = events.find((e) => e.type === "answer");
+  assert.ok(answer.submission, "answer should carry the submission");
+  assert.equal(answer.text, canonical);
+
+  submitOnSteer = false;
+  execRequests = 0;
+  events = await run();
+  assert.equal(execRequests, 2);
+  const steers = events.filter((e) => e.type === "tool_call" && e.name === "turn_end_steer");
+  assert.equal(steers.length, 1, "steer fires exactly once");
+  const plain = events.find((e) => e.type === "answer");
+  assert.equal(plain.submission, undefined);
+  assert.equal(plain.text, longText);
+
+  await rm(cwd, { recursive: true, force: true });
+});
+
 test("createAnalyst downstream verification remains unassessed and preserves submission carry", async () => {
   const dir = await mkdtemp(join(tmpdir(), "analyst-downstream-"));
   try {
