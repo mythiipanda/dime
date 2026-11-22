@@ -656,6 +656,39 @@ test("provider retry storm guard fires the retry-time budget once on cumulative 
   assert.equal(stoppedWith, null);
 });
 
+test("provider retry storm guard fires early on evidence-free runs and waits otherwise", () => {
+  const emitted = [];
+  let burned = 0;
+  let evidenceFree = true;
+  const guard = createProviderRetryStormGuard(
+    (event) => emitted.push(event),
+    () => {},
+    (ms) => { burned = ms; },
+    90_000,
+    () => evidenceFree,
+    45_000
+  );
+  for (let i = 0; i < 9; i++)
+    guard({ type: "auto_retry_start", attempt: i + 1, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
+  assert.equal(burned, 45_000, "evidence-free run steered at the early threshold");
+
+  let burned2 = 0;
+  const guard2 = createProviderRetryStormGuard(
+    () => {},
+    () => {},
+    (ms) => { burned2 = ms; },
+    90_000,
+    () => false,
+    45_000
+  );
+  for (let i = 0; i < 9; i++)
+    guard2({ type: "auto_retry_start", attempt: i + 1, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
+  assert.equal(burned2, 0, "run holding evidence waits for the full budget");
+  for (let i = 0; i < 9; i++)
+    guard2({ type: "auto_retry_start", attempt: i + 1, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
+  assert.equal(burned2, 90_000);
+});
+
 test("retryBudgetSteerText steers to a data call on evidence-free runs and to submit otherwise", () => {
   const evidenceFree = retryBudgetSteerText(95_000, true);
   assert.match(evidenceFree, /~95s/);

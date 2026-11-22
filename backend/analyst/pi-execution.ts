@@ -592,11 +592,15 @@ function poolSignature(toolName: string, rawArgs: unknown): { key: string; entit
 
 const DEFAULT_RETRY_TIME_BUDGET_MS = 90_000;
 
+const EVIDENCE_FREE_RETRY_BUDGET_MS = 45_000;
+
 export function createProviderRetryStormGuard(
     emit: (event: AnalystEvent) => void,
     stopRun: (reason: string) => void,
     onRetryBudget?: (burnedMs: number) => void,
-    retryBudgetMs: number = DEFAULT_RETRY_TIME_BUDGET_MS
+    retryBudgetMs: number = DEFAULT_RETRY_TIME_BUDGET_MS,
+    isEvidenceFree?: () => boolean,
+    evidenceFreeBudgetMs: number = EVIDENCE_FREE_RETRY_BUDGET_MS
 ) {
     let exhausted = 0;
     let retryDelayMs = 0;
@@ -604,7 +608,8 @@ export function createProviderRetryStormGuard(
     return (event: AgentSessionEvent) => {
         if (event.type === "auto_retry_start") {
             retryDelayMs += event.delayMs;
-            if (!budgetFired && retryDelayMs >= retryBudgetMs && onRetryBudget) {
+            const earlyThreshold = isEvidenceFree?.() ? evidenceFreeBudgetMs : retryBudgetMs;
+            if (!budgetFired && retryDelayMs >= earlyThreshold && onRetryBudget) {
                 budgetFired = true;
                 onRetryBudget(retryDelayMs);
             }
@@ -989,7 +994,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             content: retryBudgetSteerText(burnedMs, evidenceFree),
                             timestamp: Date.now()
                         });
-                    }, deps.retryTimeBudgetMs);
+                    }, deps.retryTimeBudgetMs, () => dataToolCalls === 0
+                        && (start.sources?.length ?? 0) === 0
+                        && connected.results.size === 0
+                        && isDataAsk(start.q));
                     session.subscribe(event => {
                         const mapped = analystEventFrom(event);
                         if (mapped)
