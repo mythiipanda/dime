@@ -2687,3 +2687,23 @@ test("wrapBridgeTools steers a zero-row named tool result to sql_exec once", asy
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("entity_value_gaps flags asked teams and evidenced players dropped from the answer", async () => {
+  const { auditEntityValueCoverage } = await import("../dist/verify-answer.js");
+  const q = "Compare the Lakers and Celtics on net rating this season, and how does Grimes fit?";
+  const evidence = "quentin grimes lal on_off 4.2 boston celtics net_rtg 6.1";
+  const missing = auditEntityValueCoverage(q, { blocks: [{ text: "The Lakers run a +2.4 net rating." }] }, evidence);
+  assert.ok(missing.some(flag => flag.startsWith("grimes")), "evidenced player token should flag");
+
+  const dropped = auditEntityValueCoverage("How do the Celtics and Lakers compare?", { blocks: [{ text: "LAL runs a +2.4 net rating." }] }, "");
+  assert.ok(dropped.some(flag => flag.startsWith("BOS")), "asked team never named should flag");
+
+  const covered = auditEntityValueCoverage("Compare the Lakers and Celtics on net rating", { blocks: [{ text: "LAL +2.4 vs BOS +6.1 net rating." }] }, "");
+  assert.deepEqual(covered, []);
+
+  const noValue = auditEntityValueCoverage("How do the Celtics compare?", { blocks: [{ text: "Boston looks strong on both ends." }] }, "");
+  assert.ok(noValue.some(flag => flag.includes("named without any value")), "mention with no nearby number flags");
+
+  const notAsked = auditEntityValueCoverage("Top three-point shooters?", { blocks: [{ text: "Steph leads at 43.2%." }] }, "grimes row");
+  assert.deepEqual(notAsked, []);
+});

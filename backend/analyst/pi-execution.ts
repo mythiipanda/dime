@@ -925,7 +925,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const noEvidenceAsk = audit.no_evidence_on_data_ask
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
-                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && irrelevantKinds.length === 0 && noEvidenceAsk.length === 0)
+                            const entityGaps = audit.entity_value_gaps
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && irrelevantKinds.length === 0 && noEvidenceAsk.length === 0 && entityGaps.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
@@ -947,6 +949,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.artifact_kind_irrelevance = irrelevantKinds;
                             if (noEvidenceAsk.length > 0)
                                 gaps.no_evidence_on_data_ask = noEvidenceAsk;
+                            if (entityGaps.length > 0)
+                                gaps.entity_value_gaps = entityGaps;
                             lastVetoedSubmission = submission;
                             lastVetoedFlags = auditGapFlagStrings(gaps);
                             emit({ type: "tool_call", name: "submit_answer_audit" });

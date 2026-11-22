@@ -21,6 +21,7 @@ export type NumericAudit = {
     unevidenced_asks: string[];
     artifact_kind_irrelevance: string[];
     no_evidence_on_data_ask: string[];
+    entity_value_gaps: string[];
 };
 
 const SEASON_RE = /\b(?:19|20)\d{2}\s*[-/–—]\s*\d{2,4}\b/g;
@@ -329,6 +330,68 @@ export function auditArtifactKindRelevance(
 
 export const ZERO_EVIDENCE_DATA_ASK_FLAG = "zero data tool calls and no evidence sources before submitting a data-grounded answer";
 
+const TEAM_ENTITY_VOCAB: Record<string, string[]> = {
+    atl: ["atlanta", "hawks"], bos: ["boston", "celtics"], bkn: ["brooklyn", "nets"],
+    cha: ["charlotte", "hornets"], chi: ["chicago", "bulls"], cle: ["cleveland", "cavaliers", "cavs"],
+    dal: ["dallas", "mavericks", "mavs"], den: ["denver", "nuggets"], det: ["detroit", "pistons"],
+    gsw: ["golden state", "warriors"], hou: ["houston", "rockets"], ind: ["indiana", "pacers"],
+    lac: ["clippers"], lal: ["lakers"], mem: ["memphis", "grizzlies"], mia: ["miami", "heat"],
+    mil: ["milwaukee", "bucks"], min: ["minnesota", "timberwolves", "wolves"],
+    nop: ["new orleans", "pelicans"], nyk: ["new york", "knicks"], okc: ["oklahoma city", "thunder"],
+    orl: ["orlando", "magic"], phi: ["philadelphia", "sixers", "76ers"], phx: ["phoenix", "suns"],
+    por: ["portland", "trail blazers", "blazers"], sac: ["sacramento", "kings"],
+    sas: ["san antonio", "spurs"], tor: ["toronto", "raptors"], uta: ["utah", "jazz"],
+    was: ["washington", "wizards"],
+};
+
+const ENTITY_VALUE_WINDOW = 120;
+
+function entityPresent(forms: string[], haystack: string): boolean {
+    return forms.some(form => STAT_TERM_BOUNDARY(form).test(haystack));
+}
+
+export function auditEntityValueCoverage(
+    question: string,
+    input: Pick<AnswerSubmission, "blocks" | "artifacts">,
+    evidenceText: string
+): string[] {
+    const normalized = question.toLowerCase().replace(/_/g, " ");
+    const haystack = (
+        input.blocks.map(block => block.text).join(" ") + " " +
+        JSON.stringify(input.artifacts ?? [])
+    ).toLowerCase();
+    const proseText = input.blocks.map(block => block.text).join("\n").toLowerCase();
+    const gaps: string[] = [];
+    for (const [abbr, forms] of Object.entries(TEAM_ENTITY_VOCAB)) {
+        const allForms = [abbr, ...forms];
+        if (!allForms.some(form => STAT_TERM_BOUNDARY(form).test(normalized)))
+            continue;
+        if (!entityPresent(allForms, haystack)) {
+            gaps.push(`${abbr.toUpperCase()} (asked, never named)`);
+            continue;
+        }
+        const seen = new RegExp(`(${allForms.map(form => form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
+        const mentions = [...proseText.matchAll(seen)].map(match => match.index ?? 0);
+        if (mentions.length === 0)
+            continue;
+        const valued = mentions.some(index => {
+            const window = proseText.slice(Math.max(0, index - ENTITY_VALUE_WINDOW), index + ENTITY_VALUE_WINDOW);
+            return /\d/.test(window);
+        });
+        if (!valued)
+            gaps.push(`${abbr.toUpperCase()} (named without any value)`);
+    }
+    const askedPlayerTokens = new Set<string>();
+    for (const clause of askClauses(question))
+        for (const token of askAnchors(clause))
+            if (token.length >= 4 && /^[a-z]+$/.test(token) && evidenceText.includes(token))
+                askedPlayerTokens.add(token);
+    for (const token of askedPlayerTokens)
+        if (!STAT_TERM_BOUNDARY(token).test(haystack))
+            gaps.push(`${token} (asked, evidenced, never named)`);
+    return [...new Set(gaps)].slice(0, 10);
+}
+
 const CAP_ASK_VOCABULARY: string[] = [
     "salary cap", "cap space", "cap room", "cap sheet", "cap hold", "cap table",
     "apron", "first apron", "second apron", "hard cap", "hard-capped", "hardcapped",
@@ -520,21 +583,23 @@ export function auditAnswerNumbers(
         .filter(claim => /%|\$/.test(claim.raw) || claim.values.some(value => !Number.isInteger(value) || Math.abs(value) >= 100))
         .slice(0, 8)
         .map(claim => `${claim.raw} (near "${claim.context.slice(0, 80)}")`);
+    const evidenceText = (collectEvidenceText(sources) + " " + (extraEvidenceText ?? "")).toLowerCase();
     const unevidenced_asks = question
-        ? auditEvidenceCoverage(question, input, (collectEvidenceText(sources) + " " + (extraEvidenceText ?? "")).toLowerCase()).slice(0, 10)
+        ? auditEvidenceCoverage(question, input, evidenceText).slice(0, 10)
         : [];
+    const entity_value_gaps = question ? auditEntityValueCoverage(question, input, evidenceText) : [];
     const artifact_kind_irrelevance = question ? auditArtifactKindRelevance(question, input) : [];
     const no_evidence_on_data_ask = dataToolCalls === 0 && sources.length === 0 && isDataAsk(question)
         ? [ZERO_EVIDENCE_DATA_ASK_FLAG]
         : [];
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks, artifact_kind_irrelevance, no_evidence_on_data_ask };
+    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks, artifact_kind_irrelevance, no_evidence_on_data_ask, entity_value_gaps };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[], question?: string) {
     return defineTool({
         name: "verify_answer_numbers",
         label: "Verify answer numbers",
-        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, asks for tables/compares/charts with zero artifacts, stat-shaped figures tracing to no tool output (unsupported_claims), ask facets narrated in the answer but absent from every tool result and call (unevidenced_asks), artifact kinds the ask does not call for (artifact_kind_irrelevance), and answers to data asks submitted with zero data tool calls (no_evidence_on_data_ask); it does not submit the answer.",
+        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, asks for tables/compares/charts with zero artifacts, stat-shaped figures tracing to no tool output (unsupported_claims), ask facets narrated in the answer but absent from every tool result and call (unevidenced_asks), artifact kinds the ask does not call for (artifact_kind_irrelevance), asked teams or evidenced players the answer never names or names without any value (entity_value_gaps), and answers to data asks submitted with zero data tool calls (no_evidence_on_data_ask); it does not submit the answer.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const audit = auditAnswerNumbers(args, getContextSources(), question);
