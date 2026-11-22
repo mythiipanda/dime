@@ -1770,3 +1770,24 @@ test("verify_answer_numbers flags question clauses with no matching terms in the
   );
   assert.equal(noQuestion.uncovered_asks.length, 0);
 });
+
+test("submit_answer vetoes once on pre-audit gaps then accepts the retry", async () => {
+  const { createSubmitAnswerTool } = await import("../dist/submit-tool.js");
+  const accepted = [];
+  let audits = 0;
+  const tool = createSubmitAnswerTool(
+    () => [],
+    (submission) => accepted.push(submission),
+    () => {
+      audits++;
+      return audits === 1 ? "Not submitted — the honesty audit found gaps" : null;
+    }
+  );
+  const args = { blocks: [{ text: "MEM went 56-26." }] };
+  const rejected = await tool.execute("call-a1", args);
+  assert.equal(accepted.length, 0);
+  assert.match(rejected.content[0].text, /Not submitted/);
+  const ok = await tool.execute("call-a2", args);
+  assert.equal(accepted.length, 1);
+  assert.match(ok.content[0].text, /Answer submitted with 1 block/);
+});

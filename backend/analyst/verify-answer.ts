@@ -184,7 +184,8 @@ const ASK_ANCHOR_RE = /\b[A-Z][A-Z0-9]{1,}\b|\b[a-z]+[A-Z][\w%]*|\b\d+(?:[.,]\d+
 const ASK_STOPWORDS = new Set([
     "the", "and", "for", "with", "which", "what", "each", "both", "using", "across",
     "compare", "show", "include", "provide", "compute", "analyze", "analyse", "summarize",
-    "report", "build", "create", "give", "list", "make", "then", "also", "use"
+    "report", "build", "create", "give", "list", "make", "then", "also", "use",
+    "submit", "hang", "answer"
 ]);
 const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
 
