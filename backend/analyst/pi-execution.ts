@@ -771,6 +771,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emit({ type: "failure", kind: "provider_retry_storm", message: reason });
                         controller.abort();
                     }, (burnedMs: number) => {
+                        emit({ type: "tool_call", name: "retry_budget_steer", args: { burned_ms: burnedMs } });
+                        emit({ type: "tool_result", name: "retry_budget_steer", status: "ok" });
                         session?.agent.steer({
                             role: "user",
                             content: `The provider lane is saturated: this run has already spent ~${Math.round(burnedMs / 1000)}s waiting on retry backoffs, and each further call may stall again. Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats a slow full attempt. Skip this only if submit_answer already ran.`,
