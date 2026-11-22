@@ -1589,3 +1589,138 @@ test("cerebras kimi resolves with thinking-as-text compat, not reasoning_content
   assert.equal(resolved.compat.requiresThinkingAsText, true);
   assert.equal(resolved.compat.requiresReasoningContentOnAssistantMessages, undefined);
 });
+
+test("wrapBridgeTools warns at the call ceiling then stops the run at the churn cap", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-call-ceiling-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let execCount = 0;
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    if (turn <= 6) {
+      const code = `return await tools.sql_exec({ sql: "SELECT 1", params: { a: ${turn} } });`;
+      const msg = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content: [
+          { type: "toolCall", id: `call-ceiling-${turn}`, name: "codemode", arguments: { code } },
+        ],
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+        usage: {
+          input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: "toolUse", message: msg });
+      stream.end();
+      return stream;
+    }
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [{ type: "text", text: "should not reach" }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: {
+        input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [
+      {
+        name: "sql_exec",
+        label: "sql_exec",
+        description: "Run SQL",
+        parameters: Type.Object({}),
+        async execute(callId) {
+          execCount++;
+          const ref = `src-ceiling-${execCount}`;
+          const payload = { rows: [{ val: 1 }] };
+          const record = {
+            ref,
+            callId,
+            tool: "sql_exec",
+            response: {
+              content: [{ type: "text", text: JSON.stringify(payload) }],
+              structuredContent: payload,
+              isError: false,
+            },
+          };
+          resultsMap.set(ref, record);
+          return {
+            content: [],
+            details: undefined,
+            structuredContent: { ref, tool: "sql_exec", result: payload, isError: false },
+            isError: false,
+          };
+        },
+      },
+    ],
+    results: resultsMap,
+    pid: 1004,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  process.env.DIME_CALL_CEILING_WARN = "3";
+  process.env.DIME_CALL_CEILING_STOP = "5";
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Test call ceiling",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    assert.equal(execCount, 3);
+    const toolResults = events.filter((e) => e.type === "tool_result" && e.name === "sql_exec");
+    assert.equal(toolResults.length, 5);
+    assert.equal(toolResults[0].status, "ok");
+    assert.equal(toolResults[1].status, "ok");
+    assert.equal(toolResults[3].status, "ok");
+    assert.match(toolResults[2].error, /High tool-call count/);
+    assert.match(toolResults[4].error, /Run stopped: 5 tool calls.*churn ceiling/);
+    const warnSource = events.find(
+      (e) => e.type === "source" && e.record.ref === "call_ceiling_3_sql_exec"
+    );
+    assert.ok(warnSource, "ceiling-warn source record should be emitted");
+    assert.equal(warnSource.record.response.structuredContent.call_ceiling, true);
+    const stopSource = events.find(
+      (e) => e.type === "source" && e.record.ref === "churn_stop_5_sql_exec"
+    );
+    assert.ok(stopSource, "churn-stop source record should be emitted");
+    assert.equal(stopSource.record.response.structuredContent.stop_reason, "tool_call_churn");
+    const failure = events.find((e) => e.type === "failure");
+    assert.ok(failure, "run should terminate with a failure event");
+    assert.match(failure.message, /churn ceiling/);
+    assert.equal(turn, 5, "model should not get another turn after the churn stop");
+  } finally {
+    delete process.env.DIME_CALL_CEILING_WARN;
+    delete process.env.DIME_CALL_CEILING_STOP;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
