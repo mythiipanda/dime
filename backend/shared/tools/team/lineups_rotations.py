@@ -204,7 +204,7 @@ def _apply_competitive_nets(rows, comp):
             r["SAMPLE"] = "small: under 50 competitive possessions"
 
 
-@tool(description='Five-man lineup stats for one team id, sorted by minutes.')
+@tool(description='Five-man lineup stats for one team: all qualifying units sorted by minutes. For per-unit ratings with sample floors use get_lineup_stats; for the league-wide board use get_lineup_leaders.')
 def get_lineups(team_id: str | int, season: str | None = None, season_type: SeasonType = 'regular-season', measure_type: MeasureType = 'base', per_mode: PerMode = 'totals') -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)

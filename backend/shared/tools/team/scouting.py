@@ -9,7 +9,7 @@ def _pkg():
     return sys.modules[__package__]
 
 
-@tool(description='One-call dossier: record, roster, lineups, leaders context.')
+@tool(description='One-call dossier: record, roster, top lineup only, leaders context. For the full qualifying-unit set use get_lineups or get_lineup_stats.')
 def get_scouting_report(team_id: str | int, season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
@@ -38,7 +38,7 @@ def get_scouting_report(team_id: str | int, season: str | None = None) -> dict[s
             "meta": {"source": "nba_api", "season": season}}
 
 
-@tool(description='One-call next-opponent brief: record, net rating, top lineups, injuries.')
+@tool(description='One-call next-opponent brief: record, net rating, top lineup only, injuries.')
 async def get_scout_pack(team: str = "", opponent: str = "", season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)

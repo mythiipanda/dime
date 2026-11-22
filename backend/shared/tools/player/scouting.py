@@ -161,7 +161,7 @@ def get_debate_card(a: str, b: str, season: str | None = None, topic: str = "") 
     }
 
 
-@tool(description="Multi-part player report: season line, advanced profile, shots, clutch.")
+@tool(description="Multi-part player report: season line, advanced profile, recent shot log sample, clutch. Not a zone-diet source — use get_shot_zones or get_zone_deltas for zone splits.")
 def get_player_report(player: str | int, season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
