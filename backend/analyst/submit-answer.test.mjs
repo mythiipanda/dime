@@ -702,6 +702,7 @@ test("createPiExecution steers a substantial unsubmitted answer through submit_a
       q: "What was MEM's record in 2021-22?",
       history: [],
       model: "fixture:fixture",
+      sources: [makeSourceRecord("prior-mem", { rows: [{ team: "MEM", season: "2021-22", wins: 56, losses: 26 }] })],
       cwd,
       agentDir,
       bridge: { python: "fake", cwd, env: {} },
