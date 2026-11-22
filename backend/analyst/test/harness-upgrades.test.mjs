@@ -622,21 +622,21 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
   }
 });
 
-test("provider retry storm guard stops the run at the 12th retry attempt", () => {
+test("provider retry storm guard stops the run on the first exhausted call", () => {
   const emitted = [];
   let stoppedWith = null;
   const guard = createProviderRetryStormGuard(
     (event) => emitted.push(event),
     (reason) => { stoppedWith = reason; }
   );
-  for (let i = 0; i < 11; i++)
+  for (let i = 0; i < 20; i++)
     guard({ type: "auto_retry_start", attempt: i + 1, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
+  guard({ type: "auto_retry_end", success: true, attempt: 6 });
+  guard({ type: "auto_retry_end", success: true, attempt: 6 });
   assert.equal(emitted.length, 0);
   assert.equal(stoppedWith, null);
-  guard({ type: "auto_retry_end", success: true, attempt: 2 });
-  assert.equal(stoppedWith, null);
-  guard({ type: "auto_retry_start", attempt: 6, maxAttempts: 6, delayMs: 5000, errorMessage: "429 rate limited" });
-  assert.match(stoppedWith, /provider retry storm — 12 retry attempts/);
+  guard({ type: "auto_retry_end", success: false, attempt: 6, finalError: "429 rate limited" });
+  assert.match(stoppedWith, /exhausted all retries against a saturated lane/);
   assert.match(stoppedWith, /429 rate limited/);
 });
 
