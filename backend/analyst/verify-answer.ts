@@ -13,6 +13,7 @@ export type NumericAudit = {
     supported: number;
     unsupported: NumericClaim[];
     evidence_count: number;
+    missing_in_artifacts: NumericClaim[];
 };
 
 const SEASON_RE = /\b(?:19|20)\d{2}\s*[-/–—]\s*\d{2,4}\b/g;
@@ -182,28 +183,38 @@ export function auditAnswerNumbers(
     input: Pick<AnswerSubmission, "blocks" | "artifacts">,
     sources: readonly SourceRecord[]
 ): NumericAudit {
-    const claims: NumericClaim[] = [];
-    const seen = new Set<string>();
+    const proseClaims: NumericClaim[] = [];
+    const proseSeen = new Set<string>();
     for (const block of input.blocks)
-        addTextClaims(block.text, claims, seen);
-    (input.artifacts ?? []).forEach((artifact, index) => collectArtifactClaims(artifact, claims, seen, `artifacts[${index}]`));
+        addTextClaims(block.text, proseClaims, proseSeen);
+    const artifactClaims: NumericClaim[] = [];
+    const artifactSeen = new Set<string>();
+    (input.artifacts ?? []).forEach((artifact, index) => collectArtifactClaims(artifact, artifactClaims, artifactSeen, `artifacts[${index}]`));
     const evidence = collectEvidenceNumbers(sources);
+    const claims = [...proseClaims, ...artifactClaims];
+    const supportedBy = (claim: NumericClaim, values: number[]) =>
+        claim.values.some(value => values.some(other => numbersClose(value, other)));
+    const artifactValues = artifactClaims.flatMap(claim => claim.values);
+    const isSupported = (claim: NumericClaim) => supportedBy(claim, evidence);
     let supported = 0;
     const unsupported: NumericClaim[] = [];
     for (const claim of claims) {
-        if (claim.values.some(value => evidence.some(evidenceValue => numbersClose(value, evidenceValue))))
+        if (isSupported(claim))
             supported++;
         else
             unsupported.push(claim);
     }
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length };
+    const missing_in_artifacts = (input.artifacts ?? []).length > 0
+        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactValues))
+        : [];
+    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[]) {
     return defineTool({
         name: "verify_answer_numbers",
         label: "Verify answer numbers",
-        description: "Audit numeric literals in a draft submit_answer payload against successful tool results. Returns counts and unsupported literals with context; it does not submit the answer.",
+        description: "Audit numeric literals in a draft submit_answer payload against successful tool results. Returns counts and unsupported literals with context, plus prose figures missing from artifact payloads; it does not submit the answer.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const audit = auditAnswerNumbers(args, getContextSources());

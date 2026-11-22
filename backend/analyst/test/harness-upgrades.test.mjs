@@ -1724,3 +1724,34 @@ test("wrapBridgeTools warns at the call ceiling then stops the run at the churn 
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("verify_answer_numbers flags prose figures missing from artifact payloads", async () => {
+  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
+  const sources = [
+    makePayloadSourceRecord("src-1", { rows: [{ ortg: 118.4, drtg: 112.1 }] }),
+  ];
+  const artifactsOnlyProse = auditAnswerNumbers(
+    {
+      blocks: [{ text: "OKC's offensive rating is 118.4 and defensive rating 112.1." }],
+      artifacts: [{ kind: "table", title: "Ratings", columns: [{ key: "team", label: "Team" }], rows: [{ team: "OKC" }] }],
+    },
+    sources,
+  );
+  assert.ok(artifactsOnlyProse.missing_in_artifacts.length >= 2);
+  assert.ok(artifactsOnlyProse.missing_in_artifacts.some((claim) => claim.values.includes(118.4)));
+
+  const covered = auditAnswerNumbers(
+    {
+      blocks: [{ text: "OKC's offensive rating is 118.4." }],
+      artifacts: [{ kind: "table", title: "Ratings", columns: [{ key: "ortg", label: "ORTG", numeric: true }], rows: [{ team: "OKC", ortg: 118.4 }] }],
+    },
+    sources,
+  );
+  assert.equal(covered.missing_in_artifacts.length, 0);
+
+  const noArtifacts = auditAnswerNumbers(
+    { blocks: [{ text: "OKC's offensive rating is 118.4." }] },
+    sources,
+  );
+  assert.equal(noArtifacts.missing_in_artifacts.length, 0);
+});
