@@ -262,7 +262,7 @@ const UNIVERSAL_ARTIFACT_KINDS = new Set(["table"]);
 const ASK_TYPES: Record<string, AskType> = {
     leaderboard: {
         terms: ["leaders", "leaderboard", "league leaders", "top", "most", "highest", "lowest", "rank", "ranking", "rankings", "standings", "who led", "who leads", "who is the best", "who was the best", "best", "worst", "fewest"],
-        kinds: ["chart", "player_card"],
+        kinds: ["chart", "player_card", "compare"],
     },
     player_profile: {
         terms: ["player card", "player profile", "player snapshot", "player overview", "season line", "tell me about"],
@@ -302,7 +302,7 @@ const ASK_TYPES: Record<string, AskType> = {
     },
     exec_memo: {
         terms: ["memo", "briefing", "brief", "report", "writeup", "write-up", "presentation", "for the gm", "for ownership", "executive"],
-        kinds: ["memo", "chart"],
+        kinds: ["memo", "chart", "scatter", "compare"],
     },
 };
 
