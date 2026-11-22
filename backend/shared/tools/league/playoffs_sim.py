@@ -3,7 +3,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from .._core import coerce_team_id
+from .._core import coerce_team_id, team_error_message
 from ..sim import run_playoff_sim
 from ._helpers import _pkg
 
@@ -370,11 +370,11 @@ def _resolve_elo_anchor(elo: dict[str, float],
     try:
         opp_id = coerce_team_id(opponent)
     except ValueError:
-        return "", 1500, f"unknown team: {opponent}"
+        return "", 1500, team_error_message(opponent)
     by_id = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
     anchor_abbr = by_id.get(opp_id, "")
     if not anchor_abbr or anchor_abbr not in elo:
-        return "", 1500, f"unknown team: {opponent}"
+        return "", 1500, team_error_message(opponent)
     return anchor_abbr, round(elo[anchor_abbr]), None
 
 

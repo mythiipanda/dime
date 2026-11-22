@@ -294,11 +294,11 @@ def _validate_brief_teams(a: str, b: str, season: str) -> tuple[str, str, str | 
     try:
         ida = pkg.coerce_team_id(a)
     except ValueError:
-        return "", "", "unknown team: " + a
+        return "", "", pkg.team_error_message(a)
     try:
         idb = pkg.coerce_team_id(b)
     except ValueError:
-        return "", "", "unknown team: " + b
+        return "", "", pkg.team_error_message(b)
     if ida == idb:
         return "", "", "a and b must be different teams"
     abbr_a = str(pkg._abbrev(a) or "").strip().upper()

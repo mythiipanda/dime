@@ -110,7 +110,8 @@ def test_unknown_team_refusal(monkeypatch):
     out = get_transactions.invoke({"team": "ZZZ"})
     assert out["ok"] is False
     assert out["rows"] == []
-    assert "unknown team: ZZZ" in out["error"]
+    assert "unknown team" in out["error"]
+    assert "ZZZ" in out["error"]
 
 
 def test_no_coverage_refusal_names_seasons(monkeypatch):

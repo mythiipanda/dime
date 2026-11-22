@@ -15,7 +15,7 @@ from .cba_cap import (
     _payroll_source,
     _salary_date,
 )
-from .._core import coerce_team_id
+from .._core import coerce_team_id, team_error_message
 from .trade_value import _trade_guard_vintage_error, _trade_unknown_message
 
 _AMOUNT_RE = _re.compile(r"^\$?([\d,]+(?:\.\d+)?)\s*([mMkK])?$")
@@ -137,7 +137,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
             if item["id"] == team_id)
     except (ValueError, StopIteration):
         return {"tool": "get_cap_scenario", "ok": False,
-                "error": f"unknown team: {team}"}
+                "error": team_error_message(team)}
     season = str(season or "").strip()
     sign_rows, bad_signings = _parse_signings(signings)
     if bad_signings:

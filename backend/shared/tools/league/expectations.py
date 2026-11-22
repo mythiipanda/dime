@@ -2,7 +2,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from .._core import coerce_team_id
+from .._core import coerce_team_id, team_error_message
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 
 
@@ -112,7 +112,7 @@ def get_expectations(team_id: object = None, team: str = "",
     info = _team_lookup().get(tid)
     if not info:
         return {"tool": "get_expectations", "ok": False,
-                "error": f"unknown team id {tid}"}
+                "error": team_error_message(tid)}
     try:
         seasons = max(1, min(int(seasons or 3), 10))
     except (TypeError, ValueError):

@@ -3,6 +3,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
 
 _FA_COLS = ["PLAYER_NAME", "FA_TYPE", "PRIOR_SALARY", "CAP_HOLD_EST",
@@ -53,10 +54,12 @@ def _scenarios(room: dict, fa: list[dict]) -> list[dict]:
     "with seed_free_agents.py."))
 def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
     _pkg()
-    abbr = _resolve_team_abbr(str(team or "").strip().upper())
+    raw_team = str(team or "").strip()
+    abbr = _resolve_team_abbr(raw_team.upper())
     if not abbr:
         return {"tool": "get_fa_plan", "ok": False,
-                "error": "team needed"}
+                "error": "team needed" if not raw_team
+                         else team_error_message(raw_team)}
     try:
         with _owned_connection(None, read_only=True) as con:
             tables = _warehouse_tables(con)

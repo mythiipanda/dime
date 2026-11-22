@@ -170,15 +170,21 @@ def get_team_season_summary(
                 "error": "a resolved team is required"}
     try:
         resolved_team_id = pkg.coerce_team_id(team_id)
+    except (TypeError, ValueError):
+        return {"tool": "get_team_season_summary", "ok": False,
+                "error": pkg.team_error_message(team_id)}
+    try:
         resolved_season = pkg.resolve_season(season)
     except (TypeError, ValueError):
         return {"tool": "get_team_season_summary", "ok": False,
-                "error": "team and season scope could not be resolved"}
+                "error": "season scope could not be resolved"}
 
     games = pkg._hist_team_games(resolved_team_id, resolved_season)
     if not games:
         return {"tool": "get_team_season_summary", "ok": False,
-                "error": "regular-season rows are unavailable for this team and season"}
+                "error": pkg.season_rows_error(
+                    None, "silver_hist_gamelogs", resolved_season,
+                    pkg._abbrev(str(resolved_team_id)))}
 
     validated = _validate_team_season_rows(games, resolved_team_id, resolved_season)
     if validated is None:

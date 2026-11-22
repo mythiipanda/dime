@@ -142,7 +142,7 @@ def test_missing_team_error(monkeypatch, tmp_path):
     _load(path, _okc_prod(), _okc_cap())
     res = get_value_contracts.invoke({"team": "SAS", "season": "2025-26"})
     assert res["ok"] is False
-    assert "no salary rows" in res["error"]
+    assert "no rows for SAS 2025-26" in res["error"]
 
 
 def test_requires_team(monkeypatch, tmp_path):

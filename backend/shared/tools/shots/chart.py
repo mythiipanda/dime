@@ -1,4 +1,6 @@
 import sys
+
+from .._core import team_error_message
 from typing import Any
 
 from langchain_core.tools import tool
@@ -69,7 +71,7 @@ def _team_ids(con: Any, season: str, raw: str) -> tuple[list[int], str | None]:
     if partial:
         names = sorted({name_of[tid] for tid in partial})
         return [], f"ambiguous team {text!r}: {', '.join(names)}"
-    return [], f"unknown team {text!r}"
+    return [], team_error_message(text)
 
 
 def _zones_for(con: Any, where: str, params: list[object]) -> dict[str, dict[str, Any]]:

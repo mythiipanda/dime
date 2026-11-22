@@ -3,7 +3,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import coerce_team_id
+from ._core import coerce_team_id, team_error_message
 
 _TABLE = "silver_transactions"
 
@@ -162,7 +162,7 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
             tid = coerce_team_id(want_team)
         except ValueError:
             return {"tool": "get_transactions", "ok": False, "rows": [],
-                    "error": f"unknown team: {want_team}",
+                    "error": team_error_message(want_team),
                     "meta": {"source": f"warehouse:{_TABLE}",
                              "team": want_team,
                              "start": want_start, "end": want_end,

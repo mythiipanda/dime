@@ -5,6 +5,7 @@ from langchain_core.tools import tool
 from ._helpers import _owned_connection, _pkg
 from .cba_cap import CAP, _payroll_source, _salary_date, _resolve_team_abbr
 from .draft_contracts import _contract_norm
+from .._core import season_rows_error, team_error_message
 
 _CHEAP_CAP_SHARE = 0.10
 _EXPENSIVE_CAP_SHARE = 0.20
@@ -115,10 +116,12 @@ def _summary(rows: list[dict]) -> dict[str, Any]:
     "roster plus summary deltas.")
 def get_value_contracts(team: str = "", season: str | None = None,
                         benchmark_team: str = "") -> dict[str, Any]:
-    team = (_resolve_team_abbr(str(team or "")) or "").upper()
+    raw_team = str(team or "").strip()
+    team = (_resolve_team_abbr(raw_team) or "").upper()
     if not team:
         return {"tool": "get_value_contracts", "ok": False,
-                "error": "team needed"}
+                "error": "team needed" if not raw_team
+                         else team_error_message(raw_team)}
     bench = (_resolve_team_abbr(str(benchmark_team or "")) or "").upper() \
         if str(benchmark_team or "").strip() else ""
     with _owned_connection(None, read_only=True) as con:
@@ -135,13 +138,15 @@ def get_value_contracts(team: str = "", season: str | None = None,
                     "error": err}
         if not prod:
             return {"tool": "get_value_contracts", "ok": False,
-                    "error": f"no production rows for {season}"}
+                    "error": season_rows_error(con, "silver_leaders_pts",
+                                               season)}
         from shared.contracts import salary_records
         cap = [r for r in salary_records(con)
                if str(r.get("TEAM") or "").upper() in ({team, bench} - {""})]
         if not any(str(r.get("TEAM")).upper() == team for r in cap):
             return {"tool": "get_value_contracts", "ok": False,
-                    "error": f"no salary rows for {team}"}
+                    "error": season_rows_error(con, "silver_salaries",
+                                               season, team)}
         salary_date = _salary_date(con)
         source = _payroll_source(con)
     missing = [c for c in _PROD_WEIGHTS if c not in have]
