@@ -18,6 +18,7 @@ export type NumericAudit = {
     no_artifacts_on_artifact_ask: string[];
     metric_value_gaps: string[];
     unsupported_claims: string[];
+    unevidenced_asks: string[];
 };
 
 const SEASON_RE = /\b(?:19|20)\d{2}\s*[-/–—]\s*\d{2,4}\b/g;
@@ -273,6 +274,72 @@ export function auditMetricCoverage(
     return gaps;
 }
 
+export function collectEvidenceText(sources: readonly SourceRecord[]): string {
+    const parts: string[] = [];
+    const seenRefs = new Set<string>();
+    for (const record of sources) {
+        if (seenRefs.has(record.ref))
+            continue;
+        seenRefs.add(record.ref);
+        try {
+            const result = sourceResult(record);
+            if (result.isError)
+                continue;
+            parts.push(JSON.stringify(result.structuredContent.result ?? ""));
+        }
+        catch {
+        }
+    }
+    return parts.join(" ").toLowerCase();
+}
+
+function askClauses(question: string): string[] {
+    return question
+        .split(/[?;!\n]+|(?<=\.)\s+(?=[A-Z])/)
+        .map(clause => clause.trim())
+        .filter(clause => clause.length >= 12 && !ASK_SKIP_RE.test(clause));
+}
+
+function askAnchors(clause: string): Set<string> {
+    return new Set(
+        (clause.match(ASK_ANCHOR_RE) ?? [])
+            .map(token => token.toLowerCase())
+            .filter(token => !ASK_STOPWORDS.has(token))
+    );
+}
+
+const EVIDENCE_ANCHOR_RE = /\b[A-Z][A-Z0-9]{1,}\b|\b\d+(?:[.,]\d+)*%?\b/g;
+
+function evidenceAnchors(clause: string): Set<string> {
+    return new Set(
+        (clause.match(EVIDENCE_ANCHOR_RE) ?? [])
+            .map(token => token.toLowerCase())
+            .filter(token => !ASK_STOPWORDS.has(token))
+    );
+}
+
+export function auditEvidenceCoverage(
+    question: string,
+    input: Pick<AnswerSubmission, "blocks" | "artifacts">,
+    evidenceText: string
+): string[] {
+    const haystack = (
+        input.blocks.map(block => block.text).join(" ") + " " +
+        JSON.stringify(input.artifacts ?? [])
+    ).toLowerCase();
+    const unevidenced: string[] = [];
+    for (const clause of askClauses(question)) {
+        const anchors = evidenceAnchors(clause);
+        if (anchors.size === 0)
+            continue;
+        if (![...anchors].some(token => haystack.includes(token)))
+            continue;
+        if (![...anchors].some(token => evidenceText.includes(token)))
+            unevidenced.push(clause);
+    }
+    return unevidenced;
+}
+
 export function auditAskCoverage(
     question: string,
     input: Pick<AnswerSubmission, "blocks" | "artifacts">
@@ -281,15 +348,9 @@ export function auditAskCoverage(
         input.blocks.map(block => block.text).join(" ") + " " +
         JSON.stringify(input.artifacts ?? [])
     ).toLowerCase();
-    const clauses = question
-        .split(/[?;!\n]+|(?<=\.)\s+(?=[A-Z])/)
-        .map(clause => clause.trim())
-        .filter(clause => clause.length >= 12 && !ASK_SKIP_RE.test(clause));
     const uncovered: string[] = [];
-    for (const clause of clauses) {
-        const anchors = new Set(
-            (clause.match(ASK_ANCHOR_RE) ?? []).map(token => token.toLowerCase()).filter(token => !ASK_STOPWORDS.has(token))
-        );
+    for (const clause of askClauses(question)) {
+        const anchors = askAnchors(clause);
         if (anchors.size === 0)
             continue;
         const covered = [...anchors].some(token => haystack.includes(token));
@@ -302,7 +363,8 @@ export function auditAskCoverage(
 export function auditAnswerNumbers(
     input: Pick<AnswerSubmission, "blocks" | "artifacts">,
     sources: readonly SourceRecord[],
-    question?: string
+    question?: string,
+    extraEvidenceText?: string
 ): NumericAudit {
     const proseClaims: NumericClaim[] = [];
     const proseSeen = new Set<string>();
@@ -343,14 +405,17 @@ export function auditAnswerNumbers(
         .filter(claim => /%|\$/.test(claim.raw) || claim.values.some(value => !Number.isInteger(value) || Math.abs(value) >= 100))
         .slice(0, 8)
         .map(claim => `${claim.raw} (near "${claim.context.slice(0, 80)}")`);
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims };
+    const unevidenced_asks = question
+        ? auditEvidenceCoverage(question, input, (collectEvidenceText(sources) + " " + (extraEvidenceText ?? "")).toLowerCase()).slice(0, 10)
+        : [];
+    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[], question?: string) {
     return defineTool({
         name: "verify_answer_numbers",
         label: "Verify answer numbers",
-        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, asks for tables/compares/charts with zero artifacts, and stat-shaped figures tracing to no tool output (unsupported_claims); it does not submit the answer.",
+        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, asks for tables/compares/charts with zero artifacts, stat-shaped figures tracing to no tool output (unsupported_claims), and ask facets narrated in the answer but absent from every tool result and call (unevidenced_asks); it does not submit the answer.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const audit = auditAnswerNumbers(args, getContextSources(), question);

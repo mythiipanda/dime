@@ -777,6 +777,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     };
                     let submitAuditRejections = 0;
                     const consultedTables = new Set<string>();
+                    const toolArgsText: string[] = [];
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
@@ -791,7 +792,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             const audit = auditAnswerNumbers(
                                 submission,
                                 [...(start.sources ?? []), ...connected.results.values()],
-                                start.q
+                                start.q,
+                                toolArgsText.join(" ")
                             );
                             const omitted = submission.omitted ?? [];
                             const missingArtifacts = audit.missing_in_artifacts
@@ -807,7 +809,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const unsupportedClaims = audit.unsupported_claims
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
-                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0)
+                            const unevidencedAsks = audit.unevidenced_asks
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
@@ -823,9 +827,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.missing_required_tables = missingTables;
                             if (unsupportedClaims.length > 0)
                                 gaps.unsupported_claims = unsupportedClaims;
+                            if (unevidencedAsks.length > 0)
+                                gaps.unevidenced_asks = unevidencedAsks;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
@@ -836,9 +842,12 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
                         tools: [
                             ...wrapBridgeTools(bridge.tools, connected.results, (event: Parameters<typeof emit>[0]) => {
-                                if (event.type === "tool_call" && event.args !== undefined)
-                                    for (const match of JSON.stringify(event.args).toLowerCase().matchAll(WAREHOUSE_TABLE_RE))
+                                if (event.type === "tool_call" && event.args !== undefined) {
+                                    const argsJson = JSON.stringify(event.args).toLowerCase();
+                                    toolArgsText.push(argsJson);
+                                    for (const match of argsJson.matchAll(WAREHOUSE_TABLE_RE))
                                         consultedTables.add(match[0]);
+                                }
                                 emit(event);
                             }, tracker, (reason: string) => {
                                 emit({ type: "failure", kind: "loop_stop", message: reason });
