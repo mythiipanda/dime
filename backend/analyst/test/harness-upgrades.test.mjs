@@ -2243,3 +2243,192 @@ test("auto-land merges vetoed payload omitted with outstanding flag strings", as
   const noOmitted = autoLandedSubmission({ blocks: [{ text: "x" }] }, ["flag a", "flag b"]);
   assert.deepEqual(noOmitted.omitted, ["flag a", "flag b"]);
 });
+
+test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct team for lineup tools, once", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-lineup-pool-fanout-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let execCount = 0;
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    turn++;
+    let msg;
+    if (turn === 1) {
+      const code = `
+        const r1 = await tools.get_lineup_stats({ team: "BOS" });
+        const r2 = await tools.get_lineup_stats({ team: "NYK", season: "2024-25" });
+        const r3 = await tools.get_lineup_stats({ team: "MEM" });
+        const r4 = await tools.get_lineup_stats({ team: "DEN" });
+        const r5 = await tools.get_lineup_stats({ team: "BOS" });
+        return { r1, r2, r3, r4, r5 };
+      `;
+      msg = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "toolCall", id: "call-lineup-pool", name: "codemode", arguments: { code } }],
+        stopReason: "toolUse", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    } else {
+      msg = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }],
+        stopReason: "stop", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    }
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [
+      {
+        name: "get_lineup_stats",
+        label: "get_lineup_stats",
+        description: "One team's lineup stats",
+        parameters: Type.Object({ team: Type.String(), season: Type.Optional(Type.String()) }),
+        async execute(callId) {
+          execCount++;
+          const ref = `src-lineup-${execCount}`;
+          const payload = { rows: [{ group_name: "five" }] };
+          const record = {
+            ref, callId, tool: "get_lineup_stats",
+            response: {
+              content: [{ type: "text", text: JSON.stringify(payload) }],
+              structuredContent: payload, isError: false,
+            },
+          };
+          resultsMap.set(ref, record);
+          return {
+            content: [], details: undefined,
+            structuredContent: { ref, tool: "get_lineup_stats", result: payload, isError: false },
+            isError: false,
+          };
+        },
+      },
+    ],
+    results: resultsMap,
+    pid: 1004,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Best five-man units in the league", history: [], model: "fixture:fixture",
+      cwd, agentDir, bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    assert.equal(execCount, 5);
+    const steers = events.filter((e) => e.type === "tool_result" && e.name === "pool_fanout_steer");
+    assert.equal(steers.length, 1, "steer fires once per tool");
+    const steerCall = events.find((e) => e.type === "tool_call" && e.name === "pool_fanout_steer");
+    assert.deepEqual(steerCall?.args, { tool: "get_lineup_stats", teams: 3 });
+    const resultEvents = events.filter((e) => e.type === "tool_result" && e.name === "get_lineup_stats");
+    assert.equal(resultEvents.length, 5);
+    assert.ok(resultEvents.every((e) => e.status === "ok"), "steer never blocks the call");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("wrapBridgeTools does not steer a lineup tool used for one team's variants", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-lineup-single-team-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let execCount = 0;
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    turn++;
+    let msg;
+    if (turn === 1) {
+      const code = `
+        const r1 = await tools.get_lineup_stats({ team: "DEN", season: "2024-25" });
+        const r2 = await tools.get_lineup_stats({ team: "DEN", season: "2023-24" });
+        const r3 = await tools.get_lineup_stats({ team: "DEN" });
+        return { r1, r2, r3 };
+      `;
+      msg = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "toolCall", id: "call-lineup-one-team", name: "codemode", arguments: { code } }],
+        stopReason: "toolUse", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    } else {
+      msg = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }],
+        stopReason: "stop", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    }
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [
+      {
+        name: "get_lineup_stats",
+        label: "get_lineup_stats",
+        description: "One team's lineup stats",
+        parameters: Type.Object({ team: Type.String(), season: Type.Optional(Type.String()) }),
+        async execute(callId) {
+          execCount++;
+          const ref = `src-lineup-1t-${execCount}`;
+          const payload = { rows: [{ group_name: "five" }] };
+          const record = {
+            ref, callId, tool: "get_lineup_stats",
+            response: {
+              content: [{ type: "text", text: JSON.stringify(payload) }],
+              structuredContent: payload, isError: false,
+            },
+          };
+          resultsMap.set(ref, record);
+          return {
+            content: [], details: undefined,
+            structuredContent: { ref, tool: "get_lineup_stats", result: payload, isError: false },
+            isError: false,
+          };
+        },
+      },
+    ],
+    results: resultsMap,
+    pid: 1005,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Denver's best lineup vs their most-used one", history: [], model: "fixture:fixture",
+      cwd, agentDir, bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    assert.equal(execCount, 3);
+    const steers = events.filter((e) => e.type === "tool_result" && e.name === "pool_fanout_steer");
+    assert.equal(steers.length, 0, "no steer for one team's repeated lookups");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
