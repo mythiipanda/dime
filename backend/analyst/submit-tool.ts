@@ -145,7 +145,8 @@ export function validateAnswerSubmission(
 
 export function createSubmitAnswerTool(
     getContextSources: () => SourceRecord[],
-    onAccept: (submission: AnswerSubmission) => void
+    onAccept: (submission: AnswerSubmission) => void,
+    onPreAudit?: (submission: AnswerSubmission) => string | null
 ) {
     return defineTool({
         name: "submit_answer",
@@ -157,6 +158,14 @@ export function createSubmitAnswerTool(
             const sourceMap = new Map(sources.map(s => [s.ref, s]));
             const warnings: string[] = [];
             const validated = validateAnswerSubmission(args, ref => sourceMap.get(ref), [...sourceMap.keys()], warnings);
+            if (onPreAudit) {
+                const rejection = onPreAudit(validated);
+                if (rejection)
+                    return {
+                        content: [{ type: "text", text: rejection }],
+                        details: undefined
+                    };
+            }
             onAccept(validated);
             const omittedNote = validated.omitted && validated.omitted.length > 0
                 ? ` ${validated.omitted.length} omitted part(s) recorded.`

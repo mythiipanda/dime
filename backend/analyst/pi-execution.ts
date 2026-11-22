@@ -7,7 +7,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { createVerifyAnswerNumbersTool } from "./verify-answer.js";
+import { auditAnswerNumbers, createVerifyAnswerNumbersTool } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -746,6 +746,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         sourceCount: () => (start.sources?.length ?? 0) + connected.results.size,
                         submitted: false,
                     };
+                    let submitAuditDone = false;
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
@@ -753,6 +754,26 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             acceptedSubmission = submission;
                             if (submission.artifacts && submission.artifacts.length > 0)
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
+                        },
+                        (submission) => {
+                            if (submitAuditDone)
+                                return null;
+                            submitAuditDone = true;
+                            const audit = auditAnswerNumbers(
+                                submission,
+                                [...(start.sources ?? []), ...connected.results.values()],
+                                start.q
+                            );
+                            const gaps: Record<string, unknown> = {};
+                            if (audit.missing_in_artifacts.length > 0)
+                                gaps.missing_in_artifacts = audit.missing_in_artifacts.map(claim => claim.context);
+                            if (audit.uncovered_asks.length > 0)
+                                gaps.uncovered_asks = audit.uncovered_asks;
+                            if (Object.keys(gaps).length === 0)
+                                return null;
+                            emit({ type: "tool_call", name: "submit_answer_audit" });
+                            emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
+                            return `Not submitted — the honesty audit found gaps: ${JSON.stringify(gaps)}. Move prose-stated figures into artifact payloads and cover every flagged ask (or record it in omitted), then call submit_answer again. The next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
