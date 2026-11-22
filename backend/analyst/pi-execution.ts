@@ -566,7 +566,7 @@ function wrapBridgeTools(
     stopRun: (reason: string) => void
 ) {
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
-    const callCounts = new Map<string, { count: number; lastRef?: string }>();
+    const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; blocked?: number }>();
     const lastErrors = new Map<string, { error: string; count: number }>();
     const failStreaks = new Map<string, number>();
     const tripped = new Set<string>();
@@ -604,7 +604,15 @@ function wrapBridgeTools(
             entry.count += 1;
             callCounts.set(key, entry);
             if (entry.count >= 3) {
-                if (entry.count >= 3 + LOOP_STOP_AFTER_INJECTIONS) {
+                if (entry.lastSuccessRef) {
+                    const prior = results.get(entry.lastSuccessRef);
+                    if (prior) {
+                        emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef}` });
+                        return sourceResult(prior);
+                    }
+                }
+                entry.blocked = (entry.blocked ?? 0) + 1;
+                if (entry.blocked > LOOP_STOP_AFTER_INJECTIONS) {
                     const { record, payload } = buildLoopStopRecord(tool.name, callId, entry.count);
                     results.set(record.ref, record);
                     emit({ type: "source", record });
@@ -630,6 +638,8 @@ function wrapBridgeTools(
                 const domain = objectValue(result.structuredContent.result);
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
+                if (!failed)
+                    entry.lastSuccessRef = record.ref;
                 if (failed) {
                     const streak = (failStreaks.get(tool.name) ?? 0) + 1;
                     failStreaks.set(tool.name, streak);
