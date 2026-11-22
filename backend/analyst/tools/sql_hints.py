@@ -18,6 +18,18 @@ _ERROR_GATE_TOKENS = (
     "binder error",
     "catalog error",
     "unavailable tables",
+    "syntax error",
+    "parser error",
+    "parameter",
+    "placeholder",
+)
+_SYNTAX_RES = (
+    re.compile(r'syntax error at or near\s+"([^"]+)"', re.IGNORECASE),
+    re.compile(r'syntax error at or near\s+(\S+)', re.IGNORECASE),
+)
+_PARAM_RES = (
+    re.compile(r'values were not provided for parameter', re.IGNORECASE),
+    re.compile(r'bound parameters? does not match|unexpected prepared parameter', re.IGNORECASE),
 )
 _MAX_HINT_TABLES = 4
 _MAX_HINT_COLUMNS = 40
@@ -117,6 +129,22 @@ def schema_hint_for_sql_failure(sql: str, res: dict[str, Any]) -> dict[str, Any]
         hint["similar_tables"] = similar[:6]
         if len(hint["similar_tables"]) == 0 and len(declared) <= _MAX_DECLARED_TABLES:
             hint["declared_tables"] = declared
+    if any(rx.search(error_text) for rx in _PARAM_RES):
+        hint["parameter_error"] = {
+            "rule": "sql_exec takes a raw SQL string - placeholders cannot be bound",
+            "fix": "inline the values as SQL literals (quote strings, keep numbers bare) and resubmit without `?` or $N placeholders",
+            "example": "sql_exec(\"select PLAYER_NAME, SALARY_2026_27 from silver_salaries where TEAM = 'BOS'\")",
+        }
+    token = _first_capture(_SYNTAX_RES, error_text)
+    if token:
+        entry: dict[str, Any] = {
+            "offending_token": token,
+            "fix": "fix or remove the clause containing this token; check quoting, keyword order, and trailing commas",
+        }
+        idx = (sql or "").lower().find(token.lower())
+        if idx >= 0:
+            entry["clause"] = sql[max(0, idx - 60):idx + len(token) + 60].strip()
+        hint["syntax_error"] = entry
     if not hint:
         return None
     return hint
