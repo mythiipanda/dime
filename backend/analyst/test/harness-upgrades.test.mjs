@@ -593,26 +593,17 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
     assert.equal(toolResults.length, 3);
     assert.equal(toolResults[0].status, "ok");
     assert.equal(toolResults[1].status, "ok");
-    assert.equal(toolResults[2].status, "fail");
-    assert.match(
-      toolResults[2].error,
-      /Already called sql_exec 3 times with equivalent arguments.*pivot or finish/
-    );
+    assert.equal(toolResults[2].status, "ok");
+    assert.match(toolResults[2].result, /reused result of src-exec-2/);
 
     const loopSource = events.find(
       (e) => e.type === "source" && e.record.ref === "loop_3_sql_exec"
     );
-    assert.ok(loopSource, "Synthetic loop source record should be emitted");
-    assert.ok(resultsMap.has("loop_3_sql_exec"));
-    const loopPayload = loopSource.record.response.structuredContent;
-    assert.equal(loopPayload.ok, false);
-    assert.equal(loopPayload.loop_detected, true);
-    assert.match(loopPayload.recovery_hint, /Reuse prior ref src-exec-2 via tools\.read_source/);
-    assert.deepEqual(loopPayload.next_actions, [
-      "Inspect prior source ref",
-      "Modify query/parameters",
-      "Call submit_answer",
-    ]);
+    assert.equal(
+      loopSource,
+      undefined,
+      "Successful repeats replay the cached result instead of emitting a loop record"
+    );
     assert.equal(
       events.find((e) => e.type === "answer")?.text,
       "Recovered after loop warning."
@@ -660,7 +651,7 @@ test("provider retry storm guard fires the retry-time budget once on cumulative 
   assert.equal(stoppedWith, null);
 });
 
-test("wrapBridgeTools terminates the run on the 6th equivalent-args call", async () => {
+test("wrapBridgeTools terminates the run on the 4th blocked repeat of a failing call", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "dime-loop-stop-"));
   const agentDir = join(cwd, "agent");
   await mkdir(agentDir, { recursive: true });
@@ -721,7 +712,7 @@ test("wrapBridgeTools terminates the run on the 6th equivalent-args call", async
         async execute(callId) {
           execCount++;
           const ref = `src-stop-${execCount}`;
-          const payload = { rows: [{ val: 1 }] };
+          const payload = { ok: false, error: "warehouse unavailable" };
           const record = {
             ref,
             callId,
@@ -729,15 +720,15 @@ test("wrapBridgeTools terminates the run on the 6th equivalent-args call", async
             response: {
               content: [{ type: "text", text: JSON.stringify(payload) }],
               structuredContent: payload,
-              isError: false,
+              isError: true,
             },
           };
           resultsMap.set(ref, record);
           return {
             content: [],
             details: undefined,
-            structuredContent: { ref, tool: "sql_exec", result: payload, isError: false },
-            isError: false,
+            structuredContent: { ref, tool: "sql_exec", result: payload, isError: true },
+            isError: true,
           };
         },
       },
@@ -767,9 +758,7 @@ test("wrapBridgeTools terminates the run on the 6th equivalent-args call", async
     assert.equal(execCount, 2);
     const toolResults = events.filter((e) => e.type === "tool_result" && e.name === "sql_exec");
     assert.equal(toolResults.length, 6);
-    assert.equal(toolResults[0].status, "ok");
-    assert.equal(toolResults[1].status, "ok");
-    for (const result of toolResults.slice(2))
+    for (const result of toolResults)
       assert.equal(result.status, "fail");
     assert.match(toolResults[5].error, /Run stopped: sql_exec called 6 times/);
     const stopSource = events.find(
