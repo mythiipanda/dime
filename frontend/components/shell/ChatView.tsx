@@ -18,10 +18,12 @@ import { citationDetails } from "../../lib/citation-details";
 import { clearWorkflowDraft, createWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft, workflowDraftWasSent, type WorkflowDraft } from "../../lib/workflow-drafts";
 
 export const suggestedPrompts = [
-  "Build a scouting report on Shai Gilgeous-Alexander",
-  "What changed in the Celtics’ offense this season?",
-  "Find undervalued wings who can defend and shoot",
+  "Can Miami aggregate salaries for Giannis under the apron?",
+  "Which five-man units have the best net rating on the Hornets?",
+  "Compare Jokić and Kennard on efficiency and usage",
 ];
+
+export const replayPrompt = "Build a scouting report on Shai Gilgeous-Alexander";
 
 export function PiAnswer({ text, carry, prefix }: { text: string; carry: VerificationCarry | null; prefix: string }) {
   const sources = new Map((carry?.sources ?? []).map(source => [source.ref, source]));
@@ -90,7 +92,7 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
   useEffect(() => {
     if (!replay || chat.historyLoading || replayStarted.current) return;
     replayStarted.current = true;
-    chat.submit(suggestedPrompts[0]);
+    chat.submit(replayPrompt);
   }, [replay, chat.historyLoading, chat.submit]);
   const busy = !!chat.live;
   const composer = <PromptBar value={chat.draft} onChange={changeDraft} onSend={chat.submit} onStop={chat.stop} busy={busy || chat.historyLoading} models={chat.modelOptions} model={chat.model} onModelChange={chat.setModel} modelError={chat.modelsError} onRetry={chat.retryModels} providers={chat.providers} modelsLoading={chat.modelsLoading} />;
