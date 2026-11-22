@@ -41,7 +41,7 @@ function isProvider(name: string): name is Provider { return Object.hasOwn(polic
 const order: Provider[] = ["groq", "agnes", "zai", "cerebras", "nvidia", "openrouter", "mistral", "gemini", "inception"];
 const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception"]);
 const reasoningReplay = new Set<Provider>(["reflection", "nvidia"]);
-const reasoningReplayModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
+const thinkingAsTextModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
 const limitSchema = Type.Object({ contextWindow: Type.Integer(), maxTokens: Type.Integer() }, { additionalProperties: true });
 
@@ -117,7 +117,8 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
             return {
                 provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers,
                 contextWindow: limits.contextWindow, maxTokens: limits.maxTokens,
-                ...(reasoningReplay.has(provider) || reasoningReplayModels.has(provider + ":" + model) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}),
+                ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}),
+                ...(thinkingAsTextModels.has(provider + ":" + model) ? { compat: { requiresThinkingAsText: true } } : {}),
                 ...(provider === "nvidia" ? { reasoning: true, compat: { requiresReasoningContentOnAssistantMessages: true, thinkingFormat: "qwen-chat-template" } } : {}),
             };
         }
