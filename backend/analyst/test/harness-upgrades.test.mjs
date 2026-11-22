@@ -1780,6 +1780,42 @@ test("verify_answer_numbers flags question clauses with no matching terms in the
   assert.equal(noQuestion.uncovered_asks.length, 0);
 });
 
+test("verify_answer_numbers flags narrated facets absent from all tool evidence", async () => {
+  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
+  const question = "Measure lineup continuity for CHI 2022-23 versus the preceding season in `silver_hist_lineups`. Report the eligible unit count and possession-weighted mean net rating.";
+  const planNotAnswer = auditAnswerNumbers(
+    {
+      blocks: [{ text: "Summary of what would be needed: pull CHI 2022-23 five-man lineups, filter to poss>=25 and non-null net rating, canonicalize the five IDs, then report the eligible unit count and possession-weighted mean net rating." }],
+    },
+    [],
+    question,
+  );
+  assert.ok(planNotAnswer.unevidenced_asks.length >= 1);
+
+  const evidenced = auditAnswerNumbers(
+    {
+      blocks: [{ text: "CHI carried 14 eligible lineup units in 2022-23 with a possession-weighted mean net rating of -1.8." }],
+    },
+    [
+      makePayloadSourceRecord("src-1", { rows: [{ team: "CHI", units: 14, poss: 612, net_rating: -1.8 }] }),
+    ],
+    question,
+  );
+  assert.equal(evidenced.unevidenced_asks.length, 0);
+
+  const derivedMath = auditAnswerNumbers(
+    {
+      blocks: [{ text: "The possession-weighted mean net rating for CHI 2022-23 lineups is -1.8." }],
+    },
+    [
+      makePayloadSourceRecord("rp-1", { stdout: "chi 2022-23 net_rating weighted mean -1.8" }, { tool: "run_python" }),
+    ],
+    question,
+    "{\"code\":\"df['net_rating'] * df['poss']\"}",
+  );
+  assert.equal(derivedMath.unevidenced_asks.length, 0);
+});
+
 test("submit_answer vetoes once on pre-audit gaps then accepts the retry", async () => {
   const { createSubmitAnswerTool } = await import("../dist/submit-tool.js");
   const accepted = [];
