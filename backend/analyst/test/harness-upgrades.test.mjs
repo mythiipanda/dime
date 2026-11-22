@@ -640,6 +640,26 @@ test("provider retry storm guard stops the run on the first exhausted call", () 
   assert.match(stoppedWith, /429 rate limited/);
 });
 
+test("provider retry storm guard fires the retry-time budget once on cumulative delay", () => {
+  const emitted = [];
+  let stoppedWith = null;
+  let burned = 0;
+  const guard = createProviderRetryStormGuard(
+    (event) => emitted.push(event),
+    (reason) => { stoppedWith = reason; },
+    (ms) => { burned = ms; },
+    30_000
+  );
+  for (let i = 0; i < 5; i++)
+    guard({ type: "auto_retry_start", attempt: i + 1, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
+  assert.equal(burned, 0);
+  guard({ type: "auto_retry_start", attempt: 6, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
+  assert.equal(burned, 30_000);
+  guard({ type: "auto_retry_start", attempt: 7, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
+  assert.equal(burned, 30_000);
+  assert.equal(stoppedWith, null);
+});
+
 test("wrapBridgeTools terminates the run on the 6th equivalent-args call", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "dime-loop-stop-"));
   const agentDir = join(cwd, "agent");
