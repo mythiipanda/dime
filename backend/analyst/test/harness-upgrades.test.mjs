@@ -14,6 +14,7 @@ import {
   flagAcknowledgedByOmissions,
   listWorkspaceArtifacts,
   normalizeLoopArgs,
+  submitAuditRejectionMessage,
 } from "../dist/pi-execution.js";
 import {
   createSubmitAnswerTool,
@@ -2047,4 +2048,24 @@ test("missingRequiredTables flags question-named warehouse tables never queried"
     missingRequiredTables("Filter silver_boxscores on SILVER_TEAM_IDS.", new Set()),
     ["silver_boxscores", "silver_team_ids"],
   );
+});
+
+test("submit veto forces immediate resubmit when the run budget is nearly spent", async () => {
+  const gaps = { metric_value_gaps: ["pw_net absent from prose and payloads"] };
+
+  const normal = submitAuditRejectionMessage(gaps, 1, 300_000, false);
+  assert.match(normal, /Produce the requested artifact kinds/);
+  assert.doesNotMatch(normal, /same payload/);
+
+  const lowBudget = submitAuditRejectionMessage(gaps, 2, 45_000, false);
+  assert.match(lowBudget, /~45s left/);
+  assert.match(lowBudget, /same payload plus omitted set to every flag string above verbatim/);
+  assert.match(lowBudget, /metric_value_gaps/);
+  assert.doesNotMatch(lowBudget, /Produce the requested artifact kinds/);
+
+  const lastTurn = submitAuditRejectionMessage(gaps, 2, undefined, true);
+  assert.match(lastTurn, /same payload plus omitted set to every flag string above verbatim/);
+
+  const boundary = submitAuditRejectionMessage(gaps, 1, 61_000, false);
+  assert.match(boundary, /Produce the requested artifact kinds/);
 });
