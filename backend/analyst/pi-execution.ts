@@ -292,6 +292,7 @@ type AnalystDeps = {
     connectTools?: (options: PythonToolsOptions) => ReturnType<typeof connectPythonTools>;
     abortGraceMs?: number;
     budgetNudgeDelayMs?: number;
+    retryTimeBudgetMs?: number;
 };
 
 const PRIOR_SUBMISSION_ITEM_LIMIT = 24;
@@ -470,12 +471,26 @@ function loopArgsKey(toolName: string, rawArgs: unknown): string {
     return `${toolName}:${canonicalArgsKey(normalizeLoopArgs(plain))}`;
 }
 
+const DEFAULT_RETRY_TIME_BUDGET_MS = 90_000;
+
 export function createProviderRetryStormGuard(
     emit: (event: AnalystEvent) => void,
-    stopRun: (reason: string) => void
+    stopRun: (reason: string) => void,
+    onRetryBudget?: (burnedMs: number) => void,
+    retryBudgetMs: number = DEFAULT_RETRY_TIME_BUDGET_MS
 ) {
     let exhausted = 0;
+    let retryDelayMs = 0;
+    let budgetFired = false;
     return (event: AgentSessionEvent) => {
+        if (event.type === "auto_retry_start") {
+            retryDelayMs += event.delayMs;
+            if (!budgetFired && retryDelayMs >= retryBudgetMs && onRetryBudget) {
+                budgetFired = true;
+                onRetryBudget(retryDelayMs);
+            }
+            return;
+        }
         if (event.type !== "auto_retry_end" || event.success)
             return;
         exhausted += 1;
@@ -682,7 +697,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     const retryStormGuard = createProviderRetryStormGuard(emit, (reason: string) => {
                         emit({ type: "failure", kind: "provider_retry_storm", message: reason });
                         controller.abort();
-                    });
+                    }, (burnedMs: number) => {
+                        session?.agent.steer({
+                            role: "user",
+                            content: `The provider lane is saturated: this run has already spent ~${Math.round(burnedMs / 1000)}s waiting on retry backoffs, and each further call may stall again. Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats a slow full attempt. Skip this only if submit_answer already ran.`,
+                            timestamp: Date.now()
+                        });
+                    }, deps.retryTimeBudgetMs);
                     session.subscribe(event => {
                         const mapped = analystEventFrom(event);
                         if (mapped)
