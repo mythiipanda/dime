@@ -711,7 +711,6 @@ test("createPiExecution steers a substantial unsubmitted answer through submit_a
     return events;
   };
 
-  // The unsubmitted long answer gets one steer; the retry submits and the answer is canonical.
   let events = await run();
   assert.equal(execRequests, 3);
   const steerCall = events.find((e) => e.type === "tool_call" && e.name === "turn_end_steer");
@@ -720,7 +719,6 @@ test("createPiExecution steers a substantial unsubmitted answer through submit_a
   assert.ok(answer.submission, "answer should carry the submission");
   assert.equal(answer.text, canonical);
 
-  // Cap: a second unsubmitted long text is accepted as-is, no third steer.
   submitOnSteer = false;
   execRequests = 0;
   events = await run();
