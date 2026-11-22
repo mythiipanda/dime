@@ -3,7 +3,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from .._core import coerce_player_id
+from .._core import coerce_player_id, team_error_message
 from ..wpa import _display_name as _wpa_name
 from ._helpers import _pkg
 
@@ -675,7 +675,7 @@ def get_situational_splits(scope: str = "player", entity: str = "",
     except ValueError as exc:
         return _split_failure(season, str(exc)[:160])
     if abbr is None and scope != "player":
-        return _split_failure(season, f"unknown team: {name}")
+        return _split_failure(season, team_error_message(name))
     rows = _clutch_pbp_rows(season, _clutch_prefixes(stype))
     home_of = _clutch_home_of(rows)
     events, _, _, scored = _clutch_fold(rows, home_of, seconds, margin)

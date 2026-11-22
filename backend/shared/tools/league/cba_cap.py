@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import contract_details, resolve_salary_column, salary_records
-from .._core import coerce_team_id
+from .._core import coerce_team_id, team_error_message
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 
@@ -437,7 +437,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
             if item["id"] == team_id)
     except (ValueError, StopIteration):
         return {"tool": "get_cap_ledger", "ok": False,
-                "error": f"unknown team: {team}"}
+                "error": team_error_message(team)}
     con = _pkg().store.connect()
     try:
         try:

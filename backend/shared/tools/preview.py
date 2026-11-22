@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ._core import clamp_season, coerce_team_id, is_past_game_date, resolve_season
+from ._core import clamp_season, coerce_team_id, is_past_game_date, resolve_season, team_error_message
 
 def _abbrev(who: str) -> str:
     try:
@@ -609,11 +609,11 @@ def _row_for_date_query(rows, a, b, game_date, season):
         try:
             ida = coerce_team_id(a)
         except ValueError:
-            return None, f"unknown team: {a}"
+            return None, team_error_message(a)
         try:
             idb = coerce_team_id(b)
         except ValueError:
-            return None, f"unknown team: {b}"
+            return None, team_error_message(b)
         for r in rows:
             home, away = _row_team_ids(r)
             if {home, away} == {ida, idb}:
@@ -624,7 +624,7 @@ def _row_for_date_query(rows, a, b, game_date, season):
         try:
             tid = coerce_team_id(who)
         except ValueError:
-            return None, f"unknown team: {who}"
+            return None, team_error_message(who)
         for r in rows:
             home, away = _row_team_ids(r)
             if tid in (home, away):
@@ -638,11 +638,11 @@ def _row_for_pair(a, b, season):
     try:
         ida = coerce_team_id(a)
     except ValueError:
-        return None, "", f"unknown team: {a}"
+        return None, "", team_error_message(a)
     try:
         idb = coerce_team_id(b)
     except ValueError:
-        return None, "", f"unknown team: {b}"
+        return None, "", team_error_message(b)
     from datetime import datetime as _dt
     from datetime import timedelta as _td
     from zoneinfo import ZoneInfo

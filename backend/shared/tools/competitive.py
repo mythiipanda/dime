@@ -5,7 +5,7 @@ from typing import Any
 import duckdb
 from langchain_core.tools import tool
 
-from ._core import clamp_season, resolve_season
+from ._core import clamp_season, resolve_season, team_error_message
 
 _TOOL_NAME = "get_competitive_ratings"
 
@@ -190,7 +190,7 @@ def get_competitive_ratings(
         abbr = _resolve_team_abbr(team)
         if abbr is None:
             return {"tool": _TOOL_NAME, "ok": False,
-                    "error": f"unknown team: {team}"}
+                    "error": team_error_message(team)}
     season_raw = str(season or "").strip()
     if season_raw.lower() == "all" or not season_raw:
         seasons: list[str] | None = None

@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from langchain_core.tools import tool
 
-from .._core import clamp_scope, clamp_season
+from .._core import clamp_scope, clamp_season, team_error_message
 from ..prediction import (
     RATINGS_LIVE,
     RATINGS_STORED,
@@ -360,7 +360,7 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
         if match is None:
             return {"tool": "get_team_four_factors", "ok": False,
                     "rows": [], "meta": {"season": season},
-                    "error": f"unknown team '{team_q}'"}
+                    "error": team_error_message(team_q)}
         team_abbr = match["abbreviation"]
     requested_season = season
     season_fallback = None

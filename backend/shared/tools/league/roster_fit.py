@@ -2,7 +2,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from .._core import coerce_team_id
+from .._core import coerce_team_id, team_error_message
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 
 
@@ -104,7 +104,7 @@ def get_roster_fit(team_id: object = None, team: str = "",
     info = _team_lookup().get(tid)
     if not info:
         return {"tool": "get_roster_fit", "ok": False,
-                "error": f"unknown team id {tid}"}
+                "error": team_error_message(tid)}
     with _owned_connection(None, read_only=True) as con:
         tables = _warehouse_tables(con)
         if "silver_leaders_pts" not in tables:

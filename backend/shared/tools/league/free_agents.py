@@ -3,6 +3,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
 
 _FA_COLS = ["PLAYER_NAME", "TEAM", "FA_TYPE", "PRIOR_SALARY",
@@ -27,8 +28,11 @@ def _rows(con, sql: str, params: list, cols: list[str]) -> list[dict]:
     "Hold and cap figures are CBA-formula estimates, marked ESTIMATED."))
 def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
     _pkg()
-    abbr = _resolve_team_abbr(str(team or "").strip().upper()) \
-        if str(team or "").strip() else ""
+    raw_team = str(team or "").strip()
+    abbr = _resolve_team_abbr(raw_team.upper()) if raw_team else ""
+    if raw_team and not abbr:
+        return {"tool": "get_free_agents", "ok": False,
+                "error": team_error_message(raw_team)}
     try:
         with _owned_connection(None, read_only=True) as con:
             tables = _warehouse_tables(con)

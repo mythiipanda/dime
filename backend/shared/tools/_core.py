@@ -606,8 +606,104 @@ _TEAM_ALIAS_INDEX = _team_alias_index()
 _TEAM_INPUT_GUIDE = ("pass an NBA abbreviation like 'BOS', a numeric "
                      "team_id, or a full team name like 'Boston Celtics'")
 
+_HISTORICAL_TEAMS = {
+    "SEA": "the Seattle SuperSonics, who relocated to Oklahoma City in 2008 (use OKC)",
+    "NJN": "the New Jersey Nets, who relocated to Brooklyn in 2012 (use BKN)",
+    "NOH": "the New Orleans Hornets, renamed the Pelicans in 2013 (use NOP)",
+    "NOK": "the New Orleans/Oklahoma City Hornets, a temporary 2005-07 relocation (use NOP)",
+    "CHO": "the Charlotte Hornets, who relocated to New Orleans in 2002; "
+           "the current Charlotte franchise began as the 2004-05 Bobcats (use CHA)",
+    "VAN": "the Vancouver Grizzlies, who relocated to Memphis in 2001 (use MEM)",
+    "SDC": "the San Diego Clippers, who relocated to Los Angeles in 1984 (use LAC)",
+    "KCK": "the Kansas City Kings, who relocated to Sacramento in 1985 (use SAC)",
+}
+
+_HISTORICAL_TEAM_NAMES = {
+    "seattle": "SEA", "supersonics": "SEA", "sonics": "SEA",
+    "seattle supersonics": "SEA",
+    "new jersey": "NJN", "new jersey nets": "NJN",
+    "vancouver": "VAN", "vancouver grizzlies": "VAN",
+    "charlotte bobcats": "CHO", "bobcats": "CHO",
+    "new orleans hornets": "NOH",
+    "new orleans oklahoma city hornets": "NOK",
+    "san diego clippers": "SDC", "kansas city kings": "KCK",
+    "kansas city": "KCK",
+}
+
+_TEAM_ID_ABBR = {tid: abbr for abbr, _full, tid in _STATIC_TEAMS}
+
+
+def _historical_team_note(raw: str) -> str:
+    key = " ".join(str(raw or "").lower().replace("-", " ")
+                   .replace("_", " ").split())
+    abbr = _HISTORICAL_TEAM_NAMES.get(key)
+    if abbr is None and key.upper() in _HISTORICAL_TEAMS:
+        abbr = key.upper()
+    return _HISTORICAL_TEAMS.get(abbr or "", "")
+
+
+def _suggest_teams(raw: str, limit: int = 3) -> list[str]:
+    import difflib as _dl
+    key = " ".join(str(raw or "").lower().replace("-", " ")
+                   .replace("_", " ").split())
+    if not key:
+        return []
+    matches = _dl.get_close_matches(key, sorted(_TEAM_ALIAS_INDEX), n=limit * 2,
+                                    cutoff=0.6)
+    seen = []
+    for match in matches:
+        for tid in _TEAM_ALIAS_INDEX.get(match, []):
+            abbr = _TEAM_ID_ABBR.get(tid)
+            if abbr and abbr not in seen:
+                seen.append(abbr)
+    return seen[:limit]
+
+
+def team_error_message(value: object) -> str:
+    raw = str(value or "").strip()
+    hist = _historical_team_note(raw)
+    if hist:
+        return f"{raw} is {hist}; it has no rows for current-season data"
+    suggestions = _suggest_teams(raw)
+    hint = (f" Closest current teams: {', '.join(suggestions)}."
+            if suggestions else "")
+    return f"unknown team: {value!r}.{hint} {_TEAM_INPUT_GUIDE}"
+
+
+def covered_seasons(con: object, table: str) -> list[str]:
+    try:
+        rows = con.execute(
+            f"SELECT DISTINCT _season FROM {table} ORDER BY 1").fetchall()
+    except Exception:
+        return []
+    return [str(r[0]) for r in rows if r and r[0]]
+
+
+def season_rows_error(con: object, table: str, season: str,
+                      team: str = "") -> str:
+    owned = con is None
+    if owned:
+        try:
+            con = store.connect(read_only=True)
+        except Exception:
+            con = None
+    try:
+        available = covered_seasons(con, table) if con is not None else []
+    finally:
+        if owned and con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+    subject = f"{team} {season}" if team else str(season)
+    if available:
+        return (f"no rows for {subject} in {table} - "
+                f"available seasons: {', '.join(available)}")
+    return f"no rows for {subject} in {table}"
+
+
 def _unknown_team(value: object) -> ValueError:
-    return ValueError(f"unknown team: {value!r}. {_TEAM_INPUT_GUIDE}")
+    return ValueError(team_error_message(value))
 
 def _static_team_id(value: object, raw: str) -> int:
     name = " ".join(raw.lower().replace("-", " ").replace("_", " ").split())

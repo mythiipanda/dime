@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from .._core import coerce_player_id, coerce_team_id
+from .._core import coerce_player_id, coerce_team_id, team_error_message
 from ..gamelog import playoff_inactive_note as _pin
 from ..splits import _resolve_name as _rn
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
@@ -533,10 +533,14 @@ def get_team_trajectory(
     through_season = pkg.resolve_season(through_season)
     try:
         team_id = coerce_team_id(team)
+    except (ValueError, TypeError):
+        return {"tool": "get_team_trajectory", "ok": False,
+                "error": team_error_message(team)}
+    try:
         limit = max(2, min(int(seasons), 10))
     except (ValueError, TypeError):
         return {"tool": "get_team_trajectory", "ok": False,
-                "error": f"unknown team or invalid season count: {team!r}"}
+                "error": f"invalid season count: {seasons!r}"}
     con = pkg.store.connect(read_only=True)
     try:
         tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}

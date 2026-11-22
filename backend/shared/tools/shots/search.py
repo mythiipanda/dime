@@ -1,4 +1,6 @@
 import sys
+
+from .._core import team_error_message
 from typing import Any
 
 from langchain_core.tools import tool
@@ -86,7 +88,7 @@ def search_shots(
         try:
             team_id = pkg.coerce_team_id(team)
         except ValueError:
-            return {"tool": "search_shots", "ok": False, "error": f"unknown team: {team!r}"}
+            return {"tool": "search_shots", "ok": False, "error": team_error_message(team)}
     try:
         con = pkg._warehouse_conn()
     except Exception as exc:

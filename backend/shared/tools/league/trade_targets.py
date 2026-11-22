@@ -5,6 +5,7 @@ from langchain_core.tools import tool
 from ._helpers import _owned_connection
 from .cba_cap import CAP, _payroll_source, _salary_date, _resolve_team_abbr
 from .draft_contracts import _contract_norm
+from .._core import team_error_message
 from .value_contracts import _cap_band, _prod_rows, _PROD_WEIGHTS, _value_score
 
 _MIN_GP = 25
@@ -130,8 +131,13 @@ def get_trade_targets(need: str = "", team: str = "", position: str = "",
                       max_salary: int | None = None, min_gp: int = _MIN_GP,
                       min_mpg: float = _MIN_MPG, limit: int = _LIMIT,
                       season: str | None = None) -> dict[str, Any]:
-    acquirer = (_resolve_team_abbr(str(team or "")) or "").upper() \
-        if str(team or "").strip() else ""
+    raw_team = str(team or "").strip()
+    acquirer = (_resolve_team_abbr(raw_team) or "").upper() \
+        if raw_team else ""
+    if raw_team and not acquirer:
+        return {"tool": "get_trade_targets", "ok": False,
+                "error": team_error_message(raw_team),
+                "rows": [], "columns": _COLUMNS}
     pos = _POS_GROUPS.get(str(position or "").strip().lower())
     if str(position or "").strip() and pos is None:
         return {"tool": "get_trade_targets", "ok": False,

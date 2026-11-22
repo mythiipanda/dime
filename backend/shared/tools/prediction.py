@@ -5,7 +5,7 @@ from typing import Any, NamedTuple
 import numpy as np
 from langchain_core.tools import tool
 
-from ._core import clamp_season, coerce_team_id, is_past_game_date, resolve_season
+from ._core import clamp_season, coerce_team_id, is_past_game_date, resolve_season, team_error_message
 from .preview import (
     _abbrev,
     _entity_date,
@@ -280,11 +280,11 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
     try:
         ida = coerce_team_id(a)
     except ValueError:
-        return _err(f"unknown team: {a}")
+        return _err(team_error_message(a))
     try:
         idb = coerce_team_id(b)
     except ValueError:
-        return _err(f"unknown team: {b}")
+        return _err(team_error_message(b))
     if ida == idb:
         return _err("a and b must be different teams")
 
