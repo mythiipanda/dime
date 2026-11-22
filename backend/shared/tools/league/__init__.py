@@ -302,6 +302,7 @@ from .standings import (
     get_standings_deep,
     get_team_trajectory,
 )
+from .fa_plan import get_fa_plan
 from .free_agents import get_free_agents
 from .daily_brief import get_team_daily_brief
 from .news import get_news_feed
