@@ -619,7 +619,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     if (priorSubmissions.length > 0) {
                         const submissionsContext: Message = {
                             role: "user",
-                            content: "Prior submitted answers and artifacts in this thread, most recent first (compact specs). When the user refers to a previous table/chart/memo, reuse or extend these specs rather than rebuilding from scratch:\n" + JSON.stringify(priorSubmissions),
+                            content: "Prior submitted answers and artifacts in this thread, most recent first (compact specs). These are reference material for resolving references like 'the earlier table' or 'that player' - never re-emit or restate their artifacts or numbers in the new submission unless the user's current question explicitly asks for the earlier output. Reuse or extend a prior spec only when the question refers to it; otherwise build fresh artifacts for the current answer only:\n" + JSON.stringify(priorSubmissions),
                             timestamp: Date.now()
                         };
                         session.sessionManager.appendMessage(submissionsContext);
