@@ -7,7 +7,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { auditAnswerNumbers, createVerifyAnswerNumbersTool } from "./verify-answer.js";
+import { auditAnswerNumbers, createVerifyAnswerNumbersTool, missingRequiredTables, WAREHOUSE_TABLE_RE } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -776,6 +776,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         submitted: false,
                     };
                     let submitAuditRejections = 0;
+                    const consultedTables = new Set<string>();
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
@@ -802,7 +803,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const metricGaps = audit.metric_value_gaps
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
-                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0)
+                            const missingTables = missingRequiredTables(start.q, consultedTables)
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
@@ -814,9 +817,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.no_artifacts_on_artifact_ask = noArtifacts;
                             if (metricGaps.length > 0)
                                 gaps.metric_value_gaps = metricGaps;
+                            if (missingTables.length > 0)
+                                gaps.missing_required_tables = missingTables;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, and state every required metric value in prose or a payload, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, and state every required metric value in prose or a payload, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
@@ -826,7 +831,12 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
                         tools: [
-                            ...wrapBridgeTools(bridge.tools, connected.results, emit, tracker, (reason: string) => {
+                            ...wrapBridgeTools(bridge.tools, connected.results, (event: Parameters<typeof emit>[0]) => {
+                                if (event.type === "tool_call" && event.args !== undefined)
+                                    for (const match of JSON.stringify(event.args).toLowerCase().matchAll(WAREHOUSE_TABLE_RE))
+                                        consultedTables.add(match[0]);
+                                emit(event);
+                            }, tracker, (reason: string) => {
                                 emit({ type: "failure", kind: "loop_stop", message: reason });
                                 controller.abort();
                             }),
