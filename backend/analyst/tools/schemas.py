@@ -120,6 +120,7 @@ TOOL_SCHEMA_DESCRIPTIONS = {
     "get_today": "Today home view: last night's results, tonight's games, leaderboard movers, streaks.",
     "get_tracking_profile": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
     "get_trade_check": "CBA trade legality check under 2023 CBA apron and salary matching rules.",
+    "get_trade_legality": "Full CBA trade legality verdict for a proposed multi-team deal: salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, sign-and-trade minimums, and Stepien pick rules.",
     "get_trade_value": "Trade value grade: estimated production surplus value vs salary per side plus pick equity.",
     "get_transactions": "Team front-office transactions: signings, waivers, trades, and conversions.",
     "get_warehouse_freshness": "Warehouse freshness and data recency panel across all silver tables.",

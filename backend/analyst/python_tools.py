@@ -89,6 +89,7 @@ _TOOL_ORDER = (
     "get_young_player_usage",
     "get_contract_value",
     "get_trade_check",
+    "get_trade_legality",
     "get_trade_value",
     "get_draft_capital",
     "get_trade_partners",

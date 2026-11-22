@@ -1478,6 +1478,50 @@
         "type": "object"
       }
     },
+    "get_trade_legality": {
+      "name": "get_trade_legality",
+      "description": "Trade legality verdict across 2+ teams. \"legs\" is a JSON array:\n[{\"from\":\"BOS\",\"to\":\"DEN\",\"players\":\"Jayson Tatum, Sam Hauser\",\"picks\":[{\"year\":2028,\"round\":1,\"protection\":\"top-4\"},{\"year\":2030,\"round\":1,\"swap\":true}]}].\nOptional \"sign_and_trade\" = {\"player\":\"...\",\"new_salary\":0,\"years\":3} (3-year minimum, BYC handled), \"cash\" = [{\"from\",\"to\",\"amount\"}], \"tpe\" = [{\"team\",\"amount\"}]. Checks 2023 CBA salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, the frozen second-apron pick, and Stepien consecutive-first rules.",
+      "args_schema": {
+        "description": "Full CBA trade legality verdict for a proposed multi-team deal: salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, sign-and-trade minimums, and Stepien pick rules.",
+        "properties": {
+          "legs": {
+            "default": "",
+            "title": "Legs",
+            "type": "string"
+          },
+          "sign_and_trade": {
+            "default": "",
+            "title": "Sign And Trade",
+            "type": "string"
+          },
+          "cash": {
+            "default": "",
+            "title": "Cash",
+            "type": "string"
+          },
+          "tpe": {
+            "default": "",
+            "title": "Tpe",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          }
+        },
+        "title": "get_trade_legality",
+        "type": "object"
+      }
+    },
     "get_trade_value": {
       "name": "get_trade_value",
       "description": "Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from the latest completed\nproduction season versus the current salary sheet. Picks like \"2029 FRP\"\nor \"2030 FRP top-4 protected\".",
