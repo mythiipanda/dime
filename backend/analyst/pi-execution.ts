@@ -355,12 +355,12 @@ function safeFailureMessage(kind: string, error: unknown, apiKey?: string): stri
 }
 
 function toHistoryMessages(history: AnalystContext["history"], model: { api: AssistantMessage["api"]; provider: string; id: string; compat?: object }): Message[] {
-    const requiresReasoning = !!(model.compat && "requiresReasoningContentOnAssistantMessages" in model.compat && model.compat.requiresReasoningContentOnAssistantMessages);
+    const replayThinking = !!(model.compat && (("requiresReasoningContentOnAssistantMessages" in model.compat && model.compat.requiresReasoningContentOnAssistantMessages) || ("requiresThinkingAsText" in model.compat && model.compat.requiresThinkingAsText)));
     return history.map(turn => {
         if (turn.role === "user")
             return { role: "user", content: turn.content, timestamp: Date.now() };
         const content: AssistantMessage["content"] = [];
-        if (requiresReasoning)
+        if (replayThinking)
             content.push({ type: "thinking", thinking: turn.reasoning?.trim() || "Reasoning was not retained for this earlier turn.", thinkingSignature: "reasoning_content" });
         content.push({ type: "text", text: turn.content });
         return {

@@ -1552,3 +1552,20 @@ test("tool_result events carry traced payloads only when DIME_TRACE_TOOL_RESULTS
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("history replays stored reasoning for thinking-as-text models", async () => {
+  const messages = await contextsForHistory({ requiresThinkingAsText: true });
+  const assistant = messages.find((m) => m.role === "assistant");
+  assert.ok(assistant);
+  const thinking = assistant.content.find((block) => block.type === "thinking");
+  assert.ok(thinking);
+  assert.equal(thinking.thinking, "Checked league scoring leaders.");
+});
+
+test("cerebras kimi resolves with thinking-as-text compat, not reasoning_content replay", async () => {
+  const { providerPolicy } = await import("../dist/providers.js");
+  const policy = providerPolicy({ CEREBRAS_API_KEY: "test-key" });
+  const resolved = policy.resolve("cerebras:moonshotai-kimi-k3.1-pro-trial");
+  assert.equal(resolved.compat.requiresThinkingAsText, true);
+  assert.equal(resolved.compat.requiresReasoningContentOnAssistantMessages, undefined);
+});
