@@ -562,6 +562,26 @@ function loopArgsKey(toolName: string, rawArgs: unknown): string {
     return `${toolName}:${canonicalArgsKey(normalizeLoopArgs(plain))}`;
 }
 
+const POOL_ARG_KEY_RE = /^(player|player_name|player_id|name)$/i;
+const POOL_FANOUT_HINT_AT = 3;
+
+function poolSignature(toolName: string, rawArgs: unknown): { key: string; entity: string } | undefined {
+    const parsed = objectValue(rawArgs);
+    if (!parsed)
+        return undefined;
+    let entity: string | undefined;
+    const rest: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+        if (POOL_ARG_KEY_RE.test(k) && typeof v === "string" && v.trim())
+            entity = v.trim().toLowerCase();
+        else
+            rest[k] = v;
+    }
+    if (!entity)
+        return undefined;
+    return { key: `${toolName}:${canonicalArgsKey(normalizeLoopArgs(rest))}`, entity };
+}
+
 const DEFAULT_RETRY_TIME_BUDGET_MS = 90_000;
 
 export function createProviderRetryStormGuard(
@@ -604,6 +624,8 @@ function wrapBridgeTools(
     const lastErrors = new Map<string, { error: string; count: number }>();
     const failStreaks = new Map<string, number>();
     const tripped = new Set<string>();
+    const poolSigs = new Map<string, Set<string>>();
+    const poolSteered = new Set<string>();
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
@@ -703,6 +725,21 @@ function wrapBridgeTools(
                 }
                 else if (!failed)
                     lastErrors.delete(tool.name);
+                if (!failed && domain) {
+                    const sig = poolSignature(tool.name, args[1]);
+                    if (sig) {
+                        const seen = poolSigs.get(sig.key) ?? new Set<string>();
+                        seen.add(sig.entity);
+                        poolSigs.set(sig.key, seen);
+                        if (seen.size >= POOL_FANOUT_HINT_AT && !poolSteered.has(sig.key)) {
+                            poolSteered.add(sig.key);
+                            domain.pool_fanout_hint = `${tool.name} has now been called for ${seen.size} different players under identical other arguments — that is a pool enumeration. For leaderboard/pool-cut asks, one sql_exec (GROUP BY player, HAVING the min-sample filter, ORDER BY the ranking metric) or a leaders tool returns the whole cohort in a single call; use it for the remaining players instead of more per-player calls.`;
+                            result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                            emit({ type: "tool_call", name: "pool_fanout_steer", args: { tool: tool.name, players: seen.size } });
+                            emit({ type: "tool_result", name: "pool_fanout_steer", status: "ok" });
+                        }
+                    }
+                }
                 emit({
                     type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
                     ...(failed ? { error: typeof error === "string" ? error : "Tool failed" } : {}),
