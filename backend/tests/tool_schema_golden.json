@@ -1029,6 +1029,54 @@
         "type": "object"
       }
     },
+    "get_cap_scenario": {
+      "name": "get_cap_scenario",
+      "description": "Cap-scenario arithmetic for one team. \"signings\" takes comma-separated amounts or name=amount pairs like \"Player=12M, 3000000\". \"in_players\" adds real contracts by name (league-wide lookup), \"out_players\" removes roster salaries. Returns the arithmetic trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA restrictions that trigger, and the matching verdict when a trade portion is present.",
+      "args_schema": {
+        "description": "Cap-scenario arithmetic: post-move payroll vs cap/tax/aprons plus the 2023 CBA restrictions that trigger, for hypothetical signings and player moves on one team.",
+        "properties": {
+          "team": {
+            "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
+            "title": "Team",
+            "type": "string"
+          },
+          "signings": {
+            "default": "",
+            "description": "Comma-separated hypothetical signings: amounts (12000000, 12M, $12M) or name=amount pairs. Default: ''.",
+            "title": "Signings",
+            "type": "string"
+          },
+          "in_players": {
+            "default": "",
+            "description": "Comma-separated players acquired (league-wide salary lookup). Default: ''.",
+            "title": "In Players",
+            "type": "string"
+          },
+          "out_players": {
+            "default": "",
+            "description": "Comma-separated roster players whose salary leaves. Default: ''.",
+            "title": "Out Players",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          }
+        },
+        "title": "get_cap_scenario",
+        "type": "object"
+      }
+    },
     "get_cap_table": {
       "name": "get_cap_table",
       "description": "League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.",
@@ -1384,7 +1432,7 @@
     },
     "get_trade_check": {
       "name": "get_trade_check",
-      "description": "Trade legality check. Player names comma separated per side.\n\nSimplified 2023 CBA: 125 percent plus 250k matching below the first\napron, 100 percent above it, no aggregation above the second apron.\nPicks and exceptions stay out of v1.",
+      "description": "Trade legality check. Player names comma separated per side.\n\n2023 CBA matching below the first apron: 200 percent plus 250k when\noutgoing is up to 7.5M, outgoing plus 7.5M up to 29M, 125 percent\nplus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Cash and exceptions stay out.",
       "args_schema": {
         "description": "CBA trade legality check under 2023 CBA apron and salary matching rules.",
         "properties": {

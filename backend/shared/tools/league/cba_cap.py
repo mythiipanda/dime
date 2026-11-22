@@ -301,18 +301,38 @@ def _allowed_incoming(outgoing: int, over_apron1: bool,
                       cap_room: int = 0) -> tuple[int, str]:
     if over_apron1:
         return outgoing, "100% (above the first apron)"
-    matched = int(outgoing * 1.25 + 250_000)
+    if outgoing <= 7_500_000:
+        matched = int(outgoing * 2 + 250_000)
+        rule = "200% plus $250k (below the first apron)"
+    elif outgoing <= 29_000_000:
+        matched = int(outgoing + 7_500_000)
+        rule = "outgoing salary plus $7.5M (below the first apron)"
+    else:
+        matched = int(outgoing * 1.25 + 250_000)
+        rule = "125% plus $250k (below the first apron)"
     if cap_room > 0 and outgoing + cap_room + 250_000 > matched:
         return outgoing + cap_room + 250_000, "cap room plus outgoing salary plus $250k (under the cap)"
-    return matched, "125% plus $250k (below the first apron)"
+    return matched, rule
 
 
 def _outgoing_needed(incoming: int, over_apron1: bool,
                      cap_room: int = 0) -> int:
     if over_apron1:
         return incoming
-    by_room = incoming - cap_room - 250_000 if cap_room > 0 else incoming
-    return max(0, min(-(-(incoming - 250_000) * 4 // 5), by_room))
+    candidates: list[int] = []
+    tier1 = -(-(incoming - 250_000) // 2)
+    if 0 < tier1 <= 7_500_000:
+        candidates.append(tier1)
+    tier2 = incoming - 7_500_000
+    if 7_500_000 < tier2 <= 29_000_000:
+        candidates.append(tier2)
+    tier3 = -(-(incoming - 250_000) * 4 // 5)
+    if tier3 > 29_000_000:
+        candidates.append(tier3)
+    needed = min(candidates) if candidates else 0
+    if cap_room > 0:
+        needed = min(needed, incoming - cap_room - 250_000)
+    return max(0, needed)
 
 
 def _season_player_team(con: object, name: str, season: str,
