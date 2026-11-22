@@ -93,6 +93,7 @@ _TOOL_ORDER = (
     "get_trade_value",
     "get_draft_capital",
     "get_trade_partners",
+    "get_trade_targets",
     "get_value_contracts",
     "get_situational_splits",
     "get_playoff_sim",

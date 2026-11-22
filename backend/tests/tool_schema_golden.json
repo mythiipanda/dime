@@ -1637,6 +1637,79 @@
         "type": "object"
       }
     },
+    "get_trade_targets": {
+      "name": "get_trade_targets",
+      "description": "Trade-target screening list for a declared roster need. Scans every non-acquirer contract on the latest salary sheet and ranks eligible candidates on the pinned production score (PTS + 1.2REB + 1.5AST + 2STL + 2BLK - 1.5TOV per game). Filters: 'position' (G/F/C or guard/wing/big), 'max_salary', 'min_gp', 'min_mpg'. Each row carries contract cost (salary, cap share, cheap/mid/expensive band, option flags), age, production rates, defensive indicators (def_rating, deflections, contested shots, rapm) and value-per-$1M so the fit reasoning can happen on real numbers. 'team' is the acquiring team - its roster is excluded from the target pool.",
+      "args_schema": {
+        "description": "Trade-target screening list for a declared roster need: league-wide candidates filtered by position group, salary ceiling and production floor, ranked on contract cost (years, guaranteed money, salary band) plus on-court production and defensive indicators. The acquiring team is excluded from its own results.",
+        "properties": {
+          "need": {
+            "default": "",
+            "description": "Declared roster need in plain words, e.g. 'a defensive wing under $20M'. Default: ''.",
+            "title": "Need",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
+            "title": "Team",
+            "type": "string"
+          },
+          "position": {
+            "default": "",
+            "description": "Position filter, e.g. 'PG', 'SG', 'SF', 'PF', 'C'; blank = all. Default: ''.",
+            "title": "Position",
+            "type": "string"
+          },
+          "max_salary": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Maximum salary ceiling in dollars for a candidate. Default: None.",
+            "title": "Max Salary"
+          },
+          "min_gp": {
+            "default": 25,
+            "description": "Minimum games-played floor. Default: 25.",
+            "title": "Min Gp",
+            "type": "integer"
+          },
+          "min_mpg": {
+            "default": 12.0,
+            "description": "Minimum minutes-per-game floor. Default: 12.0.",
+            "title": "Min Mpg",
+            "type": "number"
+          },
+          "limit": {
+            "default": 15,
+            "description": "Maximum rows returned. Default: 15.",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          }
+        },
+        "title": "get_trade_targets",
+        "type": "object"
+      }
+    },
     "get_value_contracts": {
       "name": "get_value_contracts",
       "description": "Value-contract depth audit for one team. Ranks the roster by production per cap dollar: salary, cap share, pinned value score (PTS + 1.2REB + 1.5AST + 2STL + 2BLK - 1.5TOV per game), value per $1M, and cheap/expensive depth flags (Presti rule: rotation players under ~10% of cap). 'benchmark_team' adds the same audit for a comparison roster plus summary deltas.",

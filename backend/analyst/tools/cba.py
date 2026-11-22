@@ -107,6 +107,7 @@ def register() -> dict[str, Any]:
         get_trade_legality as _orig_get_trade_legality,
         get_value_contracts as _orig_get_value_contracts,
         get_trade_partners as _orig_get_trade_partners,
+        get_trade_targets as _orig_get_trade_targets,
         get_trade_value as _orig_get_trade_value,
     )
     try:
@@ -247,6 +248,28 @@ def register() -> dict[str, Any]:
             return sanitize_for_wire(res)
         return finish_dict_list(res, "get_value_contracts", cols)
 
+    @tool("get_trade_targets", description=_orig_get_trade_targets.description)
+    def get_trade_targets(need: str = "", team: str = "", position: str = "",
+                          max_salary: float | None = None, min_gp: int = 25,
+                          min_mpg: float = 12.0, limit: int = 15,
+                          season: str | None = None) -> dict:
+        res = call_sync(_orig_get_trade_targets, "get_trade_targets", {
+            "need": need, "team": team, "position": position,
+            "max_salary": max_salary, "min_gp": min_gp,
+            "min_mpg": min_mpg, "limit": limit, "season": season,
+        })
+        cols = ["player", "team", "position", "age", "salary", "cap_share",
+                "cost_band", "contract_type", "gp", "mpg", "target_score",
+                "value_per_m", "def_rating", "net_rating", "ts_pct",
+                "rapm", "target_rank"]
+        if not isinstance(res, dict) or not res.get("ok"):
+            enrich_error("get_trade_targets", res)
+            if isinstance(res, dict):
+                res.setdefault("rows", [])
+                res.setdefault("columns", cols)
+            return sanitize_for_wire(res)
+        return finish_dict_list(res, "get_trade_targets", cols)
+
     @tool("get_transactions", description=_orig_get_transactions.description)
     def get_transactions(team: str = "", start: str = "", end: str = "", txn_type: str = "") -> dict:
         cols = ["txn_date", "txn_type", "player", "team", "detail"]
@@ -279,6 +302,7 @@ def register() -> dict[str, Any]:
         "get_trade_check": get_trade_check,
         "get_trade_legality": get_trade_legality,
         "get_trade_partners": get_trade_partners,
+        "get_trade_targets": get_trade_targets,
         "get_value_contracts": get_value_contracts,
         "get_trade_value": get_trade_value,
         "get_transactions": get_transactions,
