@@ -76,6 +76,7 @@ _TOOL_ORDER = (
     "get_ratings",
     "get_rookie_leaders",
     "get_cap_ledger",
+    "get_cap_table",
     "get_leaders",
     "get_lineup_leaders",
     "get_playoffs",

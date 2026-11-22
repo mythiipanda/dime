@@ -197,6 +197,28 @@ def test_cap_new_schedule_and_wrapper(warehouse):
     assert wrapped['rows'][0]['players'][0]['future_salaries'] == {'2027-28': 110}
 
 
+def test_cap_table_all_teams_ranked(warehouse):
+    _new_warehouse(warehouse)
+    result = league.get_cap_table.invoke({})
+    assert result['ok']
+    rows = result['rows']
+    assert len(rows) == 30
+    assert [r['payroll'] for r in rows] == sorted((r['payroll'] for r in rows), reverse=True)
+    by_team = {r['team']: r for r in rows}
+    assert by_team['BOS']['payroll'] == 100
+    assert by_team['NYK']['payroll'] == 200
+    assert by_team['NYK']['over_tax'] is False
+    assert by_team['NYK']['room_under_apron2'] == result['meta']['apron2'] - 200
+    for key in ('cap', 'tax', 'apron1', 'apron2'):
+        assert key in result['meta']
+    assert 'source' in result['meta'] and 'salary_date' in result['meta']
+    from analyst.tools import cba
+    wrapped = cba.register()['get_cap_table'].invoke({})
+    assert wrapped['ok']
+    assert len(wrapped['rows']) == 30
+    assert list(wrapped['columns']) == list(wrapped['rows'][0].keys())
+
+
 def test_contract_value_id_join_and_name_fallback(warehouse):
     _new_warehouse(warehouse)
     result = league.get_contract_value.invoke({'season': '2025-26'})

@@ -56,6 +56,7 @@ const TOOL_LABELS: Record<string, ToolNarration> = {
   get_ratings: { running: "Fetching team ratings and pace", done: "Fetched team ratings and pace" },
   get_rookie_leaders: { running: "Analyzing rookie leaderboard", done: "Analyzed rookie leaderboard" },
   get_cap_ledger: { running: "Checking salary cap and apron room", done: "Checked salary cap and apron room" },
+  get_cap_table: { running: "Checking the league cap table", done: "Checked the league cap table" },
   get_leaders: { running: "Fetching league statistical leaders", done: "Fetched league statistical leaders" },
   get_lineup_leaders: { running: "Evaluating 5-man lineup net ratings", done: "Evaluated 5-man lineup net ratings" },
   get_playoffs: { running: "Reviewing playoff series and championship", done: "Reviewed playoff series and championship" },
