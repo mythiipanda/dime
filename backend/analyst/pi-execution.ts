@@ -7,7 +7,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { auditAnswerNumbers, createVerifyAnswerNumbersTool, missingRequiredTables, WAREHOUSE_TABLE_RE } from "./verify-answer.js";
+import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -785,6 +785,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     };
                     let submitAuditRejections = 0;
                     let submitSteerUsed = false;
+                    let zeroEvidenceRepromptUsed = false;
                     const consultedTables = new Set<string>();
                     const toolArgsText: string[] = [];
                     let dataToolCalls = 0;
@@ -976,12 +977,32 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         }
                         text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                         reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
-                        if (acceptedSubmission || submitSteerUsed || text.trim().length < TURN_END_STEER_MIN_CHARS)
+                        if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
                             break;
-                        submitSteerUsed = true;
-                        emit({ type: "tool_call", name: "turn_end_steer" });
-                        emit({ type: "tool_result", name: "turn_end_steer", status: "ok" });
-                        await session.prompt("You ended the run with an answer but never called submit_answer. Route it through tools.submit_answer now: put that answer's text into blocks, add the artifacts and source anchors it should carry, list anything left out in omitted, and submit. Do not rewrite the answer.");
+                        if (!submitSteerUsed) {
+                            submitSteerUsed = true;
+                            emit({ type: "tool_call", name: "turn_end_steer" });
+                            emit({ type: "tool_result", name: "turn_end_steer", status: "ok" });
+                            await session.prompt("You ended the run with an answer but never called submit_answer. Route it through tools.submit_answer now: put that answer's text into blocks, add the artifacts and source anchors it should carry, list anything left out in omitted, and submit. Do not rewrite the answer.");
+                            continue;
+                        }
+                        const zeroEvidenceDataAsk = dataToolCalls === 0
+                            && (start.sources?.length ?? 0) === 0
+                            && connected.results.size === 0
+                            && isDataAsk(start.q);
+                        if (zeroEvidenceDataAsk && !zeroEvidenceRepromptUsed) {
+                            const remainingMs = start.runTimeoutMs !== undefined
+                                ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
+                                : undefined;
+                            if (remainingMs === undefined || remainingMs > SUBMIT_FORCE_REMAINING_MS) {
+                                zeroEvidenceRepromptUsed = true;
+                                emit({ type: "tool_call", name: "zero_evidence_reprompt" });
+                                emit({ type: "tool_result", name: "zero_evidence_reprompt", status: "ok" });
+                                await session.prompt("This is a data question and you have run zero data tools — do not answer from memory. Call at least one data tool (query the warehouse or an analyst tool) for the figures your answer relies on, then call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
+                                continue;
+                            }
+                        }
+                        break;
                     }
                     const replayReasoning = reasoning ? { reasoning } : {};
                     if (acceptedSubmission) {
@@ -990,7 +1011,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     } else {
                         if (!text.trim())
                             throw new Error("Model returned no answer");
-                        emit({ type: "answer", text, ...replayReasoning });
+                        const zeroEvidence = dataToolCalls === 0
+                            && (start.sources?.length ?? 0) === 0
+                            && connected.results.size === 0
+                            && isDataAsk(start.q);
+                        if (zeroEvidence) {
+                            emit({ type: "tool_call", name: "submit_answer_audit" });
+                            emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify({ no_evidence_on_data_ask: [ZERO_EVIDENCE_DATA_ASK_FLAG] }) });
+                            answerEmitted = true;
+                            emit({ type: "answer", text, submission: { blocks: [{ text, anchors: [] }], omitted: [ZERO_EVIDENCE_DATA_ASK_FLAG] }, ...replayReasoning });
+                        } else {
+                            emit({ type: "answer", text, ...replayReasoning });
+                        }
                     }
                 }
                 catch (error) {

@@ -16,6 +16,7 @@ import { createAnalystSession } from "./dist/runtime.js";
 import { createPiExecution } from "./dist/pi-execution.js";
 import { createAnalyst } from "./dist/analyst.js";
 import { priorSourceTool } from "./dist/pi-context.js";
+import { sourceResult } from "./dist/python-tools.js";
 
 function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
   const result = error !== undefined ? { rows, error } : { rows };
@@ -729,6 +730,112 @@ test("createPiExecution steers a substantial unsubmitted answer through submit_a
   const plain = events.find((e) => e.type === "answer");
   assert.equal(plain.submission, undefined);
   assert.equal(plain.text, longText);
+
+  await rm(cwd, { recursive: true, force: true });
+});
+
+test("createPiExecution reprompts once when a sourceless data ask ends in plain text with zero data calls", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-zero-evidence-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const longText = "Giannis Antetokounmpo leads the league in restricted-area frequency at 41.2 percent of his shot diet, with Shai Gilgeous-Alexander and Anthony Edwards rounding out the top three on sustained rim pressure across the 2024-25 season, while Denver's Nikola Jokic trails the group on lower drive volume.";
+  const canonical = "Top guards by ts% in 2024-25: Giannis leads restricted-area frequency at 41.2%.";
+  const bridgeResults = new Map();
+  const fakeSqlExec = {
+    name: "sql_exec",
+    label: "SQL",
+    description: "Run SQL",
+    parameters: { type: "object", properties: {} },
+    async execute(callId) {
+      const record = makeSourceRecord("fake-ev-1", { rows: [{ player: "Giannis", ts_pct: 41.2 }] });
+      bridgeResults.set(record.ref, record);
+      return sourceResult(record);
+    },
+  };
+
+  let execRequests = 0;
+  let mode = "reprompt";
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      let msg;
+      if (execRequests === 1) {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: longText }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else if (execRequests === 2) {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: longText }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else if (execRequests === 3 && mode === "reprompt") {
+        const code = `await tools.sql_exec({ sql: "select player, ts_pct from silver_leaders where season='2024-25' and pos='guard' order by ts_pct desc limit 10", intent: "rank top guards by ts% in 2024-25" }); await tools.submit_answer({ blocks: [{ text: ${JSON.stringify(canonical)}, anchors: [{ ref: "fake-ev-1", row: 0, columns: ["ts_pct"] }] }], artifacts: [{ kind: "table", title: "Leaders", columns: [{ key: "ts_pct", label: "TS%", numeric: true }], rows: [{ player: "Giannis", ts_pct: 41.2 }] }] }); return { done: true };`;
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-sub", name: "codemode", arguments: { code } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: "Submitted." }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      }
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = { tools: [fakeSqlExec], results: bridgeResults, pid: 12345, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const run = async (extra = {}) => {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Rank the top guards by ts% in 2024-25",
+      history: [],
+      model: "fixture:fixture",
+      sources: [],
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+      ...extra,
+    })) {
+      events.push(event);
+    }
+    return events;
+  };
+
+  let events = await run();
+  const reprompts = events.filter((e) => e.type === "tool_call" && e.name === "zero_evidence_reprompt");
+  assert.equal(reprompts.length, 1, "forced reprompt fires exactly once");
+  const answer = events.find((e) => e.type === "answer");
+  assert.equal(answer.text, canonical);
+
+  mode = "land";
+  execRequests = 0;
+  bridgeResults.clear();
+  events = await run({ runTimeoutMs: 1 });
+  const reprompts2 = events.filter((e) => e.type === "tool_call" && e.name === "zero_evidence_reprompt");
+  assert.equal(reprompts2.length, 0, "reprompt skipped when budget cannot allow it");
+  const landed = events.find((e) => e.type === "answer");
+  assert.deepEqual(landed.submission?.omitted, ["zero data tool calls and no evidence sources before submitting a data-grounded answer"]);
+  assert.equal(landed.text, longText);
 
   await rm(cwd, { recursive: true, force: true });
 });

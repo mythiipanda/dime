@@ -327,6 +327,8 @@ export function auditArtifactKindRelevance(
         .map(kind => `${kind} on ${matched.join("/")} ask`);
 }
 
+export const ZERO_EVIDENCE_DATA_ASK_FLAG = "zero data tool calls and no evidence sources before submitting a data-grounded answer";
+
 export function isDataAsk(question: string | undefined): boolean {
     if (!question)
         return false;
@@ -500,7 +502,7 @@ export function auditAnswerNumbers(
         : [];
     const artifact_kind_irrelevance = question ? auditArtifactKindRelevance(question, input) : [];
     const no_evidence_on_data_ask = dataToolCalls === 0 && sources.length === 0 && isDataAsk(question)
-        ? ["zero data tool calls and no evidence sources before submitting a data-grounded answer"]
+        ? [ZERO_EVIDENCE_DATA_ASK_FLAG]
         : [];
     return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks, artifact_kind_irrelevance, no_evidence_on_data_ask };
 }
