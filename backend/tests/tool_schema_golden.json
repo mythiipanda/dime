@@ -4191,6 +4191,7 @@
       "name": "get_fa_plan",
       "description": "Free-agent / extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table - keep all holds vs renounce all vs per-player renounce/keep-only - against the team's projected cap room and exceptions. Holds are CBA-formula estimates (150% of prior salary), marked ESTIMATED. Warehouse only; refresh with seed_free_agents.py.",
       "args_schema": {
+        "description": "Free-agent and extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table (keep all holds / renounce all / per-player renounce or keep-only) against projected cap room and exceptions.",
         "properties": {
           "team": {
             "default": "",
