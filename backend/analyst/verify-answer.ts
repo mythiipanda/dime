@@ -16,6 +16,7 @@ export type NumericAudit = {
     missing_in_artifacts: NumericClaim[];
     uncovered_asks: string[];
     no_artifacts_on_artifact_ask: string[];
+    metric_value_gaps: string[];
 };
 
 const SEASON_RE = /\b(?:19|20)\d{2}\s*[-/–—]\s*\d{2,4}\b/g;
@@ -195,6 +196,72 @@ const ASK_STOPWORDS = new Set([
 const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
 const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?)\b/gi;
 
+type StatTerm = { ask: string[]; present: string[] };
+
+const STATS_VOCABULARY: Record<string, StatTerm> = {
+    pts: { ask: ["points", "ppg", "pts", "scoring"], present: ["points", "pts", "ppg"] },
+    reb: { ask: ["rebounds", "rebounding", "rpg", "reb"], present: ["rebounds", "reb", "oreb", "dreb"] },
+    ast: { ask: ["assists", "apg", "ast"], present: ["assists", "ast", "apg"] },
+    stl: { ask: ["steals", "spg", "stl"], present: ["steals", "stl", "spg"] },
+    blk: { ask: ["blocks", "bpg", "blk"], present: ["blocks", "blk", "bpg"] },
+    tov: { ask: ["turnovers", "tov"], present: ["turnovers", "tov"] },
+    min: { ask: ["minutes", "mpg", "min per game", "minutes per game"], present: ["minutes", "min", "mpg"] },
+    gp: { ask: ["games played", "games"], present: ["games", "gp"] },
+    fgm: { ask: ["field goals made", "fgm"], present: ["fgm", "field goals made"] },
+    fga: { ask: ["field goals attempted", "field goal attempts", "fga"], present: ["fga", "field goal attempts", "field goals attempted"] },
+    fg_pct: { ask: ["field goal percentage", "field goal pct", "fg%", "fg pct", "shooting percentage", "shooting"], present: ["fg%", "fg pct", "fg_pct", "field goal percentage", "field goal pct"] },
+    fg3a: { ask: ["threes attempted", "three pointers attempted", "3pa", "three point attempts"], present: ["3pa", "fg3a", "three point attempts"] },
+    fg3_pct: { ask: ["three point percentage", "three point pct", "3p%", "3pt%", "3p pct", "three-point shooting"], present: ["3p%", "3p pct", "fg3_pct", "three point percentage", "three point pct"] },
+    ft_pct: { ask: ["free throw percentage", "free throw pct", "ft%", "ft pct"], present: ["ft%", "ft pct", "ft_pct", "free throw percentage"] },
+    efg_pct: { ask: ["effective field goal", "efg%", "efg"], present: ["efg%", "efg", "efg_pct", "effective field goal"] },
+    ts_pct: { ask: ["true shooting", "ts%", "ts pct"], present: ["ts%", "ts pct", "ts_pct", "true shooting"] },
+    usg_pct: { ask: ["usage rate", "usage", "usg%", "usg"], present: ["usg%", "usg", "usage", "usg_pct"] },
+    tov_pct: { ask: ["turnover percentage", "turnover rate", "tov%"], present: ["tov%", "tov_pct", "turnover percentage", "turnover rate"] },
+    orb_pct: { ask: ["offensive rebound percentage", "orb%", "oreb%"], present: ["orb%", "orb_pct", "oreb%", "offensive rebound"] },
+    drb_pct: { ask: ["defensive rebound percentage", "drb%", "dreb%"], present: ["drb%", "drb_pct", "dreb%", "defensive rebound"] },
+    off_rating: { ask: ["offensive rating", "ortg", "offensive rtg"], present: ["offensive rating", "ortg", "off_rating", "off rtg"] },
+    def_rating: { ask: ["defensive rating", "drtg", "defensive rtg"], present: ["defensive rating", "drtg", "def_rating", "def rtg"] },
+    net_rating: { ask: ["net rating", "net rtg", "netrtg"], present: ["net rating", "net rtg", "net_rating", "netrtg"] },
+    pw_net: { ask: ["pythagorean", "pw_net", "pyth net", "pythagorean net"], present: ["pw_net", "pythagorean"] },
+    pace: { ask: ["pace"], present: ["pace"] },
+    pie: { ask: ["pie"], present: ["pie"] },
+    per: { ask: ["player efficiency rating", "per rating"], present: ["per", "player efficiency rating"] },
+    ws: { ask: ["win shares", "ws"], present: ["win shares", "ws"] },
+    bpm: { ask: ["box plus minus", "bpm"], present: ["bpm", "box plus minus"] },
+    vorp: { ask: ["vorp"], present: ["vorp"] },
+    wins: { ask: ["wins", "win total"], present: ["wins", "win"] },
+    win_pct: { ask: ["win percentage", "win pct", "win%", "winning percentage"], present: ["win%", "win pct", "win_pct", "winning percentage", "win percentage"] },
+    plus_minus: { ask: ["plus minus", "plus-minus", "+/-", "on off", "on-off"], present: ["plus minus", "plus-minus", "+/-", "plus_minus", "on off", "on-off"] },
+    salary: { ask: ["salary", "salaries", "cap hit", "contract value"], present: ["salary", "salaries", "cap hit", "contract"] },
+    cap_hold: { ask: ["cap hold", "cap holds"], present: ["cap hold", "cap_hold"] },
+    roster_names: { ask: ["roster", "roster names", "players on", "rotation", "lineup", "depth chart"], present: ["roster", "player", "players", "player_name", "lineup", "rotation"] },
+    draft_picks: { ask: ["draft picks", "draft capital", "first round pick", "second round pick"], present: ["pick", "draft", "round"] },
+};
+
+const STAT_TERM_BOUNDARY = (term: string) =>
+    new RegExp(`(?<![\\w%+/-])${term.replace(/[.*+?^${}()|[\]\\%]/g, "\\$&")}(?![\\w%+/-])`, "i");
+
+export function auditMetricCoverage(
+    question: string,
+    input: Pick<AnswerSubmission, "blocks" | "artifacts">
+): string[] {
+    const haystack = (
+        input.blocks.map(block => block.text).join(" ") + " " +
+        JSON.stringify(input.artifacts ?? [])
+    ).toLowerCase();
+    const gaps: string[] = [];
+    for (const [metric, term] of Object.entries(STATS_VOCABULARY)) {
+        const asked = term.ask.find(form => STAT_TERM_BOUNDARY(form).test(question));
+        if (!asked)
+            continue;
+        const present = [...term.ask, ...term.present]
+            .some(form => STAT_TERM_BOUNDARY(form).test(haystack));
+        if (!present)
+            gaps.push(`${metric} (asked via "${asked}")`);
+    }
+    return gaps;
+}
+
 export function auditAskCoverage(
     question: string,
     input: Pick<AnswerSubmission, "blocks" | "artifacts">
@@ -251,17 +318,18 @@ export function auditAnswerNumbers(
         ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactValues))
         : [];
     const uncovered_asks = question ? auditAskCoverage(question, input) : [];
+    const metric_value_gaps = question ? auditMetricCoverage(question, input) : [];
     const no_artifacts_on_artifact_ask = question && (input.artifacts ?? []).length === 0
         ? [...new Set((question.match(ARTIFACT_ASK_RE) ?? []).map(token => token.toLowerCase()))]
         : [];
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask };
+    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[], question?: string) {
     return defineTool({
         name: "verify_answer_numbers",
         label: "Verify answer numbers",
-        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, and asks for tables/compares/charts with zero artifacts; it does not submit the answer.",
+        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, and asks for tables/compares/charts with zero artifacts; it does not submit the answer.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const audit = auditAnswerNumbers(args, getContextSources(), question);
