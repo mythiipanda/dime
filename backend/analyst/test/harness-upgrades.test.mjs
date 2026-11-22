@@ -2016,6 +2016,16 @@ test("verify_answer_numbers flags artifact kinds the ask does not call for", asy
     "How did Denver finish in 2023-24?",
   );
   assert.equal(noMatch.artifact_kind_irrelevance.length, 0);
+
+  const underscored = auditAnswerNumbers(
+    {
+      blocks: [{ text: "See artifacts." }],
+      artifacts: [{ kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 10, pct: 50 }] }],
+    },
+    sources,
+    "Build a comparative shot_chart deliverable for LeBron James vs Luka Dončić using silver_shots.",
+  );
+  assert.equal(underscored.artifact_kind_irrelevance.length, 0);
 });
 test("flagAcknowledgedByOmissions matches omitted entries to flagged asks", () => {
   const flag = "corner=3PT and abs(x_legacy)>=220 and y_legacy<=92.5";

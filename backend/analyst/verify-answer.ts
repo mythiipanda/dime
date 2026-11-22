@@ -310,8 +310,9 @@ export function auditArtifactKindRelevance(
     question: string,
     input: Pick<AnswerSubmission, "artifacts">
 ): string[] {
+    const normalized = question.replace(/_/g, " ");
     const matched = Object.entries(ASK_TYPES)
-        .filter(([, askType]) => askType.terms.some(term => STAT_TERM_BOUNDARY(term).test(question)))
+        .filter(([, askType]) => askType.terms.some(term => STAT_TERM_BOUNDARY(term.replace(/_/g, " ")).test(normalized)))
         .map(([name]) => name);
     if (matched.length === 0)
         return [];
@@ -329,17 +330,18 @@ export function auditMetricCoverage(
     question: string,
     input: Pick<AnswerSubmission, "blocks" | "artifacts">
 ): string[] {
+    const normalized = question.replace(/_/g, " ");
     const haystack = (
         input.blocks.map(block => block.text).join(" ") + " " +
         JSON.stringify(input.artifacts ?? [])
-    ).toLowerCase();
+    ).toLowerCase().replace(/_/g, " ");
     const gaps: string[] = [];
     for (const [metric, term] of Object.entries(STATS_VOCABULARY)) {
-        const asked = term.ask.find(form => STAT_TERM_BOUNDARY(form).test(question));
+        const asked = term.ask.find(form => STAT_TERM_BOUNDARY(form.replace(/_/g, " ")).test(normalized));
         if (!asked)
             continue;
         const present = [...term.ask, ...term.present]
-            .some(form => STAT_TERM_BOUNDARY(form).test(haystack));
+            .some(form => STAT_TERM_BOUNDARY(form.replace(/_/g, " ")).test(haystack));
         if (!present)
             gaps.push(`${metric} (asked via "${asked}")`);
     }
