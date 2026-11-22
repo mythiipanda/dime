@@ -1,4 +1,5 @@
 import difflib
+import re
 from typing import Any
 
 from langchain_core.tools import tool
@@ -39,6 +40,59 @@ def _normalize_sql_result(res: dict[str, Any]) -> dict[str, Any]:
     if not res["ok"]:
         enrich_error("sql_exec", res)
     return sanitize_for_wire(res)
+
+
+_RUN_PYTHON_RULES = [
+    (r"\bconsole\.(log|error|warn|info|debug)\b",
+     "run_python executes Python, not JavaScript",
+     "use print(), not console.log"),
+    (r"\b(fetchAll|fetchRows|queryAll|fetchOne)\s*\(",
+     "no fetchAll/queryAll-style helpers exist in this sandbox",
+     "query the warehouse via con.execute(sql).fetchall()"),
+    (r"\bfetch\s*\(|\baxios\b|\bXMLHttpRequest\b|\bawait\b|\brequire\s*\(",
+     "run_python executes Python, not JavaScript",
+     "no fetch/await/require - write synchronous Python"),
+    (r"^\s*(const|let|var)\s+\w+",
+     "run_python executes Python, not JavaScript",
+     "Python uses plain assignment, not const/let/var"),
+    (r"=>|\bfunction\s+\w+\s*\(",
+     "run_python executes Python, not JavaScript",
+     "use def or lambda, not =>/function"),
+    (r"\bduckdb\.connect\s*\(",
+     "con is provided - never call duckdb.connect()",
+     "the provided `con` is the read-only warehouse connection"),
+    (r"^\s*con\s*=(?!=)",
+     "con is provided - never reassign it",
+     "use `con` directly: con.execute(sql).fetchall()"),
+    (r"\bsqlite3\b|\.sqlite\b|\.db['\"]|\.duckdb['\"]",
+     "the warehouse is already connected via con - no file paths",
+     "query silver_* tables on `con`, never open a database file"),
+    (r"(?:import|from)\s+dime_analyst\b",
+     "dime_analyst is not a package in this sandbox",
+     "preloaded: con, pl, np, math, statistics; scientific imports "
+     "(scipy, statsmodels, sklearn, matplotlib, duckdb, polars) allowed"),
+    (r"(?:import|from)\s+(subprocess|socket|requests|urllib|http)\b",
+     "network/process imports are unavailable in the sandbox",
+     "allowed imports: scipy, statsmodels, sklearn, matplotlib, duckdb, "
+     "polars, json, pathlib + stdlib"),
+    (r"^return\b",
+     "code runs at module top level - return is a syntax error",
+     "assign `out = <value>` or print() the result"),
+]
+
+
+def _run_python_violations(code: str) -> list[dict[str, Any]]:
+    violations = []
+    if not isinstance(code, str):
+        return violations
+    for pattern, rule, fix in _RUN_PYTHON_RULES:
+        rx = re.compile(pattern)
+        for i, line in enumerate(code.split("\n"), start=1):
+            if rx.search(line):
+                violations.append({"line": i, "rule": rule, "fix": fix,
+                                   "code": line.strip()[:200]})
+                break
+    return violations
 
 
 def _select_schema_tables(columns: dict[str, Any], tables: list[str] | None) -> tuple[list[str], dict[str, Any] | None]:
@@ -266,9 +320,18 @@ def register() -> dict[str, Any]:
 
     @tool("run_python", description="Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations. Code runs at module top level in a fresh namespace per call: return results by assigning `out = <value>` or print() (never `return`), and never reassign `con` or call duckdb.connect() — the provided `con` is the warehouse.")
     def run_python(code: str) -> dict:
+        violations = _run_python_violations(code)
+        default_cols = ["printed", "out"]
+        if violations:
+            return sanitize_for_wire({
+                "tool": "run_python", "ok": False,
+                "error": "run_python code rejected before execution; fix each "
+                         "violation and resubmit",
+                "violations": violations,
+                "rows": [], "columns": default_cols,
+            })
         from shared.tools.shared import run_python as _orig_run_python
         res = call_sync(_orig_run_python, "run_python", {"code": code})
-        default_cols = ["printed", "out"]
         return finish_strict_rows(
             res, "run_python", default_cols, str(res.get("error") or "Python execution failed"),
             _python_rows,
