@@ -100,6 +100,60 @@ def _pick_rows(con, team: str, years: list[int] | None) -> list[dict[str, Any]]:
     return rows
 
 
+def _audit(rows: list[dict[str, Any]], horizon: list[int] | None) -> dict[str, Any]:
+    span = horizon if horizon else sorted({r["draft_year"] for r in rows})
+    scoped = [r for r in rows if not span or r["draft_year"] in span]
+    inventory = []
+    for y in span:
+        yr = [r for r in scoped if r["draft_year"] == y]
+        firsts = [r for r in yr if r["round"] == 1]
+        has_first = any(r["direction"] in {"kept", "incoming", "swap risk"}
+                        for r in firsts)
+        inventory.append({
+            "draft_year": y,
+            "kept": sum(1 for r in yr if r["direction"] == "kept"),
+            "incoming": sum(1 for r in yr if r["direction"] == "incoming"),
+            "outgoing": sum(1 for r in yr if r["direction"] == "outgoing"),
+            "swap_risk": sum(1 for r in yr if r["direction"] == "swap risk"),
+            "forfeited": sum(1 for r in yr if r["direction"] == "forfeited"),
+            "protected": sum(1 for r in yr if r["protection"]),
+            "first_available": has_first,
+        })
+    bare_years = [i["draft_year"] for i in inventory
+                  if not i["first_available"]]
+    consecutive_bare = any(
+        b - a == 1 for a, b in zip(bare_years, bare_years[1:]))
+    held_value = round(sum(
+        r["est_value_m"] or 0.0 for r in scoped
+        if r["direction"] in {"kept", "incoming"}), 1)
+    outgoing_value = round(sum(
+        r["est_value_m"] or 0.0 for r in scoped
+        if r["direction"] in {"outgoing", "forfeited"}), 1)
+    swap_value = round(sum(
+        r["est_value_m"] or 0.0 for r in scoped
+        if r["direction"] == "swap risk"), 1)
+    net_picks = sum(i["kept"] + i["incoming"]
+                    - i["outgoing"] - i["forfeited"] for i in inventory)
+    net_capital_m = round(held_value - outgoing_value, 1)
+    return {
+        "inventory": inventory,
+        "stepien": {
+            "years_lacking_first": bare_years,
+            "consecutive_bare_years": consecutive_bare,
+            "tradeable_firsts": [i["draft_year"] for i in inventory
+                                 if i["first_available"]],
+        },
+        "held_value_m": held_value,
+        "outgoing_value_m": outgoing_value,
+        "swap_exposure_m": swap_value,
+        "net_picks": net_picks,
+        "net_capital_m": net_capital_m,
+        "net_first_equivalents": round(net_capital_m / PICK_ONE_VALUE_M, 2),
+        "unvalued_picks": sum(1 for r in scoped
+                              if r["est_value_m"] is None),
+    }
+
+
 def _league_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     teams = sorted({r["orig_team"] for r in rows}
                    | {h for r in rows for h in r["held_by"]})
@@ -124,12 +178,15 @@ def _league_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-@tool(description='Future draft pick ownership: who holds each team\'s 2027+ '
-                  'picks, protections, swap rights and forfeits, valued on an '
-                  'empirical draft-value curve. Optional enrichment for trade '
-                  'analysis; warehouse-backed only, requires seeded '
+@tool(description='Future draft pick ownership and capital audit: who holds '
+                  'each team\'s 2027+ picks, protections, swap rights and '
+                  'forfeits, valued on an empirical draft-value curve. With '
+                  'team + optional years_ahead horizon: per-year '
+                  'kept/incoming/outgoing inventory, Stepien-rule first-round '
+                  'coverage, and net draft-capital liquidity. Requires seeded '
                   'silver_future_picks.')
-def get_draft_capital(team: str = "", draft_year: str = "") -> dict[str, Any]:
+def get_draft_capital(team: str = "", draft_year: str = "",
+                      years_ahead: int | None = None) -> dict[str, Any]:
     years = None
     if str(draft_year).strip():
         found = re.findall(r"20\d\d", str(draft_year))
@@ -149,8 +206,32 @@ def get_draft_capital(team: str = "", draft_year: str = "") -> dict[str, Any]:
     if team and not rows:
         return {"tool": "get_draft_capital", "ok": False,
                 "error": f"no future pick rows for {team.upper()}"}
+    horizon = None
+    if years_ahead is not None and str(years_ahead).strip():
+        base = min(r["draft_year"] for r in rows) if rows else None
+        horizon = list(range(base, base + int(years_ahead))) if base else None
+    checks = [
+        {"rule": "protections", "checked": False,
+         "note": "protections and swap conditions are stated but not "
+                 "resolved into conveyance probabilities"},
+        {"rule": "conditional conveyance", "checked": False,
+         "note": "conditional/pooled picks counted at face value; "
+                 "conveyance timing unmodeled"},
+        {"rule": "stepien margin", "checked": True,
+         "note": "own-first bookkeeping only - treats incoming firsts and "
+                 "swap risk as first-round assets; does not model pick "
+                 "obligations in trades not yet logged"},
+        {"rule": "valuation", "checked": True,
+         "note": "est_value_m = draft-value-curve index x "
+                 f"{PICK_ONE_VALUE_M:g}M anchor; slot estimated from "
+                 "NET_RATING_RANK - unvalued picks counted separately"},
+    ]
     out_rows = _league_summary(rows) if not team else rows
-    return {"tool": "get_draft_capital", "ok": True, "rows": out_rows,
+    out = {"tool": "get_draft_capital", "ok": True, "rows": out_rows,
+           "checks": checks}
+    if team:
+        out["audit"] = _audit(rows, horizon)
+    out.update({
             "meta": {
                 "season": _PICKS_SEASON,
                 "sources": [
@@ -172,4 +253,5 @@ def get_draft_capital(team: str = "", draft_year: str = "") -> dict[str, Any]:
                     "resolved into conveyance probabilities",
                     "ownership status can change with new trades; check "
                     "last_edited",
-                ]}}
+                ]}})
+    return out
