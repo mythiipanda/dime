@@ -13,6 +13,8 @@ import {
   createProviderRetryStormGuard,
   flagAcknowledgedByOmissions,
   listWorkspaceArtifacts,
+  auditGapFlagStrings,
+  autoLandedSubmission,
   normalizeLoopArgs,
   submitAuditRejectionMessage,
 } from "../dist/pi-execution.js";
@@ -2216,4 +2218,28 @@ test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct player of 
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+test("auto-land merges vetoed payload omitted with outstanding flag strings", async () => {
+  const gaps = {
+    uncovered_asks: ["Validate the roster premise"],
+    metric_value_gaps: ["min (asked via \"minutes\")"],
+    ignored_scalar: 7,
+  };
+  assert.deepEqual(auditGapFlagStrings(gaps), [
+    "Validate the roster premise",
+    'min (asked via "minutes")',
+  ]);
+
+  const submission = {
+    blocks: [{ text: "Partial answer text." }],
+    sources: ["src-1"],
+    omitted: ["Validate the roster premise"],
+  };
+  const landed = autoLandedSubmission(submission, auditGapFlagStrings(gaps));
+  assert.deepEqual(landed.omitted, ["Validate the roster premise", 'min (asked via "minutes")']);
+  assert.equal(landed.blocks[0].text, "Partial answer text.");
+
+  const noOmitted = autoLandedSubmission({ blocks: [{ text: "x" }] }, ["flag a", "flag b"]);
+  assert.deepEqual(noOmitted.omitted, ["flag a", "flag b"]);
 });

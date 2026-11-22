@@ -460,6 +460,14 @@ export function submitAuditRejectionMessage(gaps: Record<string, unknown>, rejec
     return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${rejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${gapsJson}. Produce the requested artifact kinds, drop artifact kinds the ask does not call for, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, run at least one data tool before submitting a data-grounded answer, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
 }
 
+export function auditGapFlagStrings(gaps: Record<string, unknown>): string[] {
+    return Object.values(gaps).flatMap(value => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
+}
+
+export function autoLandedSubmission(submission: AnswerSubmission, flags: string[]): AnswerSubmission {
+    return { ...submission, omitted: [...new Set([...(submission.omitted ?? []), ...flags])] };
+}
+
 export function flagAcknowledgedByOmissions(flag: string, omitted: string[]): boolean {
     const tokens = flag.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
     if (tokens.length === 0)
@@ -772,6 +780,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
             let acceptedSubmission: AnswerSubmission | undefined;
             let answerEmitted = false;
+            let lastVetoedSubmission: AnswerSubmission | undefined;
+            let lastVetoedFlags: string[] = [];
+            let runTracker: RunStatusTracker | undefined;
             const emitAcceptedAnswer = () => {
                 if (answerEmitted || !acceptedSubmission)
                     return;
@@ -779,7 +790,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 const canonicalText = acceptedSubmission.blocks.map(block => block.text).join("\n\n");
                 emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
             };
-            const onAbort = () => { emitAcceptedAnswer(); controller.abort(); };
+            const autoLandVetoed = () => {
+                if (acceptedSubmission || !lastVetoedSubmission)
+                    return;
+                acceptedSubmission = autoLandedSubmission(lastVetoedSubmission, lastVetoedFlags);
+                if (runTracker)
+                    runTracker.submitted = true;
+                emit({ type: "tool_call", name: "auto_land_vetoed" });
+                emit({ type: "tool_result", name: "auto_land_vetoed", status: "ok" });
+                if (acceptedSubmission.artifacts && acceptedSubmission.artifacts.length > 0)
+                    emit({ type: "custom_data", artifacts: acceptedSubmission.artifacts });
+            };
+            const onAbort = () => { autoLandVetoed(); emitAcceptedAnswer(); controller.abort(); };
             signal?.addEventListener("abort", onAbort, { once: true });
             let abandoned = false;
             const abandon = new Promise<void>(resolve => controller.signal.addEventListener("abort", () => setTimeout(resolve, abortGraceMs).unref(), { once: true }));
@@ -820,6 +842,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     let submitAuditRejections = 0;
                     let submitSteerUsed = false;
                     let zeroEvidenceRepromptUsed = false;
+                    runTracker = tracker;
                     const consultedTables = new Set<string>();
                     const toolArgsText: string[] = [];
                     let dataToolCalls = 0;
@@ -883,6 +906,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.artifact_kind_irrelevance = irrelevantKinds;
                             if (noEvidenceAsk.length > 0)
                                 gaps.no_evidence_on_data_ask = noEvidenceAsk;
+                            lastVetoedSubmission = submission;
+                            lastVetoedFlags = auditGapFlagStrings(gaps);
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
                             const remainingMs = start.runTimeoutMs !== undefined
@@ -1039,6 +1064,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         break;
                     }
                     const replayReasoning = reasoning ? { reasoning } : {};
+                    autoLandVetoed();
                     if (acceptedSubmission) {
                         const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
                         emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
@@ -1060,6 +1086,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                 }
                 catch (error) {
+                    autoLandVetoed();
                     emitAcceptedAnswer();
                     if (!answerEmitted && !controller.signal.aborted)
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
