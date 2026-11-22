@@ -195,6 +195,14 @@ const ASK_STOPWORDS = new Set([
 ]);
 const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
 const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?)\b/gi;
+export const WAREHOUSE_TABLE_RE = /\b(?:silver|gold|bronze)_[a-z0-9_]+\b/gi;
+
+export function missingRequiredTables(question: string | undefined, consulted: ReadonlySet<string>): string[] {
+    if (!question)
+        return [];
+    const required = new Set((question.match(WAREHOUSE_TABLE_RE) ?? []).map(token => token.toLowerCase()));
+    return [...required].filter(table => !consulted.has(table)).sort();
+}
 
 type StatTerm = { ask: string[]; present: string[] };
 
