@@ -2028,6 +2028,41 @@ test("verify_answer_numbers flags artifact kinds the ask does not call for", asy
   );
   assert.equal(underscored.artifact_kind_irrelevance.length, 0);
 });
+test("verify_answer_numbers flags data asks submitted with zero data tool calls", async () => {
+  const { auditAnswerNumbers, isDataAsk } = await import("../dist/verify-answer.js");
+  const sources = [];
+
+  const parametric = auditAnswerNumbers(
+    { blocks: [{ text: "Giannis leads the league in restricted-area frequency at 41.2%." }] },
+    sources,
+    "Which players lead the league in restricted-area shot frequency in 2024-25?",
+    undefined,
+    0,
+  );
+  assert.equal(parametric.no_evidence_on_data_ask.length, 1);
+
+  const withCalls = auditAnswerNumbers(
+    { blocks: [{ text: "Giannis leads the league in restricted-area frequency at 41.2%." }] },
+    sources,
+    "Which players lead the league in restricted-area shot frequency in 2024-25?",
+    undefined,
+    4,
+  );
+  assert.equal(withCalls.no_evidence_on_data_ask.length, 0);
+
+  const conceptual = auditAnswerNumbers(
+    { blocks: [{ text: "Conditioning on outcome creates a collider bias." }] },
+    sources,
+    "Explain why conditioning on the outcome cannot establish causality",
+    undefined,
+    0,
+  );
+  assert.equal(conceptual.no_evidence_on_data_ask.length, 0);
+  assert.equal(isDataAsk("Explain why conditioning on the outcome cannot establish causality"), false);
+  assert.equal(isDataAsk("Rank the top guards by ts% in 2024-25"), true);
+  assert.equal(isDataAsk(undefined), false);
+});
+
 test("flagAcknowledgedByOmissions matches omitted entries to flagged asks", () => {
   const flag = "corner=3PT and abs(x_legacy)>=220 and y_legacy<=92.5";
   assert.equal(flagAcknowledgedByOmissions(flag, ["corner three frequency and legacy coordinates"]), true);
