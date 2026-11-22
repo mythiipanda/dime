@@ -37,6 +37,16 @@ use tabular figures and right alignment, not a mono paragraph. The shared scale 
 12px metadata, 13px interface, 14px body, 28px page titles. The component-reference
 hero can use the 40px display role; ordinary app panels cannot.
 
+Type discipline beyond the scale: body text sits at 400 and headings at 400/500 —
+weight contrast carries hierarchy, not size jumps. Letter spacing tightens as type
+gets bigger, and large headings keep a tight line height. Wrap balancing applies to
+display headings so a last line never holds a lone word. Text inside a card runs
+one step smaller than equivalent text in open layout, and control labels run one
+step smaller than the body around them. Headings stay upright; italic belongs to
+a deliberate display accent, not default heading style. Skip decorative labels and
+badges that restate what layout already says, and cut a button that duplicates an
+action reachable one click away.
+
 Rails, panels and menus share a small set of vertical edges, not per-item
 margins: leading icons sit on one column inside a fixed icon box, labels on one
 text line after it, and trailing badges or counts end on one trailing edge. Fix
