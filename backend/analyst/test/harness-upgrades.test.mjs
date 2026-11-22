@@ -761,6 +761,14 @@ test("wrapBridgeTools terminates the run on the 4th blocked repeat of a failing 
     for (const result of toolResults)
       assert.equal(result.status, "fail");
     assert.match(toolResults[5].error, /Run stopped: sql_exec called 6 times/);
+    const pivotSource = events.find(
+      (e) => e.type === "source" && e.record.ref === "loop_3_sql_exec"
+    );
+    assert.ok(pivotSource, "failing repeats should emit a pivot source record");
+    const pivotPayload = pivotSource.record.response.structuredContent;
+    assert.equal(pivotPayload.repeated_failure, true);
+    assert.equal(pivotPayload.last_error, "warehouse unavailable");
+    assert.match(pivotPayload.error, /keeps failing.*do not retry/);
     const stopSource = events.find(
       (e) => e.type === "source" && e.record.ref === "loop_stop_6_sql_exec"
     );
