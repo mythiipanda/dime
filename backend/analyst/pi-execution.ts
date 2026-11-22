@@ -590,6 +590,50 @@ function poolSignature(toolName: string, rawArgs: unknown): { key: string; entit
     return { key: toolName, entity, entityKind: TEAM_POOL_TOOLS.has(toolName) ? "teams" : "players" };
 }
 
+const TOOL_NOT_FOUND_RE = /^Tool (.+) not found$/m;
+
+function unknownToolName(result: unknown): string | undefined {
+    const content = objectValue(result)?.content;
+    if (!Array.isArray(content))
+        return undefined;
+    for (const block of content) {
+        const text = objectValue(block)?.text;
+        if (typeof text !== "string")
+            continue;
+        const match = TOOL_NOT_FOUND_RE.exec(text);
+        if (match)
+            return match[1];
+    }
+    return undefined;
+}
+
+function toolEditDistance(a: string, b: string): number {
+    const prev = new Array<number>(b.length + 1);
+    const cur = new Array<number>(b.length + 1);
+    for (let j = 0; j <= b.length; j += 1)
+        prev[j] = j;
+    for (let i = 1; i <= a.length; i += 1) {
+        cur[0] = i;
+        for (let j = 1; j <= b.length; j += 1)
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        for (let j = 0; j <= b.length; j += 1)
+            prev[j] = cur[j];
+    }
+    return prev[b.length];
+}
+
+export function unknownToolSteerMessage(name: string, codemodeTools: ReadonlySet<string>): string {
+    if (codemodeTools.has(name))
+        return `Tool "${name}" is only callable inside codemode — issue it as tools.${name}({...}) inside a codemode call, not as a standalone tool call.`;
+    const nearest = [...codemodeTools]
+        .map(n => ({ n, d: toolEditDistance(name.toLowerCase(), n.toLowerCase()) }))
+        .sort((x, y) => x.d - y.d || x.n.localeCompare(y.n))
+        .slice(0, 3)
+        .map(({ n }) => `tools.${n}`);
+    const suggest = nearest.length ? ` Did you mean ${nearest.join(", ")}?` : "";
+    return `Tool "${name}" is not registered.${suggest} Data tools are only callable inside codemode as tools.<name>({...}) — call one via a codemode call now.`;
+}
+
 const DEFAULT_RETRY_TIME_BUDGET_MS = 90_000;
 
 export function createProviderRetryStormGuard(
@@ -961,29 +1005,30 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         start.q
                     );
+                    const analystTools = [
+                        ...wrapBridgeTools(bridge.tools, connected.results, (event: Parameters<typeof emit>[0]) => {
+                            if (event.type === "tool_call") {
+                                dataToolCalls += 1;
+                                if (event.args !== undefined) {
+                                    const argsJson = JSON.stringify(event.args).toLowerCase();
+                                    toolArgsText.push(argsJson);
+                                    for (const match of argsJson.matchAll(WAREHOUSE_TABLE_RE))
+                                        consultedTables.add(match[0]);
+                                }
+                            }
+                            emit(event);
+                        }, tracker, (reason: string) => {
+                            emit({ type: "failure", kind: "loop_stop", message: reason });
+                            controller.abort();
+                        }, start.q),
+                        countToolCall(priorSourceTool(start.sources ?? []), tracker),
+                        verifyTool,
+                        countToolCall(submitTool, tracker),
+                        countToolCall(createRunStatusTool(tracker), tracker),
+                    ];
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
-                        tools: [
-                            ...wrapBridgeTools(bridge.tools, connected.results, (event: Parameters<typeof emit>[0]) => {
-                                if (event.type === "tool_call") {
-                                    dataToolCalls += 1;
-                                    if (event.args !== undefined) {
-                                        const argsJson = JSON.stringify(event.args).toLowerCase();
-                                        toolArgsText.push(argsJson);
-                                        for (const match of argsJson.matchAll(WAREHOUSE_TABLE_RE))
-                                            consultedTables.add(match[0]);
-                                    }
-                                }
-                                emit(event);
-                            }, tracker, (reason: string) => {
-                                emit({ type: "failure", kind: "loop_stop", message: reason });
-                                controller.abort();
-                            }, start.q),
-                            countToolCall(priorSourceTool(start.sources ?? []), tracker),
-                            verifyTool,
-                            countToolCall(submitTool, tracker),
-                            countToolCall(createRunStatusTool(tracker), tracker),
-                        ],
+                        tools: analystTools,
                         onSkillLoad: () => {
                             tracker.toolCalls += 1;
                             emit({ type: "tool_call", name: "load_skill" });
@@ -1007,11 +1052,26 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             timestamp: Date.now()
                         });
                     }, deps.retryTimeBudgetMs);
+                    const codemodeToolNames = new Set([...analystTools.map(tool => tool.name), "load_skill"]);
+                    const unknownToolSteered = new Set<string>();
                     session.subscribe(event => {
                         const mapped = analystEventFrom(event);
                         if (mapped)
                             emit(mapped);
                         retryStormGuard(event);
+                        if (event.type === "tool_execution_end" && event.isError) {
+                            const missing = unknownToolName(event.result);
+                            if (missing && !unknownToolSteered.has(missing)) {
+                                unknownToolSteered.add(missing);
+                                emit({ type: "tool_call", name: "tool_name_steer", args: { tool: missing } });
+                                emit({ type: "tool_result", name: "tool_name_steer", status: "ok" });
+                                session?.agent.steer({
+                                    role: "user",
+                                    content: unknownToolSteerMessage(missing, codemodeToolNames),
+                                    timestamp: Date.now()
+                                });
+                            }
+                        }
                     });
                     const history = toHistoryMessages(start.history, model);
                     for (const message of history)

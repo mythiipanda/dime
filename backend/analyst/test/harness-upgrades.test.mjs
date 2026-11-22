@@ -2687,3 +2687,86 @@ test("wrapBridgeTools steers a zero-row named tool result to sql_exec once", asy
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("tool_name_steer redirects standalone and hallucinated tool calls to codemode, once per name", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-tool-name-steer-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const seenContexts = [];
+  const runtime = await makeFixtureRuntime(agentDir, (model, context) => {
+    seenContexts.push(structuredClone(context));
+    turn++;
+    let msg;
+    const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+    if (turn === 1) {
+      msg = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "toolCall", id: "call-native-1", name: "get_zone_deltas", arguments: { player: "Player A" } }],
+        stopReason: "toolUse", timestamp: Date.now(), usage,
+      };
+    } else if (turn === 2) {
+      msg = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [
+          { type: "toolCall", id: "call-native-2", name: "get_zone_deltas", arguments: { player: "Player B" } },
+          { type: "toolCall", id: "call-native-3", name: "get_zone_delta", arguments: { player: "Player C" } },
+        ],
+        stopReason: "toolUse", timestamp: Date.now(), usage,
+      };
+    } else {
+      msg = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }],
+        stopReason: "stop", timestamp: Date.now(), usage,
+      };
+    }
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => ({
+      tools: [
+        {
+          name: "get_zone_deltas",
+          label: "get_zone_deltas",
+          description: "One player's zone deltas",
+          parameters: Type.Object({ player: Type.String() }),
+          async execute() {
+            return { content: [{ type: "text", text: "{}" }], details: undefined, isError: false };
+          },
+        },
+      ],
+      results: new Map(),
+      pid: 1003,
+      close: async () => {},
+    }),
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Zone deltas", history: [], model: "fixture:fixture",
+      cwd, agentDir, bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    const steers = events.filter((e) => e.type === "tool_call" && e.name === "tool_name_steer");
+    assert.equal(steers.length, 2, "steer fires once per missing name");
+    assert.deepEqual(steers[0].args, { tool: "get_zone_deltas" });
+    assert.deepEqual(steers[1].args, { tool: "get_zone_delta" });
+    const turn2Text = JSON.stringify(seenContexts[1]?.messages ?? []);
+    assert.ok(turn2Text.includes("only callable inside codemode"), "steer names the codemode call form");
+    assert.ok(turn2Text.includes("tools.get_zone_deltas"), "steer names the exact tool call");
+    const turn3Text = JSON.stringify(seenContexts[2]?.messages ?? []);
+    assert.ok(turn3Text.includes("not registered"), "hallucinated names get a did-you-mean");
+    assert.ok(turn3Text.includes("Did you mean tools.get_zone_deltas"), "did-you-mean lists the nearest real tool");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
