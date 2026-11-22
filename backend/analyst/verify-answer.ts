@@ -499,8 +499,8 @@ export function auditAnswerNumbers(
         ? auditEvidenceCoverage(question, input, (collectEvidenceText(sources) + " " + (extraEvidenceText ?? "")).toLowerCase()).slice(0, 10)
         : [];
     const artifact_kind_irrelevance = question ? auditArtifactKindRelevance(question, input) : [];
-    const no_evidence_on_data_ask = dataToolCalls === 0 && isDataAsk(question)
-        ? ["zero data tool calls before submitting a data-grounded answer"]
+    const no_evidence_on_data_ask = dataToolCalls === 0 && sources.length === 0 && isDataAsk(question)
+        ? ["zero data tool calls and no evidence sources before submitting a data-grounded answer"]
         : [];
     return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks, artifact_kind_irrelevance, no_evidence_on_data_ask };
 }

@@ -2050,6 +2050,15 @@ test("verify_answer_numbers flags data asks submitted with zero data tool calls"
   );
   assert.equal(withCalls.no_evidence_on_data_ask.length, 0);
 
+  const withSources = auditAnswerNumbers(
+    { blocks: [{ text: "Giannis leads the league in restricted-area frequency at 41.2%." }] },
+    [makePayloadSourceRecord("src-1", { rows: [{ player: "Giannis", freq: 0.412 }] })],
+    "Which players lead the league in restricted-area shot frequency in 2024-25?",
+    undefined,
+    0,
+  );
+  assert.equal(withSources.no_evidence_on_data_ask.length, 0);
+
   const conceptual = auditAnswerNumbers(
     { blocks: [{ text: "Conditioning on outcome creates a collider bias." }] },
     sources,
