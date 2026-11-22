@@ -11,6 +11,7 @@ import {
   canonicalArgsKey,
   createPiExecution,
   listWorkspaceArtifacts,
+  normalizeLoopArgs,
 } from "../dist/pi-execution.js";
 import {
   createSubmitAnswerTool,
@@ -405,6 +406,30 @@ test("createPiExecution injects thread workspace files into initial model messag
   }
 });
 
+test("normalizeLoopArgs folds empty, case, and team id/abbrev variants into one key", () => {
+  const keyOf = (args) => canonicalArgsKey(normalizeLoopArgs(args));
+  assert.equal(
+    keyOf({ team: "", season: "2025-26" }),
+    keyOf({ season: "2025-26" })
+  );
+  assert.equal(
+    keyOf({ team: "BOS", season: "2025-26" }),
+    keyOf({ team_id: 1610612738, season: "2025-26" })
+  );
+  assert.equal(
+    keyOf({ team: "bos", season: "2025-26" }),
+    keyOf({ team: "BOS", season: "2025-26" })
+  );
+  assert.equal(
+    keyOf({ teams: "BOS, MIL" }),
+    keyOf({ teams: "mil, bos" })
+  );
+  assert.notEqual(
+    keyOf({ team: "BOS" }),
+    keyOf({ team: "MIL" })
+  );
+});
+
 test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-circuits 3rd identical call", async () => {
   assert.equal(
     canonicalArgsKey({ b: 2, a: { z: true, y: [1, { d: 4, c: 3 }] } }),
@@ -548,9 +573,9 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
     assert.equal(toolResults[0].status, "ok");
     assert.equal(toolResults[1].status, "ok");
     assert.equal(toolResults[2].status, "fail");
-    assert.equal(
+    assert.match(
       toolResults[2].error,
-      "Identical tool call repeated 3 times in this run"
+      /Already called sql_exec 3 times with equivalent arguments.*pivot or finish/
     );
 
     const loopSource = events.find(

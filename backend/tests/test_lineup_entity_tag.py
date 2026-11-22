@@ -31,6 +31,14 @@ def _seed(dbpath):
             "_fetched_at VARCHAR, _entity VARCHAR)"
         )
         con.execute(
+            "CREATE TABLE silver_boxscores ("
+            "GAME_ID VARCHAR, _season VARCHAR)"
+        )
+        con.execute(
+            "INSERT INTO silver_boxscores VALUES ('0021500001', ?)",
+            [SEASON],
+        )
+        con.execute(
             "CREATE TABLE silver_hist_possessions ("
             "game_id VARCHAR, possession_number INTEGER, "
             "offense_team_id INTEGER, defense_team_id INTEGER, "

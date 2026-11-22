@@ -1,5 +1,5 @@
 {
-  "error": "unknown team: Not A Real Team XYZ",
+  "tool": "get_lineup_stats",
   "ok": false,
-  "tool": "get_lineup_stats"
+  "error": "unknown team: 'Not A Real Team XYZ'. pass an NBA abbreviation like 'BOS', a numeric team_id, or a full team name like 'Boston Celtics'"
 }

@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from .. import store as _store
 from .team import _hist_lineup_rows, _lineup_key
 from ..sources import nba_stats
-from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id, resolve_season
+from ._core import MAX_ROWS, TTL_PBPSTATS, InvalidSeasonError, _warehouse_or_live, clamp_season, coerce_team_id, resolve_season
 
 BLOWOUT_MARGIN = 20
 BLOWOUT_SHARE_FLAG = 0.5
@@ -198,10 +198,11 @@ def get_lineup_stats(
 ) -> dict[str, Any]:
     season = resolve_season(season)
     try:
+        season = clamp_season(season)
         team_id = coerce_team_id(team)
-    except ValueError as exc:
+    except (InvalidSeasonError, ValueError) as exc:
         return {"tool": "get_lineup_stats", "ok": False,
-                "error": str(exc)[:160]}
+                "error": str(exc)[:240]}
     current = season == resolve_season(None)
     if current:
         rows, meta, agg = _fetch_lineup_inputs(team_id, season)

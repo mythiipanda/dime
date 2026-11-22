@@ -603,14 +603,20 @@ def _team_alias_index() -> dict[str, list[int]]:
 
 _TEAM_ALIAS_INDEX = _team_alias_index()
 
+_TEAM_INPUT_GUIDE = ("pass an NBA abbreviation like 'BOS', a numeric "
+                     "team_id, or a full team name like 'Boston Celtics'")
+
+def _unknown_team(value: object) -> ValueError:
+    return ValueError(f"unknown team: {value!r}. {_TEAM_INPUT_GUIDE}")
+
 def _static_team_id(value: object, raw: str) -> int:
     name = " ".join(raw.lower().replace("-", " ").replace("_", " ").split())
     if not name:
-        raise ValueError(f"unknown team: {value}")
+        raise _unknown_team(value)
     hits = _TEAM_ALIAS_INDEX.get(name, [])
     if len(hits) == 1:
         return hits[0]
-    raise ValueError(f"unknown team: {value}")
+    raise _unknown_team(value)
 
 def coerce_team_id(value: object) -> int:
     raw = str(value).strip()
@@ -619,14 +625,14 @@ def coerce_team_id(value: object) -> int:
     except (TypeError, ValueError):
         pass
     if not raw:
-        raise ValueError(f"unknown team: {value}")
+        raise _unknown_team(value)
     raw = NICKNAMES.get(raw.lower(), raw)
     raw = raw.replace("-", " ").replace("_", " ")
     name = raw.lower()
     if not name.strip():
-        raise ValueError(f"unknown team: {value}")
+        raise _unknown_team(value)
     if len(name) < 3:
-        raise ValueError(f"unknown team: {value}")
+        raise _unknown_team(value)
     return _static_team_id(value, raw)
 
 
