@@ -1880,6 +1880,48 @@ test("verify_answer_numbers flags required stat terms absent from prose and payl
   assert.equal(noQuestion.metric_value_gaps.length, 0);
 });
 
+test("verify_answer_numbers flags stat-shaped figures tracing to no tool output", async () => {
+  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
+  const sources = [
+    makePayloadSourceRecord("src-1", { rows: [{ pts: 350, fga: 210, fta: 80 }] }),
+  ];
+
+  const fabricated = auditAnswerNumbers(
+    { blocks: [{ text: "His true shooting was 0.762 with a 31.4 usage rate." }] },
+    sources,
+  );
+  assert.equal(fabricated.unsupported_claims.length, 2);
+  assert.ok(fabricated.unsupported_claims[0].includes("0.762"));
+
+  const traced = auditAnswerNumbers(
+    { blocks: [{ text: "His true shooting was 0.762." }] },
+    [
+      ...sources,
+      makePayloadSourceRecord("src-2", { stdout: "ts = 350 / (2 * (210 + 0.44 * 80)) = 0.7621" }),
+    ],
+  );
+  assert.equal(traced.unsupported_claims.length, 0);
+
+  const countClaims = auditAnswerNumbers(
+    { blocks: [{ text: "He appeared in 7 games and hit 4 threes." }] },
+    sources,
+  );
+  assert.equal(countClaims.unsupported_claims.length, 0);
+
+  const promptConstants = auditAnswerNumbers(
+    { blocks: [{ text: "The top-8 share clears the 0.85 benchmark comfortably." }] },
+    sources,
+    "Compute the HHI of the top-8 rotation minutes share and compare it to the 0.85 benchmark.",
+  );
+  assert.equal(promptConstants.unsupported_claims.length, 0);
+
+  const supported = auditAnswerNumbers(
+    { blocks: [{ text: "He scored 350 points on 210 shots." }] },
+    sources,
+  );
+  assert.equal(supported.unsupported_claims.length, 0);
+});
+
 test("flagAcknowledgedByOmissions matches omitted entries to flagged asks", () => {
   const flag = "corner=3PT and abs(x_legacy)>=220 and y_legacy<=92.5";
   assert.equal(flagAcknowledgedByOmissions(flag, ["corner three frequency and legacy coordinates"]), true);

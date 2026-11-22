@@ -805,7 +805,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const missingTables = missingRequiredTables(start.q, consultedTables)
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
-                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0)
+                            const unsupportedClaims = audit.unsupported_claims
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
@@ -819,9 +821,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.metric_value_gaps = metricGaps;
                             if (missingTables.length > 0)
                                 gaps.missing_required_tables = missingTables;
+                            if (unsupportedClaims.length > 0)
+                                gaps.unsupported_claims = unsupportedClaims;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, and state every required metric value in prose or a payload, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
