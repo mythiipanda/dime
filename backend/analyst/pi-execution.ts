@@ -449,6 +449,20 @@ function buildBreakerRecord(
 }
 
 const LOOP_STOP_AFTER_INJECTIONS = 3;
+const SUBMIT_AUDIT_MAX_REJECTIONS = 3;
+
+export function flagAcknowledgedByOmissions(flag: string, omitted: string[]): boolean {
+    const tokens = flag.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+    if (tokens.length === 0)
+        return false;
+    return omitted.some(item => {
+        const norm = item.toLowerCase();
+        if (norm.includes(flag.toLowerCase()) || flag.toLowerCase().includes(norm))
+            return true;
+        const hits = tokens.filter(t => norm.includes(t)).length;
+        return hits / tokens.length >= 0.6;
+    });
+}
 
 function intEnv(name: string, fallback: number): number {
     const raw = process.env[name];
@@ -760,7 +774,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         sourceCount: () => (start.sources?.length ?? 0) + connected.results.size,
                         submitted: false,
                     };
-                    let submitAuditDone = false;
+                    let submitAuditRejections = 0;
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
@@ -770,26 +784,34 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
                         },
                         (submission) => {
-                            if (submitAuditDone)
+                            if (submitAuditRejections >= SUBMIT_AUDIT_MAX_REJECTIONS)
                                 return null;
-                            submitAuditDone = true;
                             const audit = auditAnswerNumbers(
                                 submission,
                                 [...(start.sources ?? []), ...connected.results.values()],
                                 start.q
                             );
-                            const gaps: Record<string, unknown> = {};
-                            if (audit.missing_in_artifacts.length > 0)
-                                gaps.missing_in_artifacts = audit.missing_in_artifacts.map(claim => claim.context);
-                            if (audit.uncovered_asks.length > 0)
-                                gaps.uncovered_asks = audit.uncovered_asks;
-                            if (audit.no_artifacts_on_artifact_ask.length > 0)
-                                gaps.no_artifacts_on_artifact_ask = audit.no_artifacts_on_artifact_ask;
-                            if (Object.keys(gaps).length === 0)
+                            const omitted = submission.omitted ?? [];
+                            const missingArtifacts = audit.missing_in_artifacts
+                                .map(claim => claim.context)
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const uncoveredAsks = audit.uncovered_asks
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const noArtifacts = audit.no_artifacts_on_artifact_ask
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0)
                                 return null;
+                            submitAuditRejections += 1;
+                            const gaps: Record<string, unknown> = {};
+                            if (missingArtifacts.length > 0)
+                                gaps.missing_in_artifacts = missingArtifacts;
+                            if (uncoveredAsks.length > 0)
+                                gaps.uncovered_asks = uncoveredAsks;
+                            if (noArtifacts.length > 0)
+                                gaps.no_artifacts_on_artifact_ask = noArtifacts;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            return `Not submitted — the honesty audit found gaps: ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, and cover every flagged ask (or record it in omitted), then call submit_answer again. The next submission is accepted as-is.`;
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, and cover every flagged ask, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(

@@ -11,6 +11,7 @@ import {
   canonicalArgsKey,
   createPiExecution,
   createProviderRetryStormGuard,
+  flagAcknowledgedByOmissions,
   listWorkspaceArtifacts,
   normalizeLoopArgs,
 } from "../dist/pi-execution.js";
@@ -1827,4 +1828,13 @@ test("verify_answer_numbers flags artifact asks answered with zero artifacts", a
     "Who led MEM in scoring in 2021-22?",
   );
   assert.equal(noArtifactAsk.no_artifacts_on_artifact_ask.length, 0);
+});
+
+test("flagAcknowledgedByOmissions matches omitted entries to flagged asks", () => {
+  const flag = "corner=3PT and abs(x_legacy)>=220 and y_legacy<=92.5";
+  assert.equal(flagAcknowledgedByOmissions(flag, ["corner three frequency and legacy coordinates"]), true);
+  assert.equal(flagAcknowledgedByOmissions(flag, ["team ranking"]), false);
+  assert.equal(flagAcknowledgedByOmissions(flag, []), false);
+  assert.equal(flagAcknowledgedByOmissions("HHI of top-8 minutes distribution", ["minutes HHI of the top-8 rotation"]), true);
+  assert.equal(flagAcknowledgedByOmissions("season coverage beyond dataset", ["season coverage beyond dataset is missing"]), true);
 });
