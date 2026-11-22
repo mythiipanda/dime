@@ -28,6 +28,7 @@ export type ChatMsg =
       suggestions: string[];
       carry: VerificationCarry | null;
       failure: AssistantFailure | null;
+      stopped?: boolean;
     };
 
 export type LiveRun = StreamSnapshot & { id: number; startedAt: number };
@@ -35,6 +36,7 @@ export type LiveRun = StreamSnapshot & { id: number; startedAt: number };
 export function assistantMessageFromSnapshot(
   snap: StreamSnapshot,
   message: string,
+  stopped = false,
 ): Extract<ChatMsg, { role: "assistant" }> {
   return {
     role: "assistant",
@@ -43,5 +45,6 @@ export function assistantMessageFromSnapshot(
     suggestions: snap.suggestions,
     carry: snap.carry,
     failure: snap.failed ?? (message ? { kind: "connection", message } : null),
+    ...(stopped ? { stopped } : {}),
   };
 }
