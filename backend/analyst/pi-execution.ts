@@ -7,7 +7,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
+import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -620,12 +620,15 @@ export function createProviderRetryStormGuard(
     };
 }
 
+const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
+
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
     results: Map<string, SourceRecord>,
     emit: (event: AnalystEvent) => void,
     tracker: RunStatusTracker,
-    stopRun: (reason: string) => void
+    stopRun: (reason: string) => void,
+    question?: string
 ) {
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
     const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number }>();
@@ -634,6 +637,8 @@ function wrapBridgeTools(
     const tripped = new Set<string>();
     const poolSigs = new Map<string, Set<string>>();
     const poolSteered = new Set<string>();
+    let capWarehouseSteered = false;
+    const capAsk = isCapAsk(question);
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
@@ -734,6 +739,13 @@ function wrapBridgeTools(
                 else if (!failed)
                     lastErrors.delete(tool.name);
                 if (!failed && domain) {
+                    if (!capWarehouseSteered && capAsk && WEB_TOOLS.has(tool.name)) {
+                        capWarehouseSteered = true;
+                        domain.warehouse_steer = "This is a cap/trade question the warehouse answers directly. Prefer the cap tools — get_cap_scenario, get_trade_legality, get_fa_plan, get_draft_capital, get_cap_ledger, get_cap_table — or sql_exec over silver_salaries, silver_cap_room, silver_contracts, silver_future_picks: they carry committed salaries, projected cap/tax/apron lines, and the outgoing/incoming pick ledger. Web search is a fallback only when the warehouse lacks the input (e.g. a live news claim); cite the warehouse figures for the numbers.";
+                        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                        emit({ type: "tool_call", name: "cap_warehouse_steer", args: { tool: tool.name } });
+                        emit({ type: "tool_result", name: "cap_warehouse_steer", status: "ok" });
+                    }
                     const sig = poolSignature(tool.name, args[1]);
                     if (sig) {
                         const seen = poolSigs.get(sig.key) ?? new Set<string>();
@@ -942,7 +954,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             }, tracker, (reason: string) => {
                                 emit({ type: "failure", kind: "loop_stop", message: reason });
                                 controller.abort();
-                            }),
+                            }, start.q),
                             countToolCall(priorSourceTool(start.sources ?? []), tracker),
                             verifyTool,
                             countToolCall(submitTool, tracker),

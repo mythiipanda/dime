@@ -329,6 +329,28 @@ export function auditArtifactKindRelevance(
 
 export const ZERO_EVIDENCE_DATA_ASK_FLAG = "zero data tool calls and no evidence sources before submitting a data-grounded answer";
 
+const CAP_ASK_VOCABULARY: string[] = [
+    "salary cap", "cap space", "cap room", "cap sheet", "cap hold", "cap table",
+    "apron", "first apron", "second apron", "hard cap", "hard-capped", "hardcapped",
+    "luxury tax", "tax line", "taxpayer", "tax bill", "tax club",
+    "salary match", "matching band", "trade legality", "trade machine",
+    "sign-and-trade", "sign and trade", "trade exception", "tpe",
+    "stepien", "draft capital", "draft-capital", "pick swap", "swap rights",
+    "unprotected first", "protected pick", "pick protections", "consecutive first",
+    "mid-level", "midlevel", "mle", "bi-annual exception", "bae",
+    "bird rights", "max slot", "max offer", "max contract",
+    "extension-eligible", "extension eligible", "cap flexibility", "dead money",
+    "trade kicker", "aggregating", "aggregation", "free-agent class", "fa class",
+    "seven-year rule", "seven year rule", "committed salary", "projected room",
+];
+
+export function isCapAsk(question: string | undefined): boolean {
+    if (!question)
+        return false;
+    const normalized = question.toLowerCase().replace(/_/g, " ");
+    return CAP_ASK_VOCABULARY.some(form => STAT_TERM_BOUNDARY(form).test(normalized));
+}
+
 export function isDataAsk(question: string | undefined): boolean {
     if (!question)
         return false;
