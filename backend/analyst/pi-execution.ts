@@ -439,6 +439,18 @@ function buildBreakerRecord(
 
 const LOOP_STOP_AFTER_INJECTIONS = 3;
 
+function intEnv(name: string, fallback: number): number {
+    const raw = process.env[name];
+    const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function callCeilingLimits(): { warn: number; stop: number } {
+    const stop = intEnv("DIME_CALL_CEILING_STOP", 140);
+    const warn = Math.min(intEnv("DIME_CALL_CEILING_WARN", 80), stop);
+    return { warn, stop };
+}
+
 function buildLoopStopRecord(
     toolName: string,
     callId: string,
@@ -455,6 +467,51 @@ function buildLoopStopRecord(
     };
     const record: SourceRecord = {
         ref: `loop_stop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
+function buildCallCeilingRecord(toolName: string, callId: string, count: number) {
+    const error = `High tool-call count (${count}) — wrap up and submit verified work now with submit_answer instead of opening new queries.`;
+    const payload = {
+        ok: false,
+        call_ceiling: true,
+        error,
+        summary: `This run has already spent ${count} tool calls; churning more queries burns the run budget without improving the answer.`,
+        next_actions: ["Call submit_answer with verified partial work", "List uncovered sub-questions in its omitted field"]
+    };
+    const record: SourceRecord = {
+        ref: `call_ceiling_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
+function buildCallCeilingStopRecord(toolName: string, callId: string, count: number) {
+    const error = `Run stopped: ${count} tool calls in a single run exceeded the churn ceiling. Wrap up verified partial work in the next run.`;
+    const payload = {
+        ok: false,
+        loop_terminated: true,
+        stop_reason: "tool_call_churn",
+        error,
+        summary: `The run kept issuing varied tool calls past the churn ceiling — terminating so it does not burn the remaining budget on dithering.`,
+        next_actions: ["Call submit_answer with verified partial work"]
+    };
+    const record: SourceRecord = {
+        ref: `churn_stop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
         callId,
         tool: toolName as SourceRecord["tool"],
         response: {
@@ -519,6 +576,22 @@ function wrapBridgeTools(
             tracker.toolCalls += 1;
             emit({ type: "tool_call", name: tool.name, args: args[1] });
             const callId = typeof args[0] === "string" && args[0] ? args[0] : `call_${tracker.toolCalls}`;
+            const ceiling = callCeilingLimits();
+            if (tracker.toolCalls >= ceiling.stop) {
+                const { record, payload } = buildCallCeilingStopRecord(tool.name, callId, tracker.toolCalls);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                stopRun(payload.error);
+                return sourceResult(record);
+            }
+            if (tracker.toolCalls === ceiling.warn) {
+                const { record, payload } = buildCallCeilingRecord(tool.name, callId, tracker.toolCalls);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                return sourceResult(record);
+            }
             if (tripped.has(tool.name)) {
                 const { record, payload } = buildBreakerRecord(tool.name, callId, failStreaks.get(tool.name) ?? 0, lastErrors.get(tool.name)?.error);
                 results.set(record.ref, record);
