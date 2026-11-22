@@ -4187,6 +4187,29 @@
         "type": "object"
       }
     },
+    "get_fa_plan": {
+      "name": "get_fa_plan",
+      "description": "Free-agent / extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table - keep all holds vs renounce all vs per-player renounce/keep-only - against the team's projected cap room and exceptions. Holds are CBA-formula estimates (150% of prior salary), marked ESTIMATED. Warehouse only; refresh with seed_free_agents.py.",
+      "args_schema": {
+        "description": "Free-agent and extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table (keep all holds / renounce all / per-player renounce or keep-only) against projected cap room and exceptions.",
+        "properties": {
+          "team": {
+            "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
+            "title": "Team",
+            "type": "string"
+          },
+          "fa_year": {
+            "default": "2027",
+            "description": "Free-agent year, e.g. '2027'. Default: 2027.",
+            "title": "Fa Year",
+            "type": "string"
+          }
+        },
+        "title": "get_fa_plan",
+        "type": "object"
+      }
+    },
     "get_prospect": {
       "name": "get_prospect",
       "description": "Prospect lookup for the upcoming draft: public big-board/mock placement, current college production stats, pick-slot comps from historical drafts, and nearest historical combine measurables. Player name; draft_year defaults to the current class (2027). Warehouse only; refresh with seed_prospects.py. International prospects carry board/physical data without college stats.",

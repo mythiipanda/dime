@@ -127,6 +127,7 @@ def register() -> dict[str, Any]:
         get_draft_board as _orig_get_draft_board,
         get_draft_model as _orig_get_draft_model,
         get_elo_standings as _orig_get_elo_standings,
+        get_fa_plan as _orig_get_fa_plan,
         get_free_agents as _orig_get_free_agents,
         get_expectations as _orig_get_expectations,
         get_hustle as _orig_get_hustle,
@@ -274,6 +275,18 @@ def register() -> dict[str, Any]:
             enrich_error("get_free_agents", res)
         return sanitize_for_wire(res)
 
+
+    @tool("get_fa_plan", description=_orig_get_fa_plan.description)
+    def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict:
+        res = call_sync(_orig_get_fa_plan, "get_fa_plan", {"team": team, "fa_year": fa_year})
+        rows = _dict_or_list_rows(res.get("rows") if isinstance(res, dict) and res.get("ok") else [])
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else ["player", "fa_type", "prior_salary", "cap_hold_est", "hold_share", "extension_eligible"]
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_fa_plan", res)
+        return sanitize_for_wire(res)
+
     @tool("get_prospect", description=_orig_get_prospect.description)
     def get_prospect(player: str = "", draft_year: str = "2027", position: str = "") -> dict:
         res = call_sync(_orig_get_prospect, "get_prospect", {"player": player, "draft_year": draft_year, "position": position})
@@ -340,6 +353,7 @@ def register() -> dict[str, Any]:
         "get_injuries": get_injuries,
         "get_news_feed": get_news_feed,
         "get_free_agents": get_free_agents,
+        "get_fa_plan": get_fa_plan,
         "get_prospect": get_prospect,
         "get_roster_fit": get_roster_fit,
         "get_expectations": get_expectations,

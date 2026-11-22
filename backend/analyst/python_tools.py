@@ -157,6 +157,7 @@ _TOOL_ORDER = (
     "web_search",
     "web_fetch",
     "get_free_agents",
+    "get_fa_plan",
     "get_prospect",
     "get_roster_fit",
     "get_expectations",

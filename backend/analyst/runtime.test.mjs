@@ -304,6 +304,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "web_search",
       "web_fetch",
       "get_free_agents",
+      "get_fa_plan",
       "get_prospect",
       "get_roster_fit",
       "get_expectations",
@@ -384,7 +385,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 111);
+    assert.equal(bridge.tools.length, 112);
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
@@ -1250,6 +1251,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_team_compare: { stat_category: "PTS", top: 3, season: "2023-24" },
       get_elo_standings: { season: "2023-24", limit: 5 },
       get_draft_board: { season: "2025" },
+      get_fa_plan: { team: "OKC", fa_year: "2027" },
       get_free_agents: { team: "BOS" },
       get_prospect: { player: "Cooper Flagg", draft_year: "2027" },
       get_combine: { season: "2025" },

@@ -120,6 +120,7 @@ TOOL_SCHEMA_DESCRIPTIONS = {
     "get_today": "Today home view: last night's results, tonight's games, leaderboard movers, streaks.",
     "get_tracking_profile": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
     "get_trade_check": "CBA trade legality check under 2023 CBA apron and salary matching rules.",
+    "get_fa_plan": "Free-agent and extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table (keep all holds / renounce all / per-player renounce or keep-only) against projected cap room and exceptions.",
     "get_trade_legality": "Full CBA trade legality verdict for a proposed multi-team deal: salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, sign-and-trade minimums, and Stepien pick rules.",
     "get_value_contracts": "Value-contract depth audit for one team: salary, cap share, pinned production-per-dollar score, value-per-$1M rank, and cheap/expensive/neutral depth flags (rotation players under ~10% of cap). Optional benchmark_team adds the same audit for a comparison roster.",
     "get_trade_value": "Trade value grade: estimated production surplus value vs salary per side plus pick equity.",
