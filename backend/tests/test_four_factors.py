@@ -48,7 +48,8 @@ def test_unknown_team_is_honest():
     _require_team_four_factors_pack()
     r = get_team_four_factors.invoke({"team": "Seattle SuperSonics"})
     assert not r["ok"]
-    assert "unknown team" in r["error"]
+    assert "SuperSonics" in r["error"]
+    assert "OKC" in r["error"]
 
 def test_factor_identities():
     _require_team_four_factors_pack()
