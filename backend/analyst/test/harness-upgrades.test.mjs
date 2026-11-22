@@ -10,6 +10,7 @@ import { reportBootstrapFailure } from "../dist/host.js";
 import {
   canonicalArgsKey,
   createPiExecution,
+  createProviderRetryStormGuard,
   listWorkspaceArtifacts,
   normalizeLoopArgs,
 } from "../dist/pi-execution.js";
@@ -619,6 +620,24 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+test("provider retry storm guard stops the run at the 12th retry attempt", () => {
+  const emitted = [];
+  let stoppedWith = null;
+  const guard = createProviderRetryStormGuard(
+    (event) => emitted.push(event),
+    (reason) => { stoppedWith = reason; }
+  );
+  for (let i = 0; i < 11; i++)
+    guard({ type: "auto_retry_start", attempt: i + 1, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
+  assert.equal(emitted.length, 0);
+  assert.equal(stoppedWith, null);
+  guard({ type: "auto_retry_end", success: true, attempt: 2 });
+  assert.equal(stoppedWith, null);
+  guard({ type: "auto_retry_start", attempt: 6, maxAttempts: 6, delayMs: 5000, errorMessage: "429 rate limited" });
+  assert.match(stoppedWith, /provider retry storm — 12 retry attempts/);
+  assert.match(stoppedWith, /429 rate limited/);
 });
 
 test("wrapBridgeTools terminates the run on the 6th equivalent-args call", async () => {
