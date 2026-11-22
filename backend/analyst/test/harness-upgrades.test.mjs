@@ -1791,3 +1791,32 @@ test("submit_answer vetoes once on pre-audit gaps then accepts the retry", async
   assert.equal(accepted.length, 1);
   assert.match(ok.content[0].text, /Answer submitted with 1 block/);
 });
+
+test("verify_answer_numbers flags artifact asks answered with zero artifacts", async () => {
+  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
+  const sources = [makePayloadSourceRecord("src-1", { rows: [{ wins: 56, losses: 26 }] })];
+  const question = "Compare MEM's 2021-22 and 2022-23 win splits and return a table artifact.";
+  const emptyArtifacts = auditAnswerNumbers(
+    { blocks: [{ text: "MEM went 56-26 in 2021-22." }] },
+    sources,
+    question,
+  );
+  assert.deepEqual([...emptyArtifacts.no_artifacts_on_artifact_ask].sort(), ["compare", "table"]);
+
+  const withArtifacts = auditAnswerNumbers(
+    {
+      blocks: [{ text: "MEM went 56-26 in 2021-22." }],
+      artifacts: [{ kind: "table", title: "Splits", columns: [{ key: "wins", label: "W", numeric: true }], rows: [{ wins: 56 }] }],
+    },
+    sources,
+    question,
+  );
+  assert.equal(withArtifacts.no_artifacts_on_artifact_ask.length, 0);
+
+  const noArtifactAsk = auditAnswerNumbers(
+    { blocks: [{ text: "MEM went 56-26 in 2021-22." }] },
+    sources,
+    "Who led MEM in scoring in 2021-22?",
+  );
+  assert.equal(noArtifactAsk.no_artifacts_on_artifact_ask.length, 0);
+});

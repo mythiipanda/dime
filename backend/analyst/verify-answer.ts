@@ -15,6 +15,7 @@ export type NumericAudit = {
     evidence_count: number;
     missing_in_artifacts: NumericClaim[];
     uncovered_asks: string[];
+    no_artifacts_on_artifact_ask: string[];
 };
 
 const SEASON_RE = /\b(?:19|20)\d{2}\s*[-/–—]\s*\d{2,4}\b/g;
@@ -192,6 +193,7 @@ const ASK_STOPWORDS = new Set([
     "over", "under", "between", "against", "versus", "vs", "per", "during"
 ]);
 const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
+const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?)\b/gi;
 
 export function auditAskCoverage(
     question: string,
@@ -249,14 +251,17 @@ export function auditAnswerNumbers(
         ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactValues))
         : [];
     const uncovered_asks = question ? auditAskCoverage(question, input) : [];
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks };
+    const no_artifacts_on_artifact_ask = question && (input.artifacts ?? []).length === 0
+        ? [...new Set((question.match(ARTIFACT_ASK_RE) ?? []).map(token => token.toLowerCase()))]
+        : [];
+    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[], question?: string) {
     return defineTool({
         name: "verify_answer_numbers",
         label: "Verify answer numbers",
-        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, and question clauses with no matching terms in the answer; it does not submit the answer.",
+        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, and asks for tables/compares/charts with zero artifacts; it does not submit the answer.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const audit = auditAnswerNumbers(args, getContextSources(), question);

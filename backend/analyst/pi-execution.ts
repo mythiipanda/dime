@@ -769,11 +769,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.missing_in_artifacts = audit.missing_in_artifacts.map(claim => claim.context);
                             if (audit.uncovered_asks.length > 0)
                                 gaps.uncovered_asks = audit.uncovered_asks;
+                            if (audit.no_artifacts_on_artifact_ask.length > 0)
+                                gaps.no_artifacts_on_artifact_ask = audit.no_artifacts_on_artifact_ask;
                             if (Object.keys(gaps).length === 0)
                                 return null;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            return `Not submitted — the honesty audit found gaps: ${JSON.stringify(gaps)}. Move prose-stated figures into artifact payloads and cover every flagged ask (or record it in omitted), then call submit_answer again. The next submission is accepted as-is.`;
+                            return `Not submitted — the honesty audit found gaps: ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, and cover every flagged ask (or record it in omitted), then call submit_answer again. The next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
