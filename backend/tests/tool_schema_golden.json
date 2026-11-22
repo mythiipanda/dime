@@ -1637,6 +1637,42 @@
         "type": "object"
       }
     },
+    "get_value_contracts": {
+      "name": "get_value_contracts",
+      "description": "Value-contract depth audit for one team. Ranks the roster by production per cap dollar: salary, cap share, pinned value score (PTS + 1.2REB + 1.5AST + 2STL + 2BLK - 1.5TOV per game), value per $1M, and cheap/expensive depth flags (Presti rule: rotation players under ~10% of cap). 'benchmark_team' adds the same audit for a comparison roster plus summary deltas.",
+      "args_schema": {
+        "description": "Value-contract depth audit for one team: salary, cap share, pinned production-per-dollar score, value-per-$1M rank, and cheap/expensive/neutral depth flags (rotation players under ~10% of cap). Optional benchmark_team adds the same audit for a comparison roster.",
+        "properties": {
+          "team": {
+            "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          },
+          "benchmark_team": {
+            "default": "",
+            "description": "Optional comparison team for the value-contract audit (adds benchmark rows and summary deltas). Default: ''.",
+            "title": "Benchmark Team",
+            "type": "string"
+          }
+        },
+        "title": "get_value_contracts",
+        "type": "object"
+      }
+    },
     "get_situational_splits": {
       "name": "get_situational_splits",
       "description": "Clutch situational splits for one player or team: score state plus venue.",
