@@ -385,12 +385,21 @@ export function LiveAssistant({ live }: { live: LiveRun }) {
   );
 }
 
+export function StoppedNote() {
+  return (
+    <p className="mt-2 max-w-[620px] text-[12px] text-ink-3">
+      Stopped — partial answer shown.
+    </p>
+  );
+}
+
 export function AssistantTurn({
   text,
   artifacts,
   suggestions,
   carry,
   failure,
+  stopped,
   onFollowUp,
 }: {
   text: string;
@@ -398,6 +407,7 @@ export function AssistantTurn({
   suggestions: string[];
   carry: VerificationCarry | null;
   failure: AssistantFailure | null;
+  stopped?: boolean;
   onFollowUp: (s: string) => void;
 }) {
   return (
@@ -416,6 +426,7 @@ export function AssistantTurn({
       {carry?.submission?.omitted?.length ? (
         <OmittedNote omitted={carry.submission.omitted} />
       ) : null}
+      {stopped ? <StoppedNote /> : null}
       <AnswerVerification carry={carry} artifacts={artifacts} />
       {failure && <FailureCard failure={failure} />}
       <FollowUpPills items={suggestions} onPick={onFollowUp} />

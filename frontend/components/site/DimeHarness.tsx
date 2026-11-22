@@ -158,6 +158,7 @@ export default function DimeHarness() {
                         suggestions={m.suggestions}
                         carry={m.carry}
                         failure={m.failure}
+                        stopped={m.stopped}
                         onFollowUp={pickFollowUp}
                       />
                     ),
