@@ -2743,7 +2743,7 @@ test("wrapBridgeTools runs a bounded warehouse fallback when a mapped named tool
     assert.equal(sqlCalls.length, 1, "one bounded fallback query ran");
     assert.match(sqlCalls[0], /silver_hist_player_seasons/);
     assert.match(sqlCalls[0], /player_name ILIKE '%Jalen Williams%'/);
-    assert.match(sqlCalls[0], /season = '2024-25'/);
+    assert.match(sqlCalls[0], /season = 2025/);
     assert.match(sqlCalls[0], /LIMIT 25/);
     const fbResult = events.find((e) => e.type === "tool_result" && e.name === "named_tool_sql_fallback");
     assert.equal(fbResult?.status, "ok");

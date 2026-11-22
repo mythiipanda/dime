@@ -623,20 +623,20 @@ export function createProviderRetryStormGuard(
 const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
 const SQL_STEER_SKIP_TOOLS = new Set(["sql_exec", "run_python", "web_search", "web_fetch", "warehouse_schema", "get_warehouse_freshness", "load_skill", "run_status"]);
 
-type FallbackSpec = { table: string; nameCol?: string; teamCol?: string; seasonCol?: string; orderCol?: string };
+type FallbackSpec = { table: string; nameCol?: string; teamCol?: string; seasonCol?: string; seasonText?: boolean; idCol?: string; orderCol?: string };
 const TOOL_FALLBACK_TABLE: Record<string, FallbackSpec> = {};
 {
-    const playerSeasons: FallbackSpec = { table: "silver_hist_player_seasons", nameCol: "player_name", teamCol: "team_abbreviation", seasonCol: "season", orderCol: "season" };
+    const playerSeasons: FallbackSpec = { table: "silver_hist_player_seasons", nameCol: "player_name", teamCol: "team_abbreviation", seasonCol: "season", idCol: "player_id", orderCol: "season" };
     for (const t of ["get_scouting_report", "get_raptor_history", "get_percentiles", "get_comps", "get_player_report", "get_player_evaluation", "get_player_intel", "get_player_ratings", "get_player_rankings", "get_season_averages", "get_career_arc", "get_career_totals", "get_compare", "get_splits", "get_situational_splits", "get_roster_fit", "get_young_player_usage", "get_impact_rank", "get_impact_estimate", "get_rapm", "get_rapm_prior", "get_award_race", "get_award_results", "get_risers", "get_player_risers", "get_leaderboard_deltas", "get_leaders", "get_historical_leaders", "get_rookie_leaders", "get_clutch_stats", "get_clutch", "get_last_x", "get_trend", "get_streaks", "get_head_to_head", "get_competitive_ratings", "get_debate_card", "get_matchup_brief", "get_opponent_scout", "get_scout_pack", "get_finder", "get_wpa_leaders", "get_hustle_boards", "get_team_leaders"])
         TOOL_FALLBACK_TABLE[t] = playerSeasons;
-    const teamSeasons: FallbackSpec = { table: "silver_hist_team_seasons", teamCol: "team_name" };
+    const teamSeasons: FallbackSpec = { table: "silver_hist_team_seasons", teamCol: "team_name", seasonCol: "season", orderCol: "season" };
     for (const t of ["get_team_compare", "get_team_season_summary", "get_team_hub", "get_standings", "get_standings_deep", "get_team_splits", "get_team_trajectory", "get_team_daily_brief"])
         TOOL_FALLBACK_TABLE[t] = teamSeasons;
-    const draftBoard: FallbackSpec = { table: "silver_draft_boards", nameCol: "PLAYER_NAME", seasonCol: "_season", orderCol: "\"ORDER\"" };
+    const draftBoard: FallbackSpec = { table: "silver_draft_boards", nameCol: "PLAYER_NAME", seasonCol: "_season", seasonText: true, orderCol: "\"ORDER\"" };
     for (const t of ["get_draft_board", "get_draft_model", "get_prospect", "get_combine"])
         TOOL_FALLBACK_TABLE[t] = draftBoard;
-    TOOL_FALLBACK_TABLE["get_draft_capital"] = { table: "silver_future_picks", teamCol: "ORIG_TEAM" };
-    TOOL_FALLBACK_TABLE["get_draft_history"] = { table: "silver_hist_draft", nameCol: "PLAYER_NAME", teamCol: "TEAM_ABBREVIATION", seasonCol: "SEASON" };
+    TOOL_FALLBACK_TABLE["get_draft_capital"] = { table: "silver_future_picks", teamCol: "ORIG_TEAM", seasonCol: "DRAFT_YEAR" };
+    TOOL_FALLBACK_TABLE["get_draft_history"] = { table: "silver_hist_draft", nameCol: "PLAYER_NAME", teamCol: "TEAM_ABBREVIATION", seasonCol: "SEASON", idCol: "PERSON_ID" };
 }
 const FALLBACK_LIMIT = 25;
 
@@ -647,7 +647,8 @@ function fallbackWhere(spec: FallbackSpec, toolArgs: unknown): string[] {
     for (const [key, raw] of Object.entries(args)) {
         const k = key.toLowerCase();
         if (typeof raw === "number" && (k === "player_id" || k === "person_id")) {
-            parts.push(`player_id = ${Math.trunc(raw)}`);
+            if (spec.idCol)
+                parts.push(`${spec.idCol} = ${Math.trunc(raw)}`);
             continue;
         }
         if (typeof raw !== "string" || !raw.trim())
@@ -659,8 +660,10 @@ function fallbackWhere(spec: FallbackSpec, toolArgs: unknown): string[] {
             parts.push(`${spec.teamCol} ILIKE '%${v}%'`);
         else if (spec.seasonCol && /season|draft_year|^year$/.test(k)) {
             const m = v.match(/^(\d{4})(?:-(\d{2}))?/);
-            if (m)
-                parts.push(`${spec.seasonCol} = '${m[2] ? `${m[1]}-${m[2]}` : `${m[1]}-${String((Number(m[1]) + 1) % 100).padStart(2, "0")}`}'`);
+            if (m) {
+                const end = m[2] ? Number(m[1]) + 1 : Number(m[1]);
+                parts.push(spec.seasonText ? `${spec.seasonCol} = '${end}'` : `${spec.seasonCol} = ${end}`);
+            }
         }
     }
     return parts;
