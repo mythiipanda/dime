@@ -1828,3 +1828,16 @@ test("verify_answer_numbers flags artifact asks answered with zero artifacts", a
   );
   assert.equal(noArtifactAsk.no_artifacts_on_artifact_ask.length, 0);
 });
+
+test("missingRequiredTables flags question-named warehouse tables never queried", async () => {
+  const { missingRequiredTables } = await import("../dist/verify-answer.js");
+  const question = "Use only silver_salaries rows with _season='2026-27' and join silver_cap_players for names.";
+  assert.deepEqual(missingRequiredTables(question, new Set(["silver_salaries"])), ["silver_cap_players"]);
+  assert.deepEqual(missingRequiredTables(question, new Set(["silver_salaries", "silver_cap_players"])), []);
+  assert.deepEqual(missingRequiredTables("Who led MEM in scoring?", new Set()), []);
+  assert.deepEqual(missingRequiredTables(undefined, new Set()), []);
+  assert.deepEqual(
+    missingRequiredTables("Filter silver_boxscores on SILVER_TEAM_IDS.", new Set()),
+    ["silver_boxscores", "silver_team_ids"],
+  );
+});
