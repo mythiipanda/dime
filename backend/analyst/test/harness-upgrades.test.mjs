@@ -1830,6 +1830,56 @@ test("verify_answer_numbers flags artifact asks answered with zero artifacts", a
   assert.equal(noArtifactAsk.no_artifacts_on_artifact_ask.length, 0);
 });
 
+test("verify_answer_numbers flags required stat terms absent from prose and payloads", async () => {
+  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
+  const sources = [makePayloadSourceRecord("src-1", { rows: [{ ortg: 118.4, pw_net: 9.4 }] })];
+
+  const question = "What were OKC's net rating and pythagorean net rating in 2024-25?";
+  const partial = auditAnswerNumbers(
+    { blocks: [{ text: "OKC's net rating was +118.4 in 2024-25." }] },
+    sources,
+    question,
+  );
+  assert.deepEqual(partial.metric_value_gaps, ['pw_net (asked via "pythagorean")']);
+
+  const payloadCovered = auditAnswerNumbers(
+    {
+      blocks: [{ text: "OKC's net rating was +118.4." }],
+      artifacts: [{ kind: "table", title: "Ratings", columns: [{ key: "pw_net", label: "PW_NET", numeric: true }], rows: [{ team: "OKC", pw_net: 9.4 }] }],
+    },
+    sources,
+    question,
+  );
+  assert.equal(payloadCovered.metric_value_gaps.length, 0);
+
+  const proseCovered = auditAnswerNumbers(
+    { blocks: [{ text: "OKC's net rating was +118.4 and the pythagorean net rating was +9.4." }] },
+    sources,
+    question,
+  );
+  assert.equal(proseCovered.metric_value_gaps.length, 0);
+
+  const rotation = auditAnswerNumbers(
+    { blocks: [{ text: "DEN's top rotation players average over 30 minutes." }] },
+    sources,
+    "Compare DEN's rotation minutes and fg% leaders.",
+  );
+  assert.deepEqual(rotation.metric_value_gaps, ['fg_pct (asked via "fg%")']);
+
+  const roster = auditAnswerNumbers(
+    { blocks: [{ text: "The Lakers have a deep roster." }] },
+    sources,
+    "List the Lakers roster names for 2024-25.",
+  );
+  assert.equal(roster.metric_value_gaps.length, 0);
+
+  const noQuestion = auditAnswerNumbers(
+    { blocks: [{ text: "Anything at all." }] },
+    sources,
+  );
+  assert.equal(noQuestion.metric_value_gaps.length, 0);
+});
+
 test("flagAcknowledgedByOmissions matches omitted entries to flagged asks", () => {
   const flag = "corner=3PT and abs(x_legacy)>=220 and y_legacy<=92.5";
   assert.equal(flagAcknowledgedByOmissions(flag, ["corner three frequency and legacy coordinates"]), true);
