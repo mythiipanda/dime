@@ -570,16 +570,13 @@ function poolSignature(toolName: string, rawArgs: unknown): { key: string; entit
     if (!parsed)
         return undefined;
     let entity: string | undefined;
-    const rest: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(parsed)) {
         if (POOL_ARG_KEY_RE.test(k) && typeof v === "string" && v.trim())
             entity = v.trim().toLowerCase();
-        else
-            rest[k] = v;
     }
     if (!entity)
         return undefined;
-    return { key: `${toolName}:${canonicalArgsKey(normalizeLoopArgs(rest))}`, entity };
+    return { key: toolName, entity };
 }
 
 const DEFAULT_RETRY_TIME_BUDGET_MS = 90_000;
@@ -733,7 +730,7 @@ function wrapBridgeTools(
                         poolSigs.set(sig.key, seen);
                         if (seen.size >= POOL_FANOUT_HINT_AT && !poolSteered.has(sig.key)) {
                             poolSteered.add(sig.key);
-                            domain.pool_fanout_hint = `${tool.name} has now been called for ${seen.size} different players under identical other arguments — that is a pool enumeration. For leaderboard/pool-cut asks, one sql_exec (GROUP BY player, HAVING the min-sample filter, ORDER BY the ranking metric) or a leaders tool returns the whole cohort in a single call; use it for the remaining players instead of more per-player calls.`;
+                            domain.pool_fanout_hint = `${tool.name} has now been called for ${seen.size} different players — that is a pool enumeration. For leaderboard/pool-cut asks, one sql_exec (GROUP BY player, HAVING the min-sample filter, ORDER BY the ranking metric) or a leaders tool returns the whole cohort in a single call; use it for the remaining players instead of more per-player calls.`;
                             result.content = [{ type: "text", text: JSON.stringify(domain) }];
                             emit({ type: "tool_call", name: "pool_fanout_steer", args: { tool: tool.name, players: seen.size } });
                             emit({ type: "tool_result", name: "pool_fanout_steer", status: "ok" });

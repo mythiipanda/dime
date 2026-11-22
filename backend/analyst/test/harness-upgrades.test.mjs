@@ -2114,7 +2114,7 @@ test("submit veto forces immediate resubmit when the run budget is nearly spent"
   assert.match(boundary, /Produce the requested artifact kinds/);
 });
 
-test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct player under identical args, once", async () => {
+test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct player of one tool, once", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "dime-pool-fanout-"));
   const agentDir = join(cwd, "agent");
   await mkdir(agentDir, { recursive: true });
@@ -2128,7 +2128,7 @@ test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct player und
       const code = `
         const r1 = await tools.get_zone_deltas({ player: "Player A" });
         const r2 = await tools.get_zone_deltas({ player: "Player B" });
-        const r3 = await tools.get_zone_deltas({ player: "Player C" });
+        const r3 = await tools.get_zone_deltas({ player: "Player C", season: "2024-25" });
         const r4 = await tools.get_zone_deltas({ player: "Player D" });
         const r5 = await tools.get_zone_deltas({ player: "Player A" });
         return { r1, r2, r3, r4, r5 };
@@ -2201,7 +2201,7 @@ test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct player und
     }
     assert.equal(execCount, 5);
     const steers = events.filter((e) => e.type === "tool_result" && e.name === "pool_fanout_steer");
-    assert.equal(steers.length, 1, "steer fires once per identical-args signature");
+    assert.equal(steers.length, 1, "steer fires once per tool");
     const zoneCall = events.find((e) => e.type === "tool_call" && e.name === "pool_fanout_steer");
     assert.deepEqual(zoneCall?.args, { tool: "get_zone_deltas", players: 3 });
     const sources = events.filter((e) => e.type === "source");
