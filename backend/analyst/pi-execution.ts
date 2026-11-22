@@ -377,20 +377,31 @@ function buildLoopRecord(
     callId: string,
     count: number,
     rawArgs: unknown,
-    lastRef?: string
+    lastRef?: string,
+    lastError?: string
 ) {
-    const error = `Already called ${toolName} ${count} times with equivalent arguments in this run — already called, pivot or finish.`;
+    const error = lastError
+        ? `${toolName} keeps failing after ${count} equivalent calls (${lastError}) — do not retry it; pivot to a different tool or arguments, or call submit_answer.`
+        : `Already called ${toolName} ${count} times with equivalent arguments in this run — already called, pivot or finish.`;
     const parsedArgs = objectValue(rawArgs);
     const payload = {
         ok: false,
         loop_detected: true,
+        repeated_failure: Boolean(lastError),
         error,
-        summary: `Blocked repeated ${toolName} call (#${count}) with equivalent arguments — pivot to a different tool/args or call submit_answer.`,
+        summary: lastError
+            ? `Blocked repeated ${toolName} call (#${count}) — it failed every time with equivalent arguments; retrying is wasted. Pivot now.`
+            : `Blocked repeated ${toolName} call (#${count}) with equivalent arguments — pivot to a different tool/args or call submit_answer.`,
         args: parsedArgs ? JSON.parse(canonicalArgsKey(parsedArgs)) : {},
-        recovery_hint: lastRef
-            ? `Reuse prior ref ${lastRef} via tools.read_source, change parameters/SQL, or call submit_answer.`
-            : "Change parameters/SQL or call submit_answer.",
-        next_actions: ["Inspect prior source ref", "Modify query/parameters", "Call submit_answer"]
+        ...(lastError ? { last_error: lastError } : {}),
+        recovery_hint: lastError
+            ? "This call cannot succeed with these arguments. Change parameters/SQL, switch tools (warehouse_schema, run_python, another domain tool), or call submit_answer noting the gap."
+            : lastRef
+                ? `Reuse prior ref ${lastRef} via tools.read_source, change parameters/SQL, or call submit_answer.`
+                : "Change parameters/SQL or call submit_answer.",
+        next_actions: lastError
+            ? ["Change arguments or tool", "Note the data gap", "Call submit_answer"]
+            : ["Inspect prior source ref", "Modify query/parameters", "Call submit_answer"]
     };
     const record: SourceRecord = {
         ref: `loop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
@@ -566,7 +577,7 @@ function wrapBridgeTools(
     stopRun: (reason: string) => void
 ) {
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
-    const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; blocked?: number }>();
+    const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number }>();
     const lastErrors = new Map<string, { error: string; count: number }>();
     const failStreaks = new Map<string, number>();
     const tripped = new Set<string>();
@@ -620,7 +631,7 @@ function wrapBridgeTools(
                     stopRun(payload.error);
                     return sourceResult(record);
                 }
-                const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef);
+                const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef, entry.lastError);
                 results.set(record.ref, record);
                 emit({ type: "source", record });
                 emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
@@ -640,6 +651,8 @@ function wrapBridgeTools(
                 const error = domain?.error;
                 if (!failed)
                     entry.lastSuccessRef = record.ref;
+                else if (typeof error === "string")
+                    entry.lastError = error;
                 if (failed) {
                     const streak = (failStreaks.get(tool.name) ?? 0) + 1;
                     failStreaks.set(tool.name, streak);
@@ -676,6 +689,7 @@ function wrapBridgeTools(
                 return result;
             }
             catch (error) {
+                entry.lastError = error instanceof Error ? error.message : String(error);
                 const streak = (failStreaks.get(tool.name) ?? 0) + 1;
                 failStreaks.set(tool.name, streak);
                 if (streak >= CONSECUTIVE_FAILURE_LIMIT)
