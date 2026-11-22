@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 
 const policies = {
-    gemini: { models: ["gemini-3.5-flash", "gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash-lite", "gemini-4-hydrogen"], key: "GEMINI_API_KEY", url: "https://generativelanguage.googleapis.com/v1beta" },
+    gemini: { models: ["gemini-3.5-flash", "gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash-lite", "gemini-4-hydrogen", "gemini-4-neon"], key: "GEMINI_API_KEY", url: "https://generativelanguage.googleapis.com/v1beta" },
     nvidia: { models: ["minimaxai/minimax-m3.1-flash", "nvidia/nemotron-3-ultra-550b-a55b", "nvidia/nemotron-3.5-bolt-e4b", "nvidia/nemotron-3.5-lightning-30b-a3b"], key: "NVIDIA_NIM_API_KEY", url: "https://integrate.api.nvidia.com/v1" },
     openrouter: { models: ["nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3-super-120b-a12b:free", "dots-studio/dots-3-note-preview:free", "openrouter/free"], key: "OPENROUTER_API_KEY", url: "https://openrouter.ai/api/v1" },
     mistral: { models: ["ministral-8b-2512"], key: "MISTRAL_API_KEY", url: "https://api.mistral.ai/v1" },
@@ -28,7 +28,10 @@ const EXTRA_LIMITS: Partial<Record<Provider, Record<string, TokenLimits>>> = {
     cerebras: { "moonshotai-kimi-k3.1-pro-trial": { contextWindow: 262144, maxTokens: 32768 } },
     inception: { "mercury-2.5": { contextWindow: 131072, maxTokens: 16384 } },
     zai: { "glm-4.7-flash": { contextWindow: 200000, maxTokens: 32768 } },
-    gemini: { "gemini-4-hydrogen": { contextWindow: 1048576, maxTokens: 65536 } },
+    gemini: {
+        "gemini-4-hydrogen": { contextWindow: 1048576, maxTokens: 65536 },
+        "gemini-4-neon": { contextWindow: 1048576, maxTokens: 65536 },
+    },
 };
 
 const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens: 16384 };
