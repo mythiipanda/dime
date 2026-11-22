@@ -620,6 +620,13 @@ export function createProviderRetryStormGuard(
     };
 }
 
+export function retryBudgetSteerText(burnedMs: number, evidenceFree: boolean) {
+    const waited = Math.round(burnedMs / 1000);
+    if (evidenceFree)
+        return `The provider lane is saturated: this run has already spent ~${waited}s waiting on retry backoffs, and each further call may stall again. Data tool calls run locally and do not depend on the lane — call a warehouse or analyst data tool NOW to capture the evidence your answer needs, then call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted. Skip this only if submit_answer already ran.`;
+    return `The provider lane is saturated: this run has already spent ~${waited}s waiting on retry backoffs, and each further call may stall again. Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats a slow full attempt. Skip this only if submit_answer already ran.`;
+}
+
 const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
 
 function wrapBridgeTools(
@@ -971,11 +978,15 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emit({ type: "failure", kind: "provider_retry_storm", message: reason });
                         controller.abort();
                     }, (burnedMs: number) => {
-                        emit({ type: "tool_call", name: "retry_budget_steer", args: { burned_ms: burnedMs } });
+                        const evidenceFree = dataToolCalls === 0
+                            && (start.sources?.length ?? 0) === 0
+                            && connected.results.size === 0
+                            && isDataAsk(start.q);
+                        emit({ type: "tool_call", name: "retry_budget_steer", args: { burned_ms: burnedMs, evidence_free: evidenceFree } });
                         emit({ type: "tool_result", name: "retry_budget_steer", status: "ok" });
                         session?.agent.steer({
                             role: "user",
-                            content: `The provider lane is saturated: this run has already spent ~${Math.round(burnedMs / 1000)}s waiting on retry backoffs, and each further call may stall again. Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats a slow full attempt. Skip this only if submit_answer already ran.`,
+                            content: retryBudgetSteerText(burnedMs, evidenceFree),
                             timestamp: Date.now()
                         });
                     }, deps.retryTimeBudgetMs);
