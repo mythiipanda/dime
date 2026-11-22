@@ -571,20 +571,23 @@ function loopArgsKey(toolName: string, rawArgs: unknown): string {
 }
 
 const POOL_ARG_KEY_RE = /^(player|player_name|player_id|name)$/i;
+const TEAM_ARG_KEY_RE = /^(team|team_id|team_name|team_abbr|team_abbreviation)$/i;
+const TEAM_POOL_TOOLS = new Set(["get_lineup_stats", "get_lineups"]);
 const POOL_FANOUT_HINT_AT = 3;
 
-function poolSignature(toolName: string, rawArgs: unknown): { key: string; entity: string } | undefined {
+function poolSignature(toolName: string, rawArgs: unknown): { key: string; entity: string; entityKind: "players" | "teams" } | undefined {
     const parsed = objectValue(rawArgs);
     if (!parsed)
         return undefined;
+    const argKeyRe = TEAM_POOL_TOOLS.has(toolName) ? TEAM_ARG_KEY_RE : POOL_ARG_KEY_RE;
     let entity: string | undefined;
     for (const [k, v] of Object.entries(parsed)) {
-        if (POOL_ARG_KEY_RE.test(k) && typeof v === "string" && v.trim())
-            entity = v.trim().toLowerCase();
+        if (argKeyRe.test(k) && (typeof v === "string" || typeof v === "number") && String(v).trim())
+            entity = String(v).trim().toLowerCase();
     }
     if (!entity)
         return undefined;
-    return { key: toolName, entity };
+    return { key: toolName, entity, entityKind: TEAM_POOL_TOOLS.has(toolName) ? "teams" : "players" };
 }
 
 const DEFAULT_RETRY_TIME_BUDGET_MS = 90_000;
@@ -738,9 +741,11 @@ function wrapBridgeTools(
                         poolSigs.set(sig.key, seen);
                         if (seen.size >= POOL_FANOUT_HINT_AT && !poolSteered.has(sig.key)) {
                             poolSteered.add(sig.key);
-                            domain.pool_fanout_hint = `${tool.name} has now been called for ${seen.size} different players — that is a pool enumeration. For leaderboard/pool-cut asks, one sql_exec (GROUP BY player, HAVING the min-sample filter, ORDER BY the ranking metric) or a leaders tool returns the whole cohort in a single call; use it for the remaining players instead of more per-player calls.`;
+                            domain.pool_fanout_hint = sig.entityKind === "teams"
+                                ? `${tool.name} has now been called for ${seen.size} different teams — that is a pool enumeration. For league-wide lineup boards, get_lineup_leaders or one sql_exec over silver_hist_lineups (filter _season/season_type/measure_type/per_mode, apply the minutes floor, ORDER BY the rating) returns the whole cohort in a single call; use it for the remaining teams instead of more per-team calls.`
+                                : `${tool.name} has now been called for ${seen.size} different players — that is a pool enumeration. For leaderboard/pool-cut asks, one sql_exec (GROUP BY player, HAVING the min-sample filter, ORDER BY the ranking metric) or a leaders tool returns the whole cohort in a single call; use it for the remaining players instead of more per-player calls.`;
                             result.content = [{ type: "text", text: JSON.stringify(domain) }];
-                            emit({ type: "tool_call", name: "pool_fanout_steer", args: { tool: tool.name, players: seen.size } });
+                            emit({ type: "tool_call", name: "pool_fanout_steer", args: sig.entityKind === "teams" ? { tool: tool.name, teams: seen.size } : { tool: tool.name, players: seen.size } });
                             emit({ type: "tool_result", name: "pool_fanout_steer", status: "ok" });
                         }
                     }
