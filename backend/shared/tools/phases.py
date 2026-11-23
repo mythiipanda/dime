@@ -157,7 +157,10 @@ def _tracking_section(scope: str, pid: int | None, tid: int | None,
     "season: zone diet and eFG plus shot-family splits (catch-and-shoot vs "
     "pull-up vs rim) with playoff-minus-regular deltas in percentage points. "
     "Warehouse-first from silver_hist_shots; measured tracking splits appear "
-    "when seeded. Give exactly one of player or team."))
+    "when seeded. Give exactly one of player or team. Entity-scoped — for a "
+    "league-wide split leaderboard or qualifying pool, run one sql_exec GROUP BY "
+    "over silver_hist_shots (zone geometry is documented on get_zone_deltas) "
+    "joined to silver_boxscores for position pools; never loop this tool per player."))
 def get_phase_shot_splits(player: str = "", team: str = "",
                           season: str | None = None) -> dict[str, Any]:
     season = resolve_season(season)

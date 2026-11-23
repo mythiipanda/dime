@@ -88,7 +88,7 @@ def build_deltas(player: dict[str, dict[str, int]],
     rows.sort(key=lambda r: r["delta_pp"], reverse=True)
     return rows, excluded
 
-@tool(description='Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).')
+@tool(description='Player-vs-league shooting-zone efficiency for ONE player: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).\nEntity-scoped — for a league-wide zone leaderboard or qualifying count, do not loop\nthis tool per player; run one sql_exec GROUP BY over silver_hist_shots: regular season\nis season_type_id=2; corner 3 = shot_value=3 AND ABS(x_legacy)>=220 AND y_legacy<=92.5;\nabove-break 3 = shot_value=3 AND NOT that corner geometry; rim = shot_value=2 AND\nshot_distance<=4; midrange = shot_value=2 AND shot_distance>4 AND NOT\n(ABS(x_legacy)<=80 AND y_legacy<=140). Position pools come from\nsilver_boxscores (position column; GROUP BY PLAYER_ID for player-season totals).')
 def get_zone_deltas(player: str, season: int = MAX_SEASON,
                     min_attempts: int = DEFAULT_FLOOR) -> dict[str, Any]:
     warnings: list[str] = []
