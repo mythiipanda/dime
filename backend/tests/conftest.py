@@ -9,6 +9,15 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_season_cache():
+    from shared.tools import _core
+
+    _core.last_completed_season_cache_clear()
+    yield
+    _core.last_completed_season_cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def canonical_warehouse():
     from shared import store
 
