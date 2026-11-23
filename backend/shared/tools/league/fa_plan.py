@@ -51,7 +51,16 @@ def _scenarios(room: dict, fa: list[dict]) -> list[dict]:
     "renounce all vs per-player renounce/keep-only - against the team's "
     "projected cap room and exceptions. Holds are CBA-formula estimates "
     "(150% of prior salary), marked ESTIMATED. Warehouse only; refresh "
-    "with seed_free_agents.py."))
+    "with seed_free_agents.py. "
+    "REACH FOR THIS for any forward-looking free-agency or cap-space "
+    "decision ask: 'can the Lakers keep Reaves and still sign a wing?', "
+    "'what is Boston's cap room if they renounce X?', 'walk me the Knicks' "
+    "2027 offseason.' It returns the answer-shaped scenario table directly, "
+    "so do not rebuild hold/room arithmetic from get_cap_ledger or "
+    "get_cap_table - those show current committed salary only and cannot "
+    "answer keep-vs-renounce questions. Pair with get_free_agents for the "
+    "league-wide class and get_cap_scenario for explicit hypothetical "
+    "signing amounts."))
 def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
     _pkg()
     raw_team = str(team or "").strip()

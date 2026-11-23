@@ -119,7 +119,12 @@ def _roster_issues(roster_after: int) -> list[str]:
     '"out_players" removes roster salaries. Returns the arithmetic trace, '
     'post-move payroll vs cap/tax/first/second apron, the 2023 CBA '
     'restrictions that trigger, and the matching verdict when a trade '
-    'portion is present.')
+    'portion is present. REACH FOR THIS for any "can X afford/sign Y" or '
+    '"what if they waive/trade for Z" ask: "can the Warriors sign Player '
+    'for $12M?", "what happens to Phoenix payroll if they waive Beal?", '
+    '"does taking back $30M push DEN over the second apron?" It computes '
+    'post-move apron status and CBA restrictions directly - do not rebuild '
+    'that arithmetic from get_cap_ledger rows.')
 def get_cap_scenario(team: str = "", signings: str = "",
                      in_players: str = "", out_players: str = "",
                      season: str | None = None) -> dict[str, Any]:
