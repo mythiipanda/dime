@@ -464,3 +464,5 @@ export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRec
         }
     });
 }
+
+export const ZERO_EVIDENCE_DATA_ASK_FLAG = "zero data tool calls and no evidence sources before submitting a data-grounded answer";

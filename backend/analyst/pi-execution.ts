@@ -7,7 +7,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE } from "./verify-answer.js";
+import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -1135,7 +1135,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     } else {
                         if (!text.trim())
                             throw new Error("Model returned no answer");
-                        emit({ type: "answer", text, ...replayReasoning });
+                        const zeroEvidence = dataToolCalls === 0
+                            && (start.sources?.length ?? 0) === 0
+                            && connected.results.size === 0
+                            && isDataAsk(start.q);
+                        if (zeroEvidence) {
+                            emit({ type: "tool_call", name: "submit_answer_audit" });
+                            emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify({ no_evidence_on_data_ask: [ZERO_EVIDENCE_DATA_ASK_FLAG] }) });
+                            answerEmitted = true;
+                            emit({ type: "answer", text, submission: { blocks: [{ text, anchors: [] }], omitted: [ZERO_EVIDENCE_DATA_ASK_FLAG] }, ...replayReasoning });
+                        } else {
+                            emit({ type: "answer", text, ...replayReasoning });
+                        }
                     }
                 }
                 catch (error) {
