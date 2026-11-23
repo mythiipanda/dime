@@ -31,6 +31,12 @@ _SQL_TABLES = [
     "silver_schedule", "silver_stints", "silver_playoff_gamelogs",
     "silver_transactions", "silver_contracts", "silver_preseason_projections",
     "silver_future_picks", "silver_draft_value_curve",
+    "silver_bbref_gamelogs_2024_25", "silver_boxscores_ext",
+    "silver_cap_history", "silver_hist_hustle", "silver_hist_pbp",
+    "silver_hist_salaries", "silver_leaders_dreb", "silver_leaders_fg_pct",
+    "silver_playoff_inactive", "silver_scoreboard",
+    "silver_tracking_pt_defend", "silver_tracking_pt_shot",
+    "silver_tracking_pt_stats", "silver_wowy", "silver_zone_splits",
 ]
 
 RERUN_ROW_CAP = 25
@@ -272,6 +278,12 @@ _WRITE_RE = _re_mod.compile(
     r"vacuum|detach)\b")
 _TABLE_REF_RE = _re_mod.compile(r"(?i)from\s+(\w+)|join\s+(\w+)")
 
+_TABLE_FREE_UNSAFE_NODES = {
+    "read_csv", "readcsv", "read_parquet", "read_json", "parquet_scan",
+    "csv_scan", "json_scan", "sqlite_scan", "glob",
+    "pragma_table_info", "read_blob", "read_text",
+}
+
 
 def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]:
     sql = (sql or "").strip().rstrip(";").strip()
@@ -302,8 +314,17 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]
                     or source.catalog or not source.name):
                 raise ValueError("unknown or unavailable tables")
             used.add(present_by_lower.get(source.name.lower(), source.name))
-    if not used or not used.issubset(present):
-        rejected = sorted(used - present) if used else sorted(set())
+    if not used:
+        unsafe = {type(node).__name__.lower() for node in statement.walk()}
+        unsafe |= {
+            str(node.name).lower()
+            for node in statement.walk()
+            if isinstance(node, _sql_exp.Anonymous)
+        }
+        if unsafe & _TABLE_FREE_UNSAFE_NODES:
+            raise ValueError("unknown or unavailable tables")
+    elif not used.issubset(present):
+        rejected = sorted(used - present)
         suffix = f": {', '.join(rejected)}" if rejected else ""
         raise ValueError(f"unknown or unavailable tables{suffix}")
     return sql, sorted(used)
