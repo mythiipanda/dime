@@ -582,6 +582,7 @@
           },
           "teammate": {
             "default": "",
+            "description": "Optional second player; splits the first player's own per-game PTS/FGA/plus-minus by this teammate's presence. Default: .",
             "title": "Teammate",
             "type": "string"
           },
@@ -593,6 +594,7 @@
           },
           "min_missed": {
             "default": 15,
+            "description": "Ranking mode only: minimum games missed to qualify. Default: 15.",
             "title": "Min Missed",
             "type": "integer"
           },
