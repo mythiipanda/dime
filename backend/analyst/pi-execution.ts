@@ -7,7 +7,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
+import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -16,6 +16,7 @@ const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md
 const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
 const TURN_END_STEER_MIN_CHARS = 240;
+const SUBMIT_FORCE_REMAINING_MS = 60_000;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
 const TRACE_RESULT_PREVIEW_CHARS = 4096;
@@ -451,13 +452,6 @@ function buildBreakerRecord(
 
 const LOOP_STOP_AFTER_INJECTIONS = 3;
 const SUBMIT_AUDIT_MAX_REJECTIONS = 3;
-const SUBMIT_FORCE_REMAINING_MS = 60_000;
-
-export function submitAuditRejectionMessage(gaps: Record<string, unknown>, rejections: number, remainingMs: number | undefined, lastChance: boolean): string {
-    const gapsJson = JSON.stringify(gaps);
-    if (lastChance || (remainingMs !== undefined && remainingMs <= SUBMIT_FORCE_REMAINING_MS))
-        return `Not submitted — audit rejection ${rejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}, but the run budget is nearly spent${remainingMs !== undefined ? ` (~${Math.round(remainingMs / 1000)}s left)` : ""}: ${gapsJson}. Do not call tools, narrate, or rewrite: call submit_answer again now with the same payload plus omitted set to every flag string above verbatim — acknowledging a flag in omitted passes the audit.`;
-    return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${rejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${gapsJson}. Keep every verified block and artifact already drafted — fix only the flagged items, and never replace answer content with a description of the submission or a pointer to earlier text. Produce the requested artifact kinds, drop artifact kinds the ask does not call for, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;}
 
 export function auditGapFlagStrings(gaps: Record<string, unknown>): string[] {
     return Object.values(gaps).flatMap(value => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
@@ -949,7 +943,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         submitted: false,
                     };
                     let submitAuditRejections = 0;
-                    let submitSteerUsed = false;
                     let zeroEvidenceRepromptUsed = false;
                     runTracker = tracker;
                     const consultedTables = new Set<string>();
@@ -1013,10 +1006,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             lastVetoedFlags = auditGapFlagStrings(gaps);
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            const remainingMs = start.runTimeoutMs !== undefined
-                                ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
-                                : undefined;
-                            return submitAuditRejectionMessage(gaps, submitAuditRejections, remainingMs, submitSteerUsed);
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, drop artifact kinds the ask does not call for, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
@@ -1125,6 +1115,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                     kind = "model";
                     await session.prompt(start.q);
+                    let submitSteerUsed = false;
                     let text = "";
                     let reasoning = "";
                     for (;;) {
@@ -1171,18 +1162,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     } else {
                         if (!text.trim())
                             throw new Error("Model returned no answer");
-                        const zeroEvidence = dataToolCalls === 0
-                            && (start.sources?.length ?? 0) === 0
-                            && connected.results.size === 0
-                            && isDataAsk(start.q);
-                        if (zeroEvidence) {
-                            emit({ type: "tool_call", name: "submit_answer_audit" });
-                            emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify({ no_evidence_on_data_ask: [ZERO_EVIDENCE_DATA_ASK_FLAG] }) });
-                            answerEmitted = true;
-                            emit({ type: "answer", text, submission: { blocks: [{ text, anchors: [] }], omitted: [ZERO_EVIDENCE_DATA_ASK_FLAG] }, ...replayReasoning });
-                        } else {
-                            emit({ type: "answer", text, ...replayReasoning });
-                        }
+                        emit({ type: "answer", text, ...replayReasoning });
                     }
                 }
                 catch (error) {
