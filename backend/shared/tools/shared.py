@@ -401,7 +401,7 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
         out_ok["warning"] = str(payload["warning"])
     return out_ok
 
-@tool(description='Run isolated Python in the thread workspace with read-only DuckDB warehouse access.\n\nPreloaded: con (read-only DuckDB connection), pl (polars), np (numpy), math, statistics. Standard scientific imports (scipy, statsmodels, sklearn, matplotlib, duckdb, polars, json, pathlib) are allowed and workspace files persist across turns for identified threads. Print to stdout or assign `out`.')
+@tool(description='Run isolated Python in the thread workspace with read-only DuckDB warehouse access.\n\nPreloaded: con (read-only DuckDB connection), pl (polars), np (numpy), math, statistics. Standard scientific imports (scipy, statsmodels, sklearn, matplotlib, duckdb, polars, json, pathlib) are allowed and workspace files persist across turns for identified threads. Print to stdout or assign `out`. Each call runs up to 240 seconds; aggregate and filter large tables in SQL first so Python iterates over compact arrays, and split resampling loops across calls when a single pass would exceed the cap.')
 def run_python(code: str) -> dict[str, Any]:
     from ..store import DB_PATH
 
@@ -421,13 +421,13 @@ def run_python(code: str) -> dict[str, Any]:
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=240,
             )
         except _subprocess.TimeoutExpired:
             return {
                 "tool": "run_python",
                 "ok": False,
-                "error": "run_python timed out after 60s",
+                "error": "run_python timed out after 240s",
                 "recovery_hint": "Filter rows in SQL before Python modeling or reduce iteration count.",
             }
         raw = result_path.read_text(encoding="utf-8") if result_path.exists() else ""
