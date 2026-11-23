@@ -15,6 +15,7 @@ const policies = {
     inception: { models: ["mercury-2.5"], key: "INCEPTION_API_KEY", url: "https://api.inceptionlabs.ai/v1" },
     zai: { models: ["glm-4.7-flash", "glm-4.5-flash"], key: "ZAI_API_KEY", url: "https://api.z.ai/api/paas/v4" },
     amd: { models: ["DeepSeek-V4-Flash", "GLM-5.3-Flash", "DeepSeek-V4.1-Flash"], key: "AMD_API_KEY", url: "https://developer.amd.com.cn/radeon/api/v1" },
+    novapis: { models: ["gpt-6.2-sol"], key: "NOVAPIS_API_KEY", url: "https://novapis.com/v1" },
 };
 
 type Provider = keyof typeof policies;
@@ -40,7 +41,7 @@ const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens:
 function isProvider(name: string): name is Provider { return Object.hasOwn(policies, name); }
 
 const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception"];
-const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception"]);
+const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis"]);
 const reasoningReplay = new Set<Provider>(["reflection", "nvidia"]);
 const thinkingAsTextModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
@@ -107,7 +108,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
         catalog() {
             const defaultProvider = order.find(available) ?? "mistral";
             const availability = Object.fromEntries(Object.keys(policies).filter(isProvider).filter(name => !gated.has(name) || available(name)).map(name => [name, available(name)]));
-            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
+            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception", "novapis"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
         },
         resolve(id?: string) {
             const { provider, model } = selection(id);
