@@ -1236,7 +1236,7 @@
     },
     "get_cap_ledger": {
       "name": "get_cap_ledger",
-      "description": "Payroll plus apron room for one abbreviation. 2026-27 thresholds.",
+      "description": "Payroll plus apron room for one abbreviation. 2026-27 thresholds. For a does-this-trade-work / salary-matching ask use get_trade_check (two-team player swap) or get_trade_legality (picks, cash, TPE, multi-team); for a deal-quality grade use get_trade_value.",
       "args_schema": {
         "description": "Payroll, luxury tax position, and first/second apron room for one team.",
         "properties": {
@@ -1314,7 +1314,7 @@
     },
     "get_cap_table": {
       "name": "get_cap_table",
-      "description": "League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.",
+      "description": "League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds. For a does-this-trade-work / salary-matching ask use get_trade_check (two-team player swap) or get_trade_legality (picks, cash, TPE, multi-team); for a deal-quality grade use get_trade_value.",
       "args_schema": {
         "description": "League-wide payroll, luxury tax position, and first/second apron room for all 30 teams, ranked by payroll.",
         "properties": {
