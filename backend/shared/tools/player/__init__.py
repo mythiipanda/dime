@@ -89,6 +89,9 @@ from .comps import (
 from .availability import (
     get_availability_impact,
 )
+from .on_off_leaders import (
+    get_on_off_leaders,
+)
 from .on_off_wowy import (
     _HIST_LINEUP_FILTER,
     _hist_on_off_rows,
