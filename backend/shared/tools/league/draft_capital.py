@@ -203,9 +203,24 @@ def get_draft_capital(team: str = "", draft_year: str = "",
             "select max(LAST_EDITED), max(_fetched_at) "
             "from silver_future_picks where _season = ?",
             [_PICKS_SEASON]).fetchone()
-    if team and not rows:
-        return {"tool": "get_draft_capital", "ok": False,
-                "error": f"no future pick rows for {team.upper()}"}
+        if team and not rows:
+            team_rows = _pick_rows(con, team, None)
+            team_years = sorted({r["draft_year"] for r in team_rows})
+            all_years = [r[0] for r in con.execute(
+                "select distinct DRAFT_YEAR from silver_future_picks "
+                "where _season = ? order by 1", [_PICKS_SEASON]).fetchall()]
+            if team_years:
+                detail = (f"no pick rows for {team.upper()} in "
+                          f"{years}; {team.upper()} rows exist for "
+                          f"draft_years {team_years}")
+            else:
+                detail = (f"no pick rows at all for {team.upper()}; "
+                          f"silver_future_picks covers draft_years "
+                          f"{all_years[0]}-{all_years[-1]}"
+                          if all_years else
+                          f"no pick rows at all for {team.upper()}")
+            return {"tool": "get_draft_capital", "ok": False,
+                    "error": detail}
     horizon = None
     if years_ahead is not None and str(years_ahead).strip():
         base = min(r["draft_year"] for r in rows) if rows else None

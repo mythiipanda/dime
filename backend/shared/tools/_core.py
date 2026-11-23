@@ -80,7 +80,8 @@ def resolve_season(season: object | None = None,
                    table: str | None = None) -> str | None:
     text = "" if season is None else str(season).strip()
     if text:
-        return text
+        slug = _canonical_parts(text) or _bare_year_slug(text)
+        return slug if slug is not None else text
     if table:
         try:
             from shared.coverage import parse_season_start
@@ -601,10 +602,15 @@ def _team_alias_index() -> dict[str, list[int]]:
             index.setdefault(key, []).append(team_id)
     return index
 
+_TEAM_ABBR_ALIASES = {"brk": "bkn", "pho": "phx", "phc": "phx"}
+
 _TEAM_ALIAS_INDEX = _team_alias_index()
 
 _TEAM_INPUT_GUIDE = ("pass an NBA abbreviation like 'BOS', a numeric "
                      "team_id, or a full team name like 'Boston Celtics'")
+
+_LEAGUE_SCOPE_TOKENS = {"all", "league", "nba", "every", "league-wide",
+                        "league_wide", "any"}
 
 _HISTORICAL_TEAMS = {
     "SEA": "the Seattle SuperSonics, who relocated to Oklahoma City in 2008 (use OKC)",
@@ -661,6 +667,12 @@ def _suggest_teams(raw: str, limit: int = 3) -> list[str]:
 
 def team_error_message(value: object) -> str:
     raw = str(value or "").strip()
+    key = " ".join(raw.lower().split())
+    if not key or key in _LEAGUE_SCOPE_TOKENS:
+        return (f"unknown team: {raw or 'empty team'} is not a team: this "
+                f"tool needs one specific team ({_TEAM_INPUT_GUIDE}). For a "
+                "league-wide ranking, use a leaders tool or one sql_exec "
+                "over the silver_hist_* tables instead of per-team calls.")
     hist = _historical_team_note(raw)
     if hist:
         return f"{raw} is {hist}; it has no rows for current-season data"
@@ -707,6 +719,7 @@ def _unknown_team(value: object) -> ValueError:
 
 def _static_team_id(value: object, raw: str) -> int:
     name = " ".join(raw.lower().replace("-", " ").replace("_", " ").split())
+    name = _TEAM_ABBR_ALIASES.get(name, name)
     if not name:
         raise _unknown_team(value)
     hits = _TEAM_ALIAS_INDEX.get(name, [])
