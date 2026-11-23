@@ -669,10 +669,10 @@ def team_error_message(value: object) -> str:
     raw = str(value or "").strip()
     key = " ".join(raw.lower().split())
     if not key or key in _LEAGUE_SCOPE_TOKENS:
-        return (f"{raw or 'empty team'} is not a team: this tool needs one "
-                f"specific team ({_TEAM_INPUT_GUIDE}). For a league-wide "
-                "ranking, use a leaders tool or one sql_exec over the "
-                "silver_hist_* tables instead of per-team calls.")
+        return (f"unknown team: {raw or 'empty team'} is not a team: this "
+                f"tool needs one specific team ({_TEAM_INPUT_GUIDE}). For a "
+                "league-wide ranking, use a leaders tool or one sql_exec "
+                "over the silver_hist_* tables instead of per-team calls.")
     hist = _historical_team_note(raw)
     if hist:
         return f"{raw} is {hist}; it has no rows for current-season data"
