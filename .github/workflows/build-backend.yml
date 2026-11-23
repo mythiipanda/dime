@@ -23,7 +23,33 @@ on:
 permissions:
   packages: write
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.f.outputs.backend }}
+      frontend: ${{ steps.f.outputs.frontend }}
+      analyst: ${{ steps.f.outputs.analyst }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - '.github/workflows/build-backend.yml'
+              - '.github/actions/**'
+            frontend:
+              - 'frontend/**'
+              - '.github/workflows/build-backend.yml'
+              - '.github/actions/**'
+            analyst:
+              - 'backend/analyst/**'
+              - '.github/workflows/build-backend.yml'
+              - '.github/actions/**'
   test:
+    if: github.event_name != 'pull_request' || needs.changes.outputs.backend == 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,16 +74,17 @@ jobs:
       - name: Run backend test suite
         run: python -m pytest backend/tests -q -m "not canonical_warehouse" -n 4
   frontend:
+    if: github.event_name != 'pull_request' || needs.changes.outputs.frontend == 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+      - uses: oven-sh/setup-bun@v2
       - name: Install frontend dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
         working-directory: frontend
       - name: Typecheck the frontend
         run: npm run typecheck
@@ -66,6 +93,8 @@ jobs:
         run: npm test
         working-directory: frontend
   analyst:
+    if: github.event_name != 'pull_request' || needs.changes.outputs.analyst == 'true'
+    needs: [changes]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,16 +106,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: backend/analyst/package-lock.json
+      - uses: oven-sh/setup-bun@v2
       - name: Install backend and analyst dependencies
-        run: pip install -r backend/requirements.txt & (cd backend/analyst && npm ci --ignore-scripts) & wait
+        run: pip install -r backend/requirements.txt & (cd backend/analyst && bun install --frozen-lockfile) & wait
       - name: Run the analyst suites
         run: npm test
         working-directory: backend/analyst
   build:
     if: github.event_name != 'pull_request'
-    needs: [test, frontend, analyst]
+    needs: [changes, test, frontend, analyst]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

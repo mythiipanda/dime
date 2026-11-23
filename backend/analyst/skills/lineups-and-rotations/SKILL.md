@@ -18,6 +18,7 @@ Use this playbook for 5-man lineup evaluation, two-player With-Or-Without-You (W
 | `get_on_off` | One player's on/off possession-level splits on a team. | Individual impact within a rotation; attribute carefully (teammate context matters). |
 | `get_lineup_on_off` | On/off splits for an arbitrary 2-5 player unit — the unit's results together vs with members missing. | "How does the team do when these three share the floor" — the generalized version of pair WOWY for any unit size. |
 | `get_availability_impact` | Game-level played-vs-missed splits: team record, win pct, and margin when a player sits vs plays; optional `teammate` per-game conditioning; blank `player` = league win-drop ranking. | "How do they do without X" / games-missed questions — the game-grain complement to on/off's possession grain. |
+| `get_on_off_leaders` | Stint-level on/off splits: league board (on-minus-off net gap, possession floors), team board by on-court possessions, single-player split, or `pair` 2x2. | On-off net-rating gaps and stint-based with/without asks — the stint-source answer where `get_on_off`/`get_wowy` disagree with official numbers. |
 | `get_rotation_check` / `get_stint_timeline` | Rotation patterns, closing units, stint order per game. | Staggering and substitution-pattern questions; playoff-tightening checks in §4. |
 | `get_scout_pack` | Compact opponent dossier: record, roster, lineups, leaders. | First pass before drilling into unit-level detail. |
 

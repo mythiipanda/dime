@@ -62,9 +62,13 @@ def test_no_connection_growth_across_crud_sequence(tmp_path):
 
 def test_fd_enumeration_assumption_is_single_sourced_across_backend():
     backend = Path(__file__).resolve().parent.parent
+    excluded = {".venv", "node_modules", "__pycache__", ".pytest_cache",
+                "dist", "build", "data"}
     offenders = []
     for path in sorted(backend.rglob("*.py")):
         if path.resolve() == Path(__file__).resolve():
+            continue
+        if excluded & set(path.relative_to(backend).parts):
             continue
         if "/proc/self/fd" in path.read_text(encoding="utf-8"):
             offenders.append(str(path.relative_to(backend)))

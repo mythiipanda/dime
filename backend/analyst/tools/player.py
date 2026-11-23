@@ -195,6 +195,10 @@ def register() -> dict[str, Any]:
     except ImportError:
         from backend.shared.tools.player import get_availability_impact as _orig_get_availability_impact
     try:
+        from shared.tools.player import get_on_off_leaders as _orig_get_on_off_leaders
+    except ImportError:
+        from backend.shared.tools.player import get_on_off_leaders as _orig_get_on_off_leaders
+    try:
         from shared.tools.player import (
             get_last_x as _orig_get_last_x,
             get_player_report as _orig_get_player_report,
@@ -298,6 +302,25 @@ def register() -> dict[str, Any]:
         res["columns"] = list(rows[0].keys()) if rows else ["split", "games", "wins", "losses", "win_pct", "avg_margin"]
         if not res.get("ok"):
             enrich_error("get_availability_impact", res)
+        return sanitize_for_wire(res)
+
+    @tool("get_on_off_leaders", description=_orig_get_on_off_leaders.description)
+    def get_on_off_leaders(player: str = "", team: str = "", pair: str = "",
+                           season: str | None = None,
+                           min_on_possessions: int = 2500,
+                           min_off_possessions: int = 800,
+                           limit: int = 10) -> dict:
+        res = call_sync(_orig_get_on_off_leaders, "get_on_off_leaders", {
+            "player": player, "team": team, "pair": pair, "season": season,
+            "min_on_possessions": min_on_possessions,
+            "min_off_possessions": min_off_possessions, "limit": limit,
+        })
+        raw_rows = res.get("rows")
+        rows = [r if isinstance(r, dict) else {"value": r} for r in raw_rows] if res.get("ok") and isinstance(raw_rows, list) else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else ["player", "team", "on_poss", "off_poss", "on_net", "off_net", "net_delta"]
+        if not res.get("ok"):
+            enrich_error("get_on_off_leaders", res)
         return sanitize_for_wire(res)
 
     @tool("get_clutch_stats", description=_orig_get_clutch_stats.description)
@@ -461,6 +484,7 @@ def register() -> dict[str, Any]:
         "get_era_comps": get_era_comps,
         "get_on_off": get_on_off,
         "get_availability_impact": get_availability_impact,
+        "get_on_off_leaders": get_on_off_leaders,
         "get_clutch_stats": get_clutch_stats,
         "get_situational_splits": get_situational_splits,
         "get_playtype_profile": get_playtype_profile,

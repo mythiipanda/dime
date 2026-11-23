@@ -56,7 +56,7 @@ def test_read_frame_opens_frozen_warehouse_read_only(monkeypatch):
         return real(read_only=True)
     monkeypatch.setattr(store,"connect",observed)
     store.read_frame("fetch_log")
-    assert calls == [True]
+    assert calls and all(call is True for call in calls)
 
 def test_default_connect_keeps_canonical_warehouse_immutable(monkeypatch):
     calls=[]

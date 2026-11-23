@@ -264,6 +264,18 @@
       }
     },
     {
+      "name": "get_on_off_leaders",
+      "description": "Stint-level on/off splits from the possessions warehouse. Modes: pass player + team for one player's on/off split (per-100 OFF/DEF/NET each way); pass team alone for that team's board ranked by on-court possessions; pass pair as 'A,B' (+ team if known) for a two-player 2x2 (both on / each alone / both off); pass neither for a league board of qualifying players ranked by on-minus-off net gap (min_on_possessions/min_off_possessions floors). Use for 'better/worse with X on the floor', on-off net rating gaps, and rotation-impact asks. Coverage 2009-10 onward, regular season.",
+      "namespace": "player",
+      "schema_description": "Stint-level on/off splits: league board ranked by on-minus-off net gap with possession floors, one team's board by on-court possessions, a single player's on/off split, or a two-player 2x2. Warehouse silver_stints 2009-10+.",
+      "params": {
+        "pair": "Two players as 'A,B' for a 2x2 split (both on / each alone / both off). Default: {d}.",
+        "team": "Team name, abbreviation, or id. With player: that player's split; alone: team board by on-court possessions. Default: {d}.",
+        "min_on_possessions": "League board only: minimum on-court possessions to qualify. Default: {d}.",
+        "min_off_possessions": "League board only: minimum off-court possessions to qualify. Default: {d}."
+      }
+    },
+    {
       "name": "get_shot_zones",
       "description": "Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones below min_attempts (default 50, clamped 10..200) are excluded.",
       "namespace": "spatial",

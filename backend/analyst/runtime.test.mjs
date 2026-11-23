@@ -209,6 +209,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_win_prob",
       "get_on_off",
       "get_availability_impact",
+      "get_on_off_leaders",
       "get_shot_zones",
       "get_phase_shot_splits",
       "get_four_factors",
@@ -390,7 +391,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 117);
+    assert.equal(bridge.tools.length, 118);
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
@@ -1236,6 +1237,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_win_prob: { team_a: "BOS", team_b: "MIA" },
       get_on_off: { player_id: 2544, team_id: 1610612747, season: "2023-24" },
       get_availability_impact: { player: "Joel Embiid", season: "2024-25" },
+      get_on_off_leaders: { team: "OKC", season: "2024-25", limit: 10 },
       get_shot_zones: { player_id: 2544, season: "2023-24", min_attempts: 50 },
       get_four_factors: { team: "BOS" },
       get_clutch_stats: { player: "LeBron James" },
