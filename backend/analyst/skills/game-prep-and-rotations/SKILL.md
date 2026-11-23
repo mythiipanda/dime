@@ -26,6 +26,11 @@ endpoint at question time) and tools cite their own sources.
 | `get_injuries` / `get_injury_impact` | Current injury report and its measured cost. | Every prep answer — availability changes everything downstream. Check first; a "weak bench" analysis that ignores three rotation players out is wrong, not just incomplete. |
 | `get_news_feed` | Recent headlines per team/player. | Late-breaking context the numbers miss — trades, role changes, coach comments about rotations. |
 | `get_head_to_head` / `get_season_series` / `get_matchup_splits` | Prior meetings and player-level splits vs this opponent. | "How did it go last time" and matchup-specific player performance. |
+| `get_game_prediction` / `get_win_prob` | Pre-game Monte Carlo win probability and projected score; in-game win probability. | "Who wins tonight" and game-state questions — model estimates with stated methodology, not vibes. |
+| `get_rest_advantage` / `get_streaks` | Schedule rest differentials and active/longest streaks league-wide. | Spot flags — a team on a b2b or riding a 9-game streak changes the read. |
+| `get_elo_standings` / `get_standings_deep` / `get_competitive_ratings` / `get_team_trajectory` | Elo-implied standings, deep standings with tiebreaks, power ratings, and a team's direction over time. | "How good are they really" context and trajectory claims — beyond raw W-L. |
+| `get_playoff_sim` / `get_briefing` / `get_morning_briefing` / `get_recap` | Playoff odds simulation, league/team briefings, and game recaps. | Postseason-probability asks and dated narrative context. |
+| `get_possession_log` / `get_games_on_date` / `get_watchlist` / `get_finder` | Possession-level play-by-play, schedule lookups, watchlists, and entity search. | Possession-grain checks and "which game/player" lookups the aggregate tools don't cover. |
 
 ## 2. Building a prep answer
 

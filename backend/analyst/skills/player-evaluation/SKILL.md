@@ -24,6 +24,10 @@ cite them.
 | `get_comps` | Similar players by profile. | Reasonable-projections and aging arguments — comps show what typically happens to this profile. |
 | `get_regression_check` / `get_last_x` | Is a hot/cold stretch sustainable vs the season base rate? | "Career year?" or small-sample jumps — separates a breakout from a heater. |
 | `get_scouting_report` / `get_scout_pack` | Assembled single-player profile. | A broad "tell me about X" before drilling into a specific claim. |
+| `get_rapm` / `get_rapm_prior` / `get_ratings` / `get_player_ratings` | RAPM-family impact and composite player ratings for a season. | Single-season impact claims — `get_impact_rank` ranks across WS/VORP/BPM; these give the model-based level. |
+| `get_era_comps` | Cross-era comparisons with pace/era adjustment. | "How does he compare to players from the 90s" — raw comps mislead across eras. |
+| `get_rookie_leaders` / `get_young_player_usage` / `get_player_risers` / `get_risers` | Rookie leaderboards, young-player usage/development reads, and league risers. | "Which rookies/young players are breaking out" — the named answer, not a hand-built SQL list. |
+| `get_historical_leaders` / `get_leaderboard_deltas` | All-time/career leaderboards and week-over-week leaderboard movement. | "Most X ever" and "who's climbing the leaderboard" asks. |
 | `sql_exec` | Ad-hoc warehouse queries. | Anything the named tools don't cover — e.g. custom splits, age curves across `silver_impact`, year-over-year deltas. |
 
 ## 2. Multi-season evaluation
