@@ -30,7 +30,7 @@ _TABLE_PURPOSES = {
     "silver_clutch": "clutch-time player stats",
     "silver_combine": "draft combine measurements and results",
     "silver_four_factors": "player four-factors season stats",
-    "silver_hist_draft": "historical draft picks",
+    "silver_hist_draft": "all NBA/BAA drafts 1947 on (nba_api DraftHistory); SEASON=pick-entering season end year, DRAFT_YEAR=draft class year",
     "silver_hist_gamelogs": "team gamelogs, regular season and playoffs (season_type column)",
     "silver_hist_hustle": "historical hustle stats",
     "silver_hist_lineups": "five-man lineup stats; variant rows by season_type, measure_type, per_mode",
