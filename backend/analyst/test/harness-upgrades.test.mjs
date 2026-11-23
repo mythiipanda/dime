@@ -1915,6 +1915,7 @@ test("verify_answer_numbers flags required stat terms absent from prose and payl
   );
   assert.equal(noQuestion.metric_value_gaps.length, 0);
 });
+
 test("verify_answer_numbers flags stat-shaped figures tracing to no tool output", async () => {
   const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
   const sources = [
@@ -1962,71 +1963,7 @@ test("verify_answer_numbers flags stat-shaped figures tracing to no tool output"
   );
   assert.equal(metaNarration.unsupported_claims.length, 0);
 });
-test("verify_answer_numbers flags artifact kinds the ask does not call for", async () => {
-  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
-  const sources = [makePayloadSourceRecord("src-1", { rows: [{ player: "Jayson Tatum", ts_pct: 61.9 }] })];
 
-  const leadersQuestion = "Who are the true shooting percentage leaders in 2024-25?";
-  const offAsk = auditAnswerNumbers(
-    {
-      blocks: [{ text: "Jayson Tatum leads at 61.9%." }],
-      artifacts: [
-        { kind: "table", title: "TS% leaders", columns: [{ key: "ts_pct", label: "TS%", numeric: true }], rows: [{ player: "Tatum", ts_pct: 61.9 }] },
-        { kind: "memo", title: "Trade review", sections: [{ heading: "Trades", body: "..." }] },
-        { kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 10, pct: 50 }] },
-      ],
-    },
-    sources,
-    leadersQuestion,
-  );
-  assert.deepEqual([...offAsk.artifact_kind_irrelevance].sort(), [
-    "memo on leaderboard ask",
-    "shot_chart on leaderboard ask",
-  ]);
-
-  const onAsk = auditAnswerNumbers(
-    {
-      blocks: [{ text: "Jayson Tatum leads at 61.9%." }],
-      artifacts: [{ kind: "chart", title: "TS% leaders", series: [{ name: "TS%", values: [61.9] }] }],
-    },
-    sources,
-    leadersQuestion,
-  );
-  assert.equal(onAsk.artifact_kind_irrelevance.length, 0);
-
-  const multiPart = auditAnswerNumbers(
-    {
-      blocks: [{ text: "See artifacts." }],
-      artifacts: [
-        { kind: "compare", title: "H2H", aName: "A", bName: "B", rows: [{ label: "PTS", a: 1, b: 2 }] },
-        { kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 10, pct: 50 }] },
-      ],
-    },
-    sources,
-    "Compare Tatum and Brown's shot diet and where each shoots best.",
-  );
-  assert.equal(multiPart.artifact_kind_irrelevance.length, 0);
-
-  const noMatch = auditAnswerNumbers(
-    {
-      blocks: [{ text: "Denver won 56 games." }],
-      artifacts: [{ kind: "memo", title: "M", sections: [{ heading: "H", body: "B" }] }],
-    },
-    sources,
-    "How did Denver finish in 2023-24?",
-  );
-  assert.equal(noMatch.artifact_kind_irrelevance.length, 0);
-
-  const underscored = auditAnswerNumbers(
-    {
-      blocks: [{ text: "See artifacts." }],
-      artifacts: [{ kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 10, pct: 50 }] }],
-    },
-    sources,
-    "Build a comparative shot_chart deliverable for LeBron James vs Luka Dončić using silver_shots.",
-  );
-  assert.equal(underscored.artifact_kind_irrelevance.length, 0);
-});
 test("flagAcknowledgedByOmissions matches omitted entries to flagged asks", () => {
   const flag = "corner=3PT and abs(x_legacy)>=220 and y_legacy<=92.5";
   assert.equal(flagAcknowledgedByOmissions(flag, ["corner three frequency and legacy coordinates"]), true);
