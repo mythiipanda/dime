@@ -71,7 +71,7 @@ Use this guide when a coverage gap, usage error, or schema question arises: find
 | `silver_zone_splits` | Player/team shooting by zone. | Below-zone distance detail (query shots). |
 | `silver_playtypes` | Synergy-style playtype PPP/frequency per player/team where ingested. | Defense-side playtype suppression unless defensive playtype rows exist — verify with `warehouse_schema` first. |
 | `silver_synergy` | Seeded synergy aggregates (2015-16→2026-27 per seed). | Coverage varies by season; confirm rows exist for the asked season before quoting. |
-| `silver_clutch` | Clutch-window stats. | Custom time-window filters (compute from `silver_hist_pbp`/`silver_stints`). |
+| `silver_clutch` | Clutch-window stats — filter `GROUP_SET='Players'` for player rows (the table multiplexes group sets; without the filter the player pool reads near-empty). | Custom time-window filters (compute from `silver_hist_pbp`/`silver_stints`). |
 
 ## Seasons, standings & schedule
 
@@ -81,6 +81,11 @@ Use this guide when a coverage gap, usage error, or schema question arises: find
 | `silver_standings` / `silver_hist_standings` | Standings snapshots. | Tie-breaker resolution logic — state when tied records need them. |
 | `silver_schedule` / `silver_scoreboard` | Upcoming/recent game slate, results. | Historical full schedules before ingest coverage — check `_season`. |
 | `silver_preseason_projections` | Stored projection inputs. | Actuals vs projections needs a join, not a single table. |
+
+## Leaderboards & qualifying pools
+
+- A "top N" or "how many qualify" ask resolves in ONE aggregate query — `GROUP BY` the entity over the full table with `HAVING` on the cutoff — never per-player loops or sampled subsets. The qualifying pool size is `COUNT(*)` of qualifying rows in that same query; report it exactly.
+- Shot-zone cuts (`silver_hist_shots`) aggregate at league scale — group on the zone geometry (e.g. corner-3 `ABS(x_legacy)>=220 AND y_legacy<=92.5`) rather than enumerating players.
 
 ## When a table can't answer
 
