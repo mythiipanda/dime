@@ -65,7 +65,7 @@ def _normalize(entity_type: str, entity_id: object) -> tuple[str, str]:
 
 def _player_snapshot(name: str, season: str) -> dict[str, Any]:
     season = resolve_season(season)
-    con = store.connect()
+    con = store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_leaders_pts" not in tables:
@@ -101,7 +101,7 @@ def _team_snapshot(abbrev: str, season: str) -> dict[str, Any]:
                 break
     except Exception:
         tid = None
-    con = store.connect()
+    con = store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_standings" not in tables:

@@ -82,7 +82,7 @@ def run_playoff_sim(season=None, sims=2000):
     season = resolve_season(season)
     from .. import store as _store
     random.seed(SEED)
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         amap = _amap()
         strength, src = _strengths(con, season, amap)

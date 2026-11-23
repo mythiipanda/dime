@@ -156,7 +156,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     last: Exception | None = None
     for _ in range(tries):
         try:
-            con = store.connect()
+            con = store.connect(read_only=True)
             try:
                 return (
                     con.execute(sql, params)
@@ -320,7 +320,7 @@ def _summarize(games: list[dict[str, Any]],
 
 def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
     try:
-        con = store.connect()
+        con = store.connect(read_only=True)
         try:
             tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         finally:

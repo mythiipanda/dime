@@ -129,7 +129,7 @@ def _streaks(season: str) -> list[dict[str, Any]]:
     try:
         from .. import store as _store
 
-        con = _store.connect()
+        con = _store.connect(read_only=True)
         try:
             tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
             if "silver_standings" in tables:

@@ -96,7 +96,7 @@ RAPTOR_JOIN = ("LEFT JOIN silver_raptor_player r ON LOWER(r.PLAYER_NAME) = "
                "LOWER(h.player_name) AND r.SEASON = h.season")
 
 def _tables() -> set[str]:
-    con = store.connect()
+    con = store.connect(read_only=True)
     try:
         return {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     finally:

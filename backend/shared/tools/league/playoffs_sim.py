@@ -304,7 +304,7 @@ def get_win_prob(team_a: str = "", team_b: str = "", season: str | None = None,
         return {"tool": "get_win_prob", "ok": False, "error": "two abbreviations needed"}
     a, b = team_a.upper(), team_b.upper()
     home = (home_abbrev or "").upper()
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         rows = con.execute(
             """SELECT team_abbreviation, game_id, game_date, matchup, wl,
@@ -335,7 +335,7 @@ def get_win_prob(team_a: str = "", team_b: str = "", season: str | None = None,
 def get_elo(season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:
@@ -383,7 +383,7 @@ def get_elo_standings(season: str | None = None, opponent: str | None = None,
                       limit: int = 30) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:
