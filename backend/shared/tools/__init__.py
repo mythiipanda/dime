@@ -55,7 +55,7 @@ from .league import (
     text_to_sql,
 )
 from .career_arc import get_career_arc
-from .lineup import get_lineup_stats
+from .lineup import get_lineup_stats, get_lineup_on_off
 from .player import (
     compare_metrics,
     get_player_rankings,
@@ -152,6 +152,7 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_team_leaders,
     get_lineups,
     get_lineup_stats,
+    get_lineup_on_off,
     get_on_off,
     get_wowy,
     get_four_factors,
