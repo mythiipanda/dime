@@ -958,7 +958,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const unevidencedAsks = audit.unevidenced_asks
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
-                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0)
+                            const zeroEvidenceOnSubmit = dataToolCalls === 0
+                                && (start.sources?.length ?? 0) === 0
+                                && connected.results.size === 0
+                                && isDataAsk(start.q);
+                            if (!zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
@@ -976,6 +980,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.unsupported_claims = unsupportedClaims;
                             if (unevidencedAsks.length > 0)
                                 gaps.unevidenced_asks = unevidencedAsks;
+                            if (zeroEvidenceOnSubmit)
+                                gaps.no_evidence_on_data_ask = [ZERO_EVIDENCE_DATA_ASK_FLAG];
 
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });

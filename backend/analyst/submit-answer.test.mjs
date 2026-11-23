@@ -840,6 +840,94 @@ test("createPiExecution reprompts once when a sourceless data ask ends in plain 
   await rm(cwd, { recursive: true, force: true });
 });
 
+test("createPiExecution rejects a zero-evidence submit_answer on a data ask", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-zero-evidence-submit-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const canonical = "Top guards by ts% in 2024-25: Giannis leads restricted-area frequency at 41.2%.";
+  const bridgeResults = new Map();
+  const fakeSqlExec = {
+    name: "sql_exec",
+    label: "SQL",
+    description: "Run SQL",
+    parameters: { type: "object", properties: {} },
+    async execute(callId) {
+      const record = makeSourceRecord("fake-ev-1", { rows: [{ player: "Giannis", ts_pct: 41.2 }] });
+      bridgeResults.set(record.ref, record);
+      return sourceResult(record);
+    },
+  };
+
+  let execRequests = 0;
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      let msg;
+      if (execRequests === 1) {
+        const code = `await tools.submit_answer({ blocks: [{ text: "The answer has been submitted via tools.submit_answer." }], omitted: ["who leads"] }); return { done: true };`;
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-sub", name: "codemode", arguments: { code } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else if (execRequests === 2) {
+        const code = `await tools.sql_exec({ sql: "select player, ts_pct from silver_leaders where season='2024-25' and pos='guard' order by ts_pct desc limit 10", intent: "rank top guards by ts% in 2024-25" }); await tools.submit_answer({ blocks: [{ text: ${JSON.stringify(canonical)}, anchors: [{ ref: "fake-ev-1", row: 0, columns: ["ts_pct"] }] }] }); return { done: true };`;
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-sub2", name: "codemode", arguments: { code } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      }
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = { tools: [fakeSqlExec], results: bridgeResults, pid: 12345, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const events = [];
+  for await (const event of pi.stream({
+    q: "Rank the top guards by ts% in 2024-25",
+    history: [],
+    model: "fixture:fixture",
+    sources: [],
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+
+  const audits = events.filter((e) => e.type === "tool_result" && e.name === "submit_answer_audit" && e.status === "fail");
+  assert.ok(audits.some((e) => String(e.error).includes("no_evidence_on_data_ask")), "audit rejects a zero-evidence submit");
+  const answer = events.find((e) => e.type === "answer");
+  assert.equal(answer.text, canonical, "resubmission after a data call lands");
+
+  await rm(cwd, { recursive: true, force: true });
+});
+
 test("createAnalyst downstream verification remains unassessed and preserves submission carry", async () => {
   const dir = await mkdtemp(join(tmpdir(), "analyst-downstream-"));
   try {
