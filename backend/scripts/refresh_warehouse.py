@@ -34,6 +34,7 @@ SEEDERS = [
     ("cap_history", "seed_cap_history.py", [], False),
     ("hist_salaries", "seed_hist_salaries.py", [], False),
     ("games_missed", "seed_games_missed.py", [], False),
+    ("combine_history", "seed_combine_history.py", [], False),
     ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
