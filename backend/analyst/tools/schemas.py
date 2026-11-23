@@ -54,6 +54,7 @@ WAREHOUSE_ALTERNATIVES = {
 }
 
 TOOL_SCHEMA_DESCRIPTIONS = {
+    "get_availability_impact": "Game-level availability splits: a team's record, win pct, and average margin in games a player played vs missed; optional teammate-presence per-game scoring split; or a league-wide win-drop ranking when player is blank. Warehouse 2015-16+.",
     "get_award_results": "Historical recorded NBA award voting results.",
     "get_briefing": "Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest.",
     "get_cap_ledger": "Payroll, luxury tax position, and first/second apron room for one team.",
