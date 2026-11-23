@@ -409,6 +409,56 @@
         "type": "object"
       }
     },
+    "get_lineup_on_off": {
+      "name": "get_lineup_on_off",
+      "description": "On/off-court splits for an arbitrary 2-5 player combination on one team, computed from possession-level data. Names or ids, comma-separated. For single-player splits use get_on_off; for a named two-player pair use get_wowy; for whole-lineup ratings use get_lineup_stats.\n\nReturns possessions, points for/against, and per-100 OFF/DEF/NET ratings\nfor the unit together versus all other possessions by that team, plus\nthe on-minus-off delta. Possessions flagged as garbage time are excluded.\nUnits under min_possessions (default 100) are flagged as tiny-sample, not\ndropped; blowout-heavy splits are flagged at the same share rule as\nget_lineup_stats.",
+      "args_schema": {
+        "properties": {
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
+            "title": "Team"
+          },
+          "players": {
+            "default": "",
+            "description": "Comma-separated player full names to compare. Default: ''.",
+            "title": "Players",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          },
+          "min_possessions": {
+            "default": 100,
+            "description": "Minimum possessions floor. Default: 100.",
+            "title": "Min Possessions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "get_lineup_on_off",
+        "type": "object"
+      }
+    },
     "get_win_prob": {
       "name": "get_win_prob",
       "description": "Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side.",
