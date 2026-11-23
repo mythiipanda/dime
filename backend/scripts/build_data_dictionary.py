@@ -21,6 +21,7 @@ _TABLE_PURPOSES = {
     "silver_boxscores_ext": "extended box-score fields beyond the traditional line",
     "silver_cap_history": "league salary cap, tax, apron, and max-salary rules by season (1984-85 on)",
     "silver_hist_salaries": "per-player salary by season for 1984-85 through 2017-18 (hoopshype mirror)",
+    "silver_injury_history": "games-missed ledger derived from season GP vs team games, 1996-97 on; misses that keep a player off rosters entirely are not recorded",
     "silver_cap_players": "player contract and cap figures",
     "silver_clutch": "clutch-time player stats",
     "silver_combine": "draft combine measurements and results",
