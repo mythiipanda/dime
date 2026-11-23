@@ -1,4 +1,5 @@
 import asyncio
+import json
 import importlib
 import os
 import re
@@ -417,11 +418,8 @@ def test_wrapper_input_schema_matches_the_shared_tool(monkeypatch):
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
     tools = _catalogue(monkeypatch, {})
 
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = re.findall(r'"([^"]+)"', block)
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = [t["name"] for t in manifest["tools"]]
 
     assert len(declared) == 117
     assert len(declared) == len(tools)
@@ -432,11 +430,8 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
 
 
 def test_network_inventory_derives_real_warehouse_alternatives(monkeypatch):
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = re.findall(r'"([^"]+)"', block)
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = [t["name"] for t in manifest["tools"]]
     tools = _catalogue(monkeypatch, {})
 
     assert len(python_tools.NETWORK_TOOL_SOURCES) == 36
@@ -527,11 +522,8 @@ def test_bridge_tool_description_mutation_stays_private(monkeypatch):
 
 def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
     tools = _catalogue(monkeypatch, {})
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = re.findall(r'"([^"]+)"', block)
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = [t["name"] for t in manifest["tools"]]
 
     assert len(declared) == 117
     assert len(declared) == len(tools)
@@ -542,11 +534,8 @@ def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
 
 
 def test_timeout_error_text_for_each_tool_kind():
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = set(re.findall(r'"([^"]+)"', block))
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = {t["name"] for t in manifest["tools"]}
     elapsed = f"{python_tools.LIVE_CALL_TIMEOUT_S:.1f}s"
 
     assert python_tools._timeout_error("get_recap") == (

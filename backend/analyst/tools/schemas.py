@@ -8,7 +8,7 @@ _TOOLS = _MANIFEST["tools"]
 
 TOOL_ORDER = tuple(t["name"] for t in _TOOLS)
 
-TOOL_DESCRIPTIONS = {t["name"]: t["description"] for t in _TOOLS}
+TOOL_DESCRIPTIONS = {t["name"]: t["description"] for t in _TOOLS if "description" in t}
 
 NETWORK_TOOL_SOURCES = {
     t["name"]: t["network_source"] for t in _TOOLS if "network_source" in t
