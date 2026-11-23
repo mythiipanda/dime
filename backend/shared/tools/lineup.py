@@ -352,18 +352,18 @@ def get_lineup_on_off(
     season = resolve_season(season)
     names = [p.strip() for p in players.split(",") if p.strip()]
     if not 2 <= len(names) <= 5:
-        return {"tool": "get_lineup_on_off", "ok": False,
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
                 "error": "pass 2 to 5 comma-separated player names or ids"}
     try:
         team_id = coerce_team_id(team)
     except Exception as e:
-        return {"tool": "get_lineup_on_off", "ok": False, "error": str(e)}
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [], "error": str(e)}
     pids: list[int] = []
     for name in names:
         try:
             pid = int(name) if name.strip().isdigit() else int(_coerce_player_id_cached(name))
         except Exception as e:
-            return {"tool": "get_lineup_on_off", "ok": False,
+            return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
                     "error": f"could not resolve player '{name}': {e}"}
         if pid not in pids:
             pids.append(pid)
@@ -375,10 +375,10 @@ def get_lineup_on_off(
     try:
         rows = _store._read_df(sql, params)
     except Exception as e:
-        return {"tool": "get_lineup_on_off", "ok": False,
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
                 "error": f"possession query failed: {e}"}
     if not rows:
-        return {"tool": "get_lineup_on_off", "ok": False,
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
                 "error": f"no possession data for team {team_id} in {season}"}
     agg = {1: {"off_poss": 0, "def_poss": 0, "pf": 0, "pa": 0, "blowout": 0},
            0: {"off_poss": 0, "def_poss": 0, "pf": 0, "pa": 0, "blowout": 0}}
@@ -387,7 +387,7 @@ def get_lineup_on_off(
         for k in bucket:
             bucket[k] += int(r[k] or 0)
     if agg[1]["off_poss"] + agg[1]["def_poss"] == 0:
-        return {"tool": "get_lineup_on_off", "ok": False,
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
                 "error": f"{players} never shared the floor for this team in {season}"}
     on, off = agg[1], agg[0]
     on_rat = _ratings(on["pf"], on["off_poss"], on["pa"], on["def_poss"])
@@ -398,13 +398,17 @@ def get_lineup_on_off(
     delta = {"NET_RATING": round(on_rat["NET_RATING"] - off_rat["NET_RATING"], 1),
              "OFF_RATING": round(on_rat["OFF_RATING"] - off_rat["OFF_RATING"], 1),
              "DEF_RATING": round(on_rat["DEF_RATING"] - off_rat["DEF_RATING"], 1)}
+    on_row = {"state": "on", **on, **on_rat, "poss": poss,
+              "blowout_share": blowout_share}
+    off_row = {"state": "off", **off, **off_rat,
+               "poss": off["off_poss"] + off["def_poss"]}
     return {"tool": "get_lineup_on_off", "ok": True,
             "team_id": team_id, "season": season,
             "players": [{"player_id": p, "name": n} for p, n in zip(pids, names)],
-            "on": {**on, **on_rat, "poss": poss,
-                   "blowout_share": blowout_share},
-            "off": {**off, **off_rat,
-                    "poss": off["off_poss"] + off["def_poss"]},
+            "rows": [on_row, off_row],
+            "columns": ["state", "off_poss", "def_poss", "pf", "pa", "poss",
+                        "OFF_RATING", "DEF_RATING", "NET_RATING", "blowout_share"],
+            "on": on_row, "off": off_row,
             "delta": delta, "flags": flags,
             "meta": {"sample_floor": f"{min_possessions} possessions",
                      "scope": ("possession-level on/off for the named "

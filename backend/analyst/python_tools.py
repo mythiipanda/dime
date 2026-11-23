@@ -58,6 +58,7 @@ _TOOL_ORDER = (
     "get_comps",
     "get_era_comps",
     "get_lineup_stats",
+    "get_lineup_on_off",
     "get_win_prob",
     "get_on_off",
     "get_shot_zones",
