@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.scripts.seed_injury_history import BUILD_SQL
+from backend.scripts.seed_games_missed import BUILD_SQL
 
 
 def test_build_sql_has_expected_shape():

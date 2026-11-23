@@ -9,7 +9,7 @@ import polars as pl
 from shared import store
 from shared.sources.base import FetchMeta, FetchResult
 
-TABLE = "silver_injury_history"
+TABLE = "silver_games_missed"
 SOURCE = "derived:hist_player_seasons+hist_gamelogs"
 SEASON = "1996-2025"
 MIN_SEASONS = 25
@@ -54,7 +54,7 @@ def main() -> None:
                           for i, c in enumerate(cols)})
     res = FetchResult(frame=frame,
                       meta=FetchMeta(source=SOURCE, season=SEASON))
-    print(f"injury history rows: {frame.height}")
+    print(f"games-missed rows: {frame.height}")
     try:
         n = _save(res)
     except Exception as exc:
