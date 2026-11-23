@@ -67,6 +67,98 @@ function validateAnchor(
 
 const KNOWN_ARTIFACT_KINDS: readonly string[] = ["table", "compare", "chart", "shot_chart", "scatter", "player_card", "team_card", "memo"];
 
+const MARKDOWN_TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
+const MARKDOWN_TABLE_NULL_CELLS = new Set(["", "-", "—", "–", "n/a", "null"]);
+const PROMOTED_TABLE_LIMIT = 3;
+const PROMOTED_ROW_LIMIT = 100;
+
+function splitMarkdownRow(line: string): string[] {
+    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
+}
+
+function isMarkdownSeparator(line: string): boolean {
+    const cells = splitMarkdownRow(line);
+    return cells.length > 0 && cells.every(cell => /^:?-+:?$/.test(cell));
+}
+
+function markdownCellValue(raw: string): string | number | null {
+    const cleaned = raw.replace(/\*\*|__|`/g, "").trim();
+    if (MARKDOWN_TABLE_NULL_CELLS.has(cleaned.toLowerCase()))
+        return null;
+    const numeric = cleaned.replace(/,/g, "").replace(/^\$/, "").replace(/%$/, "");
+    if (/^-?\d+(?:\.\d+)?$/.test(numeric))
+        return Number(numeric);
+    return cleaned;
+}
+
+function markdownColumnKey(label: string, used: Set<string>): string {
+    const base = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "col";
+    let key = base;
+    let suffix = 2;
+    while (used.has(key)) {
+        key = `${base}_${suffix}`;
+        suffix += 1;
+    }
+    used.add(key);
+    return key;
+}
+
+function markdownTableTitle(lines: string[], tableStart: number): string {
+    for (let i = tableStart - 1; i >= 0; i -= 1) {
+        const line = lines[i].trim();
+        if (!line)
+            continue;
+        if (MARKDOWN_TABLE_ROW_RE.test(line))
+            break;
+        const cleaned = line.replace(/^[#>\s*-]+/, "").replace(/\*\*/g, "").trim();
+        return cleaned.length > 0 && cleaned.length <= 80 ? cleaned : "Table";
+    }
+    return "Table";
+}
+
+function markdownTableArtifacts(text: string): Record<string, unknown>[] {
+    const lines = text.split("\n");
+    const artifacts: Record<string, unknown>[] = [];
+    let i = 0;
+    while (i < lines.length - 1 && artifacts.length < PROMOTED_TABLE_LIMIT) {
+        if (!(MARKDOWN_TABLE_ROW_RE.test(lines[i]) && isMarkdownSeparator(lines[i + 1]))) {
+            i += 1;
+            continue;
+        }
+        const start = i;
+        const headers = splitMarkdownRow(lines[i]);
+        const rawRows: string[][] = [];
+        i += 2;
+        while (i < lines.length && MARKDOWN_TABLE_ROW_RE.test(lines[i]) && !isMarkdownSeparator(lines[i])) {
+            const cells = splitMarkdownRow(lines[i]);
+            if (cells.length === headers.length)
+                rawRows.push(cells);
+            i += 1;
+        }
+        if (headers.length < 2 || rawRows.length === 0)
+            continue;
+        const used = new Set<string>();
+        const columns = headers.map(header => {
+            const key = markdownColumnKey(header, used);
+            const label = header.replace(/\*\*/g, "").trim() || key;
+            return { key, label };
+        });
+        const numeric = columns.map((_, index) => rawRows.some(cells => typeof markdownCellValue(cells[index]) === "number")
+            && rawRows.every(cells => {
+                const value = markdownCellValue(cells[index]);
+                return value === null || typeof value === "number";
+            }));
+        artifacts.push({
+            kind: "table",
+            title: markdownTableTitle(lines, start),
+            columns: columns.map((column, index) => ({ ...column, numeric: numeric[index] })),
+            rows: rawRows.slice(0, PROMOTED_ROW_LIMIT).map(cells =>
+                Object.fromEntries(columns.map((column, index) => [column.key, markdownCellValue(cells[index])])))
+        });
+    }
+    return artifacts;
+}
+
 function artifactRejectionReason(artifact: Record<string, unknown>): string | null {
     const kind = typeof artifact.kind === "string" ? artifact.kind : "";
     if (!KNOWN_ARTIFACT_KINDS.includes(kind))
@@ -111,7 +203,11 @@ export function validateAnswerSubmission(
             validateAnchor(anchor, getSource, availableRefs);
         return { text: block.text, anchors };
     });
-    const artifacts = input.artifacts ? structuredClone(input.artifacts).flatMap((artifact, index) => {
+    const submitted = input.artifacts ? structuredClone(input.artifacts) : [];
+    if (!submitted.some(artifact => objectValue(artifact)?.kind === "table"))
+        for (const block of blocks)
+            submitted.push(...markdownTableArtifacts(block.text));
+    const artifacts = (input.artifacts || submitted.length > 0) ? submitted.flatMap((artifact, index) => {
         const reason = artifactRejectionReason(artifact);
         if (reason) {
             artifactWarnings?.push(`dropped artifact: ${reason}`);
