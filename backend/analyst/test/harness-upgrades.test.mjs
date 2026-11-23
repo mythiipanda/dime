@@ -3011,3 +3011,24 @@ test("guard chain does not steer or stop same-team lineup volume (dab-v1-189 con
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("generated tool manifest stays in sync with tools/manifest.json", async () => {
+  const manifestUrl = new URL("../tools/manifest.json", import.meta.url);
+  const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+  const manifestNames = manifest.tools.map((tool) => tool.name);
+  assert.deepEqual([...ANALYST_TOOL_NAMES], manifestNames);
+  const manifestNamespaces = Object.keys(manifest.namespaces);
+  for (const tool of manifest.tools) {
+    assert.ok(
+      tool.namespace === undefined || manifestNamespaces.includes(tool.namespace),
+      `${tool.name} namespace`
+    );
+    if (tool.live_only_fallback) {
+      assert.ok(manifestNames.includes(tool.live_only_fallback), `${tool.name} fallback`);
+    }
+  }
+  const manifestGuidelines = Object.fromEntries(
+    manifest.tools.filter((tool) => tool.guidelines).map((tool) => [tool.name, tool.guidelines])
+  );
+  assert.deepEqual(TOOL_PROMPT_GUIDELINES, manifestGuidelines);
+});
