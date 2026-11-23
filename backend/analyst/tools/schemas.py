@@ -41,3 +41,8 @@ TOOL_PARAM_DESCRIPTIONS = {
     for t in _TOOLS
     for field, doc in t.get("params", {}).items()
 }
+
+PARAM_KINDS = {
+    tool: dict(fields)
+    for tool, fields in _MANIFEST.get("param_kinds", {}).items()
+}

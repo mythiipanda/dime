@@ -115,6 +115,7 @@ def enrich_error(tool_name: str, res: dict[str, Any]) -> dict[str, Any]:
     res.setdefault("error", error_text)
     hint, actions = _recovery_guidance(name, error_text)
     res.setdefault("summary", _error_summary(name, error_text))
-    res.setdefault("recovery_hint", hint)
-    res.setdefault("next_actions", actions)
+    if "arg_miss" not in res:
+        res.setdefault("recovery_hint", hint)
+        res.setdefault("next_actions", actions)
     return res

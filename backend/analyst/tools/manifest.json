@@ -1004,5 +1004,33 @@
    "name": "get_expectations",
    "description": "Actual or season-to-date record and net rating versus preseason expectations (projected win total, playoff/title odds) for one team, per season. Warehouse-backed: silver_preseason_projections plus standings/ratings tables. Pass a team id, abbreviation or name; optional season like '2025-26', else the most recent seasons."
   }
- ]
+ ],
+ "param_kinds": {
+  "get_game_prediction": {
+   "a": "team",
+   "b": "team"
+  },
+  "get_matchup_preview": {
+   "a": "team",
+   "b": "team"
+  },
+  "get_matchup_brief": {
+   "a": "team",
+   "b": "team"
+  },
+  "get_shot_compare": {
+   "a": "player",
+   "b": "player"
+  },
+  "get_transactions": {
+   "start": "date_iso",
+   "end": "date_iso"
+  },
+  "get_era_comps": {
+   "players": "player_list"
+  },
+  "warehouse_schema": {
+   "tables": "raw"
+  }
+ }
 }

@@ -10,7 +10,17 @@ from typing import Any, Callable
 import numpy as np
 
 from .errors import enrich_error
-from .schemas import LIVE_CALL_TIMEOUT_S, NETWORK_TOOL_SOURCES, WAREHOUSE_ALTERNATIVES
+from .schemas import LIVE_CALL_TIMEOUT_S, NETWORK_TOOL_SOURCES, PARAM_KINDS, WAREHOUSE_ALTERNATIVES
+
+
+def _normalize_or_result(name: str, args: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    from shared.tools.argnorm import ArgMiss, arg_miss_result, normalize_call_args
+    try:
+        return normalize_call_args(name, args, PARAM_KINDS), None
+    except ArgMiss as miss:
+        return args, enrich_error(name, arg_miss_result(name, miss))
+    except Exception:
+        return args, None
 
 
 def _config_module() -> Any:
@@ -120,7 +130,8 @@ async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any]) -> dict
 
     def _worker() -> None:
         try:
-            value = orig.invoke(args)
+            normed, miss = _normalize_or_result(name, args)
+            value = miss if miss is not None else orig.invoke(normed)
             err = None
         except Exception as error:
             value = None
@@ -149,7 +160,10 @@ async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any]) -> dict
 async def _execute_tool_bounded(tools: dict[str, Any], name: str,
                                 arguments: dict[str, Any]) -> dict[str, Any]:
     def _invoke() -> Any:
-        return asyncio.run(tools[name].ainvoke(arguments))
+        normed, miss = _normalize_or_result(name, arguments)
+        if miss is not None:
+            return miss
+        return asyncio.run(tools[name].ainvoke(normed))
 
     if name not in _get_network_sources():
         result = await asyncio.to_thread(_invoke)
@@ -164,7 +178,10 @@ async def _execute_tool_bounded(tools: dict[str, Any], name: str,
 
 def call_sync(orig: Any, name: str, args: dict[str, Any], include_exc_type: bool = True) -> dict[str, Any]:
     try:
-        res = orig.invoke(args)
+        normed, miss = _normalize_or_result(name, args)
+        if miss is not None:
+            return miss
+        res = orig.invoke(normed)
         if not isinstance(res, dict):
             return {"tool": name, "ok": False, "error": str(res)}
         return res
@@ -179,11 +196,14 @@ def call_async_in_sync(orig: Any, name: str, args: dict[str, Any]) -> dict[str, 
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
+        normed, miss = _normalize_or_result(name, args)
+        if miss is not None:
+            return miss
         if loop is not None and loop.is_running():
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                res = pool.submit(asyncio.run, orig.ainvoke(args)).result()
+                res = pool.submit(asyncio.run, orig.ainvoke(normed)).result()
         else:
-            res = asyncio.run(orig.ainvoke(args))
+            res = asyncio.run(orig.ainvoke(normed))
         if not isinstance(res, dict):
             return {"tool": name, "ok": False, "error": str(res)}
         return res

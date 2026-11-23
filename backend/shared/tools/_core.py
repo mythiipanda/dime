@@ -312,9 +312,9 @@ NICKNAMES = {
 def _norm_name(s: object) -> str:
     import unicodedata as _ud
 
-    return "".join(
+    return " ".join("".join(
         c for c in _ud.normalize("NFKD", str(s or "").lower())
-        if not _ud.combining(c)).strip()
+        if c.isalnum() or c == " ").split())
 
 _PLAYER_ROWS: list[dict] = []
 _PLAYER_NORMS: list[str] = []
@@ -511,6 +511,11 @@ class PlayerNameResolutionUnavailable(ValueError):
 
 def coerce_player_id(value: object) -> int:
     raw = str(value).strip()
+    import re as _re
+
+    prefix_id = _re.fullmatch(r"[A-Za-z]{3}:(\d+)", raw)
+    if prefix_id:
+        return int(prefix_id.group(1))
     try:
         return int(raw)
     except (TypeError, ValueError):

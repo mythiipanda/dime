@@ -398,7 +398,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     // 1. get_rapm
     const rapmTool = toolMap.get("get_rapm");
     assert(rapmTool);
-    const rapmRes = await rapmTool.execute("call-rapm", { player: "NonexistentPlayer", season: "2024-25" }, undefined);
+    const rapmRes = await rapmTool.execute("call-rapm", { player: "Jayson Tatum", season: "2024-25" }, undefined);
     assert(rapmRes.structuredContent);
     assert(Array.isArray(rapmRes.structuredContent.result.rows));
     assert(Array.isArray(rapmRes.structuredContent.result.columns));
@@ -1225,7 +1225,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
     const anchorArgs = {
       sql_exec: { sql: "SELECT PTS, _source FROM silver_hist_player_seasons ORDER BY PTS" },
       warehouse_schema: {},
-      get_rapm: { player: "NonexistentPlayer", season: "2024-25" },
+      get_rapm: { player: "Jayson Tatum", season: "2024-25" },
       get_impact_rank: { player: "Jaylen Brown", season: "2025-26" },
       get_game_prediction: { a: "BOS", b: "MIA", n_sims: 100 },
       get_wpa_leaders: { season: 2025, limit: 5 },
