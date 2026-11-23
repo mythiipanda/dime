@@ -24,6 +24,7 @@ SEEDERS = [
     ("injuries_news", "seed_injury_news.py", ["--season"], True),
     ("injury_entries", "normalize_injuries.py", [], True),
     ("tracking", "seed_tracking.py", [], True),
+    ("tracking_history", "seed_tracking.py", ["--seasons", "2013-14,2014-15,2015-16,2016-17,2017-18,2018-19,2019-20,2020-21,2021-22,2022-23,2023-24"], False),
     ("playoffs", "seed_historical_playoffs.py", ["--season"], False),
     ("playoff_gamelogs", "seed_playoff_gamelogs.py", [], True),
     ("team_ratings", "seed_team_ratings.py", [], True),
