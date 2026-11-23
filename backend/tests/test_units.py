@@ -464,7 +464,21 @@ def test_text_to_sql_allowlist_covers_current_analysis_tables():
     assert {
         "silver_advanced", "silver_player_season", "silver_on_off",
         "silver_four_factors", "silver_four_factors_team", "silver_cap_players",
+        "silver_bbref_gamelogs_2024_25", "silver_boxscores_ext",
+        "silver_cap_history", "silver_hist_hustle", "silver_hist_pbp",
+        "silver_hist_salaries", "silver_leaders_dreb",
+        "silver_leaders_fg_pct", "silver_playoff_inactive",
+        "silver_scoreboard", "silver_tracking_pt_defend",
+        "silver_tracking_pt_shot", "silver_tracking_pt_stats",
+        "silver_wowy", "silver_zone_splits",
     } <= set(_SQL_TABLES)
+
+
+def test_validate_readonly_sql_allows_table_free_select():
+    from shared.tools.league.sql_schema import _validate_readonly_sql
+
+    sql, used = _validate_readonly_sql("SELECT 1", {"silver_standings"})
+    assert sql == "SELECT 1" and used == []
 
 def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
     from shared.tools import player
