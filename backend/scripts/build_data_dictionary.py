@@ -22,6 +22,7 @@ _TABLE_PURPOSES = {
     "silver_cap_history": "league salary cap, tax, apron, and max-salary rules by season (1984-85 on)",
     "silver_injury_report": "official NBA game-day injury report snapshots by season (2018-19 on): player, status, reason, report datetime",
     "silver_synergy": "public play-type stats per player-season (PnR ballhandler, isolation, spotup, etc.) regular-season totals, offensive and defensive (2015-16 on)",
+    "silver_player_bio": "player bio per season (birth country/city, height, weight, position, college, draft pick) ESPN core (1993-94 on)",
     "silver_hist_salaries": "per-player salary by season for 1984-85 through 2017-18 (hoopshype mirror)",
     "silver_games_missed": "games a rostered player did not appear in vs team games, 1996-97 on; NOT injury data — trades, DNP-CDs, G League stints and suspensions look identical; full-season absences are not recorded",
     "silver_cap_players": "player contract and cap figures",
