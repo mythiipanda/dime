@@ -425,7 +425,7 @@ def _salary_date(con: object = None) -> str | None:
     return None
 
 
-@tool(description='Payroll plus apron room for one abbreviation. 2026-27 thresholds.')
+@tool(description='Payroll plus apron room for one abbreviation, with the team\'s upcoming free-agent class, estimated cap holds, projected room/exceptions, and the keep-vs-renounce scenario table. 2026-27 thresholds; FA and projection figures are ESTIMATED.')
 def get_cap_ledger(team: str = "") -> dict[str, Any]:
     if not team:
         return {"tool": "get_cap_ledger", "ok": False, "error": "team needed"}
@@ -448,20 +448,29 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         source = _payroll_source(con)
         salary_date = _salary_date(con)
         season, _, _ = _salary_vintage(con)
+        try:
+            from .fa_plan import _fa_plan_core
+            fa_block = _fa_plan_core(con, team.upper(), "2027")
+        except Exception:
+            fa_block = None
     finally:
         con.close()
+    rows = {"team": team.upper(), "payroll": total,
+            "players": sorted(players, key=lambda p: p["salary"] or 0,
+                              reverse=True),
+            "room_under_apron2": CAP["apron2"] - total,
+            "over_tax": total > CAP["tax"]}
+    if fa_block:
+        rows["fa_planning"] = fa_block
     return {"tool": "get_cap_ledger", "ok": True,
-            "rows": {"team": team.upper(), "payroll": total,
-                     "players": sorted(players, key=lambda p: p["salary"] or 0,
-                                       reverse=True),
-                     "room_under_apron2": CAP["apron2"] - total,
-                     "over_tax": total > CAP["tax"]},
+            "rows": rows,
             "meta": {"source": source, "season": season or "2026-27",
                      "salary_date": salary_date,
+                     "estimated": bool(fa_block),
                      **{k: v for k, v in CAP.items()}}}
 
 
-@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.')
+@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, with projected cap room and each team\'s upcoming free-agent count and estimated holds. 2026-27 thresholds; projection figures are ESTIMATED.')
 def get_cap_table(season: str | None = None) -> dict[str, Any]:
     from nba_api.stats.static import teams as _teams
     con = _pkg().store.connect(read_only=True)
@@ -487,13 +496,46 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
         source = _payroll_source(con)
         salary_date = _salary_date(con)
         season_used, _, _ = _salary_vintage(con)
+        try:
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            projected = {}
+            if "silver_cap_room" in tables:
+                have = {r[1] for r in con.execute(
+                    "PRAGMA table_info(silver_cap_room)").fetchall()}
+                pick = [c for c in ("TEAM", "PROJECTED_ROOM", "MAX_ROOM",
+                                    "PROJECTED_APRON1", "PROJECTED_APRON2",
+                                    "FA_HOLDS_EST", "PLAYERS_UNDER_CONTRACT")
+                        if c in have]
+                q = (f"SELECT {', '.join(chr(34) + c + chr(34) for c in pick)}"
+                     " FROM silver_cap_room"
+                     + (" WHERE CAP_SEASON = '2027-28'"
+                        if "CAP_SEASON" in have else ""))
+                for r in con.execute(q).fetchall():
+                    projected[r[0]] = dict(zip(pick, r))
+            fa_counts = {}
+            if "silver_free_agents" in tables:
+                for team_abbr, n, holds in con.execute(
+                        "SELECT TEAM, COUNT(*), COALESCE(SUM(CAP_HOLD_EST),0)"
+                        " FROM silver_free_agents WHERE FA_YEAR = '2027'"
+                        " GROUP BY TEAM").fetchall():
+                    fa_counts[team_abbr] = {"fa_count": n,
+                                            "fa_holds_est": holds}
+        except Exception:
+            projected, fa_counts = {}, {}
     finally:
         con.close()
+    for row in rows:
+        p = projected.get(row["team"], {})
+        row["projected_room"] = p.get("PROJECTED_ROOM")
+        row["projected_apron1"] = p.get("PROJECTED_APRON1")
+        row["projected_apron2"] = p.get("PROJECTED_APRON2")
+        row.update(fa_counts.get(row["team"], {}))
     rows.sort(key=lambda r: r["payroll"], reverse=True)
     res = {"tool": "get_cap_table", "ok": True,
            "rows": rows,
            "meta": {"source": source, "season": season or season_used or "2026-27",
                     "salary_date": salary_date,
+                    "estimated": bool(projected),
                     **{k: v for k, v in CAP.items()}}}
     if missing:
         res["meta"]["missing_teams"] = missing

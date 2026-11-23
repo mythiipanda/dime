@@ -1176,7 +1176,7 @@
     },
     "get_cap_ledger": {
       "name": "get_cap_ledger",
-      "description": "Payroll plus apron room for one abbreviation. 2026-27 thresholds.",
+      "description": "Payroll plus apron room for one abbreviation, with the team's upcoming free-agent class, estimated cap holds, projected room/exceptions, and the keep-vs-renounce scenario table. 2026-27 thresholds; FA and projection figures are ESTIMATED.",
       "args_schema": {
         "description": "Payroll, luxury tax position, and first/second apron room for one team.",
         "properties": {
@@ -1254,7 +1254,7 @@
     },
     "get_cap_table": {
       "name": "get_cap_table",
-      "description": "League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.",
+      "description": "League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, with projected cap room and each team's upcoming free-agent count and estimated holds. 2026-27 thresholds; projection figures are ESTIMATED.",
       "args_schema": {
         "description": "League-wide payroll, luxury tax position, and first/second apron room for all 30 teams, ranked by payroll.",
         "properties": {
