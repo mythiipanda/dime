@@ -1543,3 +1543,56 @@ test("memo artifacts reject anchors to unknown refs, bad rows and missing column
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
 });
+test("validateAnswerSubmission promotes a markdown table in blocks into a table artifact", () => {
+  const text = [
+    "Top-10 picks by pre-draft organization type:",
+    "",
+    "| Org Type | Top-10 Picks | Share |",
+    "| --- | ---: | ---: |",
+    "| College | 232 | 95.3% |",
+    "| Other club | 34 | 14.0% |",
+    "| High school | 13 | 5.3% |",
+    "",
+    "College dominates the pipeline.",
+  ].join("\n");
+  const validated = validateAnswerSubmission({ blocks: [{ text }] }, () => undefined);
+  assert.equal(validated.artifacts.length, 1);
+  const table = validated.artifacts[0];
+  assert.equal(table.kind, "table");
+  assert.equal(table.title, "Top-10 picks by pre-draft organization type:");
+  assert.deepEqual(table.columns.map(c => c.key), ["org_type", "top_10_picks", "share"]);
+  assert.equal(table.columns[1].numeric, true);
+  assert.deepEqual(table.rows[0], { org_type: "College", top_10_picks: 232, share: 95.3 });
+  assert.equal(table.rows.length, 3);
+});
+
+test("validateAnswerSubmission does not promote markdown tables when a table artifact already exists", () => {
+  const text = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+  const artifacts = [{ kind: "table", title: "Given", columns: [{ key: "x", label: "X" }], rows: [{ x: 5 }] }];
+  const validated = validateAnswerSubmission({ blocks: [{ text }], artifacts }, () => undefined);
+  assert.equal(validated.artifacts.length, 1);
+  assert.equal(validated.artifacts[0].title, "Given");
+});
+
+test("validateAnswerSubmission leaves blocks without tables artifact-free", () => {
+  const validated = validateAnswerSubmission({ blocks: [{ text: "No table here, just prose." }] }, () => undefined);
+  assert.equal(validated.artifacts, undefined);
+});
+
+test("validateAnswerSubmission promotes multiple markdown tables up to the cap", () => {
+  const text = [
+    "| Team | Wins |",
+    "| --- | ---: |",
+    "| OKC | 50 |",
+    "",
+    "Some words between the tables.",
+    "",
+    "| Player | PPG |",
+    "| --- | ---: |",
+    "| SGA | 31.2 |",
+  ].join("\n");
+  const validated = validateAnswerSubmission({ blocks: [{ text }] }, () => undefined);
+  assert.equal(validated.artifacts.length, 2);
+  assert.equal(validated.artifacts[0].columns[0].key, "team");
+  assert.equal(validated.artifacts[1].columns[0].key, "player");
+});
