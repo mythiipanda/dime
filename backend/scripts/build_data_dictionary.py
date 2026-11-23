@@ -35,7 +35,7 @@ _TABLE_PURPOSES = {
     "silver_hist_hustle": "historical hustle stats",
     "silver_hist_lineups": "five-man lineup stats; variant rows by season_type, measure_type, per_mode",
     "silver_hist_pbp": "historical play-by-play events",
-    "silver_hist_player_seasons": "historical player season totals",
+    "silver_hist_player_seasons": "historical player season stats 1946-47 on (BAA/NBA via basketball-reference + stats.nba.com); stl/blk/tov absent pre-1973-74, 3P absent pre-1979-80; ts/usg where published, off/def/net/pie/pace NULL for pre-1996 seasons",
     "silver_hist_possessions": "lineup-level possession outcomes",
     "silver_hist_shots": "per-shot coordinates and results back to 2009-10",
     "silver_hist_standings": "historical standings snapshots",
