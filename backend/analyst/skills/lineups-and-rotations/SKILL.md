@@ -47,6 +47,23 @@ Use `get_wowy` or `get_on_off`, or query stint/possession tables in `run_python`
 - Evaluate how a team performs in the **star-off** and **second-star-stagger** segments (`A ON, B OFF` and `A OFF, B ON`) excluding garbage time.
 - Identify which role players bridge offensive creation (assists per 100, rim pressure) and defensive floor (DRTG, defensive rebounding %) when the primary initiator sits.
 
+## 3b. Adjustment and percentiles on unit ratings
+
+- **Condition on context, not just presence.** On/off and WOWY deltas are
+  confounded by who the sample faced: a 300-possession on-off split built
+  against bench-heavy opponents reads like a star's impact when it is
+  strength-of-schedule. When a margin is extreme, check the opposing-unit
+  quality of the sample before attributing it to the player.
+- **Garbage time contaminates "OFF" quadrants.** The `A OFF, B OFF` state
+  is disproportionately decided-game minutes — margin-inflated and
+  scheme-loose. Use it as a noise floor, not a comparator; report the
+  leverage of the possessions behind any four-quadrant claim.
+- **Percentiles over ranks.** A unit's +12.4 net rating means little until
+  placed in the qualifying-unit distribution: `get_lineup_leaders` gives
+  the league distribution — state "top-decile among 200+ minute units"
+  rather than "great rating". The floor-and-percentile pair is the claim;
+  either alone is weaker.
+
 ## 4. Playoff Rotation Tightening
 
 Regular-season depth often masks playoff vulnerabilities:

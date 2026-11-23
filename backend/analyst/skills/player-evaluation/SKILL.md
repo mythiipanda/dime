@@ -91,7 +91,35 @@ transferable":
   performance — use them for "does he produce in leverage" rather than
   asserting it from totals.
 
-## 5. Current vs historical — always stated
+## 5. Percentile framing and context filters
+
+Real analyst deliverables speak in percentiles and filtered samples, not
+raw totals.
+
+- **Percentile-vs-position is the language.** "17.8 PTS" means nothing
+  alone; "82nd percentile among starting centers" is the claim. Compute it
+  with `sql_exec` — rank the player against the same-position pool in
+  `silver_leaders_pts`/`silver_impact` for the same season and report the
+  percentile, not the rank. Restrict the pool deliberately (starters vs
+  all players; ≥30-minute players vs rotation) and say which pool.
+- **Context-filter first.** Strip scoreboard-corrupted stretches before
+  evaluating anyone: garbage time (final ~4 minutes of games decided by
+  ~12+ points, where defenses soften) and end-of-clock heaves (>40-foot
+  attempts in the last 2 seconds of a quarter) both depress measured
+  efficiency without measuring skill. `search_shots` and
+  `silver_hist_shots` carry period/clock/distance to filter them; splits
+  via `get_splits`/`get_situational_splits` isolate clutch vs garbage
+  samples rather than mixing them.
+- **Floors before claims.** A split or zone line under ~100 possessions is
+  an observation, not evidence — pair the sample count with every filtered
+  number and downgrade conclusions that sit below the floor.
+- **Teammate/opponent adjustment.** A player's numbers move with who
+  shares the floor: attribute his split, not the team's. Isolate it with
+  `get_wowy` (2-man quadrants), `get_lineup_on_off` (arbitrary units), or
+  `get_availability_impact` (game grain); check whether his "improvement"
+  is actually a teammates'-injury artifact before crediting the player.
+
+## 6. Current vs historical — always stated
 
 Tools default to the current 2026-27 season; historical asks must pass
 `season` explicitly, and the answer must name which season each number

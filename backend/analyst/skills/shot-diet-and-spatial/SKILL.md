@@ -42,6 +42,31 @@ Evaluate a team or player's offensive health using three structural ratios:
 
 ---
 
+## 2b. Shot-Quality Decomposition
+
+Efficiency decomposes into **shot quality** (where attempts come from —
+the diet's expected value) and **execution** (conversion above or below
+that expectation). Report both, separately:
+
+- **Expected efficiency from the diet.** Weight each zone's league-average
+  FG% by the player's zone shares — `get_shot_zones` returns the shares,
+  and the league baselines sit beside them. A diet of 38% rim / 45% threes
+  carries a higher expected eFG than a 15% mid-range-heavy profile before
+  anyone evaluates the shooting itself. An `sql_exec` over
+  `silver_hist_shots` gives the same decomposition at custom filters.
+- **Execution = actual minus expected.** `get_zone_deltas` already returns
+  per-zone conversion vs the pooled league rate: a player efficient
+  because he lives at the rim is a different bet than one efficient
+  because he out-converts every zone. Shot-family splits
+  (`get_phase_shot_splits`: catch-and-shoot / pull-up / rim) show whether
+  the execution comes from self-created or generated looks — the
+  portability question.
+- **Context filters.** End-of-quarter heaves (>40 ft, <2 s clock) and
+  garbage-time volume distort measured efficiency without measuring skill;
+  `search_shots` carries distance and clock for both. Zone cells under
+  ~50 attempts are direction, not data — pair every zone claim with its
+  attempt count.
+
 ## 3. Warehouse Tools
 
 | Tool | Answers | Reach for it when |

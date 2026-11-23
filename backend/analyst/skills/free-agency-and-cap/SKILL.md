@@ -50,7 +50,30 @@ Use this playbook for free-agent fits, cap-room computations, contract value com
 - AAV lies across cap eras: a $30M AAV signed under the 2024 cap and under the projected 2026 cap are different percentages of cap — compare as `% of cap` when the seasons differ.
 - Extensions carry rule constraints (veteran extension raise limits, supermax eligibility via awards/All-NBA) — flag eligibility dependencies instead of assuming the number.
 
-## 5. What the Warehouse Can't Answer
+## 5. Valuation Framing — Percentiles and Prior-Context
+
+- **Percentile-vs-market is the claim.** An ask ("$25M AAV") is priced
+  against the market band for the profile: rank the player inside his
+  position/type pool (`get_player_ratings`/`get_impact_rank` for level,
+  `get_comps` for the profile set) and price the percentile band, not the
+  name. "Top-15 center production priced at the MLE band" is a verdict;
+  "he averaged 19" is not.
+- **Prior-team context discounts.** A free agent's production was earned
+  in a specific role: high-usage counting stats on a bad team translate at
+  a discount to a contender's third-option role, and catch-and-shoot
+  efficiency created by a superstar's gravity may not travel. Check the
+  shot-diet composition (`get_shot_zones`/`get_playtype_profile`) and the
+  WOWY splits (`get_wowy`, `get_lineup_on_off`) around the teammates who
+  created his looks before projecting the fit.
+- **Contract context as well as amount.** `PRIOR_SALARY`/`CAP_HOLD_EST`
+  are market anchors, not prices; a 120% raise on an under-market prior
+  deal can still be a fair band. Compare guaranteed dollars and `% of cap`
+  across the contract's life, not headline totals — and for multi-year
+  asks remember the warehouse's cap lines are a single projected season
+  (see the coverage map; multi-year cap projection is not modeled — say
+  so rather than fabricating a year-by-year cap table).
+
+## 6. What the Warehouse Can't Answer
 
 - Exact dead-cap/stretch arithmetic for hypothetical waives, and real-time cap-sheet minutiae (trade exceptions, exact hold formulas) are not fully modeled — say so rather than fabricating a figure.
 - Two-way/two-way conversion and Exhibit-10 mechanics have no dedicated table; `silver_contracts.TWO_WAY` flags current two-ways only.
