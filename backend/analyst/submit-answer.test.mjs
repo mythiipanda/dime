@@ -727,9 +727,140 @@ test("createPiExecution steers a substantial unsubmitted answer through submit_a
   assert.equal(execRequests, 2);
   const steers = events.filter((e) => e.type === "tool_call" && e.name === "turn_end_steer");
   assert.equal(steers.length, 1, "steer fires exactly once");
+  const audits = events.filter((e) => e.type === "tool_call" && e.name === "unsubmitted_answer_audit");
+  assert.equal(audits.length, 1, "unsubmitted audit fires exactly once");
+  const auditResult = events.find((e) => e.type === "tool_result" && e.name === "unsubmitted_answer_audit");
+  assert.equal(auditResult.status, "ok", "clean audit accepts the synthesized submission");
   const plain = events.find((e) => e.type === "answer");
-  assert.equal(plain.submission, undefined);
+  assert.ok(plain.submission, "unsubmitted answer should land via the audit-accepted submission");
   assert.equal(plain.text, longText);
+
+  await rm(cwd, { recursive: true, force: true });
+});
+
+test("createPiExecution audits a still-unsubmitted answer once and lands the vetoed submission", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-unsubmitted-audit-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const fabricated = "The closest comps for the prospect are Anthony Edwards and Victor Wembanyama at 94.7 similarity, with Jalen Williams third at 88.3 similarity after adjusting for usage and defensive role. The distance metric weights rim-rate and shot diet over raw scoring, and the comp pool is every drafted wing since 2015 with 900+ possessions.";
+  const canonical = "Verified comps: Edwards, Wembanyama, Williams.";
+
+  let execRequests = 0;
+  let submitOnReprompt = false;
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      let msg;
+      if (execRequests === 3 && submitOnReprompt) {
+        const code = `await tools.submit_answer({ blocks: [{ text: ${JSON.stringify(canonical)}, anchors: [] }] }); return { done: true };`;
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "toolCall", id: "call-sub", name: "codemode", arguments: { code } }],
+          stopReason: "toolUse",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      } else if (execRequests < 3) {
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "text", text: fabricated }],
+          stopReason: "stop",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      } else {
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "text", text: "Submitted." }],
+          stopReason: "stop",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      }
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = {
+    tools: [],
+    results: new Map(),
+    pid: 12345,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const run = async () => {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Who are the closest draft comps for this prospect?",
+      history: [],
+      model: "fixture:fixture",
+      sources: [makeSourceRecord("prior-comps", { rows: [{ player: "Edwards", similarity: 71.2 }] })],
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    return events;
+  };
+
+  let events = await run();
+  assert.equal(execRequests, 3);
+  const audits = events.filter((e) => e.type === "tool_call" && e.name === "unsubmitted_answer_audit");
+  assert.equal(audits.length, 1, "unsubmitted audit fires exactly once");
+  const auditResult = events.find((e) => e.type === "tool_result" && e.name === "unsubmitted_answer_audit");
+  assert.equal(auditResult.status, "fail");
+  const landed = events.find((e) => e.type === "answer");
+  assert.ok(landed.submission, "vetoed submission should auto-land with flags");
+  assert.ok((landed.submission.omitted ?? []).length > 0, "audit flags should be recorded in omitted");
+  assert.equal(landed.text, fabricated);
+
+  submitOnReprompt = true;
+  execRequests = 0;
+  events = await run();
+  assert.equal(execRequests, 4);
+  const answer = events.find((e) => e.type === "answer");
+  assert.ok(answer.submission, "answer should carry the submitted canonical text");
+  assert.equal(answer.text, canonical);
 
   await rm(cwd, { recursive: true, force: true });
 });
@@ -834,7 +965,10 @@ test("createPiExecution reprompts once when a sourceless data ask ends in plain 
   const reprompts2 = events.filter((e) => e.type === "tool_call" && e.name === "zero_evidence_reprompt");
   assert.equal(reprompts2.length, 0, "reprompt skipped when budget cannot allow it");
   const landed = events.find((e) => e.type === "answer");
-  assert.deepEqual(landed.submission?.omitted, ["zero data tool calls and no evidence sources before submitting a data-grounded answer"]);
+  assert.ok(
+    (landed.submission?.omitted ?? []).includes("zero data tool calls and no evidence sources before submitting a data-grounded answer"),
+    "zero-evidence flag recorded in omitted"
+  );
   assert.equal(landed.text, longText);
 
   await rm(cwd, { recursive: true, force: true });

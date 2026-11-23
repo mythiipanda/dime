@@ -1020,6 +1020,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     let submitAuditRejections = 0;
                     let submitSteerUsed = false;
                     let zeroEvidenceRepromptUsed = false;
+                    let unsubmittedAuditUsed = false;
                     runTracker = tracker;
                     const consultedTables = new Set<string>();
                     const toolArgsText: string[] = [];
@@ -1261,6 +1262,33 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 emit({ type: "tool_call", name: "zero_evidence_reprompt" });
                                 emit({ type: "tool_result", name: "zero_evidence_reprompt", status: "ok" });
                                 await session.prompt("This is a data question and you have run zero data tools — do not answer from memory. Call at least one data tool (query the warehouse or an analyst tool) for the figures your answer relies on, then call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
+                                continue;
+                            }
+                        }
+                        if (!unsubmittedAuditUsed) {
+                            unsubmittedAuditUsed = true;
+                            emit({ type: "tool_call", name: "unsubmitted_answer_audit" });
+                            const sourceMap = new Map(collectContextSources().map(record => [record.ref, record]));
+                            const warnings: string[] = [];
+                            let synthesized: AnswerSubmission;
+                            try {
+                                synthesized = validateAnswerSubmission({ blocks: [{ text }], omitted: [] }, (ref: string) => sourceMap.get(ref), [...sourceMap.keys()], warnings);
+                            } catch {
+                                synthesized = { blocks: [{ text }], omitted: [] };
+                            }
+                            const rejection = runSubmitAudit(synthesized);
+                            if (rejection === null) {
+                                tracker.submitted = true;
+                                acceptedSubmission = synthesized;
+                                emit({ type: "tool_result", name: "unsubmitted_answer_audit", status: "ok" });
+                                break;
+                            }
+                            emit({ type: "tool_result", name: "unsubmitted_answer_audit", status: "fail", error: rejection });
+                            const remainingMs = start.runTimeoutMs !== undefined
+                                ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
+                                : undefined;
+                            if (remainingMs === undefined || remainingMs > SUBMIT_FORCE_REMAINING_MS) {
+                                await session.prompt(`Your run ended without submit_answer, so your answer text was audited directly and rejected: ${rejection} Fix the flagged gaps — call the tools needed for real figures, then route the corrected answer through tools.submit_answer.`);
                                 continue;
                             }
                         }
