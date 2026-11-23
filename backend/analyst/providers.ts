@@ -14,7 +14,7 @@ const policies = {
     reflection: { models: ["Beam-1.0-501B-A23B"], key: "REFLECTION_API_KEY", url: "https://api.reflection.ai/openai/v1" },
     inception: { models: ["mercury-2.5"], key: "INCEPTION_API_KEY", url: "https://api.inceptionlabs.ai/v1" },
     zai: { models: ["glm-4.7-flash", "glm-4.5-flash"], key: "ZAI_API_KEY", url: "https://api.z.ai/api/paas/v4" },
-    amd: { models: ["DeepSeek-V4-Flash-0731", "glm-5.3-flash", "deepseek-v4.1-flash"], key: "AMD_API_KEY", url: "https://developer.amd.com.cn/radeon/api/v1" },
+    amd: { models: ["DeepSeek-V4-Flash", "GLM-5.3-Flash", "DeepSeek-V4.1-Flash"], key: "AMD_API_KEY", url: "https://developer.amd.com.cn/radeon/api/v1" },
 };
 
 type Provider = keyof typeof policies;
