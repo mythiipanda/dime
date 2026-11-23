@@ -60,6 +60,28 @@ New color literals belong only in the foundation palette. `line` separates regio
 the low-contrast divider token as the only indication that an input exists.
 Body text needs 4.5:1; focus indicators need 3:1. Test both themes.
 
+## Design rules
+
+Hard constraints for every surface, including the landing page. They sit
+above preference: when a review or library suggests something that breaks
+one, the rule wins.
+
+### Never
+
+- No gradients, no glow.
+- No icons in rounded boxes.
+- No all caps, no eyebrow labels.
+- No nested cards, no decorative pills.
+- No bold. Regular and medium only.
+
+### Always
+
+- Sentence case everywhere.
+- Semantic tokens, never a hex value.
+- Shadows only on things that float.
+- Motion under 300ms, no bounce.
+- Check 390px, dark mode and keyboard.
+
 ## Workflows and interaction detail
 
 1. **Ask:** Keep the question and composer prominent. Model selection and tools
