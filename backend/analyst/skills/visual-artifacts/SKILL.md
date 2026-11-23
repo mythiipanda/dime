@@ -311,3 +311,31 @@ the series it is derived from, does not count as delivered inside the artifact.
 Before submitting, re-check each artifact dict: could a reader (or an audit)
 recover every reported headline number from that payload alone? If not, add the
 missing rows or the footnote line rather than hoping the prose covers it.
+
+## 5. Analyst Chart Craft — What Separates a Take From a Plot
+
+A chart that names its axes is not an analysis. The craft rules below are what
+twitter-analyst-grade visuals do; apply them to every visual artifact.
+
+- **Headline-as-take**: the title states the finding ("Corner campers", "The
+  math doesn't work on Lonzo"), not the axis names ("FGA vs TS%"). A chart that
+  only describes its axes forfeits the take to the reader.
+- **Honest axes**: zero-baseline where the shape implies magnitude, consistent
+  scales in comparisons, declared units. A truncated axis that flatters a delta
+  is a credibility hit, not a visual trick.
+- **Annotation over decoration**: one callout carries the take — `highlight` on
+  the named point, a `xMid`/`yMid` midline, a threshold line — not five. The
+  reader should find the conclusion without reading the axes.
+- **Percentile context**: frame marks against the cohort (percentile lines,
+  league-average reference, median midline), not raw values alone. A point is
+  only interesting relative to its pool.
+- **Glyph vocabulary**: beeswarm-style scatter for distributions, shot_chart
+  zones for spatial claims, rolling lines for trends, slope-shaped comparisons
+  for before/after, quadrant scatters (midlines on both axes) for
+  PPP-vs-volume or efficiency-vs-usage takes.
+- **Density discipline**: leader charts show ~8-15 rows, not 60. Aggregate or
+  filter to the sample the take needs, and state the qualifying threshold in
+  `footnote` (the field exists; use it).
+- **Identity anchors**: highlight the specific entity the take is about in a
+  different visual weight — a labeled outlier, a highlighted bar — so the
+  reader can find the subject instantly.
