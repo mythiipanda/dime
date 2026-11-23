@@ -625,6 +625,42 @@ const TOOL_FALLBACK_TABLE: Record<string, FallbackSpec> = {};
 }
 const FALLBACK_LIMIT = 25;
 
+type PointerSpec = { table: string; columns: string; note?: string };
+const TOOL_SQL_POINTER: Record<string, PointerSpec> = {
+    get_on_off_leaders: { table: "silver_stints", columns: "home_player_1..5, away_player_1..5, score_home_in/score_home_out, score_away_in/score_away_out, home_swing, duration_sec, _season", note: "any on/off cut = sum home_swing and durations over stints where the entity is in vs out of the unit columns" },
+    get_on_off: { table: "silver_stints", columns: "home_player_1..5, away_player_1..5, score_home_in/score_home_out, score_away_in/score_away_out, home_swing, duration_sec, _season", note: "any on/off cut = sum home_swing and durations over stints where the entity is in vs out of the unit columns" },
+    get_lineup_on_off: { table: "silver_stints", columns: "home_player_1..5, away_player_1..5, score_home_in/score_home_out, score_away_in/score_away_out, home_swing, duration_sec, _season", note: "unit on/off via substring/position match on the stint player columns" },
+    get_availability_impact: { table: "silver_stints", columns: "home_player_1..5, away_player_1..5, home_swing, duration_sec, _season", note: "win-drop or rating swing when a player is out = stints containing vs not containing them" },
+    get_wowy: { table: "silver_stints", columns: "home_player_1..5, away_player_1..5, home_swing, duration_sec, _season", note: "with-or-without-you splits come from stint membership" },
+    get_stint_timeline: { table: "silver_stints", columns: "game_id, stint_number, clock_in_sec, clock_out_sec, home_player_1..5, away_player_1..5, score_home_in/out, score_away_in/out, _season" },
+    get_lineup_leaders: { table: "silver_hist_lineups", columns: "group_set, group_id, group_name, team_abbreviation, gp, min, off_rating, def_rating, net_rating, _season, season_type, measure_type, per_mode", note: "filter one variant (season_type/measure_type/per_mode) and the minutes floor, order by the rating" },
+    get_lineup_stats: { table: "silver_hist_lineups", columns: "group_set, group_id, group_name, team_abbreviation, gp, min, off_rating, def_rating, net_rating, _season, season_type, measure_type, per_mode" },
+    get_lineups: { table: "silver_hist_lineups", columns: "group_set, group_id, group_name, team_abbreviation, gp, min, off_rating, def_rating, net_rating, _season, season_type, measure_type, per_mode" },
+    get_lineup_matchup_matrix: { table: "silver_stints", columns: "home_player_1..5, away_player_1..5, home_swing, duration_sec, _season", note: "two-unit head-to-head = stints where both units overlap" },
+    get_shot_zones: { table: "silver_shots", columns: "SHOT_ZONE_BASIC, SHOT_ZONE_AREA, SHOT_ZONE_RANGE, SHOT_DISTANCE, LOC_X, LOC_Y, SHOT_MADE_FLAG, SHOT_ATTEMPTED_FLAG, _season", note: "hist seasons use silver_hist_shots (x_legacy, y_legacy, shot_distance, shot_value, season_type_id: 2=reg, NULL pre-2025-26)" },
+    get_shot_chart: { table: "silver_shots", columns: "SHOT_ZONE_BASIC, LOC_X, LOC_Y, SHOT_DISTANCE, SHOT_MADE_FLAG, _season", note: "hist seasons use silver_hist_shots" },
+    get_shot_compare: { table: "silver_shots", columns: "SHOT_ZONE_BASIC, SHOT_DISTANCE, LOC_X, LOC_Y, SHOT_MADE_FLAG, _season", note: "hist seasons use silver_hist_shots" },
+    get_team_shot_zones: { table: "silver_shots", columns: "SHOT_ZONE_BASIC, TEAM_ID, TEAM_NAME, SHOT_MADE_FLAG, SHOT_ATTEMPTED_FLAG, _season", note: "hist seasons use silver_hist_shots" },
+    get_phase_shot_splits: { table: "silver_hist_shots", columns: "x_legacy, y_legacy, shot_distance, shot_value, shot_result, period, clock, season_type_id, _season" },
+    get_zone_deltas: { table: "silver_zone_splits", columns: "PLAYER_ID, ZONE ('0-3ft','3-10ft','10-16ft','16ft-3P','3P'), FGA, FGM, FG_PCT, _season" },
+    get_hustle: { table: "silver_hist_hustle", columns: "player_name, team_abbreviation, g, min, deflections, screen_assists, loose_balls_recovered, charges_drawn, box_outs, _season" },
+    get_tracking_profile: { table: "silver_tracking_pt_stats", columns: "PLAYER_NAME, TEAM_ABBREVIATION, MIN, CATCH_SHOOT_*, DRIVES metrics, DEF_RIM_FGM/FGA, _season", note: "also silver_tracking_pt_shot and silver_tracking_pt_defend for shot/defense tracking" },
+    get_draft_board: { table: "silver_draft_boards", columns: "PLAYER_NAME, _season, ORDER, plus board columns" },
+    get_draft_model: { table: "silver_draft_boards", columns: "PLAYER_NAME, _season, ORDER", note: "value curve lives in silver_draft_value_curve" },
+    get_draft_capital: { table: "silver_future_picks", columns: "ORIG_TEAM, DRAFT_YEAR, pick columns" },
+};
+
+function sqlPointerFor(toolName: string): string | null {
+    const explicit = TOOL_SQL_POINTER[toolName];
+    if (explicit)
+        return `If this payload does not cover the ask's scope, split, pool or season, sql_exec over ${explicit.table} (${explicit.columns}) answers it directly — apply the stated pool filter${explicit.note ? `; ${explicit.note}` : ""}.`;
+    const spec = TOOL_FALLBACK_TABLE[toolName];
+    if (!spec)
+        return null;
+    const cols = [spec.nameCol, spec.teamCol, spec.seasonCol, spec.orderCol, spec.idCol].filter(Boolean).join(", ");
+    return `If this payload does not cover the ask's scope, split, pool or season, sql_exec over ${spec.table}${cols ? ` (key columns: ${cols})` : ""} answers it directly — apply the stated pool filter.`;
+}
+
 function fallbackWhere(spec: FallbackSpec, toolArgs: unknown): string[] {
     const args = (toolArgs && typeof toolArgs === "object" ? toolArgs : {}) as Record<string, unknown>;
     const parts: string[] = [];
@@ -782,6 +818,11 @@ function wrapBridgeTools(
                 const domain = objectValue(result.structuredContent.result);
                 if (domain && tracker.budgetMs !== undefined)
                     domain.budget_remaining_ms = Math.max(0, Math.round(tracker.budgetMs - (Date.now() - tracker.startedAt)));
+                if (domain && !SQL_STEER_SKIP_TOOLS.has(tool.name)) {
+                    const pointer = sqlPointerFor(tool.name);
+                    if (pointer)
+                        domain.sql_pointer = pointer;
+                }
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
                 if (!failed)
