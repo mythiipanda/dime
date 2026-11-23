@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
@@ -2762,6 +2762,263 @@ test("wrapBridgeTools runs a bounded warehouse fallback when a mapped named tool
     assert.equal(steerCall?.args?.fallback, true);
   }
   finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("guard chain replays dab-v1-188 lineup enumeration: steered once, then churn-stopped", async () => {
+  const trace = JSON.parse(
+    await readFile(join(import.meta.dirname, "fixtures", "dab-v1-188-lineup-teams.json"), "utf8")
+  );
+  const cwd = await mkdtemp(join(tmpdir(), "dime-replay-188-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let seqIdx = 0;
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    if (seqIdx < trace.length) {
+      const team = trace[seqIdx++];
+      const code = `return await tools.get_lineup_stats({ season: "2024-25", team: ${JSON.stringify(team)} });`;
+      const msg = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content: [
+          { type: "toolCall", id: `replay-${turn}`, name: "codemode", arguments: { code } },
+        ],
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+        usage: {
+          input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: "toolUse", message: msg });
+      stream.end();
+      return stream;
+    }
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [{ type: "text", text: "done without submit" }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: {
+        input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  let execCount = 0;
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [
+      {
+        name: "get_lineup_stats",
+        label: "get_lineup_stats",
+        description: "Lineup stats",
+        parameters: Type.Object({}),
+        async execute(callId) {
+          execCount++;
+          const ref = `src-lineup-${execCount}`;
+          const payload = { rows: [{ lineup: "A B C D E", net_rating: 4.2 }] };
+          const record = {
+            ref,
+            callId,
+            tool: "get_lineup_stats",
+            response: {
+              content: [{ type: "text", text: JSON.stringify(payload) }],
+              structuredContent: payload,
+              isError: false,
+            },
+          };
+          resultsMap.set(ref, record);
+          return {
+            content: [],
+            details: undefined,
+            structuredContent: { ref, tool: "get_lineup_stats", result: payload, isError: false },
+            isError: false,
+          };
+        },
+      },
+    ],
+    results: resultsMap,
+    pid: 1005,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  process.env.DIME_CALL_CEILING_WARN = "30";
+  process.env.DIME_CALL_CEILING_STOP = "60";
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Best 5-man lineup for every team",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    const steers = events.filter(
+      (e) => e.type === "tool_call" && e.name === "pool_fanout_steer"
+    );
+    assert.equal(steers.length, 1, "lineup pool fan-out steer should fire exactly once");
+    assert.deepEqual(steers[0].args, { tool: "get_lineup_stats", teams: 3 });
+    const stopSource = events.find(
+      (e) => e.type === "source" && e.record.ref.startsWith("churn_stop_")
+    );
+    assert.ok(stopSource, "churn-stop source record should be emitted");
+    assert.equal(stopSource.record.response.structuredContent.stop_reason, "tool_call_churn");
+    const failure = events.find((e) => e.type === "failure");
+    assert.ok(failure, "run should terminate with a failure event");
+    assert.ok(
+      seqIdx < trace.length,
+      `run must terminate mid-trace (consumed ${seqIdx}/${trace.length}), not dither to the end`
+    );
+  } finally {
+    delete process.env.DIME_CALL_CEILING_WARN;
+    delete process.env.DIME_CALL_CEILING_STOP;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("guard chain does not steer or stop same-team lineup volume (dab-v1-189 control)", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-replay-189-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let seqIdx = 0;
+  let turn = 0;
+  const N = 20;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    if (seqIdx < N) {
+      seqIdx++;
+      const code = `return await tools.get_lineup_stats({ season: "2024-25", team: "DEN", opponent: "OPP${seqIdx}" });`;
+      const msg = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content: [
+          { type: "toolCall", id: `ctrl-${turn}`, name: "codemode", arguments: { code } },
+        ],
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+        usage: {
+          input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: "toolUse", message: msg });
+      stream.end();
+      return stream;
+    }
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [{ type: "text", text: "final answer" }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: {
+        input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  let execCount = 0;
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [
+      {
+        name: "get_lineup_stats",
+        label: "get_lineup_stats",
+        description: "Lineup stats",
+        parameters: Type.Object({}),
+        async execute(callId) {
+          execCount++;
+          const ref = `src-ctrl-${execCount}`;
+          const payload = { rows: [{ lineup: "A B C D E", net_rating: 4.2 }] };
+          const record = {
+            ref,
+            callId,
+            tool: "get_lineup_stats",
+            response: {
+              content: [{ type: "text", text: JSON.stringify(payload) }],
+              structuredContent: payload,
+              isError: false,
+            },
+          };
+          resultsMap.set(ref, record);
+          return {
+            content: [],
+            details: undefined,
+            structuredContent: { ref, tool: "get_lineup_stats", result: payload, isError: false },
+            isError: false,
+          };
+        },
+      },
+    ],
+    results: resultsMap,
+    pid: 1006,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "DEN rotation deep dive",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    assert.equal(execCount, N);
+    assert.equal(
+      events.filter((e) => e.type === "tool_call" && e.name === "pool_fanout_steer").length,
+      0,
+      "same-team calls must never trip the fan-out steer"
+    );
+    assert.equal(
+      events.findIndex((e) => e.type === "source" && e.record.ref.startsWith("churn_stop_")),
+      -1,
+      "same-team volume must not hit the churn stop"
+    );
+  } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 });
