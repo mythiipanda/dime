@@ -101,6 +101,7 @@ TOOL_SCHEMA_DESCRIPTIONS = {
     "get_rest": "Back-to-back and rest-day schedule splits for any team.",
     "get_rest_advantage": "Rest advantage: who had the fresher legs before each game.",
     "get_risers": "Team risers and fallers: last-N weeks win percentage versus season win percentage.",
+    "get_salary_history": "Historical player salaries 1984-85 through 2020-21 with cap/tax/apron context: a player's salary by season, a team's payroll vs cap for a season, or a season's league salary landscape.",
     "get_rookie_leaders": "Current rookie class leaderboard (first-year NBA players only, verified against historical seasons).",
     "get_season_series": "Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup.",
     "get_phase_shot_splits": "Regular season vs playoffs shooting splits for one player or team: zone eFG/share plus catch-and-shoot vs pull-up family splits with deltas and cited warehouse sources.",

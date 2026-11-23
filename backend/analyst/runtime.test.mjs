@@ -237,6 +237,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_combine",
       "get_young_player_usage",
       "get_contract_value",
+      "get_salary_history",
       "get_trade_check",
       "get_trade_legality",
       "get_trade_value",
@@ -388,7 +389,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
   const pid = bridge.pid;
   try {
     const toolMap = new Map(bridge.tools.map(t => [t.name, t]));
-    assert.equal(bridge.tools.length, 115);
+    assert.equal(bridge.tools.length, 116);
     assert.equal(bridge.tools.length, ANALYST_TOOL_NAMES.length);
     assert.deepEqual(new Set(bridge.tools.map(t => t.name)), new Set(ANALYST_TOOL_NAMES));
 
@@ -1230,6 +1231,7 @@ test("real statistical tools cross MCP with anchor compatibility, rows, columns,
       get_era_comps: { player_id: 2544, season: "1985-86", k: 3 },
       get_lineup_stats: { team: "BOS", season: "2023-24", limit: 5 },
       get_lineup_on_off: { team: "OKC", players: "Shai Gilgeous-Alexander, Jalen Williams", season: "2025-26" },
+      get_salary_history: { season: "2003-04" },
       get_win_prob: { team_a: "BOS", team_b: "MIA" },
       get_on_off: { player_id: 2544, team_id: 1610612747, season: "2023-24" },
       get_shot_zones: { player_id: 2544, season: "2023-24", min_attempts: 50 },

@@ -67,6 +67,7 @@ const TOOL_LABELS: Record<string, ToolNarration> = {
   get_draft_board: { running: "Evaluating draft board rankings and prospects", done: "Evaluated draft board rankings and prospects" },
   get_combine: { running: "Reviewing draft combine anthropometrics and athletic testing", done: "Reviewed draft combine anthropometrics and athletic testing" },
   get_young_player_usage: { running: "Analyzing young player usage rates and thresholds", done: "Analyzed young player usage rates and thresholds" },
+  get_salary_history: { running: "Pulling salary history and cap context", done: "Pulled salary history and cap context" },
   get_contract_value: { running: "Evaluating contract surplus and value residuals", done: "Evaluated contract surplus and value residuals" },
   get_trade_check: { running: "Verifying trade legality and CBA matching rules", done: "Verified trade legality and CBA matching rules" },
   get_trade_value: { running: "Grading trade value and player equity", done: "Graded trade value and player equity" },

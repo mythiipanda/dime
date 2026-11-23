@@ -1551,6 +1551,41 @@
         "type": "object"
       }
     },
+    "get_salary_history": {
+      "name": "get_salary_history",
+      "description": "Historical player salaries (1984-85 through 2020-21) with league salary-cap, luxury-tax and apron context. One of: a player name (career salary by season), a team abbreviation plus a season (payroll vs cap, ranked in the league), or a season alone (cap figures plus the top individual salaries). For current contracts and cap sheets use get_cap_ledger or get_cap_table; for contract efficiency use get_contract_value or get_value_contracts.",
+      "args_schema": {
+        "description": "Historical player salaries 1984-85 through 2020-21 with cap/tax/apron context: a player's salary by season, a team's payroll vs cap for a season, or a season's league salary landscape.",
+        "properties": {
+          "player": {
+            "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
+            "title": "Player",
+            "type": "string"
+          },
+          "team": {
+            "default": "",
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'. Default: ''.",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season",
+            "type": "string"
+          },
+          "top": {
+            "default": 10,
+            "description": "Rows returned when no specific entity is requested. Default: 10.",
+            "title": "Top",
+            "type": "integer"
+          }
+        },
+        "title": "get_salary_history",
+        "type": "object"
+      }
+    },
     "get_trade_check": {
       "name": "get_trade_check",
       "description": "Trade legality check. Player names comma separated per side.\n\n2023 CBA matching below the first apron: 200 percent plus 250k when\noutgoing is up to 7.5M, outgoing plus 7.5M up to 29M, 125 percent\nplus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Cash and exceptions stay out.",

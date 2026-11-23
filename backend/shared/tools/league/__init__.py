@@ -143,6 +143,7 @@ from .draft_contracts import (
     get_draft_board,
     get_draft_model,
 )
+from .salary_history import get_salary_history
 from .leaderboards import (
     _ensure_leaderboard_snapshots,
     get_leaderboard_deltas,

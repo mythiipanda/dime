@@ -57,6 +57,7 @@ const SOURCE_LABELS: Record<string, string> = {
   get_combine: "Combine testing",
   get_young_player_usage: "Young player usage",
   get_contract_value: "Contract value",
+  get_salary_history: "Salary history",
   get_trade_check: "Trade check",
   get_trade_value: "Trade value",
   get_situational_splits: "Situational splits",

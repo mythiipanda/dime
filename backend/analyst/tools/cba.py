@@ -102,6 +102,7 @@ def register() -> dict[str, Any]:
         get_cap_scenario as _orig_get_cap_scenario,
         get_cap_table as _orig_get_cap_table,
         get_contract_value as _orig_get_contract_value,
+        get_salary_history as _orig_get_salary_history,
         get_draft_capital as _orig_get_draft_capital,
         get_trade_check as _orig_get_trade_check,
         get_trade_legality as _orig_get_trade_legality,
@@ -295,8 +296,24 @@ def register() -> dict[str, Any]:
         res["ok"] = True
         return sanitize_for_wire(res)
 
+
+    @tool("get_salary_history", description=_orig_get_salary_history.description)
+    def get_salary_history(player: str = "", team: str = "", season: str = "", top: int = 10) -> dict:
+        res = call_sync(_orig_get_salary_history, "get_salary_history", {
+            "player": player, "team": team, "season": season, "top": top,
+        })
+        cols = ["PLAYER_NAME", "TEAM", "salary", "salary_cap", "share_of_cap"]
+        rows = [r for r in res.get("rows") or [] if isinstance(r, dict)] if res.get("ok") else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else cols
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_salary_history", res)
+        return sanitize_for_wire(res)
+
     return {
         "get_cap_ledger": get_cap_ledger,
+        "get_salary_history": get_salary_history,
         "get_cap_scenario": get_cap_scenario,
         "get_cap_table": get_cap_table,
         "get_contract_value": get_contract_value,
