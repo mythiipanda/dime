@@ -177,7 +177,13 @@ def seed_season(start_year: int, nm: dict, fetcher=None) -> int:
     rows = season_rows(start_year, pg, adv, nm)
     if not rows:
         raise RuntimeError(f"{label(start_year)}: no usable rows")
-    frame = pl.DataFrame(rows, strict=False)
+    float_cols = [c for c in rows[0] if c not in
+                ("player_name", "team_abbreviation", "player_id", "season", "gp")]
+    frame = pl.DataFrame(rows, strict=False).with_columns(
+        [pl.col(c).cast(pl.Float64, strict=False) for c in float_cols] +
+        [pl.col("player_id").cast(pl.Int64, strict=False),
+         pl.col("season").cast(pl.Int32, strict=False),
+         pl.col("gp").cast(pl.Int64, strict=False)])
     res = FetchResult(frame=frame,
                       meta=FetchMeta(SOURCE, label(start_year)))
     return store.save_frame(TABLE, res, ENTITY, replace_season=True)
