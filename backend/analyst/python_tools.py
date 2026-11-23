@@ -56,6 +56,7 @@ _TOOL_ORDER = (
     "get_game_prediction",
     "get_wpa_leaders",
     "get_comps",
+    "get_era_comps",
     "get_lineup_stats",
     "get_win_prob",
     "get_on_off",

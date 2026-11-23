@@ -187,6 +187,10 @@ def register() -> dict[str, Any]:
     from shared.tools.tracking import get_defensive_matchups as _orig_get_defensive_matchups
     from shared.tools.player import get_comps as _orig_get_comps, get_on_off as _orig_get_on_off
     try:
+        from shared.tools.player import get_era_comps as _orig_get_era_comps
+    except ImportError:
+        from backend.shared.tools.player import get_era_comps as _orig_get_era_comps
+    try:
         from shared.tools.player import (
             get_last_x as _orig_get_last_x,
             get_player_report as _orig_get_player_report,
@@ -237,6 +241,21 @@ def register() -> dict[str, Any]:
         res["columns"] = list(rows[0].keys()) if rows else ["player_id", "name", "rapm", "possessions"]
         if not res.get("ok"):
             enrich_error("get_rapm", res)
+        return res
+
+
+    @tool("get_era_comps", description=_orig_get_era_comps.description)
+    def get_era_comps(player_id: str | int, season: str | None = None, k: int = 5,
+                      start_season: str | None = None, end_season: str | None = None) -> dict:
+        res = call_sync(_orig_get_era_comps, "get_era_comps", {
+            "player_id": player_id, "season": season, "k": k,
+            "start_season": start_season, "end_season": end_season})
+        rows = res.get("rows") if res.get("ok") and isinstance(res.get("rows"), list) else []
+        default_cols = ["PLAYER", "PLAYER_ID", "TEAM", "season", "age", "similarity", "archetype", "shared_archetype", "drivers"]
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else default_cols
+        if not res.get("ok"):
+            enrich_error("get_era_comps", res)
         return res
 
     @tool("get_comps", description=_orig_get_comps.description)
@@ -419,6 +438,7 @@ def register() -> dict[str, Any]:
     return {
         "get_rapm": get_rapm,
         "get_comps": get_comps,
+        "get_era_comps": get_era_comps,
         "get_on_off": get_on_off,
         "get_clutch_stats": get_clutch_stats,
         "get_situational_splits": get_situational_splits,

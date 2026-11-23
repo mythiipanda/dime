@@ -281,6 +281,77 @@
         "type": "object"
       }
     },
+    "get_era_comps": {
+      "name": "get_era_comps",
+      "description": "Cross-era statistical neighbors for one player's season. Compares the target season's per-36 box-score shape and efficiency profile against every qualified player-season in the warehouse (1996-97 onward), with each feature z-scored within its own season so the match is era-relative shape, not raw level. Optional start_season/end_season window (e.g. '2003-04' to '2010-11') narrows the candidate pool. Same-season-only comps live in get_comps.",
+      "args_schema": {
+        "description": "Cross-era statistical neighbors for one player season, z-scored within each season (1996-97+).",
+        "properties": {
+          "player_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "description": "nba_api numeric player id, e.g. 203081 (not the name).",
+            "title": "Player Id"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          },
+          "k": {
+            "default": 5,
+            "description": "Number of neighbors returned. Default: 5.",
+            "title": "K",
+            "type": "integer"
+          },
+          "start_season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Pool window start, e.g. '2003-04'. Default: None.",
+            "title": "Start Season"
+          },
+          "end_season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Pool window end, e.g. '2010-11'. Default: None.",
+            "title": "End Season"
+          }
+        },
+        "required": [
+          "player_id"
+        ],
+        "title": "get_era_comps",
+        "type": "object"
+      }
+    },
     "get_lineup_stats": {
       "name": "get_lineup_stats",
       "description": "Per-unit five-man lineup ratings with possession floors for one team. Names, abbrevs, or ids. For all qualifying units sorted by minutes use get_lineups; for the league-wide board use get_lineup_leaders.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default. Warehouse-backed with live fallback.",
