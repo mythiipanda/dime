@@ -1,4 +1,6 @@
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
@@ -249,6 +251,80 @@ function resolveAnalystModel(resolveModel: ReturnType<typeof providerPolicy>["re
     }
 }
 
+const MODEL_LANE_STALE_MS = 30 * 60 * 1000;
+
+function modelLaneSlots(env: NodeJS.ProcessEnv): number {
+    const n = Number(env.DIME_LANE_SLOTS ?? "0");
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function modelLaneDir(env: NodeJS.ProcessEnv): string {
+    return env.DIME_LANE_DIR || join(tmpdir(), "dime-model-lanes");
+}
+
+function pidAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+
+function laneSlotReleasable(slot: string): boolean {
+    try {
+        const pid = Number(readFileSync(join(slot, "owner"), "utf8").trim());
+        if (!Number.isFinite(pid) || !pidAlive(pid))
+            return true;
+    }
+    catch {
+    }
+    try {
+        return Date.now() - statSync(slot).mtimeMs > MODEL_LANE_STALE_MS;
+    }
+    catch {
+        return false;
+    }
+}
+
+async function acquireModelLane(dir: string, slots: number, signal?: AbortSignal): Promise<() => void> {
+    mkdirSync(dir, { recursive: true });
+    for (;;) {
+        for (let i = 0; i < slots; i++) {
+            const slot = join(dir, `lane-${i}`);
+            try {
+                mkdirSync(slot);
+            }
+            catch {
+                if (laneSlotReleasable(slot)) {
+                    try {
+                        rmSync(slot, { recursive: true, force: true });
+                    }
+                    catch {
+                    }
+                }
+                continue;
+            }
+            try {
+                writeFileSync(join(slot, "owner"), String(process.pid));
+            }
+            catch {
+            }
+            return () => {
+                try {
+                    rmSync(slot, { recursive: true, force: true });
+                }
+                catch {
+                }
+            };
+        }
+        if (signal?.aborted)
+            throw new Error("model lane wait aborted");
+        await new Promise(r => setTimeout(r, 300 + Math.random() * 400));
+    }
+}
+
 export function createAnalyst(options: AnalystOptions) {
     const paths = productPaths(options.env), store = options.store ?? new ProductStore(paths.conversations, paths.sources);
     const policy = providerPolicy(options.env), execution = options.execution ?? createPiExecution();
@@ -266,6 +342,17 @@ export function createAnalyst(options: AnalystOptions) {
             const identity = input.thread && input.client ? { owner: input.client, thread: input.thread } : undefined;
             let directory: string | undefined;
             const state: RunState = { failed: false, streamed: false, records: identity ? store.priorSources(identity) : [], fresh: [] };
+            const laneSlots = modelLaneSlots(options.env);
+            let releaseLane: (() => void) | undefined;
+            if (laneSlots > 0) {
+                try {
+                    releaseLane = await acquireModelLane(modelLaneDir(options.env), laneSlots, signal);
+                }
+                catch {
+                    if (signal?.aborted)
+                        return;
+                }
+            }
             try {
                 const history = identity ? store.read(identity) : input.history ?? [];
                 const workspace = await prepareRunWorkspace(paths, identity);
@@ -289,6 +376,7 @@ export function createAnalyst(options: AnalystOptions) {
                 yield { type: "failure", data: { kind: "transport", message: "Dime could not finish this run." } };
             }
             finally {
+                releaseLane?.();
                 if (directory)
                     await rm(directory, { recursive: true, force: true });
             }

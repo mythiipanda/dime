@@ -49,6 +49,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--save-history", action="store_true", help="Save the judged run into dime-internal DAB history")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--timeout-s", type=float, default=420.0)
+    parser.add_argument("--lane-slots", type=int, default=2,
+                        help="Machine-wide concurrent model runs shared across dab_run processes (0 = unlimited)")
     parser.add_argument("--out-name", default=None)
     parser.add_argument("--host-log", default=None)
     parser.add_argument("--keep-host", action="store_true")
@@ -256,8 +258,9 @@ def eval_command(args: argparse.Namespace) -> list[str]:
     if args.tasks:
         cmd.extend(["--tasks", args.tasks])
     cmd.extend(["--workers", str(args.workers)])
+    adapter_timeout = args.timeout_s * 2 if args.lane_slots > 0 else args.timeout_s
     cmd.extend([
-        "--timeout-s", str(args.timeout_s),
+        "--timeout-s", str(adapter_timeout),
         "--out-dir", f"runs/{args.out_name}",
     ])
     if args.no_llm_judge:
@@ -419,6 +422,8 @@ def main(argv: list[str] | None = None) -> int:
         "DIME_TRACE_TOOL_RESULTS": "1",
         "PORT": str(args.port),
     })
+    if args.lane_slots > 0:
+        env["DIME_LANE_SLOTS"] = str(args.lane_slots)
     if provider:
         env[f"DIME_ENABLE_{provider.upper()}"] = "true"
 
