@@ -30,6 +30,7 @@ SEEDERS = [
     ("impact", "seed_bref_impact.py", [], True),
     ("awards", "seed_bbref_awards.py", [], False),
     ("salaries", "seed_salaries.py", [], False),
+    ("cap_history", "seed_cap_history.py", [], False),
     ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
