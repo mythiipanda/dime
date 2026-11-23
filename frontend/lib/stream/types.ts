@@ -106,15 +106,32 @@ export interface ChartSeriesPayload {
   tone?: ChartTone;
 }
 
+export interface ChartMark {
+  value: number;
+  label: string;
+}
+
+export interface ChartAnnotation {
+  index: number;
+  text: string;
+}
+
 export interface ChartArtifactPayload {
   kind: "chart";
   title: string;
+  subtitle?: string;
+  variant?: "line" | "bar";
   source?: string;
   provenance?: DimeProvenance;
   series: ChartSeriesPayload[];
   footnote?: string;
   unit?: string;
   xLabels?: string[];
+  xLabel?: string;
+  yLabel?: string;
+  marks?: ChartMark[];
+  annotations?: ChartAnnotation[];
+  labelValues?: boolean;
 }
 
 export interface ShotChartArtifactPayload {

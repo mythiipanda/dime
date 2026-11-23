@@ -72,6 +72,27 @@ function resolveChart(
     : undefined;
   const footnote =
     typeof entry.footnote === "string" && entry.footnote ? entry.footnote : undefined;
+  const textField = (key: string) =>
+    typeof entry[key] === "string" && entry[key] ? (entry[key] as string) : undefined;
+  const marks = (Array.isArray(entry.marks) ? entry.marks : [])
+    .map((raw) => {
+      const m = raw as Record<string, unknown>;
+      const value = finiteNumber(m?.value);
+      const label = typeof m?.label === "string" ? m.label : "";
+      return value !== undefined && label ? { value, label } : null;
+    })
+    .filter((m): m is { value: number; label: string } => m !== null);
+  const annotations = (Array.isArray(entry.annotations) ? entry.annotations : [])
+    .map((raw) => {
+      const a = raw as Record<string, unknown>;
+      const index = finiteNumber(a?.index);
+      const text = typeof a?.text === "string" ? a.text : "";
+      return index !== undefined && Number.isInteger(index) && index >= 0 && text
+        ? { index, text }
+        : null;
+    })
+    .filter((a): a is { index: number; text: string } => a !== null);
+  const variant = entry.variant === "bar" ? "bar" : entry.variant === "line" ? "line" : undefined;
   return {
     kind: "chart",
     title,
@@ -81,6 +102,13 @@ function resolveChart(
     footnote,
     ...(unit !== undefined ? { unit } : {}),
     ...(xLabels && xLabels.length > 0 ? { xLabels } : {}),
+    ...(textField("subtitle") ? { subtitle: textField("subtitle") } : {}),
+    ...(textField("xLabel") ? { xLabel: textField("xLabel") } : {}),
+    ...(textField("yLabel") ? { yLabel: textField("yLabel") } : {}),
+    ...(variant ? { variant } : {}),
+    ...(marks.length ? { marks } : {}),
+    ...(annotations.length ? { annotations } : {}),
+    ...(entry.labelValues === true ? { labelValues: true } : {}),
   };
 }
 

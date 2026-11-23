@@ -62,6 +62,13 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
         footnote={artifact.footnote}
         unit={artifact.unit}
         xLabels={artifact.xLabels}
+        subtitle={artifact.subtitle}
+        variant={artifact.variant}
+        xLabel={artifact.xLabel}
+        yLabel={artifact.yLabel}
+        marks={artifact.marks}
+        annotations={artifact.annotations}
+        labelValues={artifact.labelValues}
       />
     );
   }

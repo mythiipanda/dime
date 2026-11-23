@@ -17,7 +17,7 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 | **Court Location & Shooting Profiles** | `shot_chart` | Court zones with attempt counts (`att`) and shooting percentages (`pct`). |
 | **Head-to-Head Showdowns** (2 players or 2 teams) | `compare` | Visual bars comparing normalized metrics between entity `a` and entity `b`. |
 | **Rankings, Rosters, Ledgers, Multi-Metric Lists** | `table` | Sortable columns with typed numeric formatting, source citation headers, CSV export. |
-| **Time-Series, Trajectories, Multi-Game Trends** | `chart` | Line/bar series over ordered games, months, or seasons with `unit`, `xLabels`, and semantic `tone`. |
+| **Time-Series, Trajectories, Multi-Game Trends** | `chart` | Line/bar series over ordered games, months, or seasons with `unit`, `xLabels`, and semantic `tone`. `variant:"bar"` renders a ranked leaderboard; `marks`, `annotations`, `labelValues`, `xLabel`/`yLabel`, `subtitle` cover threshold lines, callouts and axis labels. |
 | **Executive Briefings, GM/Owner Deliverables, Multi-Section Reports** | `memo` | Titled document with headed `sections`, per-section citation `anchors`, and markdown export. |
 
 ---
@@ -186,17 +186,49 @@ sections like a roster or pick list belong in `table`, not `fields`.
 ```
 
 ### `chart`
+Default `variant` is `"line"`. Use `variant: "bar"` for ranked leaderboards and
+any x-axis of distinct entities (players, teams, lineups) rather than a sequence —
+it renders horizontal bars sorted in the order you provide, so order values
+descending before submitting. Style the answer the way a public NBA analyst
+post would: the `title` states the takeaway in a few words, `subtitle` carries
+the metric/scope context, `marks` draw labeled threshold lines (league mean,
+max-slot cap, playoff line), `annotations` call out the single observation the
+task asks for (biggest drop, best, first below half), `labelValues` prints each
+value on the bars/points, and `xLabel`/`yLabel` name the axes.
 ```typescript
 {
   kind: "chart",
-  title: "Scoring Progression Across 5-Game Rolling Windows (2025-26)",
-  unit: "PPG",
-  xLabels: ["G1-5", "G6-10", "G11-15", "G16-20", "G21-25"],
+  title: "Franz's four-month slide sits below the floor",
+  subtitle: "Catch & shoot eFG% by month · Magic wings, 2025-26",
+  variant: "line",
+  unit: "eFG%",
+  xLabels: ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"],
+  xLabel: "Month",
+  yLabel: "Catch & shoot eFG%",
   series: [
-    { name: "Rolling PPG", values: [31.2, 34.5, 36.8, 32.0, 35.4], tone: "accent" },
-    { name: "Season Baseline", values: [33.9, 33.9, 33.9, 33.9, 33.9] }
+    { name: "Franz Wagner", values: [0.512, 0.498, 0.451, 0.432, 0.418, 0.407, 0.396], tone: "accent" },
+    { name: "Team wings avg", values: [0.481, 0.479, 0.476, 0.474, 0.473, 0.471, 0.470], tone: "muted" }
   ],
-  footnote: "Source: silver_boxscores. Semantic tones: accent (primary), good (positive), warn (caution)."
+  marks: [{ value: 0.466, label: "Wing floor (league median)" }],
+  annotations: [{ index: 4, text: "First month below the team average — slope steepens here" }],
+  labelValues: false,
+  footnote: "Source: silver_shots · 7 months · 82 games · eFG 0.512 → 0.396"
+}
+```
+For a leaderboard bar chart, pass one series and pre-sorted `xLabels`:
+```typescript
+{
+  kind: "chart",
+  title: "Five spots clear a full max slot",
+  variant: "bar",
+  unit: "$M",
+  xLabels: ["DET", "CHI", "IND", "OKC", "ORL", "SAS", "ATL"],
+  xLabel: "Practical cap space ($M)",
+  series: [{ name: "2026 practical space", values: [74.2, 63.1, 58.7, 55.9, 54.6, 48.2, 41.5], tone: "accent" }],
+  marks: [{ value: 54.45, label: "Max-slot threshold" }],
+  annotations: [{ index: 4, text: "ORL is the last team that clears a full max" }],
+  labelValues: true,
+  footnote: "Source: silver_team_payroll · 7 teams shown of 30"
 }
 ```
 
