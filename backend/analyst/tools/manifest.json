@@ -287,7 +287,7 @@
   },
   {
    "name": "get_phase_shot_splits",
-   "description": "Regular season vs playoffs shooting splits for one player or team in one season: zone diet and eFG plus shot-family splits (catch-and-shoot vs pull-up vs rim) with playoff-minus-regular deltas in percentage points. Warehouse-first from silver_hist_shots; measured tracking splits appear when seeded. Give exactly one of player or team.",
+   "description": "Regular season vs playoffs shooting splits for one player or team in one season: zone diet and eFG plus shot-family splits (catch-and-shoot vs pull-up vs rim) with playoff-minus-regular deltas in percentage points. Warehouse-first from silver_hist_shots; measured tracking splits appear when seeded. Give exactly one of player or team. One player or one team, regular-vs-playoff only — for league-wide zone leaderboards or position pools use sql_exec over silver_hist_shots (zone geometry: corner_3 = ABS(x_legacy)>=220 AND y_legacy<=92.5, rim = shot_distance<=4, midrange = shot_value=2 AND shot_distance>4).",
    "namespace": "spatial",
    "schema_description": "Regular season vs playoffs shooting splits for one player or team: zone eFG/share plus catch-and-shoot vs pull-up family splits with deltas and cited warehouse sources."
   },
@@ -709,7 +709,7 @@
   },
   {
    "name": "get_zone_deltas",
-   "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).",
+   "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).\nNot a leaderboard: for league-wide zone leaders or pools (\"top N by made corner threes\", \"best rim finishers among centers\", \"guards with the most midrange attempts\", \"share of shots from deep\") use sql_exec over silver_hist_shots — corner_3 = ABS(x_legacy)>=220 AND y_legacy<=92.5, rim = shot_distance<=4, midrange = shot_value=2 AND shot_distance>4, above-the-break 3 = shot_value=3 minus the corner — joined to silver_hist_player_seasons for position pools and attempt floors.",
    "namespace": "spatial",
    "schema_description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs pooled league-average FG% with percentage-point deltas across court zones.",
    "guidelines": [
