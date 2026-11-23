@@ -118,6 +118,64 @@ def free_port(start: int, span: int = 50) -> int | None:
     return None
 
 
+def port_owner_pid(port: int) -> int | None:
+    try:
+        proc = subprocess.run(
+            ["ss", "-tlnp", f"sport = :{port}"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        match = re.search(r"pid=(\d+)", proc.stdout)
+        if match:
+            return int(match.group(1))
+    except OSError:
+        pass
+    try:
+        proc = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        if proc.returncode == 0:
+            for line in proc.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[3].upper() == "LISTENING" and parts[1].endswith(f":{port}"):
+                    pid = parts[4]
+                    if pid.isdigit():
+                        return int(pid)
+    except OSError:
+        pass
+    return None
+
+
+def proc_cwd(pid: int) -> Path | None:
+    try:
+        return Path(os.readlink(f"/proc/{pid}/cwd")).resolve()
+    except OSError:
+        return None
+
+
+def pid_is_descendant(pid: int, ancestor: int) -> bool:
+    for _ in range(32):
+        if pid == ancestor:
+            return True
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="ignore")
+            pid = int(stat.rpartition(")")[2].split()[1])
+        except (OSError, IndexError, ValueError):
+            return False
+    return False
+
+
+def host_matches_worktree(pid: int) -> bool:
+    cwd = proc_cwd(pid)
+    return cwd is not None and cwd == ROOT
+
+
 def log_path_for(args: argparse.Namespace) -> Path:
     if args.host_log:
         return Path(args.host_log)
@@ -154,17 +212,19 @@ def boot_host(env: dict[str, str], log_file: Path) -> subprocess.Popen | None:
 
 
 def tail_log(log_file: Path) -> None:
+    if not log_file.is_file():
+        return
     lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
     for line in lines[-20:]:
         print(redact(line), file=sys.stderr)
 
 
-def wait_health(port: int, host: subprocess.Popen, log_file: Path) -> dict | None:
+def wait_health(port: int, host: subprocess.Popen | None, log_file: Path) -> dict | None:
     url = f"http://127.0.0.1:{port}/api/health"
     deadline = time.monotonic() + 120.0
     with httpx.Client(timeout=2.0) as client:
         while time.monotonic() < deadline:
-            if host.poll() is not None:
+            if host is not None and host.poll() is not None:
                 print("host exited before health became ready", file=sys.stderr)
                 tail_log(log_file)
                 return None
@@ -322,7 +382,10 @@ def report_results(args: argparse.Namespace) -> bool:
     return True
 
 
-def terminate_host(host: subprocess.Popen, keep: bool) -> None:
+def terminate_host(host: subprocess.Popen | None, keep: bool) -> None:
+    if host is None:
+        print("reused host left running")
+        return
     if keep:
         print(f"host left running pid {host.pid}")
         return
@@ -359,15 +422,22 @@ def main(argv: list[str] | None = None) -> int:
     if provider:
         env[f"DIME_ENABLE_{provider.upper()}"] = "true"
 
+    reuse_pid: int | None = None
     held_by = listener_pid(args.port)
     if held_by is not None:
-        picked = free_port(args.port + 1)
-        if picked is None:
-            print(f"port {args.port} already listening, held by pid {held_by}; no free port in the next 50", file=sys.stderr)
-            return 1
-        print(f"port {args.port} already listening, held by pid {held_by}; using {picked} instead", file=sys.stderr)
-        args.port = picked
-        env["PORT"] = str(args.port)
+        owner = port_owner_pid(args.port)
+        if owner is not None and host_matches_worktree(owner):
+            reuse_pid = owner
+            print(f"port {args.port} already serves this worktree (pid {owner}); reusing it")
+        else:
+            detail = f"pid {owner} cwd {proc_cwd(owner)}" if owner is not None else "pid unknown"
+            picked = free_port(args.port + 1)
+            if picked is None:
+                print(f"port {args.port} already listening, held by {detail}; no free port in the next 50", file=sys.stderr)
+                return 1
+            print(f"port {args.port} already listening, held by {detail}; using {picked} instead", file=sys.stderr)
+            args.port = picked
+            env["PORT"] = str(args.port)
 
     warehouse_errors, warehouse_tables = verify_runtime_warehouse()
     if warehouse_errors:
@@ -391,12 +461,27 @@ def main(argv: list[str] | None = None) -> int:
     print(f"asset manifest: {manifest_path}")
 
     log_file = log_path_for(args)
-    print(f"host log: {log_file}")
-    host = boot_host(env, log_file)
+    host: subprocess.Popen | None = None
+    if reuse_pid is None:
+        print(f"host log: {log_file}")
+        host = boot_host(env, log_file)
     ok = True
     try:
         providers = wait_health(args.port, host, log_file)
         if providers is None:
+            return 1
+        owner = port_owner_pid(args.port)
+        if reuse_pid is not None:
+            if owner != reuse_pid:
+                print(f"port {args.port} owner changed mid-run; refusing to evaluate", file=sys.stderr)
+                return 1
+        elif owner is not None and host is not None and owner != host.pid and not pid_is_descendant(owner, host.pid):
+            print(
+                f"port {args.port} is served by foreign pid {owner} "
+                f"(cwd {proc_cwd(owner)}), not spawned host pid {host.pid}; "
+                "refusing to evaluate",
+                file=sys.stderr,
+            )
             return 1
         if provider and providers.get(provider) is not True:
             print(f"provider {provider} is not enabled in health providers map", file=sys.stderr)
