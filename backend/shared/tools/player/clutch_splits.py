@@ -231,10 +231,21 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
             }
         except Exception:
             teams = {}
+        try:
+            covered = [r[0] for r in con.execute(
+                "SELECT DISTINCT _season FROM silver_raptor_player ORDER BY 1"
+            ).fetchall() if r and r[0]]
+        except Exception:
+            covered = []
     finally:
         con.close()
     if frame.height == 0:
-        return {"tool": "get_raptor_history", "ok": False, "error": f"no RAPTOR history for '{name}'" + (f" in {season}" if season else "")}
+        where = f" in {season}" if season else ""
+        pointer = (f" - silver_raptor_player covers {covered[0]} through {covered[-1]}; "
+                   f"for seasons outside that range use sql_exec over silver_hist_player_seasons"
+                   if covered else "")
+        return {"tool": "get_raptor_history", "ok": False,
+                "error": f"no RAPTOR history for '{name}'{where}{pointer}"}
     rows = [
         {
             "SEASON": r.get("_season"),

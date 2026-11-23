@@ -1,4 +1,5 @@
 
+import re
 from collections import Counter
 from typing import Any, Union
 
@@ -16,10 +17,15 @@ def season_label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[-2:]}"
 
 def clamp_season_year(value: object, fallback: int = MAX_YEAR) -> tuple[int | None, str | None]:
-    try:
-        year = int(str(value).strip()[:4])
-    except (TypeError, ValueError, AttributeError):
-        return fallback, f"season '{value}' invalid, using {fallback}"
+    text = str(value).strip()
+    slug = re.fullmatch(r"(\d{4})-(\d{2})", text)
+    if slug:
+        year = 2000 + int(slug.group(2))
+    else:
+        try:
+            year = int(text[:4])
+        except (TypeError, ValueError, AttributeError):
+            return fallback, f"season '{value}' invalid, using {fallback}"
     if year > MAX_YEAR:
         return None, None
     if year < MIN_YEAR:

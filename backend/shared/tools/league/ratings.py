@@ -129,12 +129,31 @@ def _ratings_available_seasons() -> list[str]:
         return []
 
 
+_METRIC_ALIASES = {
+    "OFF": "OFF_RATING", "OFFENSE": "OFF_RATING", "OFFENSIVE": "OFF_RATING",
+    "ORTG": "OFF_RATING", "DEF": "DEF_RATING", "DEFENSE": "DEF_RATING",
+    "DEFENSIVE": "DEF_RATING", "DRTG": "DEF_RATING", "NET": "NET_RATING",
+    "NRTG": "NET_RATING", "NETRTG": "NET_RATING", "NET_RATING": "NET_RATING",
+    "PACE": "PACE", "TS": "TS_PCT", "TS%": "TS_PCT", "TS_PCT": "TS_PCT",
+    "TRUE_SHOOTING": "TS_PCT", "TOV": "TM_TOV_PCT", "TOV_PCT": "TM_TOV_PCT",
+    "TM_TOV": "TM_TOV_PCT", "OFF_RATING": "OFF_RATING",
+    "DEF_RATING": "DEF_RATING",
+}
+
+_DIRECTION_ALIASES = {
+    "desc": "desc", "descending": "desc", "high": "desc", "highest": "desc",
+    "top": "desc", "best": "desc", "max": "desc",
+    "asc": "asc", "ascending": "asc", "low": "asc", "lowest": "asc",
+    "bottom": "asc", "worst": "asc", "min": "asc",
+}
+
+
 @tool(description='Team ratings, optionally bound to one requested ranked metric.\n\nWhen ``requested_metric`` and ``ranking_direction`` are set, rows are\nordered by that metric field and the payload owns the leader claim.\n``team`` narrows a direct team-ratings question.')
 def get_ratings(
     season: str | None = None,
     team: str = "",
-    requested_metric: _RequestedMetric = "",
-    ranking_direction: _RankingDirection = "",
+    requested_metric: str = "",
+    ranking_direction: str = "",
 ) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season, "silver_team_ratings")
@@ -166,11 +185,17 @@ def get_ratings(
         d["TEAM"] = abbrev.get(r.get("TEAM_ID"), str(r.get("TEAM_NAME") or ""))
         slim.append(d)
     metric = str(requested_metric or "").strip().upper()
-    direction = str(ranking_direction or "").strip().lower()
+    metric = _METRIC_ALIASES.get(metric, metric)
+    direction = _DIRECTION_ALIASES.get(
+        str(ranking_direction or "").strip().lower(),
+        str(ranking_direction or "").strip().lower())
     if metric:
         if metric not in TEAM_RATING_METRICS:
             return {"tool": "get_ratings", "ok": False,
-                    "error": f"unsupported requested_metric: {metric}"}
+                    "error": (f"unsupported requested_metric: "
+                              f"{requested_metric!r}; valid: "
+                              f"{sorted(TEAM_RATING_METRICS)} (aliases like "
+                              f"'net', 'off', 'def', 'ts', 'tov' accepted)")}
         if direction not in RANKING_DIRECTIONS:
             return {"tool": "get_ratings", "ok": False,
                     "error": "ranking_direction must be 'asc' or 'desc'"}
