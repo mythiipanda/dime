@@ -191,7 +191,7 @@ def _fetch_lineup_inputs(
     )
     return rows, meta, _safe_aggs(team_id, season)
 
-@tool(description='Per-unit five-man lineup ratings with possession floors for one team. Names, abbrevs, or ids. For all qualifying units sorted by minutes use get_lineups; for the league-wide board use get_lineup_leaders.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default.')
+@tool(description='Per-unit five-man lineup ratings with possession floors for one team. Names, abbrevs, or ids. For all qualifying units sorted by minutes use get_lineups; for the league-wide board use get_lineup_leaders.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default.\nFor a player on-versus-off split (not unit ratings) use get_on_off or\nget_on_off_leaders.')
 def get_lineup_stats(
     team: str | int, season: str | None = None, min_possessions: int = 100,
     include_small: bool = False, limit: int = 10,

@@ -197,7 +197,9 @@ def _ranking_rows(con, year: int, min_minutes: float, min_missed: int, limit: in
     "player's own per-game scoring/FGA/plus-minus by the teammate's presence; or leave "
     "player empty for a league-wide ranking of high-minute one-team players by win-rate "
     "drop when sitting (min_minutes/min_missed qualifiers). Warehouse coverage: "
-    "2015-16 onward, regular season."
+    "2015-16 onward, regular season. Possession-level net rating with the player "
+    "on vs off the floor is a different question — use get_on_off (one player) "
+    "or get_on_off_leaders (boards and pairs)."
 )
 def get_availability_impact(player: str = "", season: str | None = None,
                             teammate: str = "", min_minutes: float = 28.0,
