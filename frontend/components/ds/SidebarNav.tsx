@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
-import { EditPencil, Search, SidebarCollapse, SidebarExpand, Basketball } from "iconoir-react";
+import { EditPencil, Search, SidebarCollapse, SidebarExpand, Basketball, ChatBubbleEmpty } from "iconoir-react";
 
 export interface SidebarItem { id: string; label: string; icon: ReactNode; href?: string; group?: string }
 export interface SidebarRecent { id: string; label: string }
@@ -29,8 +29,12 @@ export function SidebarNav({ workspace, items, activeNav, recents, activeThread,
       <label className="mb-2 flex items-center gap-2 px-2 text-[11px] text-ink-3"><span>Chats</span><Search width={12} height={12} className="ml-auto" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} className="w-20 min-w-0 bg-transparent text-ink-2 outline-none placeholder:text-ink-3" /></label>
       <div className="min-h-0 overflow-y-auto">
         {recents.filter((r) => r.label.toLowerCase().includes(search.toLowerCase())).map((r) => <button key={r.id} className="sidebar-row" aria-current={activeThread === r.id && activeNav === "chat" ? "page" : undefined} onClick={() => onPick(r.id)}><span className="truncate text-[12px]">{r.label}</span></button>)}
-        {!recents.length && <p className="px-2 py-2 text-[11px] leading-relaxed text-ink-3">Your conversations will live here.</p>}
-        {!!recents.length && !recents.some((r) => r.label.toLowerCase().includes(search.toLowerCase())) && <p className="px-2 py-2 text-[11px] text-ink-3">No matching chats.</p>}
+        {!recents.length && !search && <div className="mx-2 mt-1 flex items-center gap-2.5 rounded-lg border border-line bg-field px-2.5 py-2">
+          <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-md border border-line text-ink-3"><ChatBubbleEmpty width={16} height={16} /></span>
+          <div className="min-w-0"><p className="text-[11px] font-medium text-ink-2">No conversations yet</p><button type="button" className="text-[11px] text-ink-3 underline-offset-2 hover:text-ink-2 hover:underline" onClick={onNewChat}>Start one</button></div>
+        </div>}
+        {!recents.length && !!search && <p className="px-2 py-2 text-[11px] text-ink-3">No chats match &ldquo;{search}&rdquo;.</p>}
+        {!!recents.length && !recents.some((r) => r.label.toLowerCase().includes(search.toLowerCase())) && <p className="px-2 py-2 text-[11px] text-ink-3">No chats match &ldquo;{search}&rdquo;.</p>}
       </div>
     </div>
     <div className="sidebar-copy mt-auto border-t border-line px-2 pt-4 pb-14">{footer}</div>

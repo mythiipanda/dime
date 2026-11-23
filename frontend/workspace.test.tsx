@@ -80,7 +80,7 @@ test("Ask explains supported provider keys and prevents form and keyboard sends 
   });
   const enabled = renderToStaticMarkup(<PromptBar {...props} models={[{ id: "gemini:flash", label: "Flash", available: true }]} model="gemini:flash" />);
   assert.doesNotMatch(enabled, /no models are configured/);
-  const error = renderToStaticMarkup(<PromptBar {...props} modelError />); assert.match(error, /Models unavailable/); assert.doesNotMatch(error, /no models are configured/);
+  const error = renderToStaticMarkup(<PromptBar {...props} modelError />); assert.match(error, /Couldn.t load models/); assert.doesNotMatch(error, /no models are configured/);
 });
 
 test("Shots explorer preserves zone data even if shot coordinates are unavailable", async () => {

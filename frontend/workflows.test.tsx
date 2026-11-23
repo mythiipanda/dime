@@ -265,7 +265,7 @@ for (const mode of ["available", "empty", "error", "retry", "leave-return"]) it(
     } else {
       assert.equal(requests.length, 0);
       assert.equal(host.querySelector("textarea")!.value, expected);
-      assert.match(host.textContent!, mode === "empty" ? /GEMINI_API_KEY/ : /Models unavailable/);
+      assert.match(host.textContent!, mode === "empty" ? /GEMINI_API_KEY/ : /Couldn.t load models/);
       assert.equal(host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.disabled, true);
       assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!)!.text, expected);
       await act(async () => root.unmount());
@@ -282,7 +282,7 @@ for (const mode of ["available", "empty", "error", "retry", "leave-return"]) it(
     await act(async () => dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Close command palette"]')!.click());
     if (mode === "retry") {
       modelsFail = false;
-      await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Models unavailable"))!.click());
+      await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Try again"))!.click());
       assert.equal(host.querySelector("textarea")!.value, expected);
       assert.equal(requests.length, 0);
       await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Send message"]')!.click());
