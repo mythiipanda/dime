@@ -84,6 +84,7 @@ from .comps import (
     _pool_from_gamelogs,
     _pool_from_leaders,
     get_comps,
+    get_era_comps,
 )
 from .on_off_wowy import (
     _HIST_LINEUP_FILTER,

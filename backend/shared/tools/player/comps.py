@@ -315,3 +315,223 @@ def get_comps(player_id: str | int, season: str | None = None, k: int = 5) -> di
             "notes": notes,
         },
     }
+
+
+_ERA_COUNTING = [
+    ("pts", "PTS36"), ("reb", "REB36"), ("ast", "AST36"), ("stl", "STL36"),
+    ("blk", "BLK36"), ("tov", "TOV36"), ("fg3a", "FG3A36"), ("fta", "FTA36"),
+]
+_ERA_RATES = ["FG3_PCT", "FT_PCT", "TS_PCT", "USG_PCT", "PIE"]
+_ERA_FEATURES = [f for _, f in _ERA_COUNTING] + _ERA_RATES
+
+
+def _era_feats(row: dict[str, Any]) -> dict[str, Any]:
+    pkg = _pkg()
+    minutes = pkg._num(row.get("min"))
+    feats: dict[str, Any] = {}
+    for col, feat in _ERA_COUNTING:
+        v = pkg._num(row.get(col))
+        feats[feat] = 36 * v / minutes if (v is not None and minutes) else None
+    for col, feat in (
+        ("fg3_pct", "FG3_PCT"), ("ft_pct", "FT_PCT"), ("ts_pct", "TS_PCT"),
+        ("usg_pct", "USG_PCT"), ("pie", "PIE"),
+    ):
+        feats[feat] = pkg._num(row.get(col))
+    return feats
+
+
+def _era_pool(con, start_season: str | None, end_season: str | None) -> list[dict[str, Any]]:
+    where = "gp >= 25 AND gp * min >= 500"
+    params: list[Any] = []
+    if start_season:
+        where += " AND _season >= ?"
+        params.append(start_season)
+    if end_season:
+        where += " AND _season <= ?"
+        params.append(end_season)
+    frame = con.execute(
+        f"SELECT player_id, player_name, team_abbreviation, _season, age, gp, min, "
+        f"pts, reb, ast, stl, blk, tov, fg3a, fta, fg3_pct, ft_pct, ts_pct, usg_pct, pie "
+        f"FROM silver_hist_player_seasons WHERE {where}", params).fetchdf()
+    pool: list[dict[str, Any]] = []
+    for row in frame.to_dict(orient="records"):
+        feats = _era_feats(row)
+        if all(feats[f] is not None for f in _ERA_COUNTING_FEATURES_REQUIRED):
+            pool.append({
+                "sid": f"{row['player_id']}:{row['_season']}",
+                "pid": row["player_id"],
+                "name": row["player_name"],
+                "team": row["team_abbreviation"],
+                "season": row["_season"],
+                "age": row["age"],
+                "feats": feats,
+            })
+    return pool
+
+
+_ERA_COUNTING_FEATURES_REQUIRED = ["PTS36", "REB36", "AST36"]
+
+
+def _era_season_stats(pool: list[dict[str, Any]], features: list[str]) -> dict[str, dict[str, tuple[float, float]]]:
+    import math
+
+    by_season: dict[str, dict[str, list[float]]] = {}
+    for e in pool:
+        slot = by_season.setdefault(e["season"], {f: [] for f in features})
+        for f in features:
+            v = e["feats"].get(f)
+            if isinstance(v, (int, float)):
+                slot[f].append(float(v))
+    stats: dict[str, dict[str, tuple[float, float]]] = {}
+    for season, slots in by_season.items():
+        per: dict[str, tuple[float, float]] = {}
+        for f, vals in slots.items():
+            if len(vals) >= 2:
+                mean = sum(vals) / len(vals)
+                var = sum((v - mean) ** 2 for v in vals) / len(vals)
+                if var > 0:
+                    per[f] = (mean, math.sqrt(var))
+        stats[season] = per
+    return stats
+
+
+def _era_z(e: dict[str, Any], stats: dict[str, dict[str, tuple[float, float]]], kept: list[str]) -> dict[str, float]:
+    per = stats.get(e["season"], {})
+    z: dict[str, float] = {}
+    for f in kept:
+        v = e["feats"].get(f)
+        if isinstance(v, (int, float)) and f in per:
+            mean, sd = per[f]
+            z[f] = (float(v) - mean) / sd
+        else:
+            z[f] = 0.0
+    return z
+
+
+@tool(
+    description="Cross-era statistical neighbors for one player's season. "
+    "Compares the target season's per-36 box-score shape and efficiency "
+    "profile against every qualified player-season in the warehouse "
+    "(1996-97 onward), with each feature z-scored within its own season so "
+    "the match is era-relative shape, not raw level. Optional start_season/"
+    "end_season window (e.g. '2003-04' to '2010-11') narrows the candidate "
+    "pool. Same-season-only comps live in get_comps."
+)
+def get_era_comps(player_id: str | int, season: str | None = None, k: int = 5,
+                  start_season: str | None = None, end_season: str | None = None) -> dict[str, Any]:
+    import math
+
+    pkg = _pkg()
+    season = pkg.resolve_season(season)
+    try:
+        k = max(1, min(int(k or 5), 15))
+    except (TypeError, ValueError):
+        k = 5
+    try:
+        pid = pkg.coerce_player_id(player_id)
+    except ValueError as exc:
+        return {"tool": "get_era_comps", "ok": False, "error": str(exc)}
+
+    try:
+        con = pkg.store.connect(read_only=True)
+    except Exception as exc:
+        return {"tool": "get_era_comps", "ok": False,
+                "error": f"warehouse unavailable: {exc}"[:240]}
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_player_seasons" not in tables:
+            return {"tool": "get_era_comps", "ok": False,
+                    "error": "silver_hist_player_seasons not loaded; era comps unavailable"}
+        pool = _era_pool(con, start_season or None, end_season or None)
+        target = next((e for e in pool if str(e["pid"]) == str(pid) and e["season"] == season), None)
+        if target is None:
+            target_row = con.execute(
+                "SELECT player_id, player_name, team_abbreviation, _season, age, gp, min, "
+                "pts, reb, ast, stl, blk, tov, fg3a, fta, fg3_pct, ft_pct, ts_pct, usg_pct, pie "
+                "FROM silver_hist_player_seasons WHERE player_id = ? AND _season = ?",
+                [pid, season]).fetchone()
+            if not target_row:
+                span = con.execute("SELECT min(_season), max(_season) FROM silver_hist_player_seasons").fetchone()
+                return {
+                    "tool": "get_era_comps", "ok": False,
+                    "error": (f"no qualifying season for player {pid} in {season}; "
+                              f"era comps pool covers {span[0]} through {span[1]} with gp>=25, min>=500"),
+                }
+            cols = ["player_id", "player_name", "team_abbreviation", "_season", "age", "gp", "min",
+                    "pts", "reb", "ast", "stl", "blk", "tov", "fg3a", "fta",
+                    "fg3_pct", "ft_pct", "ts_pct", "usg_pct", "pie"]
+            row = dict(zip(cols, target_row))
+            target = {"sid": f"{pid}:{season}", "pid": pid, "name": row["player_name"],
+                      "team": row["team_abbreviation"], "season": season,
+                      "age": row["age"], "feats": _era_feats(row)}
+    finally:
+        con.close()
+
+    if not pool:
+        return {"tool": "get_era_comps", "ok": False,
+                "error": "era comps pool is empty"}
+
+    features = [f for f in _ERA_FEATURES
+                if sum(1 for e in pool if isinstance(e["feats"].get(f), (int, float))) >= 2]
+    if not features:
+        return {"tool": "get_era_comps", "ok": False,
+                "error": "no comparable features across eras"}
+    stats = _era_season_stats(pool, features)
+    kept = [f for f in features
+            if f in stats.get(target["season"], {}) or isinstance(target["feats"].get(f), (int, float))]
+    if not kept:
+        return {"tool": "get_era_comps", "ok": False,
+                "error": "no comparable features across eras"}
+
+    zt = _era_z(target, stats, kept)
+    scored = []
+    for e in pool:
+        if str(e["pid"]) == str(pid):
+            continue
+        ze = _era_z(e, stats, kept)
+        dist = math.sqrt(sum((zt[f] - ze[f]) ** 2 for f in kept))
+        scored.append((dist, e, ze))
+    scored.sort(key=lambda t: t[0])
+
+    pct_round = {f for f in kept if f.endswith("_PCT")}
+    target_arch = _comps_archetype(target["feats"])
+    rows = []
+    for dist, e, ze in scored[:k]:
+        order = sorted(kept, key=lambda f: abs(zt[f] - ze[f]))[:3]
+        drivers = []
+        for feat in order:
+            nd = 3 if feat in pct_round else 1
+            tv, cv = target["feats"].get(feat), e["feats"].get(feat)
+            drivers.append({
+                "stat": LABELS.get(feat, feat),
+                "target": round(float(tv), nd) if isinstance(tv, (int, float)) else None,
+                "comp": round(float(cv), nd) if isinstance(cv, (int, float)) else None,
+            })
+        arch = _comps_archetype(e["feats"])
+        rows.append({
+            "PLAYER": e["name"],
+            "PLAYER_ID": e["pid"],
+            "TEAM": e["team"],
+            "season": e["season"],
+            "age": e["age"],
+            "similarity": round(100 / (1 + dist / 20), 1),
+            "archetype": arch,
+            "shared_archetype": arch == target_arch,
+            "drivers": drivers,
+        })
+    return {
+        "tool": "get_era_comps",
+        "ok": True,
+        "player": {"name": target["name"], "id": pid, "season": season,
+                   "archetype": target_arch},
+        "rows": rows,
+        "meta": {
+            "source": "warehouse:silver_hist_player_seasons",
+            "season": season,
+            "window": [start_season, end_season],
+            "features": kept,
+            "candidates": len(pool),
+            "similarity": "100/(1+d/20); d = Euclidean distance over within-season z-scores",
+            "normalization": "each feature standardized within its own season's qualified pool",
+        },
+    }
