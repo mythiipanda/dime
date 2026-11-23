@@ -88,7 +88,7 @@ test("generative replay is development-only and completes through the real strea
     await replayStream("generative", { onEvent: (type, data) => stream.handle(type, data), onDone: () => stream.finish(), onError: message => assert.fail(message) });
     assert.equal(stream.snapshot().done, true);
     assert.match(stream.snapshot().text, /Fictional players/);
-    assert.deepEqual(stream.snapshot().artifacts.map(a => a.kind), ["player_card", "chart", "table", "compare", "scatter", "shot_chart", "team_card", "memo"]);
+    assert.deepEqual(stream.snapshot().artifacts.map(a => a.kind), ["player_card", "chart", "chart", "table", "compare", "scatter", "shot_chart", "team_card", "memo"]);
   } finally { Object.assign(process.env, { NODE_ENV: previous }); }
 });
 
