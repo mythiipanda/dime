@@ -153,6 +153,23 @@ test("streamed chart artifacts render custom unit and xLabels", () => {
   assert.ok(html.includes("Dec"), html);
 });
 
+test("streamed bar charts render marks, annotations and axis labels", () => {
+  const html = render({
+    kind: "chart",
+    title: "Five spots clear a full max slot",
+    variant: "bar",
+    unit: "$M",
+    xLabels: ["DET", "CHI", "ORL"],
+    xLabel: "Practical cap space",
+    series: [{ name: "2026 practical space", values: [74.2, 63.1, 54.6], tone: "accent" }],
+    marks: [{ value: 54.45, label: "Max-slot threshold" }],
+    annotations: [{ index: 2, text: "ORL is the last team that clears a full max" }],
+    labelValues: true,
+  });
+  assert.ok(html.includes("recharts-responsive-container"), html.slice(0, 120));
+  assert.ok(html.includes("ORL is the last team that clears a full max"), html);
+});
+
 test("streamed shot chart artifacts render a court", () => {
   const html = render({
     kind: "shot_chart",

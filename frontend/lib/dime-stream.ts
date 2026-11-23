@@ -1,6 +1,8 @@
 export type {
   ArtifactEvent,
+  ChartAnnotation,
   ChartArtifactPayload,
+  ChartMark,
   ChartSeriesPayload,
   ChartTone,
   CompareArtifactPayload,

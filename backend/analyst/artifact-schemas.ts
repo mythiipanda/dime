@@ -50,6 +50,16 @@ const scatterPointSchema = Type.Object({
     highlight: Type.Optional(Type.Boolean())
 }, { additionalProperties: false });
 
+const chartMarkSchema = Type.Object({
+    value: numberValue,
+    label: label
+}, { additionalProperties: false });
+
+const chartAnnotationSchema = Type.Object({
+    index: Type.Integer({ minimum: 0 }),
+    text: label
+}, { additionalProperties: false });
+
 const artifactSchemas = {
     table: Type.Object({
         kind: Type.Literal("table"),
@@ -68,9 +78,16 @@ const artifactSchemas = {
     chart: Type.Object({
         kind: Type.Literal("chart"),
         title: label,
+        subtitle: optionalLabel,
+        variant: Type.Optional(Type.Union([Type.Literal("line"), Type.Literal("bar")])),
         series: Type.Array(chartSeriesSchema, { minItems: 1 }),
         unit: optionalLabel,
         xLabels: Type.Optional(Type.Array(label)),
+        xLabel: optionalLabel,
+        yLabel: optionalLabel,
+        marks: Type.Optional(Type.Array(chartMarkSchema)),
+        annotations: Type.Optional(Type.Array(chartAnnotationSchema)),
+        labelValues: Type.Optional(Type.Boolean()),
         footnote: optionalLabel
     }, { additionalProperties: false }),
     shot_chart: Type.Object({
