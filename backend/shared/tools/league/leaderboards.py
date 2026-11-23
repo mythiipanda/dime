@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 from ._helpers import _pkg
 
 
-@tool(description='Current rookie class leaderboard (first-year NBA players only).\n\nRookies are defined structurally: a player in the current-season\nstats table with NO row in any prior season (hist or warehouse).\nNever an age proxy, never historical seasons (F46: a "rookies 20+\nppg" query answered from 2023-24 listed Edwards/LaMelo/Wemby; the\nright answer was the current draft class, e.g. Cooper Flagg).\nstat is a per-game column: ppg, rpg, apg, spg, bpg, mpg.')
+@tool(description='Current-season NBA rookie leaderboard: first-year players already in the league.\n\nRookies are defined structurally: a player in the current-season\nstats table with NO row in any prior season (hist or warehouse).\nNever an age proxy, never historical seasons (F46: a "rookies 20+\nppg" query answered from 2023-24 listed Edwards/LaMelo/Wemby; the\nright answer was the season\'s actual first-year players, e.g. Cooper Flagg).\nstat is a per-game column: ppg, rpg, apg, spg, bpg, mpg.\nREACH FOR THIS for "best rookies" or any ask about players already\ndebuted in the NBA. Draft prospects are NOT rookies: for the\nupcoming class ("2027 prospects", "mock/big board", college pool)\nuse get_draft_board, get_prospect or get_draft_model.')
 def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
                        min_gp: int = 10, limit: int = 15,
                        season: str | None = None) -> dict[str, Any]:
