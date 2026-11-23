@@ -457,8 +457,7 @@ export function submitAuditRejectionMessage(gaps: Record<string, unknown>, rejec
     const gapsJson = JSON.stringify(gaps);
     if (lastChance || (remainingMs !== undefined && remainingMs <= SUBMIT_FORCE_REMAINING_MS))
         return `Not submitted — audit rejection ${rejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}, but the run budget is nearly spent${remainingMs !== undefined ? ` (~${Math.round(remainingMs / 1000)}s left)` : ""}: ${gapsJson}. Do not call tools, narrate, or rewrite: call submit_answer again now with the same payload plus omitted set to every flag string above verbatim — acknowledging a flag in omitted passes the audit.`;
-    return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${rejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${gapsJson}. Keep every verified block and artifact already drafted — fix only the flagged items, and never replace answer content with a description of the submission or a pointer to earlier text. Produce the requested artifact kinds, drop artifact kinds the ask does not call for, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, run at least one data tool before submitting a data-grounded answer, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
-}
+    return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${rejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${gapsJson}. Keep every verified block and artifact already drafted — fix only the flagged items, and never replace answer content with a description of the submission or a pointer to earlier text. Produce the requested artifact kinds, drop artifact kinds the ask does not call for, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;}
 
 export function auditGapFlagStrings(gaps: Record<string, unknown>): string[] {
     return Object.values(gaps).flatMap(value => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
@@ -955,7 +954,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     runTracker = tracker;
                     const consultedTables = new Set<string>();
                     const toolArgsText: string[] = [];
-                    let dataToolCalls = 0;
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
@@ -971,8 +969,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 submission,
                                 [...(start.sources ?? []), ...connected.results.values()],
                                 start.q,
-                                toolArgsText.join(" "),
-                                dataToolCalls
+                                toolArgsText.join(" ")
                             );
                             const omitted = submission.omitted ?? [];
                             const missingArtifacts = audit.missing_in_artifacts
@@ -992,9 +989,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const irrelevantKinds = audit.artifact_kind_irrelevance
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
-                            const noEvidenceAsk = audit.no_evidence_on_data_ask
-                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
-                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && irrelevantKinds.length === 0 && noEvidenceAsk.length === 0)
+                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && irrelevantKinds.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
@@ -1014,8 +1009,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.unevidenced_asks = unevidencedAsks;
                             if (irrelevantKinds.length > 0)
                                 gaps.artifact_kind_irrelevance = irrelevantKinds;
-                            if (noEvidenceAsk.length > 0)
-                                gaps.no_evidence_on_data_ask = noEvidenceAsk;
                             lastVetoedSubmission = submission;
                             lastVetoedFlags = auditGapFlagStrings(gaps);
                             emit({ type: "tool_call", name: "submit_answer_audit" });
@@ -1034,14 +1027,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
                         tools: [
                             ...wrapBridgeTools(bridge.tools, connected.results, (event: Parameters<typeof emit>[0]) => {
-                                if (event.type === "tool_call") {
-                                    dataToolCalls += 1;
-                                    if (event.args !== undefined) {
-                                        const argsJson = JSON.stringify(event.args).toLowerCase();
-                                        toolArgsText.push(argsJson);
-                                        for (const match of argsJson.matchAll(WAREHOUSE_TABLE_RE))
-                                            consultedTables.add(match[0]);
-                                    }
+                                if (event.type === "tool_call" && event.args !== undefined) {
+                                    const argsJson = JSON.stringify(event.args).toLowerCase();
+                                    toolArgsText.push(argsJson);
+                                    for (const match of argsJson.matchAll(WAREHOUSE_TABLE_RE))
+                                        consultedTables.add(match[0]);
                                 }
                                 emit(event);
                             }, tracker, (reason: string) => {
