@@ -555,6 +555,60 @@
         "type": "object"
       }
     },
+    "get_availability_impact": {
+      "name": "get_availability_impact",
+      "description": "Game-level availability impact: split a team's results into the games a player played versus the games they missed (game counts, record, win pct, average margin). Pass a player for the single-player split; add teammate to split that player's own per-game scoring/FGA/plus-minus by the teammate's presence; or leave player empty for a league-wide ranking of high-minute one-team players by win-rate drop when sitting (min_minutes/min_missed qualifiers). Warehouse coverage: 2015-16 onward, regular season.",
+      "args_schema": {
+        "description": "Game-level availability splits: a team's record, win pct, and average margin in games a player played vs missed; optional teammate-presence per-game scoring split; or a league-wide win-drop ranking when player is blank. Warehouse 2015-16+.",
+        "properties": {
+          "player": {
+            "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
+            "title": "Player",
+            "type": "string"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season"
+          },
+          "teammate": {
+            "default": "",
+            "description": "Optional second player; splits the first player's own per-game PTS/FGA/plus-minus by this teammate's presence. Default: .",
+            "title": "Teammate",
+            "type": "string"
+          },
+          "min_minutes": {
+            "default": 28.0,
+            "description": "Minimum minutes floor. Default: 28.0.",
+            "title": "Min Minutes",
+            "type": "number"
+          },
+          "min_missed": {
+            "default": 15,
+            "description": "Ranking mode only: minimum games missed to qualify. Default: 15.",
+            "title": "Min Missed",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 5,
+            "description": "Maximum rows returned. Default: 5.",
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "get_availability_impact",
+        "type": "object"
+      }
+    },
     "get_shot_zones": {
       "name": "get_shot_zones",
       "description": "Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones below min_attempts (default 50, clamped 10..200) are excluded. Warehouse-backed with live fallback.",

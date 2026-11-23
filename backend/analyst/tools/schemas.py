@@ -54,6 +54,7 @@ WAREHOUSE_ALTERNATIVES = {
 }
 
 TOOL_SCHEMA_DESCRIPTIONS = {
+    "get_availability_impact": "Game-level availability splits: a team's record, win pct, and average margin in games a player played vs missed; optional teammate-presence per-game scoring split; or a league-wide win-drop ranking when player is blank. Warehouse 2015-16+.",
     "get_award_results": "Historical recorded NBA award voting results.",
     "get_briefing": "Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest.",
     "get_cap_ledger": "Payroll, luxury tax position, and first/second apron room for one team.",
@@ -287,6 +288,8 @@ TOOL_PARAM_DESCRIPTIONS = {
     ("get_finder", "mode"): "'streak', 'versus', 'span', 'player_streak', or 'head2head'. Default: {d}.",
     ("get_streaks", "mode"): "'longest' all-time or 'active' currently running. Default: {d}.",
     ("get_situational_splits", "season_type"): "'regular' or 'playoffs'. Default: {d}.",
+    ("get_availability_impact", "teammate"): "Optional second player; splits the first player's own per-game PTS/FGA/plus-minus by this teammate's presence. Default: {d}.",
+    ("get_availability_impact", "min_missed"): "Ranking mode only: minimum games missed to qualify. Default: {d}.",
     ("get_era_comps", "players"): "Comma-separated list.",
     ("get_era_comps", "start_season"): "Pool window start, e.g. '2003-04'.",
     ("get_era_comps", "end_season"): "Pool window end, e.g. '2010-11'.",
