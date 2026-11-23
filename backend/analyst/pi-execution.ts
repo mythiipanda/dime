@@ -924,6 +924,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     let zeroEvidenceRepromptUsed = false;
                     const consultedTables = new Set<string>();
                     const toolArgsText: string[] = [];
+                    let dataToolCalls = 0;
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
@@ -990,6 +991,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         tools: [
                             ...wrapBridgeTools(bridge.tools, connected.results, (event: Parameters<typeof emit>[0]) => {
                                 if (event.type === "tool_call" && event.args !== undefined) {
+                                    dataToolCalls += 1;
                                     const argsJson = JSON.stringify(event.args).toLowerCase();
                                     toolArgsText.push(argsJson);
                                     for (const match of argsJson.matchAll(WAREHOUSE_TABLE_RE))

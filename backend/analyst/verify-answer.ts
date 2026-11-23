@@ -254,6 +254,42 @@ const STATS_VOCABULARY: Record<string, StatTerm> = {
 const STAT_TERM_BOUNDARY = (term: string) =>
     new RegExp(`(?<![\\w%+/-])${term.replace(/[.*+?^${}()|[\]\\%]/g, "\\$&")}(?![\\w%+/-])`, "i");
 
+const CAP_ASK_VOCABULARY: string[] = [
+    "salary cap", "cap space", "cap room", "cap sheet", "cap hold", "cap table",
+    "apron", "first apron", "second apron", "hard cap", "hard-capped", "hardcapped",
+    "luxury tax", "tax line", "taxpayer", "tax bill", "tax club",
+    "salary match", "matching band", "matching bands", "salary matching",
+    "trade legality", "legality check", "trade machine",
+    "sign-and-trade", "sign and trade", "trade exception", "tpe",
+    "stepien", "draft capital", "draft-capital", "pick swap", "swap rights",
+    "unprotected first", "protected pick", "pick protections", "consecutive first",
+    "mid-level", "midlevel", "mle", "bi-annual exception", "bae",
+    "bird rights", "max slot", "max offer", "max contract",
+    "extension-eligible", "extension eligible", "cap flexibility", "dead money",
+    "trade kicker", "aggregating", "aggregation", "free-agent class", "fa class",
+    "seven-year rule", "seven year rule", "committed salary", "projected room",
+];
+
+export function isCapAsk(question: string | undefined): boolean {
+    if (!question)
+        return false;
+    const normalized = question.toLowerCase().replace(/_/g, " ");
+    return CAP_ASK_VOCABULARY.some(form => STAT_TERM_BOUNDARY(form).test(normalized));
+}
+
+export function isDataAsk(question: string | undefined): boolean {
+    if (!question)
+        return false;
+    if ((question.match(WAREHOUSE_TABLE_RE) ?? []).length > 0)
+        return true;
+    if ((question.match(EVIDENCE_ANCHOR_RE) ?? []).some(token => !ASK_STOPWORDS.has(token.toLowerCase())))
+        return true;
+    for (const term of Object.values(STATS_VOCABULARY))
+        if (term.ask.some(form => STAT_TERM_BOUNDARY(form).test(question)))
+            return true;
+    return false;
+}
+
 export function auditMetricCoverage(
     question: string,
     input: Pick<AnswerSubmission, "blocks" | "artifacts">
