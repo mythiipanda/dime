@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from .. import store as _store
 from .team import _hist_lineup_rows, _lineup_key
 from ..sources import nba_stats
-from ._core import MAX_ROWS, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id, resolve_season
+from ._core import MAX_ROWS, TTL_PBPSTATS, InvalidSeasonError, _coerce_player_id_cached, _warehouse_or_live, clamp_season, coerce_team_id, resolve_season
 
 BLOWOUT_MARGIN = 20
 BLOWOUT_SHARE_FLAG = 0.5
@@ -191,17 +191,18 @@ def _fetch_lineup_inputs(
     )
     return rows, meta, _safe_aggs(team_id, season)
 
-@tool(description='Five-man lineup ratings with sample floors. Names, abbrevs, or ids.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default.')
+@tool(description='Per-unit five-man lineup ratings with possession floors for one team. Names, abbrevs, or ids. For all qualifying units sorted by minutes use get_lineups; for the league-wide board use get_lineup_leaders.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default.')
 def get_lineup_stats(
     team: str | int, season: str | None = None, min_possessions: int = 100,
     include_small: bool = False, limit: int = 10,
 ) -> dict[str, Any]:
     season = resolve_season(season)
     try:
+        season = clamp_season(season)
         team_id = coerce_team_id(team)
-    except ValueError as exc:
+    except (InvalidSeasonError, ValueError) as exc:
         return {"tool": "get_lineup_stats", "ok": False,
-                "error": str(exc)[:160]}
+                "error": str(exc)[:240]}
     current = season == resolve_season(None)
     if current:
         rows, meta, agg = _fetch_lineup_inputs(team_id, season)
@@ -304,3 +305,112 @@ def get_lineup_stats(
                 "data_note": data_note + (f"; {warning}" if warning else "")}
     return {"tool": "get_lineup_stats", "ok": True, "rows": visible,
             "best_net_unit": best, "meta": meta_out}
+
+
+def _lineup_onoff_sql(n_pids: int) -> str:
+    slot_terms = " + ".join(
+        f"CAST((CASE WHEN offense_team_id = ? THEN off_player_{i} ELSE def_player_{i} END)"
+        f" IN ({','.join(['?'] * n_pids)}) AS INTEGER)"
+        for i in range(1, 6))
+    return (
+        "SELECT on_floor,"
+        " COUNT(*) FILTER (offense_team_id = ?) AS off_poss,"
+        " COUNT(*) FILTER (offense_team_id <> ?) AS def_poss,"
+        " COALESCE(SUM(points) FILTER (offense_team_id = ?), 0) AS pf,"
+        " COALESCE(SUM(points) FILTER (offense_team_id <> ?), 0) AS pa,"
+        " COUNT(*) FILTER (ABS(margin) >= ?) AS blowout"
+        " FROM ("
+        " SELECT offense_team_id, COALESCE(points, 0) AS points,"
+        f" CASE WHEN ({slot_terms}) >= {n_pids} THEN 1 ELSE 0 END AS on_floor,"
+        " COALESCE(SUM(CASE WHEN offense_team_id = ?"
+        " THEN COALESCE(points, 0) ELSE 0 END) OVER w"
+        " - SUM(CASE WHEN offense_team_id <> ?"
+        " THEN COALESCE(points, 0) ELSE 0 END) OVER w, 0) AS margin"
+        " FROM silver_hist_possessions"
+        " WHERE _season = ? AND (offense_team_id = ? OR defense_team_id = ?)"
+        " AND count_as_possession = 'true'"
+        " AND (garbage IS NULL OR garbage = 0)"
+        " AND ((offense_team_id = ?"
+        " AND off_player_1 IS NOT NULL AND off_player_2 IS NOT NULL"
+        " AND off_player_3 IS NOT NULL AND off_player_4 IS NOT NULL"
+        " AND off_player_5 IS NOT NULL)"
+        " OR (offense_team_id <> ? AND defense_team_id = ?"
+        " AND def_player_1 IS NOT NULL AND def_player_2 IS NOT NULL"
+        " AND def_player_3 IS NOT NULL AND def_player_4 IS NOT NULL"
+        " AND def_player_5 IS NOT NULL))"
+        " WINDOW w AS (PARTITION BY game_id ORDER BY possession_number"
+        " ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)"
+        " ) GROUP BY on_floor"
+    )
+
+
+@tool(description='On/off-court splits for an arbitrary 2-5 player combination on one team, computed from possession-level data. Names or ids, comma-separated. For single-player splits use get_on_off; for a named two-player pair use get_wowy; for whole-lineup ratings use get_lineup_stats.\n\nReturns possessions, points for/against, and per-100 OFF/DEF/NET ratings\nfor the unit together versus all other possessions by that team, plus\nthe on-minus-off delta. Possessions flagged as garbage time are excluded.\nUnits under min_possessions (default 100) are flagged as tiny-sample, not\ndropped; blowout-heavy splits are flagged at the same share rule as\nget_lineup_stats.')
+def get_lineup_on_off(
+    team: str | int, players: str = "", season: str | None = None,
+    min_possessions: int = 100,
+) -> dict[str, Any]:
+    season = resolve_season(season)
+    names = [p.strip() for p in players.split(",") if p.strip()]
+    if not 2 <= len(names) <= 5:
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
+                "error": "pass 2 to 5 comma-separated player names or ids"}
+    try:
+        team_id = coerce_team_id(team)
+    except Exception as e:
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [], "error": str(e)}
+    pids: list[int] = []
+    for name in names:
+        try:
+            pid = int(name) if name.strip().isdigit() else int(_coerce_player_id_cached(name))
+        except Exception as e:
+            return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
+                    "error": f"could not resolve player '{name}': {e}"}
+        if pid not in pids:
+            pids.append(pid)
+    sql = _lineup_onoff_sql(len(pids))
+    params = ([team_id, team_id, team_id, team_id, BLOWOUT_MARGIN]
+              + [v for _ in range(5) for v in [team_id, *pids]]
+              + [team_id, team_id, season, team_id, team_id,
+                 team_id, team_id, team_id])
+    try:
+        rows = _store._read_df(sql, params)
+    except Exception as e:
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
+                "error": f"possession query failed: {e}"}
+    if not rows:
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
+                "error": f"no possession data for team {team_id} in {season}"}
+    agg = {1: {"off_poss": 0, "def_poss": 0, "pf": 0, "pa": 0, "blowout": 0},
+           0: {"off_poss": 0, "def_poss": 0, "pf": 0, "pa": 0, "blowout": 0}}
+    for r in rows:
+        bucket = agg[int(r["on_floor"] or 0)]
+        for k in bucket:
+            bucket[k] += int(r[k] or 0)
+    if agg[1]["off_poss"] + agg[1]["def_poss"] == 0:
+        return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
+                "error": f"{players} never shared the floor for this team in {season}"}
+    on, off = agg[1], agg[0]
+    on_rat = _ratings(on["pf"], on["off_poss"], on["pa"], on["def_poss"])
+    off_rat = _ratings(off["pf"], off["off_poss"], off["pa"], off["def_poss"])
+    poss = on["off_poss"] + on["def_poss"]
+    blowout_share = round(on["blowout"] / poss, 3) if poss else 0.0
+    flags = _flags(poss, blowout_share, min_possessions, False)
+    delta = {"NET_RATING": round(on_rat["NET_RATING"] - off_rat["NET_RATING"], 1),
+             "OFF_RATING": round(on_rat["OFF_RATING"] - off_rat["OFF_RATING"], 1),
+             "DEF_RATING": round(on_rat["DEF_RATING"] - off_rat["DEF_RATING"], 1)}
+    on_row = {"state": "on", **on, **on_rat, "poss": poss,
+              "blowout_share": blowout_share}
+    off_row = {"state": "off", **off, **off_rat,
+               "poss": off["off_poss"] + off["def_poss"]}
+    return {"tool": "get_lineup_on_off", "ok": True,
+            "team_id": team_id, "season": season,
+            "players": [{"player_id": p, "name": n} for p, n in zip(pids, names)],
+            "rows": [on_row, off_row],
+            "columns": ["state", "off_poss", "def_poss", "pf", "pa", "poss",
+                        "OFF_RATING", "DEF_RATING", "NET_RATING", "blowout_share"],
+            "on": on_row, "off": off_row,
+            "delta": delta, "flags": flags,
+            "meta": {"sample_floor": f"{min_possessions} possessions",
+                     "scope": ("possession-level on/off for the named "
+                               "combination; garbage time excluded; "
+                               "ratings per 100 possessions")}}

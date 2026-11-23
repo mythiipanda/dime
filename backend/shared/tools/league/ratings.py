@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from langchain_core.tools import tool
 
-from .._core import clamp_scope, clamp_season
+from .._core import clamp_scope, clamp_season, team_error_message
 from ..prediction import (
     RATINGS_LIVE,
     RATINGS_STORED,
@@ -129,12 +129,31 @@ def _ratings_available_seasons() -> list[str]:
         return []
 
 
+_METRIC_ALIASES = {
+    "OFF": "OFF_RATING", "OFFENSE": "OFF_RATING", "OFFENSIVE": "OFF_RATING",
+    "ORTG": "OFF_RATING", "DEF": "DEF_RATING", "DEFENSE": "DEF_RATING",
+    "DEFENSIVE": "DEF_RATING", "DRTG": "DEF_RATING", "NET": "NET_RATING",
+    "NRTG": "NET_RATING", "NETRTG": "NET_RATING", "NET_RATING": "NET_RATING",
+    "PACE": "PACE", "TS": "TS_PCT", "TS%": "TS_PCT", "TS_PCT": "TS_PCT",
+    "TRUE_SHOOTING": "TS_PCT", "TOV": "TM_TOV_PCT", "TOV_PCT": "TM_TOV_PCT",
+    "TM_TOV": "TM_TOV_PCT", "OFF_RATING": "OFF_RATING",
+    "DEF_RATING": "DEF_RATING",
+}
+
+_DIRECTION_ALIASES = {
+    "desc": "desc", "descending": "desc", "high": "desc", "highest": "desc",
+    "top": "desc", "best": "desc", "max": "desc",
+    "asc": "asc", "ascending": "asc", "low": "asc", "lowest": "asc",
+    "bottom": "asc", "worst": "asc", "min": "asc",
+}
+
+
 @tool(description='Team ratings, optionally bound to one requested ranked metric.\n\nWhen ``requested_metric`` and ``ranking_direction`` are set, rows are\nordered by that metric field and the payload owns the leader claim.\n``team`` narrows a direct team-ratings question.')
 def get_ratings(
     season: str | None = None,
     team: str = "",
-    requested_metric: _RequestedMetric = "",
-    ranking_direction: _RankingDirection = "",
+    requested_metric: str = "",
+    ranking_direction: str = "",
 ) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season, "silver_team_ratings")
@@ -166,11 +185,17 @@ def get_ratings(
         d["TEAM"] = abbrev.get(r.get("TEAM_ID"), str(r.get("TEAM_NAME") or ""))
         slim.append(d)
     metric = str(requested_metric or "").strip().upper()
-    direction = str(ranking_direction or "").strip().lower()
+    metric = _METRIC_ALIASES.get(metric, metric)
+    direction = _DIRECTION_ALIASES.get(
+        str(ranking_direction or "").strip().lower(),
+        str(ranking_direction or "").strip().lower())
     if metric:
         if metric not in TEAM_RATING_METRICS:
             return {"tool": "get_ratings", "ok": False,
-                    "error": f"unsupported requested_metric: {metric}"}
+                    "error": (f"unsupported requested_metric: "
+                              f"{requested_metric!r}; valid: "
+                              f"{sorted(TEAM_RATING_METRICS)} (aliases like "
+                              f"'net', 'off', 'def', 'ts', 'tov' accepted)")}
         if direction not in RANKING_DIRECTIONS:
             return {"tool": "get_ratings", "ok": False,
                     "error": "ranking_direction must be 'asc' or 'desc'"}
@@ -289,12 +314,48 @@ def get_playoff_team_ratings(
     }
 
 
+_TEAM_FOUR_FACTORS_SQL = """
+WITH games AS (
+    SELECT Team_ID, Game_ID, _season,
+           FGM, FG3M, FGA, FTA, TOV, OREB, DREB,
+           MIN, PTS, WL,
+           split_part(MATCHUP, ' ', 1) AS TEAM
+    FROM silver_team_games
+    WHERE _season = ?
+),
+paired AS (
+    SELECT g.*, o.DREB AS OPP_DREB, o.FGM AS OPP_FGM,
+           o.FG3M AS OPP_FG3M, o.FGA AS OPP_FGA, o.FTA AS OPP_FTA,
+           o.TOV AS OPP_TOV, o.OREB AS OPP_OREB
+    FROM games g
+    JOIN games o ON o.Game_ID = g.Game_ID AND o.Team_ID <> g.Team_ID
+)
+SELECT TEAM, Team_ID, _season, COUNT(*) AS GP,
+       SUM(CASE WHEN WL = 'W' THEN 1 ELSE 0 END) AS W,
+       ROUND((SUM(FGM) + 0.5 * SUM(FG3M)) / NULLIF(SUM(FGA), 0), 4) AS EFG_PCT,
+       ROUND(SUM(TOV) / NULLIF(SUM(FGA) + 0.44 * SUM(FTA) + SUM(TOV), 0), 4) AS TOV_PCT,
+       ROUND(SUM(OREB) / NULLIF(SUM(OREB) + SUM(OPP_DREB), 0), 4) AS ORB_PCT,
+       ROUND(SUM(FTA) / NULLIF(SUM(FGA), 0), 4) AS FT_RATE,
+       ROUND((SUM(OPP_FGM) + 0.5 * SUM(OPP_FG3M)) / NULLIF(SUM(OPP_FGA), 0), 4) AS OPP_EFG_PCT,
+       ROUND(SUM(OPP_TOV) / NULLIF(SUM(OPP_FGA) + 0.44 * SUM(OPP_FTA) + SUM(OPP_TOV), 0), 4) AS OPP_TOV_PCT,
+       ROUND(SUM(DREB) / NULLIF(SUM(DREB) + SUM(OPP_OREB), 0), 4) AS DRB_PCT,
+       ROUND(SUM(OPP_FTA) / NULLIF(SUM(OPP_FGA), 0), 4) AS OPP_FT_RATE
+FROM paired
+GROUP BY TEAM, Team_ID, _season
+ORDER BY EFG_PCT DESC
+"""
+
+_TEAM_FOUR_FACTOR_COLS = (
+    "TEAM", "GP", "W", "EFG_PCT", "TOV_PCT", "ORB_PCT", "FT_RATE",
+    "OPP_EFG_PCT", "OPP_TOV_PCT", "DRB_PCT", "OPP_FT_RATE")
+
+
 @tool(description='Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive\nmirrors), computed offline from warehouse team game rows. Use for\n"why are the Thunder good", "team identity", or any four-factors\nask. Pass a team name/abbrev to scope to one team; empty returns\nthe full 30-team board.')
 def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
     try:
-        _con = pkg.store.connect()
+        _con = pkg.store.connect(read_only=True)
         try:
             tables = {r[0] for r in _con.execute("SHOW TABLES").fetchall()}
         finally:
@@ -303,14 +364,15 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
         return {"tool": "get_team_four_factors", "ok": False,
                 "rows": [], "meta": {},
                 "error": f"warehouse read failed: {str(exc)[:120]}"}
-    if "silver_four_factors_team" not in tables:
+    derived = "silver_four_factors_team" not in tables
+    if derived and "silver_team_games" not in tables:
         return {"tool": "get_team_four_factors", "ok": False,
                 "rows": [], "meta": {"season": season},
                 "error": "warehouse table missing: "
-                         "silver_four_factors_team (run "
-                         "scripts/build_team_four_factors.py)"}
-    where, params = "_season = ?", [season]
+                         "silver_four_factors_team and "
+                         "silver_team_games"}
     team_q = (team or "").strip()
+    team_abbr = ""
     if team_q:
         from nba_api.stats.static import teams as _static
         match = None
@@ -323,15 +385,47 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
         if match is None:
             return {"tool": "get_team_four_factors", "ok": False,
                     "rows": [], "meta": {"season": season},
-                    "error": f"unknown team '{team_q}'"}
-        where += " AND TEAM = ?"
-        params.append(match["abbreviation"])
+                    "error": team_error_message(team_q)}
+        team_abbr = match["abbreviation"]
+    requested_season = season
+    season_fallback = None
     try:
-        rows = pkg.store._read_df(
-            f"SELECT TEAM, GP, W, EFG_PCT, TOV_PCT, ORB_PCT, FT_RATE, "
-            f"OPP_EFG_PCT, OPP_TOV_PCT, DRB_PCT, OPP_FT_RATE "
-            f"FROM silver_four_factors_team WHERE {where} "
-            f"ORDER BY EFG_PCT DESC", params)
+        src_table = ("silver_team_games" if derived
+                     else "silver_four_factors_team")
+        probe = pkg.store.connect(read_only=True)
+        try:
+            has_rows = probe.execute(
+                f"SELECT 1 FROM {src_table} WHERE _season = ? LIMIT 1",
+                [season]).fetchone()
+            if not has_rows:
+                latest = probe.execute(
+                    f"SELECT MAX(_season) FROM {src_table} "
+                    "WHERE _season <= ?", [season]).fetchone()
+                latest = str(latest[0] or "") if latest else ""
+                if latest and latest != season:
+                    season_fallback = latest
+                    season = latest
+        finally:
+            probe.close()
+    except Exception:
+        season_fallback = None
+    try:
+        if derived:
+            raw = pkg.store._read_df(_TEAM_FOUR_FACTORS_SQL, [season])
+            rows = [{k: r.get(k) for k in _TEAM_FOUR_FACTOR_COLS}
+                    for r in raw]
+            if team_abbr:
+                rows = [r for r in rows if r.get("TEAM") == team_abbr]
+        else:
+            where, params = "_season = ?", [season]
+            if team_abbr:
+                where += " AND TEAM = ?"
+                params.append(team_abbr)
+            rows = pkg.store._read_df(
+                f"SELECT TEAM, GP, W, EFG_PCT, TOV_PCT, ORB_PCT, FT_RATE, "
+                f"OPP_EFG_PCT, OPP_TOV_PCT, DRB_PCT, OPP_FT_RATE "
+                f"FROM silver_four_factors_team WHERE {where} "
+                f"ORDER BY EFG_PCT DESC", params)
     except Exception as exc:
         return {"tool": "get_team_four_factors", "ok": False,
                 "rows": [], "meta": {"season": season},
@@ -340,12 +434,17 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
         return {"tool": "get_team_four_factors", "ok": False,
                 "rows": [], "meta": {"season": season},
                 "error": f"no four-factors rows for {season}"}
-    meta = {"season": season, "source": "warehouse",
+    meta = {"season": season,
+            "source": "warehouse:silver_team_games" if derived else "warehouse",
+            "derived_from": "silver_team_games" if derived else None,
             "rows": len(rows),
             "note": "computed offline from silver_team_games box "
                     "scores; eFG% = (FGM + 0.5*FG3M)/FGA, TOV% per "
                     "possession estimate, ORB% vs opponent DREB, "
-                    "FTr = FTA/FGA. Quote figures verbatim."}
+                    "FTr = FTA/FGA. Quote figures verbatim.",
+            **({"requested_season": requested_season,
+                "season_fallback": season_fallback}
+               if season_fallback else {})}
     if team_q and rows:
         r0 = rows[0]
         meta["leader_line"] = (
@@ -373,7 +472,7 @@ def get_hustle(scope: str = "player", season: str | None = None) -> dict[str, An
 def get_rapm(player: str = "", top: int = 10, season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_rapm" not in tables:
@@ -484,7 +583,7 @@ def get_impact_rank(player: str = "", season: str | None = None) -> dict[str, An
 def get_rest(team_abbrev: str = "", season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:
@@ -556,7 +655,7 @@ def get_risers(season: str | None = None, weeks: int = 4) -> dict[str, Any]:
     except (TypeError, ValueError):
         weeks = 4
     n = max(5, min(round(weeks * 2.5), 15))
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:
@@ -610,7 +709,7 @@ def get_player_risers(season: str | None = None, n: int = 10) -> dict[str, Any]:
         n = max(5, min(int(n or 10), 15))
     except (TypeError, ValueError):
         n = 10
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_player_gamelogs" not in tables:

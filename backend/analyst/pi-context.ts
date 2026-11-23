@@ -10,7 +10,17 @@ export const modelConfigSchema = Type.Object({
     baseUrl: Type.String({ minLength: 1 }), apiKey: Type.String({ minLength: 1 }),
     contextWindow: Type.Integer({ minimum: 1 }), maxTokens: Type.Integer({ minimum: 1 }),
     headers: Type.Optional(Type.Record(Type.String(), Type.String())),
-    compat: Type.Optional(Type.Object({ requiresReasoningContentOnAssistantMessages: Type.Optional(Type.Boolean()) })),
+    reasoning: Type.Optional(Type.Boolean()),
+    compat: Type.Optional(Type.Object({
+        requiresReasoningContentOnAssistantMessages: Type.Optional(Type.Boolean()),
+        thinkingFormat: Type.Optional(Type.Union([
+            Type.Literal("openai"), Type.Literal("openrouter"), Type.Literal("deepseek"),
+            Type.Literal("together"), Type.Literal("baseten"), Type.Literal("zai"),
+            Type.Literal("qwen"), Type.Literal("chat-template"), Type.Literal("qwen-chat-template"),
+            Type.Literal("string-thinking"), Type.Literal("ant-ling"),
+        ])),
+        supportsReasoningEffort: Type.Optional(Type.Boolean()),
+    })),
 });
 
 export async function resolvedRuntime(input: unknown) {
@@ -21,7 +31,7 @@ export async function resolvedRuntime(input: unknown) {
     runtime.registerProvider(config.provider, {
         api: config.provider === "gemini" ? "google-generative-ai" : "openai-completions", baseUrl: config.baseUrl, apiKey: config.apiKey, headers: config.headers,
         models: [{
-                id: config.model, name: config.model, input: ["text"], reasoning: false, contextWindow: config.contextWindow, maxTokens: config.maxTokens, compat: config.compat,
+                id: config.model, name: config.model, input: ["text"], reasoning: config.reasoning ?? false, contextWindow: config.contextWindow, maxTokens: config.maxTokens, compat: config.compat,
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
             }]
     });
@@ -35,7 +45,7 @@ export function priorSourceTool(records: SourceRecord[]) {
     const catalogue = new Map(records.map(record => [record.ref, record]));
     return defineTool({
         name: "read_source", label: "Read prior source",
-        description: "Read a prior source by ref from this conversation. Returns {ref, tool, result, isError}. Filter result before returning from codemode; retain ref. Includes units and provenance.",
+        description: "Read a prior source by ref from this conversation. Returns {ref, tool, result, evidence, isError}. evidence is a compact source card; result keeps full rows. Filter result before returning from codemode; retain ref.",
         outputSchema: sourceOutputSchema,
         parameters: Type.Object({ ref: Type.String() }, { additionalProperties: false }),
         async execute(_callId, { ref }) {

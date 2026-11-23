@@ -9,7 +9,7 @@ import { CitationChip } from "../ds/CitationChip";
 import { ThinkingState } from "../ds/ThinkingState";
 import { ToolChips } from "../ds/ToolChips";
 import { StreamingText } from "../ds/StreamingText";
-import { AnswerVerification } from "../site/harness/AnswerView";
+import { AnswerVerification, OmittedNote, StoppedNote } from "../site/harness/AnswerView";
 import { StreamArtifacts } from "../site/harness/ArtifactsView";
 import { useDimeChat } from "../site/harness/useDimeChat";
 import type { ChatMsg } from "../site/harness/types";
@@ -18,10 +18,12 @@ import { citationDetails } from "../../lib/citation-details";
 import { clearWorkflowDraft, createWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft, workflowDraftWasSent, type WorkflowDraft } from "../../lib/workflow-drafts";
 
 export const suggestedPrompts = [
-  "Build a scouting report on Shai Gilgeous-Alexander",
-  "What changed in the Celtics’ offense this season?",
-  "Find undervalued wings who can defend and shoot",
+  "Can Miami aggregate salaries for Giannis under the apron?",
+  "Which five-man units have the best net rating on the Hornets?",
+  "Compare Jokić and Kennard on efficiency and usage",
 ];
+
+export const replayPrompt = "Build a scouting report on Shai Gilgeous-Alexander";
 
 export function PiAnswer({ text, carry, prefix }: { text: string; carry: VerificationCarry | null; prefix: string }) {
   const sources = new Map((carry?.sources ?? []).map(source => [source.ref, source]));
@@ -39,6 +41,8 @@ export function AssistantTurn({ message, prefix, onFollowUp }: { message: Extrac
   return <article className="assistant-turn">
     <div className="mb-3 flex items-center gap-2 text-[11px] text-ink-3"><Basketball width={14} height={14} /><span>Dime</span></div>
     <PiAnswer text={message.text} carry={message.carry} prefix={prefix} />
+    {message.carry?.submission?.omitted?.length ? <OmittedNote omitted={message.carry.submission.omitted} /> : null}
+    {message.stopped ? <StoppedNote /> : null}
     <StreamArtifacts artifacts={message.artifacts} />
     <AnswerVerification carry={message.carry} artifacts={message.artifacts} prefix={prefix} />
     {message.failure && <div role="alert" className="my-4 rounded-lg border border-red/25 bg-red-tint px-4 py-3 text-[12px] text-red">{message.failure.message}</div>}
@@ -88,7 +92,7 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
   useEffect(() => {
     if (!replay || chat.historyLoading || replayStarted.current) return;
     replayStarted.current = true;
-    chat.submit(suggestedPrompts[0]);
+    chat.submit(replayPrompt);
   }, [replay, chat.historyLoading, chat.submit]);
   const busy = !!chat.live;
   const composer = <PromptBar value={chat.draft} onChange={changeDraft} onSend={chat.submit} onStop={chat.stop} busy={busy || chat.historyLoading} models={chat.modelOptions} model={chat.model} onModelChange={chat.setModel} modelError={chat.modelsError} onRetry={chat.retryModels} providers={chat.providers} modelsLoading={chat.modelsLoading} />;

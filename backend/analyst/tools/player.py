@@ -187,6 +187,18 @@ def register() -> dict[str, Any]:
     from shared.tools.tracking import get_defensive_matchups as _orig_get_defensive_matchups
     from shared.tools.player import get_comps as _orig_get_comps, get_on_off as _orig_get_on_off
     try:
+        from shared.tools.player import get_era_comps as _orig_get_era_comps
+    except ImportError:
+        from backend.shared.tools.player import get_era_comps as _orig_get_era_comps
+    try:
+        from shared.tools.player import get_availability_impact as _orig_get_availability_impact
+    except ImportError:
+        from backend.shared.tools.player import get_availability_impact as _orig_get_availability_impact
+    try:
+        from shared.tools.player import get_on_off_leaders as _orig_get_on_off_leaders
+    except ImportError:
+        from backend.shared.tools.player import get_on_off_leaders as _orig_get_on_off_leaders
+    try:
         from shared.tools.player import (
             get_last_x as _orig_get_last_x,
             get_player_report as _orig_get_player_report,
@@ -239,6 +251,21 @@ def register() -> dict[str, Any]:
             enrich_error("get_rapm", res)
         return res
 
+
+    @tool("get_era_comps", description=_orig_get_era_comps.description)
+    def get_era_comps(player_id: str | int, season: str | None = None, k: int = 5,
+                      start_season: str | None = None, end_season: str | None = None) -> dict:
+        res = call_sync(_orig_get_era_comps, "get_era_comps", {
+            "player_id": player_id, "season": season, "k": k,
+            "start_season": start_season, "end_season": end_season})
+        rows = res.get("rows") if res.get("ok") and isinstance(res.get("rows"), list) else []
+        default_cols = ["PLAYER", "PLAYER_ID", "TEAM", "season", "age", "similarity", "archetype", "shared_archetype", "drivers"]
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else default_cols
+        if not res.get("ok"):
+            enrich_error("get_era_comps", res)
+        return res
+
     @tool("get_comps", description=_orig_get_comps.description)
     def get_comps(player_id: str | int, season: str | None = None, k: int = 5) -> dict:
         res = call_sync(_orig_get_comps, "get_comps", {"player_id": player_id, "season": season, "k": k})
@@ -259,6 +286,41 @@ def register() -> dict[str, Any]:
         res["columns"] = list(rows[0].keys()) if rows else ["Stat", "On", "Off", "On-Off"]
         if not res.get("ok"):
             enrich_error("get_on_off", res)
+        return sanitize_for_wire(res)
+
+    @tool("get_availability_impact", description=_orig_get_availability_impact.description)
+    def get_availability_impact(player: str = "", season: str | None = None,
+                                teammate: str = "", min_minutes: float = 28.0,
+                                min_missed: int = 15, limit: int = 5) -> dict:
+        res = call_sync(_orig_get_availability_impact, "get_availability_impact", {
+            "player": player, "season": season, "teammate": teammate,
+            "min_minutes": min_minutes, "min_missed": min_missed, "limit": limit,
+        })
+        raw_rows = res.get("rows")
+        rows = [r if isinstance(r, dict) else {"value": r} for r in raw_rows] if res.get("ok") and isinstance(raw_rows, list) else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else ["split", "games", "wins", "losses", "win_pct", "avg_margin"]
+        if not res.get("ok"):
+            enrich_error("get_availability_impact", res)
+        return sanitize_for_wire(res)
+
+    @tool("get_on_off_leaders", description=_orig_get_on_off_leaders.description)
+    def get_on_off_leaders(player: str = "", team: str = "", pair: str = "",
+                           season: str | None = None,
+                           min_on_possessions: int = 2500,
+                           min_off_possessions: int = 800,
+                           limit: int = 10) -> dict:
+        res = call_sync(_orig_get_on_off_leaders, "get_on_off_leaders", {
+            "player": player, "team": team, "pair": pair, "season": season,
+            "min_on_possessions": min_on_possessions,
+            "min_off_possessions": min_off_possessions, "limit": limit,
+        })
+        raw_rows = res.get("rows")
+        rows = [r if isinstance(r, dict) else {"value": r} for r in raw_rows] if res.get("ok") and isinstance(raw_rows, list) else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else ["player", "team", "on_poss", "off_poss", "on_net", "off_net", "net_delta"]
+        if not res.get("ok"):
+            enrich_error("get_on_off_leaders", res)
         return sanitize_for_wire(res)
 
     @tool("get_clutch_stats", description=_orig_get_clutch_stats.description)
@@ -419,7 +481,10 @@ def register() -> dict[str, Any]:
     return {
         "get_rapm": get_rapm,
         "get_comps": get_comps,
+        "get_era_comps": get_era_comps,
         "get_on_off": get_on_off,
+        "get_availability_impact": get_availability_impact,
+        "get_on_off_leaders": get_on_off_leaders,
         "get_clutch_stats": get_clutch_stats,
         "get_situational_splits": get_situational_splits,
         "get_playtype_profile": get_playtype_profile,

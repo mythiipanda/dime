@@ -1,18 +1,19 @@
 ---
 name: statistical-modeling
-description: Formulate and fit custom NBA analytical models including Regularized Adjusted Plus-Minus (RAPM), ridge regression shrinkage, win probability, in-game leverage, and Bayesian priors.
+description: Fit, validate, and interpret NBA statistical estimates, including RAPM, shrinkage, weighted regression, clustered uncertainty, and win probability. Use when the decision depends on whether an observed difference is trustworthy.
 ---
 
-# Statistical Modeling & Quantitative Analytics Playbook
+# Statistical modeling and uncertainty
 
-This playbook provides foundational mathematics, algorithms, and implementation procedures for executing advanced quantitative basketball models in Dime's analytical workspace.
+## Specify the comparison before fitting
 
-## 1. Regularized Adjusted Plus-Minus (RAPM)
+1. Define the estimand, eligible cohort, date range, observation grain, weights, and units. Honor the requested method and seed. Verify schema and join keys; compare counts and distinct keys before and after joins and state material exclusions. Uniform duplication inflates totals but cancels in a rate; uneven duplication can bias both. Keep unavailable values separate from zeroes.
+2. Use SQL to prepare the cohort at the right grain and Python to fit or resample it. In `run_python`, `con` is read-only and `np` is NumPy. Aggregate sufficient statistics in SQL when possible; keep full-precision values until display. Assign a compact dict or list of dicts to `out` with estimates, denominators, and diagnostics. Check that the computation succeeded before citing it.
+3. Give the point estimate and a relevant comparator. Show the sample size (including independent clusters when applicable). If inference is warranted, give the interval and its meaning at zero and at the decision threshold. If uncertainty was not estimated, call the gap descriptive; don't imply significance or causality. Identify the specific bias or coverage limit most likely to change the recommendation.
 
-### Mathematical Formulation
-RAPM isolates individual player contributions per 100 possessions by controlling for all 9 other players on the court, home court advantage, and stint duration.
+## Shooting rates: empirical Bayes shrinkage
 
-$$\hat{\beta} = \arg\min_{\beta} \sum_{i=1}^{N} w_i \left( y_i - X_i \beta \right)^2 + \lambda \|\beta\|_2^2$$
+- Fit the prior only on the specified reference cohort, then score the target cohort. Supply one row per eligible player with positive attempts and makes between zero and attempts, using the same shot population for both counts. `mu` comes from the same reference rows as the variance. For an attempt-weighted method of moments, run this helper:
 
 In closed-form matrix notation:
 $$\hat{\beta} = (X^T W X + \lambda I)^{-1} X^T W Y$$
@@ -71,6 +72,17 @@ $$\hat{\theta}_{\text{shrunk}} = \frac{\text{FGM} + \alpha_0}{\text{FGA} + \alph
   - $\beta_0 = (1 - 0.360) \times 300 = 192$
   - A player shooting 15-for-30 ($50.0\%$) shrinks to $\frac{15 + 108}{30 + 300} = \frac{123}{330} \approx 37.3\%$.
 
+### Estimating the Prior From the Warehouse (Method of Moments)
+
+When a question asks for an empirical-Bayes estimate rather than a hand-picked prior, fit $\mu$ and $M$ from the warehouse instead of assuming them. On `silver_hist_shots` (3PA per player from `shot_value = 3` rows, `game_id LIKE '002%'` for the regular season):
+
+1. Restrict the reference pool to high-volume shooters (e.g. `FG3A >= 100`, optionally joined to `silver_player_season` with `GP >= 20`) so MLE noise doesn't dominate the variance estimate.
+2. Pooled mean: $\mu = \frac{\sum \text{FG3M}}{\sum \text{FG3A}}$ over that pool.
+3. Attempt-weighted sample variance $s^2 = \frac{\sum n_i (p_i - \mu)^2}{\sum n_i}$ with $\bar n$ the mean attempts; then
+$$M = \frac{\mu(1-\mu) - s^2}{s^2 - \mu(1-\mu)/\bar n}$$
+A negative numerator means the pool has less spread than binomial noise — fall back to the fixed prior above.
+4. Shrink each player on the full qualifying cohort ($\text{FG3A} \ge 40$): $\hat\theta = \frac{\text{FG3M} + M\mu}{\text{FG3A} + M}$. Report the shift, not just the shrunk value — the biggest movers are the low-volume players, and stating who moved most carries more meaning than a re-sorted leaderboard.
+
 ---
 
 ## 4. Visual Artifact Guidelines for Modeling
@@ -87,33 +99,80 @@ When presenting modeling results:
 The analyst agent has direct access to the `run_python` tool equipped with preloaded:
 - `con`: Read-only DuckDB connection connected directly to the analytical warehouse.
 - `pl`: Polars library for high-speed tabular manipulation and aggregation.
+- `np`: NumPy for vectorized modeling and resampling.
 - `math` and `statistics`: Standard library mathematical algorithms.
+
+### Warehouse Grain for Shot-Row Modeling
+
+- `silver_hist_shots` carries `person_id` and a display `player_name` (full names like "Michael Porter Jr."). Group by `person_id`, never `player_name` — names are not stable keys across feeds — and when naming a player in the answer, use the exact `player_name` value the warehouse returns rather than a shortened surname form.
+- `silver_player_season` holds only the latest season. For earlier seasons join `silver_hist_player_seasons` on `player_id`; its counting stats are per-game, so cohort thresholds like `FG3A >= 40` come from `COUNT(*)` over shot rows, not the season row.
 
 ### Example: Fitting Bayesian Shrinkage Over Warehouse Rows
 ```python
-# Query players with low attempt counts
-rows = con.execute("""
-    SELECT player, fg3m, fg3a 
-    FROM silver_leaders_pts 
-    WHERE fg3a BETWEEN 10 AND 50
-""").fetchall()
-
-alpha_0 = 108.0
-beta_0 = 192.0
-
-shrunk = []
-for p, fg3m, fg3a in rows:
-    raw_pct = (fg3m / fg3a) * 100.0 if fg3a > 0 else 0.0
-    shrunk_pct = ((fg3m + alpha_0) / (fg3a + alpha_0 + beta_0)) * 100.0
-    shrunk.append({
-        "player": p,
-        "fg3m": fg3m,
-        "fg3a": fg3a,
-        "raw_pct": round(raw_pct, 1),
-        "shrunk_pct": round(shrunk_pct, 1)
-    })
-
-# Assigning to out converts directly into structured rows with columns
-out = pl.DataFrame(shrunk)
+def fit_beta_prior(makes, attempts):
+    k = np.asarray(makes, dtype=float)
+    n = np.asarray(attempts, dtype=float)
+    mu = k.sum() / n.sum()
+    observed_var = np.average((k / n - mu) ** 2, weights=n)
+    noise_var = np.average(mu * (1 - mu) / n, weights=n)
+    latent_var = observed_var - noise_var
+    strength = mu * (1 - mu) / latent_var - 1 if latent_var > 0 else None
+    return {"mu": mu, "M": strength, "observed_var": observed_var, "noise_var": noise_var, "latent_var": latent_var, "players": len(n), "attempts": n.sum()}
 ```
+
+- `mu*(1-mu)/observed_var` is not `M`: it treats binomial noise as skill spread and omits the `- 1`, so the prior is too weak. The Beta shape parameters are `M*mu` and `M*(1-mu)`. If `M` is `None`, report that these moments don't identify a finite strength; disclose any requested floor, cap, or fallback. A supplied fixed prior is not a fitted empirical prior.
+- The posterior mean is `(k + M*mu)/(n + M)`. Report raw and shrunk rates, attempts, and signed `shrunk - raw` in percentage points when ranking shifts. Low-volume rates move more toward the prior; a raw leaderboard is not a reliable ranking of underlying skill.
+
+## Cluster bootstrap: differences of rates
+
+Use whole games or the requested independent unit when events within it are dependent. Build a NumPy array with one row per cluster in stable key order and columns `[a_num, a_den, b_num, b_den]`. Sample the same number of clusters with replacement, retaining repeated draws and both groups from each draw. Recompute the difference of pooled rates, not the mean of the per-cluster percentages. For eFG%, use `FGM + 0.5*3PM` as the numerator.
+
+```python
+def bootstrap_rate_gap(counts, seed, draws):
+    n_clusters = len(counts)
+    if n_clusters < 2:
+        raise ValueError("At least two clusters are required")
+    rng = np.random.default_rng(seed)
+    gaps = []
+    for _ in range(draws):
+        a_num, a_den, b_num, b_den = counts[rng.integers(n_clusters, size=n_clusters)].sum(axis=0)
+        if a_den > 0 and b_den > 0:
+            gaps.append(a_num / a_den - b_num / b_den)
+    if len(gaps) < 2:
+        raise ValueError("Too few draws with both groups represented")
+    return np.std(gaps, ddof=1), np.percentile(gaps, [2.5, 97.5]).tolist(), len(gaps)
+```
+
+Compute the observed gap on original totals. Report the seed, cluster count, requested and usable draws, bootstrap SE, and percentile interval. If many draws lack a denominator, flag the sparse comparison rather than treating the interval as robust. An interval excluding zero need not imply a decision-relevant difference.
+
+## Regularized adjusted plus-minus
+
+- Use the requested exposure and target: possession-level points and stint-level net ratings are not interchangeable. Encode player participation at that grain, keeping rows that contain players outside the fitted cohort unless the specification excludes them. Verify the response center and scale, offense/defense sign convention, exposure weights, and ridge penalty.
+- Use a linear solve for `(X.T @ W @ X + lambda * I) beta = X.T @ W @ y`, not a matrix inverse. With unit weights omit `W`; with a prior mean add `lambda * prior_mean` to the right side. If fitting an intercept, leave it unpenalized. Use a sparse design or accumulate cross-products for large possession sets.
+- Ridge stabilizes estimates from teammates who share most of their minutes, at the cost of shrinking coefficients. Report the row and player counts and the penalty. Compare correlation and rank overlap with a reference on the same matched player population and season; differences in samples, targets, and regularization can affect agreement. Do not present the coefficients as causal effects.
+
+## Weighted regressions and forecasts
+
+- Fit WLS by multiplying the design (including its intercept) and response by `sqrt(w)`, then using least squares. Compute weighted R² as `1 - sum(w*(y-yhat)**2) / sum(w*(y-weighted_mean(y))**2)` when the denominator is positive. For a quadratic, the slope at `x` is `b1 + 2*b2*x`; the vertex `-b1/(2*b2)` is a peak only if `b2 < 0` and is not supported outside the observed range.
+- Distinguish a cross-sectional aging curve from within-player decline. Older players who still clear availability and minutes filters are selected survivors; weighting by minutes further emphasizes players still earning rotation roles. This can flatten apparent late-career decline. Don't use the cohort curve as a player-specific forecast without further checks.
+- For win probability, use only time, score, possession and pregame information available at prediction time. Evaluate chronologically against a simple baseline; for probabilities, check calibration and Brier score. Quantify possession leverage as the change between explicitly defined scoring and stopping scenarios, not as a causal player contribution.
+
+## Explain what changes the decision
+
+- For lineup and on/off gaps, compare possession counts and note teammate, opponent, and game-state mix. A small sample or a different rotation assignment can reverse the apparent ranking. Before recommending a rotation change, distinguish a testable adjustment such as staggering creators from a claim that the raw split proves it would work.
+- For shot mix and trends, separate changes in opportunity share from conversion within each group. Describe the most material phase or inflection, not just the endpoints. A threshold or quadrant partitions the observed cohort; it isn't evidence of a natural cutoff.
+- State the most useful next check when it would alter the decision: a wider sample, a matched comparison, or sensitivity to a plausible filter or model choice. Don't add a model to a descriptive request merely to produce an interval.
 The output can then be directly cited in `submit_answer` and visualized in a `table` or `scatter` artifact.
+
+---
+
+## 6. Cluster Bootstrap With Reproducible Seeds
+
+Shots within a game are correlated, so resample the **game cluster**, not the shot row, when the statistic involves shot outcomes from `silver_hist_shots`.
+
+1. Aggregate each cluster first (per `game_id`: corner-3 makes/attempts, arc-3 makes/attempts, or whatever the statistic needs — corner 3s are `ABS(x_legacy) >= 220 AND y_legacy <= 92.5`).
+2. Pick a seed and a generator and say which you used: the legacy `np.random.seed(seed)` stream and `np.random.default_rng(seed)` produce different draws, so the two are not interchangeable when someone re-runs your numbers.
+3. For each of `B` resamples (1000 is conventional), sum the resampled cluster aggregates and compute the statistic on the pooled totals (e.g. `1.5 * corner_3pm/corner_3pa - 1.5 * arc_3pm/arc_3pa`).
+4. Report `std(ddof=1)` as the standard error and `np.percentile(stats, [2.5, 97.5])` as the 95% CI.
+
+State the cluster unit, the seed, the generator, and `B` alongside the estimate so the number is reproducible.

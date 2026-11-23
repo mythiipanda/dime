@@ -4,16 +4,19 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 
 const policies = {
-    gemini: { models: ["gemini-3.5-flash", "gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash-lite", "gemini-4-hydrogen"], key: "GEMINI_API_KEY", url: "https://generativelanguage.googleapis.com/v1beta" },
-    nvidia: { models: ["z-ai/glm-5.3-flash", "deepseek-ai/deepseek-v4.1-flash"], key: "NVIDIA_NIM_API_KEY", url: "https://integrate.api.nvidia.com/v1" },
+    gemini: { models: ["gemini-3.5-flash", "gemini-3.8-flash", "gemma-4-31b-it", "gemini-3.5-flash-lite", "gemini-4-hydrogen", "gemini-4-neon"], key: "GEMINI_API_KEY", url: "https://generativelanguage.googleapis.com/v1beta" },
+    nvidia: { models: ["minimaxai/minimax-m3.1-flash", "nvidia/nemotron-3-ultra-550b-a55b", "nvidia/nemotron-3.5-bolt-e4b", "nvidia/nemotron-3.5-lightning-30b-a3b", "nvidia/nemotron-3.5-super-vl-120b-a12b"], key: "NVIDIA_NIM_API_KEY", url: "https://integrate.api.nvidia.com/v1" },
     openrouter: { models: ["nvidia/nemotron-3-ultra-550b-a55b:free", "nvidia/nemotron-3-super-120b-a12b:free", "dots-studio/dots-3-note-preview:free", "openrouter/free"], key: "OPENROUTER_API_KEY", url: "https://openrouter.ai/api/v1" },
     mistral: { models: ["ministral-8b-2512"], key: "MISTRAL_API_KEY", url: "https://api.mistral.ai/v1" },
-    cerebras: { models: ["gpt-oss-120b", "qwen-3.8-27b"], key: "CEREBRAS_API_KEY", url: "https://api.cerebras.ai/v1" },
+    cerebras: { models: ["gpt-oss-120b", "qwen-3.8-27b", "moonshotai-kimi-k3.1-pro-trial"], key: "CEREBRAS_API_KEY", url: "https://api.cerebras.ai/v1" },
     groq: { models: ["openai/gpt-oss-120b", "openai/gpt-oss-20b"], key: "GROQ_API_KEY", url: "https://api.groq.com/openai/v1" },
     agnes: { models: ["agnes-3.0-flash", "agnes-2.5-flash"], key: "AGNES_API_KEY", url: "https://apihub.agnes-ai.com/v1" },
     reflection: { models: ["Beam-1.0-501B-A23B"], key: "REFLECTION_API_KEY", url: "https://api.reflection.ai/openai/v1" },
     inception: { models: ["mercury-2.5"], key: "INCEPTION_API_KEY", url: "https://api.inceptionlabs.ai/v1" },
     zai: { models: ["glm-4.7-flash", "glm-4.5-flash"], key: "ZAI_API_KEY", url: "https://api.z.ai/api/paas/v4" },
+    amd: { models: ["DeepSeek-V4-Flash", "GLM-5.3-Flash", "DeepSeek-V4.1-Flash"], key: "AMD_API_KEY", url: "https://developer.amd.com.cn/radeon/api/v1" },
+    novapis: { models: ["gpt-6.2-sol"], key: "NOVAPIS_API_KEY", url: "https://novapis.com/v1" },
+    numes: { models: ["nvidia/nemotron-3-ultra-550b-a55b:free", "deepseek/deepseek-v4.1-flash:free"], key: "NUMES_API_KEY", url: "https://api.numes.ai/api/v1" },
 };
 
 type Provider = keyof typeof policies;
@@ -25,18 +28,23 @@ const EXTRA_LIMITS: Partial<Record<Provider, Record<string, TokenLimits>>> = {
         "agnes-3.0-flash": { contextWindow: 262144, maxTokens: 32768 },
         "agnes-2.5-flash": { contextWindow: 262144, maxTokens: 32768 },
     },
+    cerebras: { "moonshotai-kimi-k3.1-pro-trial": { contextWindow: 262144, maxTokens: 32768 } },
     inception: { "mercury-2.5": { contextWindow: 131072, maxTokens: 16384 } },
     zai: { "glm-4.7-flash": { contextWindow: 200000, maxTokens: 32768 } },
-    gemini: { "gemini-4-hydrogen": { contextWindow: 1048576, maxTokens: 65536 } },
+    gemini: {
+        "gemini-4-hydrogen": { contextWindow: 1048576, maxTokens: 65536 },
+        "gemini-4-neon": { contextWindow: 1048576, maxTokens: 65536 },
+    },
 };
 
 const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens: 16384 };
 
 function isProvider(name: string): name is Provider { return Object.hasOwn(policies, name); }
 
-const order: Provider[] = ["groq", "agnes", "zai", "cerebras", "nvidia", "openrouter", "mistral", "gemini", "inception"];
-const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception"]);
-const reasoningReplay = new Set<Provider>(["reflection"]);
+const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception", "numes"];
+const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis", "numes"]);
+const reasoningReplay = new Set<Provider>(["reflection", "nvidia"]);
+const thinkingAsTextModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
 const limitSchema = Type.Object({ contextWindow: Type.Integer(), maxTokens: Type.Integer() }, { additionalProperties: true });
 
@@ -101,17 +109,21 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
         catalog() {
             const defaultProvider = order.find(available) ?? "mistral";
             const availability = Object.fromEntries(Object.keys(policies).filter(isProvider).filter(name => !gated.has(name) || available(name)).map(name => [name, available(name)]));
-            return { models: ["gemini", "nvidia", "openrouter", "cerebras", "mistral", "groq", "agnes", "zai", "reflection", "inception"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
+            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception", "novapis", "numes"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
         },
         resolve(id?: string) {
             const { provider, model } = selection(id);
             if (!available(provider))
                 throw new Error("Selected provider is unavailable");
-            if (provider === "nvidia")
-                throw new Error("Provider requires request options not yet supported by Pi adapter");
             const limits = resolveLimits(provider, model);
             const headers: Record<string, string> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : {};
-            return { provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers, contextWindow: limits.contextWindow, maxTokens: limits.maxTokens, ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}) };
+            return {
+                provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers,
+                contextWindow: limits.contextWindow, maxTokens: limits.maxTokens,
+                ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}),
+                ...(thinkingAsTextModels.has(provider + ":" + model) ? { compat: { requiresThinkingAsText: true } } : {}),
+                ...(provider === "nvidia" ? { reasoning: true, compat: { requiresReasoningContentOnAssistantMessages: true, thinkingFormat: "qwen-chat-template" } } : {}),
+            };
         }
     };
 }

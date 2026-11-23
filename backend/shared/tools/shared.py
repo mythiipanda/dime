@@ -159,6 +159,32 @@ def _table_hint(con, code):
     return col_hint, hint
 
 
+def _exc_lineno(exc):
+    lineno = getattr(exc, "lineno", None)
+    if lineno is not None:
+        return lineno
+    tb = exc.__traceback__
+    found = None
+    while tb is not None:
+        if tb.tb_frame.f_code.co_filename == "<dime>":
+            found = tb.tb_lineno
+        tb = tb.tb_next
+    return found
+
+
+def _code_context(code, lineno):
+    lines = code.splitlines()
+    if lineno is None or not (1 <= lineno <= len(lines)):
+        return None
+    lo = max(1, lineno - 2)
+    hi = min(len(lines), lineno + 2)
+    out = []
+    for n in range(lo, hi + 1):
+        mark = ">>" if n == lineno else "  "
+        out.append(f"{mark} {n:4d}| {lines[n - 1][:160]}")
+    return "\\n".join(out)
+
+
 def _serialize_out(out):
     if isinstance(out, pl.DataFrame):
         return _json_safe(out.head(500).to_dicts()), None
@@ -211,15 +237,57 @@ def _main():
         msg = str(exc) or type(exc).__name__
         hints = ("does not exist", "Catalog", "Referenced column", "Binder")
         recovery = "Check Python syntax, variable names, and warehouse column names via warehouse_schema."
-        if any(h in msg for h in hints):
+        if isinstance(exc, SyntaxError):
+            recovery = "Fix the syntax on the marked line of the submitted code, then rerun run_python."
+            js_ish = re.search(
+                r"`|=>|\\$\\{|\\bconst\\b|\\blet\\b|^return\\s", code, re.M)
+            if js_ish:
+                recovery = ("run_python executes Python, not JavaScript: replace "
+                            "backticks and ${...} with string literals, const/let "
+                            "with plain assignment, => with def/lambda, and "
+                            "assign the result to `out` or print it instead of "
+                            "returning.")
+            elif re.match(r"\\s*(SELECT|WITH)\\b", code, re.I):
+                recovery = ("run_python executes Python code; raw SQL is not "
+                            "valid here. Pass the query as a string to "
+                            "con.execute or call sql_exec instead.")
+        elif isinstance(exc, NameError) and re.search(r"\\b(store|load)\\s*\\(", code):
+            recovery = ("store()/load() exist only in codemode, not in "
+                        "run_python: run_python is Python executed fresh per "
+                        "call, so keep intermediate results in Python "
+                        "variables within the call or write them to files "
+                        "under the workspace dir.")
+        elif ("Cannot open database" in msg or "duckdb" in msg.lower()) and re.search(r"\\bduckdb\\.connect\\s*\\(", code):
+            recovery = ("Do not open warehouse files by guessed path — the "
+                        "warehouse is reachable only through the preloaded "
+                        "`con` (con.execute(...)). Re-run without "
+                        "duckdb.connect().")
+        elif any(h in msg for h in hints):
             col_hint, valid_hint = _table_hint(con, code)
             recovery = f"Unknown table or column.{col_hint} Valid tables: {valid_hint}"
-        result_path.write_text(json.dumps({
+            if "sqlite_" in msg and re.search(r"\\bduckdb\\.connect\\s*\\(", code):
+                recovery = ("duckdb.connect with a relative or new file path "
+                            "(including ':memory:') opens an empty database, so "
+                            "no warehouse tables exist on that connection; use "
+                            "the preloaded `con` for the warehouse instead of "
+                            f"opening a new file. Valid tables: {valid_hint}")
+        lineno = _exc_lineno(exc)
+        context = _code_context(code, lineno)
+        error_text = f"{type(exc).__name__}: {msg}"
+        if context:
+            error_text += "\\ncode around line " + str(lineno) + ":\\n" + context
+        payload = {
             "ok": False,
-            "error": msg[:500],
+            "error": error_text[:1200],
+            "error_type": type(exc).__name__,
             "stdout": buf.getvalue()[:16000],
             "recovery_hint": recovery,
-        }), encoding="utf-8")
+        }
+        if lineno is not None:
+            payload["error_line"] = lineno
+        if context:
+            payload["code_context"] = context
+        result_path.write_text(json.dumps(payload), encoding="utf-8")
         return
     finally:
         sys.stdout = old_stdout
@@ -235,13 +303,22 @@ def _main():
         for p in Path(".").rglob("*")
         if p.is_file()
     )[:200]
-    result_path.write_text(json.dumps({
+    payload = {
         "ok": True,
         "structured_rows": structured_rows,
         "out_val": out_val,
         "stdout": text,
         "workspace_files": workspace_files,
-    }), encoding="utf-8")
+    }
+    if con is not None and ns.get("con") is not con:
+        payload["warning"] = (
+            "Your code rebound `con` to a different DuckDB connection; a bare "
+            "duckdb.connect() (or ':memory:'/new file) opens an empty database "
+            "with no warehouse tables. The warehouse is only reachable through "
+            "the preloaded `con`: do not reassign it, re-run with con.execute(...) "
+            "against the provided connection."
+        )
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 _main()
@@ -291,8 +368,11 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {
             "tool": "run_python",
             "ok": False,
-            "error": str(payload.get("error") or "Python execution failed")[:500],
+            "error": str(payload.get("error") or "Python execution failed")[:1200],
         }
+        for key in ("error_type", "error_line", "code_context"):
+            if payload.get(key) is not None:
+                out[key] = payload[key]
         if payload.get("recovery_hint"):
             out["recovery_hint"] = str(payload["recovery_hint"])
         if payload.get("stdout"):
@@ -309,7 +389,7 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
             "out": payload.get("out_val"),
             "workspace_files": workspace_files,
         }
-    return {
+    out_ok: dict[str, Any] = {
         "tool": "run_python",
         "ok": True,
         "rows": rows_payload,
@@ -317,8 +397,11 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
         "workspace_files": workspace_files,
         "meta": {"source": "warehouse", "workspace_files": workspace_files},
     }
+    if payload.get("warning"):
+        out_ok["warning"] = str(payload["warning"])
+    return out_ok
 
-@tool(description='Run isolated Python in the thread workspace with read-only DuckDB warehouse access.\n\nPreloaded: con (read-only DuckDB connection), pl (polars), np (numpy), math, statistics. Standard scientific imports (scipy, statsmodels, sklearn, matplotlib, duckdb, polars, json, pathlib) are allowed and workspace files persist across turns for identified threads. Print to stdout or assign `out`.')
+@tool(description='Run isolated Python in the thread workspace with read-only DuckDB warehouse access.\n\nPreloaded: con (read-only DuckDB connection), pl (polars), np (numpy), math, statistics. Standard scientific imports (scipy, statsmodels, sklearn, matplotlib, duckdb, polars, json, pathlib) are allowed and workspace files persist across turns for identified threads. Print to stdout or assign `out`. Each call runs up to 240 seconds; aggregate and filter large tables in SQL first so Python iterates over compact arrays, and split resampling loops across calls when a single pass would exceed the cap.')
 def run_python(code: str) -> dict[str, Any]:
     from ..store import DB_PATH
 
@@ -338,13 +421,13 @@ def run_python(code: str) -> dict[str, Any]:
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=240,
             )
         except _subprocess.TimeoutExpired:
             return {
                 "tool": "run_python",
                 "ok": False,
-                "error": "run_python timed out after 60s",
+                "error": "run_python timed out after 240s",
                 "recovery_hint": "Filter rows in SQL before Python modeling or reduce iteration count.",
             }
         raw = result_path.read_text(encoding="utf-8") if result_path.exists() else ""

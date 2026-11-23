@@ -1671,6 +1671,27 @@ test("parseCarry keeps valid submission attached to carry", () => {
   assert.deepEqual(carry.submission.blocks[0].anchors, [{ ref: "src-1", row: 0, columns: ["PTS"] }]);
 });
 
+test("parseCarry keeps submission omitted parts", () => {
+  const carry = parseCarry({
+    run_id: "run-fixture-omitted",
+    verification: "partial",
+    verified_claims: null,
+    gaps: [],
+    submission: {
+      blocks: [
+        {
+          text: "Partial scouting answer.",
+          anchors: [{ ref: "src-1", row: 0, columns: ["PTS"] }],
+        },
+      ],
+      omitted: ["On-off splits", "Playtype breakdown", ""],
+    },
+  });
+  assert.ok(carry);
+  assert.ok(carry.submission);
+  assert.deepEqual(carry.submission.omitted, ["On-off splits", "Playtype breakdown"]);
+});
+
 test("parseCarry drops malformed submission without dropping valid carry fields", () => {
   const carry = parseCarry({
     run_id: "run-fixture-corrupt-sub",

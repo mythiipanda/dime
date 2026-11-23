@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ._core import clamp_season, coerce_team_id, is_past_game_date, resolve_season
+from ._core import clamp_season, coerce_team_id, is_past_game_date, resolve_season, team_error_message
 
 def _abbrev(who: str) -> str:
     try:
@@ -62,7 +62,7 @@ def _scoreboard_warehouse(season: str, dates: list[str]) -> list[dict[str, Any]]
     from .. import store
 
     entities = [f"date:{d}" for d in dates]
-    con = store.connect()
+    con = store.connect(read_only=True)
     try:
         cur = con.execute(
             "SELECT _entity, GAME_ID, GAME_STATUS_ID, GAME_STATUS_TEXT,"
@@ -160,7 +160,7 @@ def _form_card(team_id: int, season: str) -> tuple[dict[str, Any], str | None]:
     from .. import store
 
     def _read() -> list[tuple]:
-        con = store.connect()
+        con = store.connect(read_only=True)
         try:
             return con.execute(
                 "SELECT GAME_DATE, WL FROM silver_team_games"
@@ -215,7 +215,7 @@ def _leaders_card(abbr: str, team_id: int, season: str) -> list[dict[str, Any]]:
     season = resolve_season(season)
     from .. import store
 
-    con = store.connect()
+    con = store.connect(read_only=True)
     try:
         try:
             rows = con.execute(
@@ -319,7 +319,7 @@ def _xfactor_card(leaders: list[dict[str, Any]], season: str) -> dict[str, Any]:
     cands = [lead for lead in leaders[2:8] if lead.get("gp", 0) >= 10]
     best = None
     for lead in cands:
-        con = store.connect()
+        con = store.connect(read_only=True)
         try:
             try:
                 grows = con.execute(
@@ -609,11 +609,11 @@ def _row_for_date_query(rows, a, b, game_date, season):
         try:
             ida = coerce_team_id(a)
         except ValueError:
-            return None, f"unknown team: {a}"
+            return None, team_error_message(a)
         try:
             idb = coerce_team_id(b)
         except ValueError:
-            return None, f"unknown team: {b}"
+            return None, team_error_message(b)
         for r in rows:
             home, away = _row_team_ids(r)
             if {home, away} == {ida, idb}:
@@ -624,7 +624,7 @@ def _row_for_date_query(rows, a, b, game_date, season):
         try:
             tid = coerce_team_id(who)
         except ValueError:
-            return None, f"unknown team: {who}"
+            return None, team_error_message(who)
         for r in rows:
             home, away = _row_team_ids(r)
             if tid in (home, away):
@@ -638,11 +638,11 @@ def _row_for_pair(a, b, season):
     try:
         ida = coerce_team_id(a)
     except ValueError:
-        return None, "", f"unknown team: {a}"
+        return None, "", team_error_message(a)
     try:
         idb = coerce_team_id(b)
     except ValueError:
-        return None, "", f"unknown team: {b}"
+        return None, "", team_error_message(b)
     from datetime import datetime as _dt
     from datetime import timedelta as _td
     from zoneinfo import ZoneInfo

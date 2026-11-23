@@ -4,12 +4,18 @@ from .._core import (
     TTL_PBPSTATS,
     TTL_ROSTER,
     TTL_SCOREBOARD_PAST,
+    InvalidSeasonError,
     _warehouse_or_live,
+    clamp_season,
     coerce_team_id,
     is_past_game_date,
+    last_completed_season,
     resolve_season,
     sample_tier,
+    season_rows_error,
     season_static,
+    season_to_date_meta,
+    team_error_message,
 )
 from ...sources import nba_stats
 from ._helpers import (
@@ -20,6 +26,7 @@ from ._helpers import (
     _hist_team_games,
     _num,
     _sample_tier,
+    _std_context,
     _team_game_seasons,
     _team_game_summary,
     _team_game_window,
@@ -67,6 +74,7 @@ from .scouting import (
     _rating_card,
     get_injury_impact,
     get_matchup_brief,
+    get_opponent_scout,
     get_scout_pack,
     get_scouting_report,
 )

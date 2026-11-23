@@ -1,5 +1,7 @@
 import argparse
+import ast
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -109,6 +111,71 @@ def listener_pid(port: int) -> str | None:
     return None
 
 
+def free_port(start: int, span: int = 50) -> int | None:
+    for candidate in range(start, start + span):
+        if listener_pid(candidate) is None:
+            return candidate
+    return None
+
+
+def port_owner_pid(port: int) -> int | None:
+    try:
+        proc = subprocess.run(
+            ["ss", "-tlnp", f"sport = :{port}"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        match = re.search(r"pid=(\d+)", proc.stdout)
+        if match:
+            return int(match.group(1))
+    except OSError:
+        pass
+    try:
+        proc = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        if proc.returncode == 0:
+            for line in proc.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[3].upper() == "LISTENING" and parts[1].endswith(f":{port}"):
+                    pid = parts[4]
+                    if pid.isdigit():
+                        return int(pid)
+    except OSError:
+        pass
+    return None
+
+
+def proc_cwd(pid: int) -> Path | None:
+    try:
+        return Path(os.readlink(f"/proc/{pid}/cwd")).resolve()
+    except OSError:
+        return None
+
+
+def pid_is_descendant(pid: int, ancestor: int) -> bool:
+    for _ in range(32):
+        if pid == ancestor:
+            return True
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="ignore")
+            pid = int(stat.rpartition(")")[2].split()[1])
+        except (OSError, IndexError, ValueError):
+            return False
+    return False
+
+
+def host_matches_worktree(pid: int) -> bool:
+    cwd = proc_cwd(pid)
+    return cwd is not None and cwd == ROOT
+
+
 def log_path_for(args: argparse.Namespace) -> Path:
     if args.host_log:
         return Path(args.host_log)
@@ -145,17 +212,19 @@ def boot_host(env: dict[str, str], log_file: Path) -> subprocess.Popen | None:
 
 
 def tail_log(log_file: Path) -> None:
+    if not log_file.is_file():
+        return
     lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
     for line in lines[-20:]:
         print(redact(line), file=sys.stderr)
 
 
-def wait_health(port: int, host: subprocess.Popen, log_file: Path) -> dict | None:
+def wait_health(port: int, host: subprocess.Popen | None, log_file: Path) -> dict | None:
     url = f"http://127.0.0.1:{port}/api/health"
     deadline = time.monotonic() + 120.0
     with httpx.Client(timeout=2.0) as client:
         while time.monotonic() < deadline:
-            if host.poll() is not None:
+            if host is not None and host.poll() is not None:
                 print("host exited before health became ready", file=sys.stderr)
                 tail_log(log_file)
                 return None
@@ -217,6 +286,56 @@ def run_eval(cmd: list[str], env: dict[str, str]) -> int:
     return proc.wait()
 
 
+def declared_tables() -> list[str]:
+    path = ROOT / "backend" / "shared" / "tools" / "league" / "sql_schema.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", "") == "_SQL_TABLES" for t in node.targets):
+            return list(ast.literal_eval(node.value))
+    return []
+
+
+def verify_runtime_warehouse() -> tuple[list[str], int]:
+    if not WAREHOUSE.is_file():
+        return [f"runtime warehouse missing: {WAREHOUSE}"], 0
+    try:
+        import duckdb
+        con = duckdb.connect(str(WAREHOUSE), read_only=True)
+        try:
+            present = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        finally:
+            con.close()
+    except Exception as exc:
+        return [f"runtime warehouse unreadable: {exc}"], 0
+    declared = set(declared_tables())
+    missing = sorted(declared - present)
+    if missing:
+        shown = ", ".join(missing[:10])
+        more = f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""
+        return [
+            f"runtime warehouse lacks {len(missing)} declared table(s): "
+            f"{shown}{more}; refresh backend/data/warehouse.duckdb via "
+            "scripts/fetch-data.sh and relink warehouse-runtime.duckdb"
+        ], len(present)
+    return [], len(present)
+
+
+def warehouse_metadata() -> dict[str, object]:
+    digest = hashlib.sha256()
+    with WAREHOUSE.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    stat = WAREHOUSE.stat()
+    return {
+        "warehouse_file": WAREHOUSE.name,
+        "warehouse_sha256": digest.hexdigest(),
+        "warehouse_size_bytes": stat.st_size,
+        "warehouse_mtime_utc": datetime.datetime.fromtimestamp(
+            stat.st_mtime, datetime.timezone.utc).isoformat(),
+    }
+
+
 def dab_root() -> Path:
     from_env = os.environ.get("DIME_DAB_ROOT")
     if from_env:
@@ -263,7 +382,10 @@ def report_results(args: argparse.Namespace) -> bool:
     return True
 
 
-def terminate_host(host: subprocess.Popen, keep: bool) -> None:
+def terminate_host(host: subprocess.Popen | None, keep: bool) -> None:
+    if host is None:
+        print("reused host left running")
+        return
     if keep:
         print(f"host left running pid {host.pid}")
         return
@@ -294,15 +416,42 @@ def main(argv: list[str] | None = None) -> int:
         "DIME_V2_MODEL": model,
         "DIME_WAREHOUSE": str(WAREHOUSE),
         "DIME_PI_PYTHON": sys.executable,
+        "DIME_TRACE_TOOL_RESULTS": "1",
         "PORT": str(args.port),
     })
     if provider:
         env[f"DIME_ENABLE_{provider.upper()}"] = "true"
 
+    reuse_pid: int | None = None
     held_by = listener_pid(args.port)
     if held_by is not None:
-        print(f"port {args.port} already listening, held by pid {held_by}", file=sys.stderr)
+        owner = port_owner_pid(args.port)
+        if owner is not None and host_matches_worktree(owner):
+            reuse_pid = owner
+            print(f"port {args.port} already serves this worktree (pid {owner}); reusing it")
+        else:
+            detail = f"pid {owner} cwd {proc_cwd(owner)}" if owner is not None else "pid unknown"
+            picked = free_port(args.port + 1)
+            if picked is None:
+                print(f"port {args.port} already listening, held by {detail}; no free port in the next 50", file=sys.stderr)
+                return 1
+            print(f"port {args.port} already listening, held by {detail}; using {picked} instead", file=sys.stderr)
+            args.port = picked
+            env["PORT"] = str(args.port)
+
+    warehouse_errors, warehouse_tables = verify_runtime_warehouse()
+    if warehouse_errors:
+        for problem in warehouse_errors:
+            print(f"FAILED: {problem}", file=sys.stderr)
         return 1
+    print(f"runtime warehouse ok: {WAREHOUSE} ({warehouse_tables} tables)")
+    run_metadata = {
+        "model": model,
+        "judge_model": args.judge_model,
+        "split": args.split,
+        "recorded_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        **warehouse_metadata(),
+    }
 
     manifest_dir = Path(tempfile.mkdtemp(prefix="dab-manifest-"))
     manifest_path = manifest_dir / "asset-manifest.json"
@@ -312,12 +461,27 @@ def main(argv: list[str] | None = None) -> int:
     print(f"asset manifest: {manifest_path}")
 
     log_file = log_path_for(args)
-    print(f"host log: {log_file}")
-    host = boot_host(env, log_file)
+    host: subprocess.Popen | None = None
+    if reuse_pid is None:
+        print(f"host log: {log_file}")
+        host = boot_host(env, log_file)
     ok = True
     try:
         providers = wait_health(args.port, host, log_file)
         if providers is None:
+            return 1
+        owner = port_owner_pid(args.port)
+        if reuse_pid is not None:
+            if owner != reuse_pid:
+                print(f"port {args.port} owner changed mid-run; refusing to evaluate", file=sys.stderr)
+                return 1
+        elif owner is not None and host is not None and owner != host.pid and not pid_is_descendant(owner, host.pid):
+            print(
+                f"port {args.port} is served by foreign pid {owner} "
+                f"(cwd {proc_cwd(owner)}), not spawned host pid {host.pid}; "
+                "refusing to evaluate",
+                file=sys.stderr,
+            )
             return 1
         if provider and providers.get(provider) is not True:
             print(f"provider {provider} is not enabled in health providers map", file=sys.stderr)
@@ -326,6 +490,10 @@ def main(argv: list[str] | None = None) -> int:
         if run_eval(eval_command(args), env) != 0:
             print("eval subprocess failed", file=sys.stderr)
             ok = False
+        run_dir = dab_root() / "runs" / args.out_name
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "run-metadata.json").write_text(
+            json.dumps(run_metadata, indent=2) + "\n", encoding="utf-8")
         if not report_results(args):
             ok = False
         elif args.save_history and not save_history(args):

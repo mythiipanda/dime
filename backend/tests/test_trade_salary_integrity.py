@@ -35,6 +35,74 @@ def test_trade_check_fails_closed_on_salary_vintage_mismatch(
     assert "not calculated" in out["error"]
 
 
+def test_trade_check_serves_season_column_under_later_vintage_label(
+        monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+
+    path = tmp_path / "vintage.duckdb"
+    con = duckdb.connect(str(path))
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, "
+            "TEAM VARCHAR, SALARY_2025_26 INTEGER, _season VARCHAR, "
+            "_fetched_at VARCHAR)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES ('LeBron James', 'LAL', "
+            "50000000, '2026-27', NULL)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES "
+            "('Giannis Antetokounmpo', 'MIA', 40000000, '2026-27', NULL)")
+    finally:
+        con.close()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store.warehouse_tables_cache_clear()
+    store.warehouse_pool_clear()
+    out = get_trade_check.invoke({
+        "team_a": "LAL", "players_a": "LeBron James",
+        "team_b": "MIA", "players_b": "Giannis Antetokounmpo",
+        "season": "2025-26",
+    })
+    assert out["ok"] is True
+
+
+def test_trade_check_refuses_season_with_no_salary_column(
+        monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+
+    path = tmp_path / "vintage.duckdb"
+    con = duckdb.connect(str(path))
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, "
+            "TEAM VARCHAR, SALARY_2025_26 INTEGER, _season VARCHAR, "
+            "_fetched_at VARCHAR)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES ('LeBron James', 'LAL', "
+            "50000000, '2026-27', NULL)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES "
+            "('Giannis Antetokounmpo', 'MIA', 40000000, '2026-27', NULL)")
+    finally:
+        con.close()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store.warehouse_tables_cache_clear()
+    store.warehouse_pool_clear()
+    out = get_trade_check.invoke({
+        "team_a": "LAL", "players_a": "LeBron James",
+        "team_b": "MIA", "players_b": "Giannis Antetokounmpo",
+        "season": "2026-27",
+    })
+    assert out["ok"] is False
+    assert "covers 2025-26, not 2026-27" in out["error"]
+    assert "not calculated" in out["error"]
+
+
 def _vintaged_warehouse(tmp_path, monkeypatch, columns, rows):
     import duckdb
 
@@ -121,3 +189,32 @@ def test_cap_ledger_vintage_only_schema_fails_typed(
     out = league_mod.get_cap_ledger.invoke({"team": "LAL"})
     assert out["ok"] is False
     assert out["reason"] == "salary_column_unmatched"
+
+
+def test_salary_vintage_prefers_the_newest_season(monkeypatch, tmp_path):
+    import duckdb
+
+    from shared import store
+    from shared.tools.league import _salary_vintage
+
+    path = tmp_path / "vintage_order.duckdb"
+    con = duckdb.connect(str(path))
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
+            "SALARY INTEGER, _season VARCHAR, _fetched_at VARCHAR)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES "
+            "('LeBron James', 'LAL', 50000000, '2025-26', '2026-01-01'), "
+            "('Giannis Antetokounmpo', 'MIA', 40000000, '2025-26', "
+            "'2026-01-01'), "
+            "('Jayson Tatum', 'BOS', 58000000, '2026-27', '2026-09-01')")
+    finally:
+        con.close()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store.warehouse_tables_cache_clear()
+    store.warehouse_pool_clear()
+    season, rows, _ = _salary_vintage()
+    assert season == "2026-27"
+    assert rows == 1

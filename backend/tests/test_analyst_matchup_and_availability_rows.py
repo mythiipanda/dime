@@ -1,4 +1,5 @@
 import asyncio
+import json
 import importlib
 import re
 import sys
@@ -1267,12 +1268,10 @@ def test_get_today_preserves_real_zero_and_marks_unplayed_with_question(monkeypa
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
     tools = _catalogue(monkeypatch, {})
 
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = re.findall(r'"([^"]+)"', block)
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = [t["name"] for t in manifest["tools"]]
 
+    assert len(declared) == 118
     assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for spec in SECTIONED:

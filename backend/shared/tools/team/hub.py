@@ -14,7 +14,7 @@ def _preview_rating_row(season: str, tid: int, full_by_id: dict[int, str]) -> di
     try:
         from ... import store as _store
 
-        _con = _store.connect()
+        _con = _store.connect(read_only=True)
         try:
             _row = _con.execute(
                 "SELECT OFF_RATING, DEF_RATING, PACE FROM silver_team_ratings"
@@ -170,15 +170,21 @@ def get_team_season_summary(
                 "error": "a resolved team is required"}
     try:
         resolved_team_id = pkg.coerce_team_id(team_id)
+    except (TypeError, ValueError):
+        return {"tool": "get_team_season_summary", "ok": False,
+                "error": pkg.team_error_message(team_id)}
+    try:
         resolved_season = pkg.resolve_season(season)
     except (TypeError, ValueError):
         return {"tool": "get_team_season_summary", "ok": False,
-                "error": "team and season scope could not be resolved"}
+                "error": "season scope could not be resolved"}
 
     games = pkg._hist_team_games(resolved_team_id, resolved_season)
     if not games:
         return {"tool": "get_team_season_summary", "ok": False,
-                "error": "regular-season rows are unavailable for this team and season"}
+                "error": pkg.season_rows_error(
+                    None, "silver_hist_gamelogs", resolved_season,
+                    pkg._abbrev(str(resolved_team_id)))}
 
     validated = _validate_team_season_rows(games, resolved_team_id, resolved_season)
     if validated is None:
@@ -188,6 +194,7 @@ def get_team_season_summary(
     count = len(games)
     from ... import store as _store
 
+    std = pkg._std_context(resolved_team_id, resolved_season, games)
     return {
         "tool": "get_team_season_summary",
         "ok": True,
@@ -205,6 +212,7 @@ def get_team_season_summary(
             "source": "warehouse:silver_hist_gamelogs",
             **_store.warehouse_identity(),
             "season": resolved_season,
+            **({"season_to_date": std} if std else {}),
             "coverage": (
                 "Summary of rows available for this team, season, and "
                 "regular-season source; season completeness is unverified."),
@@ -266,6 +274,9 @@ def get_team_hub(team_id: str | int, season: str | None = None) -> dict[str, Any
                   "APG": r.get("APG")}
                  for r in frame.to_dicts()),
                 key=lambda r: -(r.get("GP") or 0))
+    std = pkg._std_context(team_id, season, games)
+    if std:
+        meta = {**meta, "season_to_date": std}
     return {
         "tool": "get_team_hub", "ok": True,
         "rows": {"roster": roster, "summary": summary, "games": games},

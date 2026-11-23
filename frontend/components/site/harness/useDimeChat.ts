@@ -271,7 +271,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     stop: () => {
       abortRef.current?.abort();
       liveId.current += 1;
-      if (live) appendMessage(thread ?? activeTab, assistantMessageFromSnapshot({ ...live, done: true }, ""));
+      if (live) appendMessage(thread ?? activeTab, assistantMessageFromSnapshot({ ...live, done: true }, "", true));
       setLive(null);
     },
     tabs,

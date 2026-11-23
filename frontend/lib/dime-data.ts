@@ -59,7 +59,10 @@ export const followUps = [
 export const sgaTrend = [28, 34, 29, 38, 31, 27, 35, 33, 30, 36, 29, 32, 41, 26, 34];
 export const lukaTrend = [33, 27, 36, 29, 31, 40, 24, 32, 35, 28, 30, 37, 26, 33, 29];
 
-export type ShotZone = { x: number; y: number; att: number; pct: number };
+export type ShotZone = {
+  x: number; y: number; att: number; pct: number;
+  label?: string; makes?: number; delta?: number;
+};
 export const sgaZones: ShotZone[] = [
   { x: 50, y: 12, att: 142, pct: 71 }, { x: 32, y: 22, att: 88, pct: 52 }, { x: 68, y: 22, att: 91, pct: 54 },
   { x: 18, y: 38, att: 64, pct: 47 }, { x: 50, y: 34, att: 118, pct: 49 }, { x: 82, y: 38, att: 59, pct: 45 },

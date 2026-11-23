@@ -9,7 +9,7 @@
         "source": "nba_api",
         "static_season": true,
         "warehouse_id": "frozen-eval",
-        "warehouse_sha256": "8d3c9a18366ce6992b7b04c587a07e175d67a9e1fa790871c93ec66e37aaa672"
+        "warehouse_sha256": "4ddb90e92946f4bc8494d104f986788057f97bab592878b08ac2ef0731efed81"
       },
       "team_b": {
         "cached": true,
@@ -18,7 +18,7 @@
         "source": "nba_api",
         "static_season": true,
         "warehouse_id": "frozen-eval",
-        "warehouse_sha256": "8d3c9a18366ce6992b7b04c587a07e175d67a9e1fa790871c93ec66e37aaa672"
+        "warehouse_sha256": "4ddb90e92946f4bc8494d104f986788057f97bab592878b08ac2ef0731efed81"
       }
     },
     "matchup_games": 6,

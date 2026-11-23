@@ -17,7 +17,7 @@ def _competitive_lineup_nets(
     season = pkg.resolve_season(season)
     from ... import store as _store
 
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         pros = con.execute(
             "SELECT offense_team_id, defense_team_id, points,"
@@ -204,11 +204,15 @@ def _apply_competitive_nets(rows, comp):
             r["SAMPLE"] = "small: under 50 competitive possessions"
 
 
-@tool(description='Five-man lineup stats for one team id, sorted by minutes.')
+@tool(description='Five-man lineup stats for one team: all qualifying units sorted by minutes. For per-unit ratings with sample floors use get_lineup_stats; for the league-wide board use get_lineup_leaders.')
 def get_lineups(team_id: str | int, season: str | None = None, season_type: SeasonType = 'regular-season', measure_type: MeasureType = 'base', per_mode: PerMode = 'totals') -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    team_id = pkg.coerce_team_id(team_id)
+    try:
+        season = pkg.clamp_season(season)
+        team_id = pkg.coerce_team_id(team_id)
+    except (pkg.InvalidSeasonError, ValueError) as exc:
+        return {"tool": "get_lineups", "ok": False, "error": str(exc)[:240]}
     rows, meta = pkg._warehouse_or_live(
         "silver_lineups", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],

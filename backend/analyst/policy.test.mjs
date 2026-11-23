@@ -11,7 +11,7 @@ test("Reflection requires explicit activation and key, known metadata, no fallba
  for(const env of [{},{REFLECTION_API_KEY:"fake"},{DIME_ENABLE_REFLECTION:"true"}])assert.throws(()=>providerPolicy(env).resolve("reflection:beam-1"));
  const policy=providerPolicy({DIME_ENABLE_REFLECTION:"true",REFLECTION_API_KEY:"fake"});const model=policy.resolve("reflection:beam-1");assert.equal(model.provider,"reflection");assert.equal(model.model,"Beam-1.0-501B-A23B");assert.equal(model.maxTokens,131072);assert.equal(model.contextWindow,1048576);
  assert.throws(()=>policy.resolve("reflection:unknown"));assert.throws(()=>policy.resolve("unapproved:model"));
- assert.throws(()=>providerPolicy({NVIDIA_NIM_API_KEY:"fake"}).resolve("nvidia:z-ai/glm-5.3-flash"),/request options/);
+ const nim=providerPolicy({NVIDIA_NIM_API_KEY:"fake"}).resolve("nvidia:minimaxai/minimax-m3.1-flash");assert.equal(nim.reasoning,true);assert.equal(nim.compat.thinkingFormat,"qwen-chat-template");assert.equal(nim.compat.requiresReasoningContentOnAssistantMessages,true);assert.throws(()=>providerPolicy({NVIDIA_NIM_API_KEY:"fake"}).resolve("nvidia:unapproved/model"),/not approved/);
  const groq=providerPolicy({DIME_ENABLE_GROQ:"true",GROQ_API_KEY:"fake"}).resolve("groq:openai/gpt-oss-120b");assert(groq.contextWindow>0&&groq.maxTokens>0);
  const agnesPolicy=providerPolicy({DIME_ENABLE_AGNES:"true",AGNES_API_KEY:"fake"});
  const agnes30=agnesPolicy.resolve("agnes:agnes-3.0-flash");assert.equal(agnes30.provider,"agnes");assert.equal(agnes30.model,"agnes-3.0-flash");assert.equal(agnes30.contextWindow,262144);assert.equal(agnes30.maxTokens,32768);

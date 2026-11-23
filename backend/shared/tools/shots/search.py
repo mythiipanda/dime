@@ -1,4 +1,6 @@
 import sys
+
+from .._core import team_error_message
 from typing import Any
 
 from langchain_core.tools import tool
@@ -34,7 +36,7 @@ def _pkg():
 
 
 @tool(
-    description='Conversational shot finder: filter warehouse shots by player, team,\nzone, period, makes, and late-clock window, with zone/period aggregates\nplus optional per-player/per-team leaderboards.\n\nzones: rim, short_mid, long_mid, corner_3, atb_3 (comma-separated;\n"" = all). periods: 1-4, ot, 1h, 2h, 4th (comma-separated; "" = all).\nlate_clock: integer seconds remaining (periods 4+, time-based only, not\nscore-aware). group_by: "" | "player" | "team" -- per-player/per-team\nvolume + efficiency leaderboards sorted by attempts (this is how you\nanswer "who takes over fourth quarters"). include_ot: auto (default --\novertime is included when a 4th-quarter/2nd-half window is selected,\nwhen overtime is explicitly selected (periods=\'ot\'), or when late_clock\nis given without an explicit period filter), yes, no.\nperiods=\'4th\' includes overtime by default; pass include_ot=no to get\nexactly the 4th quarter. Zero matches return ok True with empty\naggregates and an explanatory note, never silent zeros. Results are\ntime-based only, never score-aware (meta.clutch_safe=false); TS% is not\nshown because the table has no free-throw attempts.'
+    description='Conversational shot finder: filter warehouse shots by player, team,\nzone, period, makes, and late-clock window, with zone/period aggregates\nplus optional per-player/per-team leaderboards. Warehouse shots cover\nthe 2025-26 season only.\n\nzones: rim, short_mid, long_mid, corner_3, atb_3 (comma-separated;\n"" = all). periods: 1-4, ot, 1h, 2h, 4th (comma-separated; "" = all).\nlate_clock: integer seconds remaining (periods 4+, time-based only, not\nscore-aware). group_by: "" | "player" | "team" -- per-player/per-team\nvolume + efficiency leaderboards sorted by attempts (this is how you\nanswer "who takes over fourth quarters"). include_ot: auto (default --\novertime is included when a 4th-quarter/2nd-half window is selected,\nwhen overtime is explicitly selected (periods=\'ot\'), or when late_clock\nis given without an explicit period filter), yes, no.\nperiods=\'4th\' includes overtime by default; pass include_ot=no to get\nexactly the 4th quarter. Zero matches return ok True with empty\naggregates and an explanatory note, never silent zeros. Results are\ntime-based only, never score-aware (meta.clutch_safe=false); TS% is not\nshown because the table has no free-throw attempts.'
 )
 def search_shots(
     player: str = "",
@@ -51,7 +53,7 @@ def search_shots(
     include_ot: str = "auto",
 ) -> dict[str, Any]:
     pkg = _pkg()
-    season = pkg.clamp_season(pkg.resolve_season(season))
+    season = pkg.clamp_season(pkg.resolve_season(season, "silver_shots"))
     _shot_seasons = pkg._shots_seasons()
     if season not in _shot_seasons:
         if _shot_seasons:
@@ -86,7 +88,7 @@ def search_shots(
         try:
             team_id = pkg.coerce_team_id(team)
         except ValueError:
-            return {"tool": "search_shots", "ok": False, "error": f"unknown team: {team!r}"}
+            return {"tool": "search_shots", "ok": False, "error": team_error_message(team)}
     try:
         con = pkg._warehouse_conn()
     except Exception as exc:
@@ -115,7 +117,7 @@ def _run_search(
     periods_raw: str, late_raw: str,
 ) -> dict[str, Any]:
     pkg = _pkg()
-    season = pkg.resolve_season(season)
+    season = pkg.resolve_season(season, "silver_shots")
     _shot_seasons = pkg._shots_seasons()
     zone_expr = _zone_case_sql()
     heave = _heave_sql()
@@ -323,8 +325,8 @@ def _shot_meta(
         "clutch_safe": False, "score_aware": False,
         "data_note": (
             f"Warehouse silver_shots coverage is {', '.join(shot_seasons) or 'no season on hand'} "
-            f"(233,632 shots, regular season and playoffs). PLAYER_NAME is last-name-only "
-            f"(e.g. 'Gilgeous-Alexander'). TEAM_NAME/HTM/VTM columns are not populated in this table, "
+            f"({scanned:,} shots, regular season and playoffs). PLAYER_NAME carries full names; "
+            f"surname queries match on the last name. TEAM_NAME/HTM/VTM columns are not populated in this table, "
             f"so team abbreviations come from the nba_api static id->abbreviation mapping. GAME_DATE is not "
             f"populated in this table. Periods: {ot_msg}; use periods='ot' for overtime only, "
             f"include_ot=no for exactly the 4th quarter. There is no score-margin column, so late-game "
@@ -346,8 +348,8 @@ def _empty_note(folded, late_seconds, periods_raw) -> str:
             f"late_clock or widen periods (e.g. '2h', '4th', 'ot')."
         )
     return (
-        "No shots matched the combined filters. PLAYER_NAME is "
-        "last-name-only (e.g. 'Tatum'), teams resolve from "
-        "abbreviations or full names, and late_clock only applies "
+        "No shots matched the combined filters. PLAYER_NAME carries "
+        "full names and surname queries match on the last name; teams "
+        "resolve from abbreviations or full names, and late_clock only applies "
         "to periods 4+ (incl. overtime)."
     )

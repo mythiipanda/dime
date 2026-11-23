@@ -127,7 +127,7 @@ def get_team_game_log(team: str, limit: int = 10,
                           f"in {season}. Team game coverage: "
                           f"{', '.join(sorted(covered))}.")}
 
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         games, err = _team_games_rows(con, tables, tid, abbr, season,
@@ -496,7 +496,7 @@ def get_team_splits(team: str | int, season: str | None = None) -> dict[str, Any
         return {"tool": "get_team_splits", "ok": False, "error": str(exc)[:160]}
     from datetime import datetime as _dt
     from ... import store as _store
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         rows = con.execute(
             "SELECT MATCHUP, WL, GAME_DATE, PTS FROM silver_team_games"

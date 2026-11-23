@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import contract_details, resolve_salary_column, salary_records
-from .._core import coerce_team_id
+from .._core import coerce_team_id, team_error_message
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 
@@ -236,7 +236,7 @@ def _payroll(team: str, con: object = None,
              season: str | None = None) -> tuple[int, list[dict]]:
     own = con is None
     if own:
-        con = _pkg().store.connect()
+        con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
@@ -248,11 +248,29 @@ def _payroll(team: str, con: object = None,
                     "salary_column_unmatched",
                     f"silver_salaries has no salary column for season "
                     f"{season or 'unknown'}")
-            records = [r for r in salary_records(con, salary_season=season) if str(r['TEAM']).upper() == team.upper()]
-            rows = [(r['PLAYER_NAME'], r['salary']) for r in records]
+            records = salary_records(con, salary_season=season)
+            team_cache: dict[str, str] = {}
+            rows = []
+            players = []
+            for r in records:
+                name = str(r.get('PLAYER_NAME') or '')
+                key = name.lower()
+                if season:
+                    if key not in team_cache:
+                        team_cache[key] = (_season_player_team(con, name, season, tables)
+                                           or str(r.get('TEAM') or ''))
+                    record_team = team_cache[key]
+                else:
+                    record_team = str(r.get('TEAM') or '')
+                if record_team.upper() != team.upper():
+                    continue
+                salary = r.get('salary')
+                if salary is None:
+                    continue
+                rows.append((r['PLAYER_NAME'], salary))
+                players.append({"player": r['PLAYER_NAME'], "salary": salary,
+                                "team": record_team, **contract_details(r)})
             if rows:
-                players = [{"player": r['PLAYER_NAME'], "salary": r['salary'],
-                            **contract_details(r)} for r in records]
                 return sum(r[1] or 0 for r in rows), players
         if "silver_cap_players" in tables:
             rows = con.execute(
@@ -283,31 +301,77 @@ def _allowed_incoming(outgoing: int, over_apron1: bool,
                       cap_room: int = 0) -> tuple[int, str]:
     if over_apron1:
         return outgoing, "100% (above the first apron)"
-    matched = int(outgoing * 1.25 + 250_000)
+    if outgoing <= 7_500_000:
+        matched = int(outgoing * 2 + 250_000)
+        rule = "200% plus $250k (below the first apron)"
+    elif outgoing <= 29_000_000:
+        matched = int(outgoing + 7_500_000)
+        rule = "outgoing salary plus $7.5M (below the first apron)"
+    else:
+        matched = int(outgoing * 1.25 + 250_000)
+        rule = "125% plus $250k (below the first apron)"
     if cap_room > 0 and outgoing + cap_room + 250_000 > matched:
         return outgoing + cap_room + 250_000, "cap room plus outgoing salary plus $250k (under the cap)"
-    return matched, "125% plus $250k (below the first apron)"
+    return matched, rule
 
 
 def _outgoing_needed(incoming: int, over_apron1: bool,
                      cap_room: int = 0) -> int:
     if over_apron1:
         return incoming
-    by_room = incoming - cap_room - 250_000 if cap_room > 0 else incoming
-    return max(0, min(-(-(incoming - 250_000) * 4 // 5), by_room))
+    candidates: list[int] = []
+    tier1 = -(-(incoming - 250_000) // 2)
+    if 0 < tier1 <= 7_500_000:
+        candidates.append(tier1)
+    tier2 = incoming - 7_500_000
+    if 7_500_000 < tier2 <= 29_000_000:
+        candidates.append(tier2)
+    tier3 = -(-(incoming - 250_000) * 4 // 5)
+    if tier3 > 29_000_000:
+        candidates.append(tier3)
+    needed = min(candidates) if candidates else 0
+    if cap_room > 0:
+        needed = min(needed, incoming - cap_room - 250_000)
+    return max(0, needed)
+
+
+def _season_player_team(con: object, name: str, season: str,
+                        tables: set[str] | None = None) -> str | None:
+    if tables is None:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    lookups = (
+        ("silver_leaders_pts", "PLAYER", "TEAM"),
+        ("silver_player_season", "PLAYER", "TEAM"),
+        ("silver_hist_player_seasons", "player_name", "team_abbreviation"),
+    )
+    for table, name_col, team_col in lookups:
+        if table not in tables:
+            continue
+        try:
+            row = con.execute(
+                f"SELECT {team_col} FROM {table} WHERE _season = ? "
+                f"AND lower({name_col}) = lower(?) "
+                f"AND upper({team_col}) <> 'TOT' LIMIT 1",
+                [season, name]).fetchone()
+        except Exception:
+            row = None
+        if row and row[0]:
+            return str(row[0]).upper()
+    return None
 
 
 def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
     own = con is None
     if own:
-        con = _pkg().store.connect()
+        con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" not in tables:
             return "", 0, None
         row = con.execute(
             "SELECT _season, COUNT(*), MAX(_fetched_at) FROM silver_salaries "
-            "GROUP BY _season ORDER BY COUNT(*) DESC LIMIT 1"
+            "GROUP BY _season ORDER BY _season DESC NULLS LAST, "
+            "COUNT(*) DESC LIMIT 1"
         ).fetchone()
         if not row:
             return "", 0, None
@@ -322,7 +386,7 @@ def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
 def _payroll_source(con: object = None) -> str:
     own = con is None
     if own:
-        con = _pkg().store.connect()
+        con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
@@ -341,7 +405,7 @@ def _payroll_source(con: object = None) -> str:
 def _salary_date(con: object = None) -> str | None:
     own = con is None
     if own:
-        con = _pkg().store.connect()
+        con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         for table in ("silver_salaries", "silver_cap_players"):
@@ -373,8 +437,8 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
             if item["id"] == team_id)
     except (ValueError, StopIteration):
         return {"tool": "get_cap_ledger", "ok": False,
-                "error": f"unknown team: {team}"}
-    con = _pkg().store.connect()
+                "error": team_error_message(team)}
+    con = _pkg().store.connect(read_only=True)
     try:
         try:
             total, players = _payroll(team, con)
@@ -395,6 +459,45 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
             "meta": {"source": source, "season": season or "2026-27",
                      "salary_date": salary_date,
                      **{k: v for k, v in CAP.items()}}}
+
+
+@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.')
+def get_cap_table(season: str | None = None) -> dict[str, Any]:
+    from nba_api.stats.static import teams as _teams
+    con = _pkg().store.connect(read_only=True)
+    try:
+        rows = []
+        missing = []
+        for item in _teams.get_teams():
+            abbr = str(item["abbreviation"]).upper()
+            try:
+                total, _players = _payroll(abbr, con, season)
+            except SalaryColumnError as exc:
+                return {"tool": "get_cap_table", "ok": False,
+                        "reason": exc.reason, "error": str(exc)}
+            except Exception as exc:
+                missing.append({"team": abbr, "error": str(exc)[:200]})
+                continue
+            rows.append({"team": abbr, "payroll": total,
+                         "cap_room": CAP["cap"] - total,
+                         "room_under_apron2": CAP["apron2"] - total,
+                         "over_tax": total > CAP["tax"],
+                         "over_apron1": total > CAP["apron1"],
+                         "over_apron2": total > CAP["apron2"]})
+        source = _payroll_source(con)
+        salary_date = _salary_date(con)
+        season_used, _, _ = _salary_vintage(con)
+    finally:
+        con.close()
+    rows.sort(key=lambda r: r["payroll"], reverse=True)
+    res = {"tool": "get_cap_table", "ok": True,
+           "rows": rows,
+           "meta": {"source": source, "season": season or season_used or "2026-27",
+                    "salary_date": salary_date,
+                    **{k: v for k, v in CAP.items()}}}
+    if missing:
+        res["meta"]["missing_teams"] = missing
+    return res
 
 
 class _RosterIndex:
@@ -458,7 +561,7 @@ def _unknown_player_hints(unknown: list[str], con: object = None) -> list[str]:
     hints: list[str] = []
     own = con is None
     try:
-        con2 = _pkg().store.connect() if own else con
+        con2 = _pkg().store.connect(read_only=True) if own else con
         try:
             for u in unknown:
                 base = u.split(" (suggestions")[0].strip()

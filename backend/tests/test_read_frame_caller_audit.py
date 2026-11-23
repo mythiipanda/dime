@@ -26,6 +26,11 @@ OPTIONAL_READ_SITES = {
         "the predicate only decides whether to consult the live source, and "
         "it is consulted in the offseason, where no games exist either way, "
         "so an absent scoreboard table and an empty one agree",
+    ("shared.tools.phases", "_tracking_section"):
+        "measured catch-and-shoot and pull-up tracking is an optional "
+        "enrichment on top of shot-level splits; an absent tracking table "
+        "degrades to a declared note, and playoff tracking entities are "
+        "expectedly unseeded until seed_tracking ingests them",
     ("scripts.seed_sportsdataverse", "have_shots"):
         "seed script asks whether silver_hist_shots has been seeded yet; "
         "absent means nothing seeded, which is the question being asked",

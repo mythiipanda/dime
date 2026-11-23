@@ -5,7 +5,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import coerce_player_id, coerce_team_id
+from ._core import coerce_player_id, coerce_team_id, team_error_message
 
 _TRACKING_TABLE = "silver_tracking_pt_stats"
 _DEFEND_TABLE = "silver_tracking_pt_defend"
@@ -259,7 +259,7 @@ def get_tracking_profile(player: str = "", team: str = "",
         tid = coerce_team_id(want_team) if want_team else None
     except ValueError:
         return {"tool": "get_tracking_profile", "ok": False, "rows": [],
-                "error": f"unknown team: {want_team}",
+                "error": team_error_message(want_team),
                 "meta": {"source": f"warehouse:{_TRACKING_TABLE}",
                          "season": season}}
     from shared.coverage import table_seasons

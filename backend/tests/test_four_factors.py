@@ -15,10 +15,11 @@ def _require_team_four_factors_pack():
         tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
     finally:
         con.close()
-    if "silver_four_factors_team" not in tables:
+    if ("silver_four_factors_team" not in tables
+            and "silver_team_games" not in tables):
         pytest.skip(
-            "release pack omits silver_four_factors_team; "
-            "run scripts/build_team_four_factors.py"
+            "release pack omits silver_four_factors_team and "
+            "silver_team_games; run scripts/build_team_four_factors.py"
         )
 
 def test_tool_registered():
@@ -47,7 +48,8 @@ def test_unknown_team_is_honest():
     _require_team_four_factors_pack()
     r = get_team_four_factors.invoke({"team": "Seattle SuperSonics"})
     assert not r["ok"]
-    assert "unknown team" in r["error"]
+    assert "SuperSonics" in r["error"]
+    assert "OKC" in r["error"]
 
 def test_factor_identities():
     _require_team_four_factors_pack()

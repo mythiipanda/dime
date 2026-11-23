@@ -173,7 +173,7 @@ def snapshot_leaderboard(season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = str(pkg.resolve_season(season) or "").strip() or pkg.resolve_season(None)
     today = datetime.now(timezone.utc).date().isoformat()
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         with pkg.store.write_guard():
             _ensure_leaderboard_snapshots(con)
@@ -222,7 +222,7 @@ def get_leaderboard_deltas(season: str | None = None, days: int = 7) -> dict[str
         days = max(1, int(days or 7))
     except (TypeError, ValueError):
         days = 7
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "leaderboard_snapshots" not in tables:

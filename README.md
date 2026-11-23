@@ -3,9 +3,19 @@
 Ask NBA questions in plain English. Dime plans the query, runs it
 against its own data warehouse, and shows its work.
 
+Website: [mythiipanda.github.io/dime-site](https://mythiipanda.github.io/dime-site/)
+
 Live demo: [dime-fawn.vercel.app](https://dime-fawn.vercel.app)
 
 <video src="assets/readme/dime-motion-demo.mp4" controls muted loop playsinline width="100%"></video>
+
+Ask → streamed answer with sources:
+
+<video src="assets/readme/dime-ask-demo.mp4" controls muted loop playsinline width="100%"></video>
+
+Trade check → salary resolution, apron rules, pin to board:
+
+<video src="assets/readme/dime-trade-demo.mp4" controls muted loop playsinline width="100%"></video>
 
 ![Dime chat in the dark theme](assets/readme/chat-dark.png)
 
@@ -31,10 +41,15 @@ The live component reference is available at `/design-system`.
   four factors, on/off splits, clutch numbers, shot zones,
   lineups, rest advantage, game predictions, head-to-heads.
   Trade checks against the 2026-27 cap ledger, award races,
-  and draft history back to 1996-97.
-- History: game logs, shots, possessions, lineups, and
-  standings for 2009-10 through 2025-26, play-by-play for
-  2020-21 through 2024-25, and RAPTOR back to 1976-77.
+  and draft history back to 1947.
+- History: player and team seasons back to 1946-47, game
+  logs, shots, possessions, lineups, and standings for
+  2009-10 through 2025-26, play-by-play for 2020-21
+  through 2024-25, and RAPTOR back to 1976-77. Injuries,
+  salaries back to 1984-85, cap and apron history,
+  draft-combine measurements, Synergy play types, hustle
+  stats, coach staffs, officials, G League seasons, and
+  player bios.
 - Fixed answers come from code, not recall. Records, four
   factors, Finals results, and rankings are computed from
   warehouse rows. Outside the coverage window, the answer
@@ -52,7 +67,7 @@ The live component reference is available at `/design-system`.
 Backend (Node 22.19+ and Python 3.12):
 
 ```bash
-# warehouse: fetch the data pack release (verifies checksum, unzips to backend/data/warehouse.duckdb)
+# warehouse: fetch the Hugging Face dataset (verifies checksum, writes backend/data/warehouse.duckdb)
 ./scripts/fetch-data.sh
 cd backend
 uv venv --python 3.12
@@ -104,23 +119,24 @@ and are not behind this flag.
 
 ## Data
 
-The warehouse is a DuckDB file baked into the backend Docker
-image. On backend changes, CI downloads the data pack
-(`dime-data-20260930`), unzips it into
-`backend/data/`, builds derived tables at
-image time, and pushes
+The warehouse is a DuckDB file hosted as the private Hugging Face
+dataset `mythiix/dime-warehouse`. On backend changes, CI downloads
+`warehouse.duckdb` from that dataset, verifies its checksum, and
+builds derived tables at image time before pushing
 `ghcr.io/mythiipanda/dime-backend:latest`. For local dev,
-`./scripts/fetch-data.sh` fetches the current pack
-(`dime-data-20260930`, checksum-verified) and exits 1 on
-failure. The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
+`./scripts/fetch-data.sh` fetches the current dataset file
+(checksum-verified) and exits 1 on failure. Publish an updated
+warehouse with `backend/scripts/publish_warehouse.py` after ingest.
+The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
 
-The current pack holds 58 tables. A fresh backfill covers
+The current dataset holds 74 tables. A fresh backfill covers
 2015-16 through 2024-25 with 330,485 boxscore rows and 40,000
-lineup rows. The pack also carries the historical tables:
+lineup rows. The dataset also carries the historical tables:
 RAPTOR, RAPM, shots, advanced stats, on/off splits, clutch
 splits, leaders, salaries, zone splits, transactions, and
-the `hist_*` tables — game logs back to 1996-97 and shots to
-2009-10, both through 2025-26. Derived tables
+the `hist_*` tables — player seasons, team seasons and drafts
+back to 1946-47, game logs to 1996-97, and shots to 2009-10,
+all through 2025-26 where the source reaches. Derived tables
 (four factors, draft capital, injury entries, team season
 summaries) are rebuilt by `backend/scripts/refresh_warehouse.py`
 and published with `backend/scripts/publish_warehouse.py`.
@@ -136,7 +152,7 @@ dime-internal checkout:
 python evals/benchmark-pack/runner.py --url http://127.0.0.1:8010 --out reports/run.json
 ```
 
-The pytest suite (`backend/tests/`, 173 test files) covers
+The pytest suite (`backend/tests/`, 218 test files) covers
 routing, the pinned lanes, warehouse contracts, and
 streaming:
 
@@ -148,7 +164,7 @@ pytest tests/ -q
 ## Contributing
 
 Push backend changes on `dev` and CI builds the backend
-image with the data pack baked in. Run `pytest tests/ -q`
+image with the warehouse baked in. Run `pytest tests/ -q`
 from `backend/` before you open a PR. Deployments go
 through `infra/deploy.sh`, which needs `az login` and the
 LLM keys in `backend/.env` (pushed as Container App

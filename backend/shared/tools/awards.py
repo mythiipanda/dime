@@ -124,7 +124,7 @@ def _qualification(spec: dict[str, Any]) -> str:
 
 def _missing_table() -> str | None:
     try:
-        con = store.connect()
+        con = store.connect(read_only=True)
     except Exception:
         return None
     try:

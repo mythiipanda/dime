@@ -15,6 +15,7 @@ from .._core import (
     TTL_SCOREBOARD_PAST,
     _warehouse_or_live,
     clamp_stat,
+    current_season,
     is_past_game_date,
     is_scope_game,
     last_completed_season,
@@ -64,7 +65,12 @@ from .cba_cap import (
     _unknown_player_hints,
     _unknown_trade_name,
     get_cap_ledger,
+    get_cap_table,
 )
+from .cap_scenario import get_cap_scenario
+from .trade_legality import get_trade_legality
+from .trade_targets import get_trade_targets
+from .value_contracts import get_value_contracts
 from .clutch import (
     _CLUTCH_MARGIN_DEFAULT,
     _CLUTCH_PBP_ALIAS,
@@ -118,6 +124,8 @@ from .clutch import (
     get_clutch_stats,
     get_situational_splits,
 )
+from .draft_capital import get_draft_capital
+from .expectations import get_expectations
 from .draft_contracts import (
     _CONTRACT_WEIGHTS,
     _contract_fetched,
@@ -135,6 +143,7 @@ from .draft_contracts import (
     get_draft_board,
     get_draft_model,
 )
+from .salary_history import get_salary_history
 from .leaderboards import (
     _ensure_leaderboard_snapshots,
     get_leaderboard_deltas,
@@ -201,6 +210,7 @@ from .playoffs_sim import (
     get_playoffs,
     get_win_prob,
 )
+from .roster_fit import get_roster_fit
 from .ratings import (
     _RATINGS_KEEP,
     _RankingDirection,
@@ -294,7 +304,11 @@ from .standings import (
     get_standings_deep,
     get_team_trajectory,
 )
+from .fa_plan import get_fa_plan
+from .free_agents import get_free_agents
+from .daily_brief import get_team_daily_brief
 from .news import get_news_feed
+from .prospects import get_prospect
 from .trade_value import (
     PICK_VALUE_M,
     _TRADE_CHECK_UNMODELED,

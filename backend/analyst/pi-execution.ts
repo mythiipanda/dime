@@ -1,19 +1,97 @@
-import { readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
-import { connectPythonTools, objectValue, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
+import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
-import { createSubmitAnswerTool, type AnswerSubmission } from "./submit-tool.js";
+import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
+import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
+import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
 const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
+const TURN_END_STEER_MIN_CHARS = 240;
+const SUBMIT_FORCE_REMAINING_MS = 60_000;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
+const TRACE_RESULT_PREVIEW_CHARS = 4096;
+
+type TracedResult = Pick<Extract<AnalystEvent, { type: "tool_result" }>, "result" | "result_sha256" | "result_bytes" | "result_truncated">;
+
+function tracedResult(payload: unknown): TracedResult {
+    try {
+        const serialized = JSON.stringify(payload ?? null);
+        return {
+            result: serialized.slice(0, TRACE_RESULT_PREVIEW_CHARS),
+            result_sha256: createHash("sha256").update(serialized).digest("hex"),
+            result_bytes: serialized.length,
+            ...(serialized.length > TRACE_RESULT_PREVIEW_CHARS ? { result_truncated: true } : {})
+        };
+    }
+    catch {
+        return {};
+    }
+}
+const CODEMODE_STORE_ENTRY_TYPE = "codemode-store";
+const CODEMODE_STORE_FILE = "codemode-store.json";
+const CODEMODE_STORE_MAX_BYTES = 512 * 1024;
+
+export function codemodeStoreSnapshot(branch: ReadonlyArray<{ type: string }>): Record<string, unknown> {
+    const store = new Map<string, unknown>();
+    for (const entry of branch) {
+        if (entry.type !== "custom")
+            continue;
+        const custom = entry as { customType?: string; data?: unknown };
+        if (custom.customType !== CODEMODE_STORE_ENTRY_TYPE)
+            continue;
+        const data = objectValue(custom.data);
+        if (!data)
+            continue;
+        if (Array.isArray(data.delete))
+            for (const key of data.delete)
+                if (typeof key === "string")
+                    store.delete(key);
+        const set = objectValue(data.set);
+        if (!set)
+            continue;
+        for (const [key, value] of Object.entries(set))
+            store.set(key, value);
+    }
+    return Object.fromEntries(store);
+}
+
+function readStoredSnapshot(dir: string): Record<string, unknown> | undefined {
+    try {
+        const value: unknown = JSON.parse(readFileSync(join(dir, CODEMODE_STORE_FILE), "utf8"));
+        const snapshot = objectValue(value);
+        return snapshot && Object.keys(snapshot).length > 0 ? snapshot : undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
+
+function persistStoreSnapshot(dir: string, snapshot: Record<string, unknown>): void {
+    try {
+        const path = join(dir, CODEMODE_STORE_FILE);
+        if (Object.keys(snapshot).length === 0) {
+            if (existsSync(path))
+                unlinkSync(path);
+            return;
+        }
+        const json = JSON.stringify(snapshot);
+        if (json.length > CODEMODE_STORE_MAX_BYTES)
+            return;
+        writeFileSync(path, json);
+    }
+    catch {
+    }
+}
 
 export function analystEventFrom(event: AgentSessionEvent): AnalystEvent | undefined {
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta")
@@ -67,6 +145,83 @@ export function listWorkspaceArtifacts(cwd: string): WorkspaceArtifact[] {
     return items.slice(0, WORKSPACE_ARTIFACT_LIMIT);
 }
 
+const TEAM_ABBREV_TO_ID: Record<string, number> = {
+    atl: 1610612737, bos: 1610612738, bkn: 1610612751, cha: 1610612766,
+    chi: 1610612741, cle: 1610612739, dal: 1610612742, den: 1610612743,
+    det: 1610612765, gsw: 1610612744, hou: 1610612745, ind: 1610612754,
+    lac: 1610612746, lal: 1610612747, mem: 1610612763, mia: 1610612748,
+    mil: 1610612749, min: 1610612750, nop: 1610612740, nyk: 1610612752,
+    okc: 1610612760, orl: 1610612753, phi: 1610612755, phx: 1610612756,
+    por: 1610612757, sac: 1610612758, sas: 1610612759, tor: 1610612761,
+    uta: 1610612762, was: 1610612764,
+};
+
+const TEAM_ARG_KEYS = new Set(["team", "team_id", "team_abbr", "teams", "opponent", "opponent_team", "home_team", "away_team"]);
+
+const TEAM_KEY_CANON: Record<string, string> = { team_id: "team", team_abbr: "team" };
+
+function isSeasonKey(key: string): boolean {
+    return key === "season" || key === "seasons" || key.endsWith("_season");
+}
+
+function normalizeSeasonArgValue(value: number | string): string | number {
+    const text = typeof value === "number" && Number.isInteger(value) ? String(value) : typeof value === "string" ? value.trim() : null;
+    if (text && /^\d{4}(-\d{4})?$/.test(text)) {
+        const start = text.slice(0, 4);
+        return `${start}-${String(Number(start) + 1).slice(2)}`;
+    }
+    return value;
+}
+
+function normalizeTeamArgValue(raw: string): string | undefined {
+    const lower = raw.trim().toLowerCase();
+    if (!lower) return "";
+    const single = TEAM_ABBREV_TO_ID[lower];
+    if (single) return `tid:${single}`;
+    if (/^\d{10}$/.test(lower)) return `tid:${Number(lower)}`;
+    const parts = lower.split(",").map(part => part.trim()).filter(Boolean);
+    if (parts.length > 1) {
+        const ids = parts.map(part => TEAM_ABBREV_TO_ID[part]);
+        if (ids.every(id => id !== undefined))
+            return `tid:${(ids as number[]).sort((a, b) => a - b).join("+")}`;
+    }
+    return lower;
+}
+
+function normalizeLoopArgValue(key: string | null, value: unknown): unknown {
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (key && TEAM_ARG_KEYS.has(key))
+            return normalizeTeamArgValue(trimmed);
+        if (key && isSeasonKey(key)) {
+            const season = normalizeSeasonArgValue(trimmed);
+            return typeof season === "string" ? season.toLowerCase() : season;
+        }
+        return trimmed.toLowerCase();
+    }
+    if (typeof value === "number" && key && TEAM_ARG_KEYS.has(key) && value > 1e9)
+        return `tid:${value}`;
+    if (typeof value === "number" && key && isSeasonKey(key))
+        return normalizeSeasonArgValue(value);
+    if (Array.isArray(value))
+        return value.map(item => normalizeLoopArgValue(key, item));
+    if (value !== null && typeof value === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            const normalized = normalizeLoopArgValue(k, v);
+            if (normalized === "" || normalized === null || normalized === undefined)
+                continue;
+            out[TEAM_KEY_CANON[k] ?? k] = normalized;
+        }
+        return out;
+    }
+    return value;
+}
+
+export function normalizeLoopArgs(args: unknown): unknown {
+    return normalizeLoopArgValue(null, args);
+}
+
 export function canonicalArgsKey(value: unknown): string {
     if (value === null || typeof value !== "object")
         return JSON.stringify(value) ?? "null";
@@ -82,10 +237,16 @@ export function canonicalArgsKey(value: unknown): string {
     return "{" + parts.join(",") + "}";
 }
 
-const turnSchema = Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String() });
+const turnSchema = Type.Object({
+    role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+    content: Type.String(),
+    reasoning: Type.Optional(Type.String())
+});
 export const analystContextSchema = Type.Object({
-    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(),
-    sources: Type.Optional(Type.Array(sourceRecordSchema)), cwd: Type.String(), agentDir: Type.String(),
+    q: Type.String({ minLength: 1 }), history: Type.Array(turnSchema, { maxItems: 24 }), model: Type.Unknown(), runTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
+    sources: Type.Optional(Type.Array(sourceRecordSchema)),
+    submissions: Type.Optional(Type.Array(Type.Object({ run_id: Type.String(), submission: submitAnswerSchema }, { additionalProperties: false }), { maxItems: 8 })),
+    cwd: Type.String(), agentDir: Type.String(),
     bridge: Type.Object({ python: Type.String(), cwd: Type.String(), env: Type.Record(Type.String(), Type.String()) }),
 });
 export type AnalystContext = Static<typeof analystContextSchema>;
@@ -95,12 +256,17 @@ export type AnalystEvent = {
 } | {
     type: "tool_call";
     name: string;
+    args?: unknown;
 } | {
     type: "tool_result";
     name: string;
     status: "ok" | "fail";
     error?: string;
     rows?: number;
+    result?: string;
+    result_sha256?: string;
+    result_bytes?: number;
+    result_truncated?: boolean;
 } | {
     type: "source";
     record: SourceRecord;
@@ -108,6 +274,7 @@ export type AnalystEvent = {
     type: "answer";
     text: string;
     submission?: AnswerSubmission;
+    reasoning?: string;
 } | {
     type: "custom_data";
     tables?: Array<Record<string, unknown>>;
@@ -126,15 +293,56 @@ type AnalystDeps = {
     resolveRuntime?: typeof resolvedRuntime;
     connectTools?: (options: PythonToolsOptions) => ReturnType<typeof connectPythonTools>;
     abortGraceMs?: number;
+    budgetNudgeDelayMs?: number;
+    retryTimeBudgetMs?: number;
 };
 
+const PRIOR_SUBMISSION_ITEM_LIMIT = 24;
+const PRIOR_SUBMISSION_TEXT_CHARS = 500;
+const PRIOR_SUBMISSIONS_CHARS = 12000;
+
+function compactArtifactValue(value: unknown, depth: number): unknown {
+    if (Array.isArray(value)) {
+        const items = value.slice(0, PRIOR_SUBMISSION_ITEM_LIMIT).map(item => compactArtifactValue(item, depth + 1));
+        if (value.length > PRIOR_SUBMISSION_ITEM_LIMIT)
+            items.push(`…${value.length - PRIOR_SUBMISSION_ITEM_LIMIT} more`);
+        return items;
+    }
+    const obj = objectValue(value);
+    if (obj) {
+        if (depth >= 5)
+            return "[object]";
+        return Object.fromEntries(Object.entries(obj).map(([key, item]) => [key, compactArtifactValue(item, depth + 1)]));
+    }
+    if (typeof value === "string" && value.length > PRIOR_SUBMISSION_TEXT_CHARS)
+        return value.slice(0, PRIOR_SUBMISSION_TEXT_CHARS) + "…";
+    return value;
+}
+
+export function compactPriorSubmissions(submissions: ReadonlyArray<{ run_id: string; submission: AnswerSubmission }>) {
+    const out: Record<string, unknown>[] = [];
+    let budget = PRIOR_SUBMISSIONS_CHARS;
+    for (const { run_id, submission } of [...submissions].slice(-8).reverse()) {
+        const entry: Record<string, unknown> = {
+            run_id,
+            blocks: submission.blocks.map(block => ({
+                text: block.text.length > PRIOR_SUBMISSION_TEXT_CHARS ? block.text.slice(0, PRIOR_SUBMISSION_TEXT_CHARS) + "…" : block.text,
+                ...(block.anchors?.length ? { anchors: block.anchors } : {})
+            }))
+        };
+        if (submission.artifacts?.length)
+            entry.artifacts = submission.artifacts.map(artifact => compactArtifactValue(artifact, 0));
+        const size = JSON.stringify(entry).length;
+        if (out.length > 0 && size > budget)
+            break;
+        out.push(entry);
+        budget -= size;
+    }
+    return out;
+}
+
 function sourceSummary(record: SourceRecord) {
-    const { result, isError } = sourceResult(record).structuredContent;
-    const data = objectValue(result);
-    return {
-        ref: record.ref, tool: record.tool, failed: isError, columns: data?.columns,
-        declared_column_semantics: data?.declared_column_semantics, season_semantics: data?.season_semantics, provenance: data?.meta
-    };
+    return sourceEvidenceCard(record);
 }
 
 function safeFailureMessage(kind: string, error: unknown, apiKey?: string): string {
@@ -150,15 +358,20 @@ function safeFailureMessage(kind: string, error: unknown, apiKey?: string): stri
 }
 
 function toHistoryMessages(history: AnalystContext["history"], model: { api: AssistantMessage["api"]; provider: string; id: string; compat?: object }): Message[] {
-    if (history.length > 0 && model.compat && "requiresReasoningContentOnAssistantMessages" in model.compat && model.compat.requiresReasoningContentOnAssistantMessages)
-        return [{ role: "user", content: "Earlier turns of this conversation, replayed as a transcript because their reasoning was not retained:\n\n" + history.map(turn => (turn.role === "user" ? "User: " : "Analyst: ") + turn.content).join("\n\n"), timestamp: Date.now() }];
-    return history.map(turn => turn.role === "user"
-        ? { role: "user", content: turn.content, timestamp: Date.now() }
-        : {
-            role: "assistant", content: [{ type: "text", text: turn.content }], api: model.api, provider: model.provider, model: model.id,
+    const replayThinking = !!(model.compat && (("requiresReasoningContentOnAssistantMessages" in model.compat && model.compat.requiresReasoningContentOnAssistantMessages) || ("requiresThinkingAsText" in model.compat && model.compat.requiresThinkingAsText)));
+    return history.map(turn => {
+        if (turn.role === "user")
+            return { role: "user", content: turn.content, timestamp: Date.now() };
+        const content: AssistantMessage["content"] = [];
+        if (replayThinking)
+            content.push({ type: "thinking", thinking: turn.reasoning?.trim() || "Reasoning was not retained for this earlier turn.", thinkingSignature: "reasoning_content" });
+        content.push({ type: "text", text: turn.content });
+        return {
+            role: "assistant", content, api: model.api, provider: model.provider, model: model.id,
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
             stopReason: "stop", timestamp: Date.now()
-        });
+        };
+    });
 }
 
 function buildLoopRecord(
@@ -166,23 +379,66 @@ function buildLoopRecord(
     callId: string,
     count: number,
     rawArgs: unknown,
-    lastRef?: string
+    lastRef?: string,
+    lastError?: string
 ) {
-    const error = "Identical tool call repeated 3 times in this run";
+    const error = lastError
+        ? `${toolName} keeps failing after ${count} equivalent calls (${lastError}) — do not retry it; pivot to a different tool or arguments, or call submit_answer.`
+        : `Already called ${toolName} ${count} times with equivalent arguments in this run — already called, pivot or finish.`;
     const parsedArgs = objectValue(rawArgs);
     const payload = {
         ok: false,
         loop_detected: true,
+        repeated_failure: Boolean(lastError),
         error,
-        summary: `Blocked repeated ${toolName} call (#${count}) with identical arguments.`,
+        summary: lastError
+            ? `Blocked repeated ${toolName} call (#${count}) — it failed every time with equivalent arguments; retrying is wasted. Pivot now.`
+            : `Blocked repeated ${toolName} call (#${count}) with equivalent arguments — pivot to a different tool/args or call submit_answer.`,
         args: parsedArgs ? JSON.parse(canonicalArgsKey(parsedArgs)) : {},
-        recovery_hint: lastRef
-            ? `Reuse prior ref ${lastRef} via tools.read_source, change parameters/SQL, or call submit_answer.`
-            : "Change parameters/SQL or call submit_answer.",
-        next_actions: ["Inspect prior source ref", "Modify query/parameters", "Call submit_answer"]
+        ...(lastError ? { last_error: lastError } : {}),
+        recovery_hint: lastError
+            ? "This call cannot succeed with these arguments. Change parameters/SQL, switch tools (warehouse_schema, run_python, another domain tool), or call submit_answer noting the gap."
+            : lastRef
+                ? `Reuse prior ref ${lastRef} via tools.read_source, change parameters/SQL, or call submit_answer.`
+                : "Change parameters/SQL or call submit_answer.",
+        next_actions: lastError
+            ? ["Change arguments or tool", "Note the data gap", "Call submit_answer"]
+            : ["Inspect prior source ref", "Modify query/parameters", "Call submit_answer"]
     };
     const record: SourceRecord = {
         ref: `loop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        ...(parsedArgs ? { args: parsedArgs } : {}),
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
+const CONSECUTIVE_FAILURE_LIMIT = 5;
+
+function buildBreakerRecord(
+    toolName: string,
+    callId: string,
+    failures: number,
+    lastError?: string
+) {
+    const error = `${toolName} disabled for this run after ${failures} consecutive failed calls`;
+    const payload = {
+        ok: false,
+        circuit_open: true,
+        error,
+        summary: `${toolName} failed ${failures} calls in a row; it is blocked for the rest of this run.`,
+        ...(lastError ? { last_error: lastError } : {}),
+        recovery_hint: "Repeated failures mean a data or source limitation, not a transient error. Move on: answer from warehouse tools (sql_exec, run_python, domain tools), note the gap, or call submit_answer with what you have.",
+        next_actions: ["Use a different tool", "Note the data gap in the answer", "Call submit_answer"]
+    };
+    const record: SourceRecord = {
+        ref: `breaker_${failures}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
         callId,
         tool: toolName as SourceRecord["tool"],
         response: {
@@ -194,26 +450,324 @@ function buildLoopRecord(
     return { record, payload };
 }
 
+const LOOP_STOP_AFTER_INJECTIONS = 3;
+const SUBMIT_AUDIT_MAX_REJECTIONS = 3;
+
+export function flagAcknowledgedByOmissions(flag: string, omitted: string[]): boolean {
+    const tokens = flag.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+    if (tokens.length === 0)
+        return false;
+    return omitted.some(item => {
+        const norm = item.toLowerCase();
+        if (norm.includes(flag.toLowerCase()) || flag.toLowerCase().includes(norm))
+            return true;
+        const hits = tokens.filter(t => norm.includes(t)).length;
+        return hits / tokens.length >= 0.6;
+    });
+}
+
+function intEnv(name: string, fallback: number): number {
+    const raw = process.env[name];
+    const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function callCeilingLimits(): { warn: number; stop: number } {
+    const stop = intEnv("DIME_CALL_CEILING_STOP", 140);
+    const warn = Math.min(intEnv("DIME_CALL_CEILING_WARN", 80), stop);
+    return { warn, stop };
+}
+
+function buildLoopStopRecord(
+    toolName: string,
+    callId: string,
+    count: number
+) {
+    const error = `Run stopped: ${toolName} called ${count} times with equivalent arguments after repeated pivot warnings.`;
+    const payload = {
+        ok: false,
+        loop_terminated: true,
+        stop_reason: "tool_call_loop",
+        error,
+        summary: `${toolName} kept re-calling with equivalent arguments after ${LOOP_STOP_AFTER_INJECTIONS} pivot warnings — the run is being terminated so it does not burn the remaining budget.`,
+        next_actions: ["Call submit_answer with verified partial work"]
+    };
+    const record: SourceRecord = {
+        ref: `loop_stop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
+function buildCallCeilingRecord(toolName: string, callId: string, count: number) {
+    const error = `High tool-call count (${count}) — wrap up and submit verified work now with submit_answer instead of opening new queries.`;
+    const payload = {
+        ok: false,
+        call_ceiling: true,
+        error,
+        summary: `This run has already spent ${count} tool calls; churning more queries burns the run budget without improving the answer.`,
+        next_actions: ["Call submit_answer with verified partial work", "List uncovered sub-questions in its omitted field"]
+    };
+    const record: SourceRecord = {
+        ref: `call_ceiling_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
+function buildCallCeilingStopRecord(toolName: string, callId: string, count: number) {
+    const error = `Run stopped: ${count} tool calls in a single run exceeded the churn ceiling. Wrap up verified partial work in the next run.`;
+    const payload = {
+        ok: false,
+        loop_terminated: true,
+        stop_reason: "tool_call_churn",
+        error,
+        summary: `The run kept issuing varied tool calls past the churn ceiling — terminating so it does not burn the remaining budget on dithering.`,
+        next_actions: ["Call submit_answer with verified partial work"]
+    };
+    const record: SourceRecord = {
+        ref: `churn_stop_${count}_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
+function loopArgsKey(toolName: string, rawArgs: unknown): string {
+    const plain = rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? rawArgs : {};
+    return `${toolName}:${canonicalArgsKey(normalizeLoopArgs(plain))}`;
+}
+
+const POOL_ARG_KEY_RE = /^(player|player_name|player_id|name)$/i;
+const TEAM_ARG_KEY_RE = /^(team|team_id|team_name|team_abbr|team_abbreviation)$/i;
+const TEAM_POOL_TOOLS = new Set(["get_lineup_stats", "get_lineups"]);
+const POOL_FANOUT_HINT_AT = 3;
+
+function poolSignature(toolName: string, rawArgs: unknown): { key: string; entity: string; entityKind: "players" | "teams" } | undefined {
+    const parsed = objectValue(rawArgs);
+    if (!parsed)
+        return undefined;
+    const argKeyRe = TEAM_POOL_TOOLS.has(toolName) ? TEAM_ARG_KEY_RE : POOL_ARG_KEY_RE;
+    let entity: string | undefined;
+    for (const [k, v] of Object.entries(parsed)) {
+        if (argKeyRe.test(k) && (typeof v === "string" || typeof v === "number") && String(v).trim())
+            entity = String(v).trim().toLowerCase();
+    }
+    if (!entity)
+        return undefined;
+    return { key: toolName, entity, entityKind: TEAM_POOL_TOOLS.has(toolName) ? "teams" : "players" };
+}
+
+const DEFAULT_RETRY_TIME_BUDGET_MS = 90_000;
+
+export function createProviderRetryStormGuard(
+    emit: (event: AnalystEvent) => void,
+    stopRun: (reason: string) => void,
+    onRetryBudget?: (burnedMs: number) => void,
+    retryBudgetMs: number = DEFAULT_RETRY_TIME_BUDGET_MS
+) {
+    let exhausted = 0;
+    let retryDelayMs = 0;
+    let budgetFired = false;
+    return (event: AgentSessionEvent) => {
+        if (event.type === "auto_retry_start") {
+            retryDelayMs += event.delayMs;
+            if (!budgetFired && retryDelayMs >= retryBudgetMs && onRetryBudget) {
+                budgetFired = true;
+                onRetryBudget(retryDelayMs);
+            }
+            return;
+        }
+        if (event.type !== "auto_retry_end" || event.success)
+            return;
+        exhausted += 1;
+        if (exhausted === 1) {
+            const detail = typeof event.finalError === "string" && event.finalError ? event.finalError : "provider unavailable";
+            stopRun(`Run stopped: provider call exhausted all retries against a saturated lane (${detail}). Retry the task when the provider recovers.`);
+        }
+    };
+}
+
+const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
+const SQL_STEER_SKIP_TOOLS = new Set(["sql_exec", "run_python", "web_search", "web_fetch", "warehouse_schema", "get_warehouse_freshness", "load_skill", "run_status"]);
+
+type FallbackSpec = { table: string; nameCol?: string; teamCol?: string; seasonCol?: string; seasonText?: boolean; idCol?: string; orderCol?: string };
+const TOOL_FALLBACK_TABLE: Record<string, FallbackSpec> = {};
+{
+    const playerSeasons: FallbackSpec = { table: "silver_hist_player_seasons", nameCol: "player_name", teamCol: "team_abbreviation", seasonCol: "season", idCol: "player_id", orderCol: "season" };
+    for (const t of ["get_scouting_report", "get_raptor_history", "get_percentiles", "get_comps", "get_player_report", "get_player_evaluation", "get_player_intel", "get_player_ratings", "get_player_rankings", "get_season_averages", "get_career_arc", "get_career_totals", "get_compare", "get_splits", "get_situational_splits", "get_roster_fit", "get_young_player_usage", "get_impact_rank", "get_impact_estimate", "get_rapm", "get_rapm_prior", "get_award_race", "get_award_results", "get_risers", "get_player_risers", "get_leaderboard_deltas", "get_leaders", "get_historical_leaders", "get_rookie_leaders", "get_clutch_stats", "get_clutch", "get_last_x", "get_trend", "get_streaks", "get_head_to_head", "get_competitive_ratings", "get_debate_card", "get_matchup_brief", "get_opponent_scout", "get_scout_pack", "get_finder", "get_wpa_leaders", "get_hustle_boards", "get_team_leaders"])
+        TOOL_FALLBACK_TABLE[t] = playerSeasons;
+    const teamSeasons: FallbackSpec = { table: "silver_hist_team_seasons", teamCol: "team_name", seasonCol: "season", orderCol: "season" };
+    for (const t of ["get_team_compare", "get_team_season_summary", "get_team_hub", "get_standings", "get_standings_deep", "get_team_splits", "get_team_trajectory", "get_team_daily_brief"])
+        TOOL_FALLBACK_TABLE[t] = teamSeasons;
+    const draftBoard: FallbackSpec = { table: "silver_draft_boards", nameCol: "PLAYER_NAME", seasonCol: "_season", seasonText: true, orderCol: "\"ORDER\"" };
+    for (const t of ["get_draft_board", "get_draft_model", "get_prospect", "get_combine"])
+        TOOL_FALLBACK_TABLE[t] = draftBoard;
+    TOOL_FALLBACK_TABLE["get_draft_capital"] = { table: "silver_future_picks", teamCol: "ORIG_TEAM", seasonCol: "DRAFT_YEAR" };
+    TOOL_FALLBACK_TABLE["get_draft_history"] = { table: "silver_hist_draft", nameCol: "PLAYER_NAME", teamCol: "TEAM_ABBREVIATION", seasonCol: "SEASON", idCol: "PERSON_ID" };
+}
+const FALLBACK_LIMIT = 25;
+
+function fallbackWhere(spec: FallbackSpec, toolArgs: unknown): string[] {
+    const args = (toolArgs && typeof toolArgs === "object" ? toolArgs : {}) as Record<string, unknown>;
+    const parts: string[] = [];
+    const esc = (v: unknown) => String(v).replace(/'/g, "''");
+    for (const [key, raw] of Object.entries(args)) {
+        const k = key.toLowerCase();
+        if (typeof raw === "number" && (k === "player_id" || k === "person_id")) {
+            if (spec.idCol)
+                parts.push(`${spec.idCol} = ${Math.trunc(raw)}`);
+            continue;
+        }
+        if (typeof raw !== "string" || !raw.trim())
+            continue;
+        const v = esc(raw.trim());
+        if (spec.nameCol && /player.*name|^name$|^player$/.test(k))
+            parts.push(`${spec.nameCol} ILIKE '%${v}%'`);
+        else if (spec.teamCol && /team(_(abbreviation|name|abbr))?$|^team$/.test(k))
+            parts.push(`${spec.teamCol} ILIKE '%${v}%'`);
+        else if (spec.seasonCol && /season|draft_year|^year$/.test(k)) {
+            const m = v.match(/^(\d{4})(?:-(\d{2}))?/);
+            if (m) {
+                const end = m[2] ? Number(m[1]) + 1 : Number(m[1]);
+                parts.push(spec.seasonText ? `${spec.seasonCol} = '${end}'` : `${spec.seasonCol} = ${end}`);
+            }
+        }
+    }
+    return parts;
+}
+
+function fallbackSql(spec: FallbackSpec, toolArgs: unknown): string | null {
+    const parts = fallbackWhere(spec, toolArgs);
+    if (parts.length === 0)
+        return null;
+    return `SELECT * FROM ${spec.table} WHERE ${parts.join(" AND ")}${spec.orderCol ? ` ORDER BY ${spec.orderCol} DESC` : ""} LIMIT ${FALLBACK_LIMIT}`;
+}
+
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
     results: Map<string, SourceRecord>,
-    emit: (event: AnalystEvent) => void
+    emit: (event: AnalystEvent) => void,
+    tracker: RunStatusTracker,
+    stopRun: (reason: string) => void,
+    question?: string
 ) {
-    const callCounts = new Map<string, { count: number; lastRef?: string }>();
+    const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
+    const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number }>();
+    const lastErrors = new Map<string, { error: string; count: number }>();
+    const failStreaks = new Map<string, number>();
+    const tripped = new Set<string>();
+    const poolSigs = new Map<string, Set<string>>();
+    const poolSteered = new Set<string>();
+    let capWarehouseSteered = false;
+    const namedToolSteered = new Set<string>();
+    const capAsk = isCapAsk(question);
+    const sqlExecTool = tools.find(t => t.name === "sql_exec");
+    const namedToolSqlSteer = async (tool: { name: string }, domain: Record<string, unknown>, result: { content?: unknown }, reason: "failed" | "no_rows", toolArgs: unknown, callArgs: readonly unknown[]) => {
+        if (namedToolSteered.has(tool.name) || SQL_STEER_SKIP_TOOLS.has(tool.name))
+            return false;
+        namedToolSteered.add(tool.name);
+        domain.named_tool_steer = reason === "failed"
+            ? `${tool.name} failed for this ask. The warehouse usually covers this class directly: run sql_exec over silver_hist_player_seasons (per-player season rows — _season, player_name, team_abbreviation, age, gp, min, pts/reb/ast/stl/blk/tov per game, fg3_pct, ts_pct, usg_pct, off/def/net_rating, pie), silver_hist_team_seasons (team rows with *_rank league ranks), or the draft tables silver_draft_boards, silver_draft_value_curve, silver_future_picks and silver_hist_draft for prospect/pick asks — applying the stated season and pool filter. Scouting, percentile, comp, fit and draft-board asks resolve there instead of through this named tool.`
+            : `${tool.name} returned no rows for this ask — a coverage gap, not necessarily an empty answer. The warehouse usually covers this class directly: run sql_exec over silver_hist_player_seasons (per-player season rows — _season, player_name, team_abbreviation, age, gp, min, pts/reb/ast/stl/blk/tov per game, fg3_pct, ts_pct, usg_pct, off/def/net_rating, pie), silver_hist_team_seasons (team rows with *_rank league ranks), or the draft tables silver_draft_boards, silver_draft_value_curve, silver_future_picks and silver_hist_draft for prospect/pick asks — applying the stated season and pool filter.`;
+        const spec = TOOL_FALLBACK_TABLE[tool.name];
+        const sql = spec ? fallbackSql(spec, toolArgs) : null;
+        if (sql && sqlExecTool) {
+            emit({ type: "tool_call", name: "named_tool_sql_fallback", args: { tool: tool.name, table: spec!.table, sql } });
+            try {
+                const fb = await sqlExecTool.execute(`fb_${tool.name}_${tracker.toolCalls}`, { sql }, callArgs[2] as never, callArgs[3] as never, callArgs[4] as never);
+                const fbDomain = objectValue((fb?.structuredContent as Record<string, unknown> | undefined)?.result);
+                const fbRows = Array.isArray(fbDomain?.rows) ? (fbDomain.rows as unknown[]) : [];
+                if (fbRows.length > 0) {
+                    domain.warehouse_fallback = {
+                        table: spec!.table,
+                        sql,
+                        rows: fbRows.slice(0, FALLBACK_LIMIT),
+                        note: `${tool.name} ${reason === "failed" ? "failed" : "returned no rows"} — these warehouse rows answer the ask directly. Build the answer from them (and further sql_exec over this table for aggregates/percentiles) instead of retrying the named tool.`,
+                    };
+                }
+                emit({ type: "tool_result", name: "named_tool_sql_fallback", status: fbRows.length > 0 ? "ok" : "fail", rows: fbRows.length });
+            }
+            catch {
+                emit({ type: "tool_result", name: "named_tool_sql_fallback", status: "fail", error: "fallback query failed" });
+            }
+        }
+        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+        emit({ type: "tool_call", name: "named_tool_sql_steer", args: { tool: tool.name, reason, fallback: Boolean(domain.warehouse_fallback) } });
+        emit({ type: "tool_result", name: "named_tool_sql_steer", status: "ok" });
+        return true;
+    };
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
-            emit({ type: "tool_call", name: tool.name });
-            const key = `${tool.name}:${canonicalArgsKey(args[1] ?? {})}`;
+            tracker.toolCalls += 1;
+            emit({ type: "tool_call", name: tool.name, args: args[1] });
+            const callId = typeof args[0] === "string" && args[0] ? args[0] : `call_${tracker.toolCalls}`;
+            const ceiling = callCeilingLimits();
+            if (tracker.toolCalls >= ceiling.stop) {
+                const { record, payload } = buildCallCeilingStopRecord(tool.name, callId, tracker.toolCalls);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                stopRun(payload.error);
+                return sourceResult(record);
+            }
+            if (tracker.toolCalls === ceiling.warn) {
+                const { record, payload } = buildCallCeilingRecord(tool.name, callId, tracker.toolCalls);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                return sourceResult(record);
+            }
+            if (tripped.has(tool.name)) {
+                const { record, payload } = buildBreakerRecord(tool.name, callId, failStreaks.get(tool.name) ?? 0, lastErrors.get(tool.name)?.error);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                return sourceResult(record);
+            }
+            const key = loopArgsKey(tool.name, args[1]);
             const entry = callCounts.get(key) ?? { count: 0 };
             entry.count += 1;
             callCounts.set(key, entry);
             if (entry.count >= 3) {
-                const callId = typeof args[0] === "string" && args[0] ? args[0] : `loop_${entry.count}`;
-                const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef);
+                if (entry.lastSuccessRef) {
+                    const prior = results.get(entry.lastSuccessRef);
+                    if (prior) {
+                        emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef}` });
+                        return sourceResult(prior);
+                    }
+                }
+                entry.blocked = (entry.blocked ?? 0) + 1;
+                if (entry.blocked > LOOP_STOP_AFTER_INJECTIONS) {
+                    const { record, payload } = buildLoopStopRecord(tool.name, callId, entry.count);
+                    results.set(record.ref, record);
+                    emit({ type: "source", record });
+                    emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                    stopRun(payload.error);
+                    return sourceResult(record);
+                }
+                const { record, payload } = buildLoopRecord(tool.name, callId, entry.count, args[1], entry.lastRef, entry.lastError);
                 results.set(record.ref, record);
                 emit({ type: "source", record });
-                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
                 return sourceResult(record);
             }
             try {
@@ -228,14 +782,78 @@ function wrapBridgeTools(
                 const domain = objectValue(result.structuredContent.result);
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
+                if (!failed)
+                    entry.lastSuccessRef = record.ref;
+                else if (typeof error === "string")
+                    entry.lastError = error;
+                if (failed) {
+                    const streak = (failStreaks.get(tool.name) ?? 0) + 1;
+                    failStreaks.set(tool.name, streak);
+                    if (streak >= CONSECUTIVE_FAILURE_LIMIT) {
+                        tripped.add(tool.name);
+                        const { record, payload } = buildBreakerRecord(tool.name, callId, streak, typeof error === "string" ? error : undefined);
+                        results.set(record.ref, record);
+                        emit({ type: "source", record });
+                        emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                        return sourceResult(record);
+                    }
+                }
+                else
+                    failStreaks.delete(tool.name);
+                if (failed && domain) {
+                    const errorText = typeof error === "string" ? error : "Tool failed";
+                    const previous = lastErrors.get(tool.name);
+                    const count = previous && previous.error === errorText ? previous.count + 1 : 1;
+                    lastErrors.set(tool.name, { error: errorText, count });
+                    if (count >= 2) {
+                        domain.repeated_error = `Same error as ${count - 1} earlier ${tool.name} call(s) in this run`;
+                        domain.recovery_hint = "Treat as a data limitation: note the gap and move to the next sub-question instead of retrying.";
+                        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                    }
+                    await namedToolSqlSteer(tool, domain, result, "failed", args[1], args);
+                }
+                else if (!failed)
+                    lastErrors.delete(tool.name);
+                if (!failed && domain) {
+                    if (Array.isArray(domain.rows) && domain.rows.length === 0)
+                        await namedToolSqlSteer(tool, domain, result, "no_rows", args[1], args);
+                    if (!capWarehouseSteered && capAsk && WEB_TOOLS.has(tool.name)) {
+                        capWarehouseSteered = true;
+                        domain.warehouse_steer = "This is a cap/trade question the warehouse answers directly. Prefer the cap tools — get_cap_scenario, get_trade_legality, get_fa_plan, get_draft_capital, get_cap_ledger, get_cap_table — or sql_exec over silver_salaries, silver_cap_room, silver_contracts, silver_future_picks: they carry committed salaries, projected cap/tax/apron lines, and the outgoing/incoming pick ledger. Web search is a fallback only when the warehouse lacks the input (e.g. a live news claim); cite the warehouse figures for the numbers.";
+                        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                        emit({ type: "tool_call", name: "cap_warehouse_steer", args: { tool: tool.name } });
+                        emit({ type: "tool_result", name: "cap_warehouse_steer", status: "ok" });
+                    }
+                    const sig = poolSignature(tool.name, args[1]);
+                    if (sig) {
+                        const seen = poolSigs.get(sig.key) ?? new Set<string>();
+                        seen.add(sig.entity);
+                        poolSigs.set(sig.key, seen);
+                        if (seen.size >= POOL_FANOUT_HINT_AT && !poolSteered.has(sig.key)) {
+                            poolSteered.add(sig.key);
+                            domain.pool_fanout_hint = sig.entityKind === "teams"
+                                ? `${tool.name} has now been called for ${seen.size} different teams — that is a pool enumeration. For league-wide lineup boards, get_lineup_leaders or one sql_exec over silver_hist_lineups (filter _season/season_type/measure_type/per_mode, apply the minutes floor, ORDER BY the rating) returns the whole cohort in a single call; use it for the remaining teams instead of more per-team calls.`
+                                : `${tool.name} has now been called for ${seen.size} different players — that is a pool enumeration. For leaderboard/pool-cut asks, one sql_exec (GROUP BY player, HAVING the min-sample filter, ORDER BY the ranking metric) or a leaders tool returns the whole cohort in a single call; use it for the remaining players instead of more per-player calls.`;
+                            result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                            emit({ type: "tool_call", name: "pool_fanout_steer", args: sig.entityKind === "teams" ? { tool: tool.name, teams: seen.size } : { tool: tool.name, players: seen.size } });
+                            emit({ type: "tool_result", name: "pool_fanout_steer", status: "ok" });
+                        }
+                    }
+                }
                 emit({
                     type: "tool_result", name: tool.name, status: failed ? "fail" : "ok",
                     ...(failed ? { error: typeof error === "string" ? error : "Tool failed" } : {}),
-                    ...(Array.isArray(domain?.rows) ? { rows: domain.rows.length } : {})
+                    ...(Array.isArray(domain?.rows) ? { rows: domain.rows.length } : {}),
+                    ...(traceResults ? tracedResult(domain) : {})
                 });
                 return result;
             }
             catch (error) {
+                entry.lastError = error instanceof Error ? error.message : String(error);
+                const streak = (failStreaks.get(tool.name) ?? 0) + 1;
+                failStreaks.set(tool.name, streak);
+                if (streak >= CONSECUTIVE_FAILURE_LIMIT)
+                    tripped.add(tool.name);
                 emit({ type: "tool_result", name: tool.name, status: "fail", error: error instanceof Error ? error.message : String(error) });
                 throw error;
             }
@@ -247,6 +865,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
     const resolveRuntime = deps.resolveRuntime ?? resolvedRuntime;
     const connectTools = deps.connectTools ?? connectPythonTools;
     const abortGraceMs = deps.abortGraceMs ?? ABORT_GRACE_MS;
+    const budgetNudgeDelayMs = deps.budgetNudgeDelayMs;
     return {
         async *stream(input: unknown, signal?: AbortSignal): AsyncGenerator<AnalystEvent> {
             const controller = new AbortController();
@@ -254,7 +873,16 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             let wake: (() => void) | undefined;
             let finished = false;
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
-            const onAbort = () => controller.abort();
+            let acceptedSubmission: AnswerSubmission | undefined;
+            let answerEmitted = false;
+            const emitAcceptedAnswer = () => {
+                if (answerEmitted || !acceptedSubmission)
+                    return;
+                answerEmitted = true;
+                const canonicalText = acceptedSubmission.blocks.map(block => block.text).join("\n\n");
+                emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+            };
+            const onAbort = () => { emitAcceptedAnswer(); controller.abort(); };
             signal?.addEventListener("abort", onAbort, { once: true });
             let abandoned = false;
             const abandon = new Promise<void>(resolve => controller.signal.addEventListener("abort", () => setTimeout(resolve, abortGraceMs).unref(), { once: true }));
@@ -265,15 +893,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let session: Awaited<ReturnType<typeof createAnalystSession>> | undefined;
                 let bridge: Awaited<ReturnType<typeof connectPythonTools>> | undefined;
                 let kind = "configuration";
+                let bridgeCwd: string | undefined;
                 let bridgePid: number | undefined;
-                let acceptedSubmission: AnswerSubmission | undefined;
                 let modelApiKey: string | undefined;
+                let budgetNudge: ReturnType<typeof setTimeout> | undefined;
+                const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
                 try {
                     if (!Value.Check(analystContextSchema, input) || !input.q.trim())
                         throw new Error("Invalid product context");
                     const start = input;
+                    bridgeCwd = start.bridge.cwd;
                     modelApiKey = objectValue(start.model)?.apiKey as string | undefined;
                     const { runtime, model } = await resolveRuntime(start.model);
                     controller.signal.throwIfAborted();
@@ -282,36 +913,146 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     bridgePid = bridge.pid;
                     controller.signal.throwIfAborted();
                     const connected = bridge;
+                    const tracker: RunStatusTracker = {
+                        startedAt,
+                        budgetMs: start.runTimeoutMs,
+                        toolCalls: 0,
+                        sourceCount: () => (start.sources?.length ?? 0) + connected.results.size,
+                        submitted: false,
+                    };
+                    let submitAuditRejections = 0;
+                    let zeroEvidenceRepromptUsed = false;
+                    const consultedTables = new Set<string>();
+                    const toolArgsText: string[] = [];
+                    let dataToolCalls = 0;
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
+                            tracker.submitted = true;
                             acceptedSubmission = submission;
                             if (submission.artifacts && submission.artifacts.length > 0)
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
+                        },
+                        (submission) => {
+                            if (submitAuditRejections >= SUBMIT_AUDIT_MAX_REJECTIONS)
+                                return null;
+                            const audit = auditAnswerNumbers(
+                                submission,
+                                [...(start.sources ?? []), ...connected.results.values()],
+                                start.q,
+                                toolArgsText.join(" ")
+                            );
+                            const omitted = submission.omitted ?? [];
+                            const missingArtifacts = audit.missing_in_artifacts
+                                .map(claim => claim.context)
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const uncoveredAsks = audit.uncovered_asks
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const noArtifacts = audit.no_artifacts_on_artifact_ask
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const metricGaps = audit.metric_value_gaps
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const missingTables = missingRequiredTables(start.q, consultedTables)
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const unsupportedClaims = audit.unsupported_claims
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const unevidencedAsks = audit.unevidenced_asks
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            if (missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0)
+                                return null;
+                            submitAuditRejections += 1;
+                            const gaps: Record<string, unknown> = {};
+                            if (missingArtifacts.length > 0)
+                                gaps.missing_in_artifacts = missingArtifacts;
+                            if (uncoveredAsks.length > 0)
+                                gaps.uncovered_asks = uncoveredAsks;
+                            if (noArtifacts.length > 0)
+                                gaps.no_artifacts_on_artifact_ask = noArtifacts;
+                            if (metricGaps.length > 0)
+                                gaps.metric_value_gaps = metricGaps;
+                            if (missingTables.length > 0)
+                                gaps.missing_required_tables = missingTables;
+                            if (unsupportedClaims.length > 0)
+                                gaps.unsupported_claims = unsupportedClaims;
+                            if (unevidencedAsks.length > 0)
+                                gaps.unevidenced_asks = unevidencedAsks;
+
+                            emit({ type: "tool_call", name: "submit_answer_audit" });
+                            emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
+                    );
+                    const verifyTool = createVerifyAnswerNumbersTool(
+                        () => [...(start.sources ?? []), ...connected.results.values()],
+                        start.q
                     );
                     session = await createAnalystSession({
                         cwd: start.cwd, agentDir: start.agentDir, model, modelRuntime: runtime,
-                        tools: [...wrapBridgeTools(bridge.tools, connected.results, emit), priorSourceTool(start.sources ?? []), submitTool],
+                        tools: [
+                            ...wrapBridgeTools(bridge.tools, connected.results, (event: Parameters<typeof emit>[0]) => {
+                                if (event.type === "tool_call" && event.args !== undefined) {
+                                    dataToolCalls += 1;
+                                    const argsJson = JSON.stringify(event.args).toLowerCase();
+                                    toolArgsText.push(argsJson);
+                                    for (const match of argsJson.matchAll(WAREHOUSE_TABLE_RE))
+                                        consultedTables.add(match[0]);
+                                }
+                                emit(event);
+                            }, tracker, (reason: string) => {
+                                emit({ type: "failure", kind: "loop_stop", message: reason });
+                                controller.abort();
+                            }, start.q),
+                            countToolCall(priorSourceTool(start.sources ?? []), tracker),
+                            verifyTool,
+                            countToolCall(submitTool, tracker),
+                            countToolCall(createRunStatusTool(tracker), tracker),
+                        ],
                         onSkillLoad: () => {
+                            tracker.toolCalls += 1;
                             emit({ type: "tool_call", name: "load_skill" });
                             emit({ type: "tool_result", name: "load_skill", status: "ok" });
                         }
                     });
                     controller.signal.throwIfAborted();
+                    const retryStormGuard = createProviderRetryStormGuard(emit, (reason: string) => {
+                        emit({ type: "failure", kind: "provider_retry_storm", message: reason });
+                        controller.abort();
+                    }, (burnedMs: number) => {
+                        emit({ type: "tool_call", name: "retry_budget_steer", args: { burned_ms: burnedMs } });
+                        emit({ type: "tool_result", name: "retry_budget_steer", status: "ok" });
+                        session?.agent.steer({
+                            role: "user",
+                            content: `The provider lane is saturated: this run has already spent ~${Math.round(burnedMs / 1000)}s waiting on retry backoffs, and each further call may stall again. Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats a slow full attempt. Skip this only if submit_answer already ran.`,
+                            timestamp: Date.now()
+                        });
+                    }, deps.retryTimeBudgetMs);
                     session.subscribe(event => {
                         const mapped = analystEventFrom(event);
                         if (mapped)
                             emit(mapped);
+                        retryStormGuard(event);
                     });
                     const history = toHistoryMessages(start.history, model);
                     for (const message of history)
                         session.sessionManager.appendMessage(message);
                     session.agent.state.messages = [...session.agent.state.messages, ...history];
                     if (start.sources?.length) {
-                        const context: Message = { role: "user", content: "Prior source catalogue. Use tools.read_source({ref}) inside codemode and return only filtered results:\n" + JSON.stringify(start.sources.map(sourceSummary)), timestamp: Date.now() };
+                        const context: Message = { role: "user", content: "Prior source evidence cards. Use tools.read_source({ref}) inside codemode and return only filtered results; cards omit full rows:\n" + JSON.stringify(start.sources.map(sourceSummary)), timestamp: Date.now() };
                         session.sessionManager.appendMessage(context);
                         session.agent.state.messages.push(context);
+                    }
+                    const restoredStore = readStoredSnapshot(start.bridge.cwd);
+                    if (restoredStore)
+                        session.sessionManager.appendCustomEntry(CODEMODE_STORE_ENTRY_TYPE, { set: restoredStore, delete: [] });
+                    const priorSubmissions = start.submissions?.length ? compactPriorSubmissions(start.submissions) : [];
+                    if (priorSubmissions.length > 0) {
+                        const submissionsContext: Message = {
+                            role: "user",
+                            content: "Prior submitted answers and artifacts in this thread, most recent first (compact specs). These are reference material for resolving references like 'the earlier table' or 'that player' - never re-emit or restate their artifacts or numbers in the new submission unless the user's current question explicitly asks for the earlier output. Reuse or extend a prior spec only when the question refers to it; otherwise build fresh artifacts for the current answer only:\n" + JSON.stringify(priorSubmissions),
+                            timestamp: Date.now()
+                        };
+                        session.sessionManager.appendMessage(submissionsContext);
+                        session.agent.state.messages.push(submissionsContext);
                     }
                     const workspaceFiles = listWorkspaceArtifacts(start.bridge.cwd);
                     if (workspaceFiles.length > 0) {
@@ -323,29 +1064,105 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         session.sessionManager.appendMessage(workspaceContext);
                         session.agent.state.messages.push(workspaceContext);
                     }
+                    if (start.runTimeoutMs !== undefined) {
+                        const budgetContext: Message = {
+                            role: "user",
+                            content: `Host run budget: ${Math.round(start.runTimeoutMs / 1000)}s (${Math.round(start.runTimeoutMs)}ms total). The host aborts this run when it expires; tools.run_status({}) reports elapsed and remaining budget.`,
+                            timestamp: Date.now()
+                        };
+                        session.sessionManager.appendMessage(budgetContext);
+                        session.agent.state.messages.push(budgetContext);
+                        const runTimeoutMs = start.runTimeoutMs;
+                        const nudgeAtMs = budgetNudgeDelayMs ?? Math.max(5000, Math.min(runTimeoutMs * 0.85, runTimeoutMs - 30000));
+                        const agent = session.agent;
+                        budgetNudge = setTimeout(() => {
+                            if (acceptedSubmission)
+                                return;
+                            const remaining = Math.max(0, Math.round((runTimeoutMs - (Date.now() - startedAt)) / 1000));
+                            agent.steer({
+                                role: "user",
+                                content: `Host run budget nearly exhausted (~${remaining}s remaining before abort). Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats no answer. Skip this only if submit_answer already ran.`,
+                                timestamp: Date.now()
+                            });
+                        }, nudgeAtMs);
+                        budgetNudge.unref();
+                    }
                     kind = "model";
                     await session.prompt(start.q);
-                    controller.signal.throwIfAborted();
-                    const last = session.messages.filter(m => m.role === "assistant").at(-1);
-                    if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
-                        const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
-                        throw new Error(detail || "Model failed");
+                    let submitSteerUsed = false;
+                    let text = "";
+                    let reasoning = "";
+                    for (;;) {
+                        controller.signal.throwIfAborted();
+                        const last = session.messages.filter(m => m.role === "assistant").at(-1);
+                        if (!last || last.stopReason === "error" || last.stopReason === "aborted") {
+                            const detail = last && "errorMessage" in last && typeof last.errorMessage === "string" ? last.errorMessage : "";
+                            throw new Error(detail || "Model failed");
+                        }
+                        text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
+                        reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
+                        if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
+                            break;
+                        if (!submitSteerUsed) {
+                            submitSteerUsed = true;
+                            emit({ type: "tool_call", name: "turn_end_steer" });
+                            emit({ type: "tool_result", name: "turn_end_steer", status: "ok" });
+                            await session.prompt("You ended the run with an answer but never called submit_answer. Route it through tools.submit_answer now: put that answer's text into blocks, add the artifacts and source anchors it should carry, list anything left out in omitted, and submit. Do not rewrite the answer.");
+                            continue;
+                        }
+                        const zeroEvidenceDataAsk = dataToolCalls === 0
+                            && (start.sources?.length ?? 0) === 0
+                            && connected.results.size === 0
+                            && isDataAsk(start.q);
+                        if (zeroEvidenceDataAsk && !zeroEvidenceRepromptUsed) {
+                            const remainingMs = start.runTimeoutMs !== undefined
+                                ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
+                                : undefined;
+                            if (remainingMs === undefined || remainingMs > SUBMIT_FORCE_REMAINING_MS) {
+                                zeroEvidenceRepromptUsed = true;
+                                emit({ type: "tool_call", name: "zero_evidence_reprompt" });
+                                emit({ type: "tool_result", name: "zero_evidence_reprompt", status: "ok" });
+                                await session.prompt("This is a data question and you have run zero data tools — do not answer from memory. Call at least one data tool (query the warehouse or an analyst tool) for the figures your answer relies on, then call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
+                                continue;
+                            }
+                        }
+                        break;
                     }
-                    const text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
+                    const replayReasoning = reasoning ? { reasoning } : {};
                     if (acceptedSubmission) {
                         const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
-                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission });
+                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
                     } else {
                         if (!text.trim())
                             throw new Error("Model returned no answer");
-                        emit({ type: "answer", text });
+                        const zeroEvidence = dataToolCalls === 0
+                            && (start.sources?.length ?? 0) === 0
+                            && connected.results.size === 0
+                            && isDataAsk(start.q);
+                        if (zeroEvidence) {
+                            emit({ type: "tool_call", name: "submit_answer_audit" });
+                            emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify({ no_evidence_on_data_ask: [ZERO_EVIDENCE_DATA_ASK_FLAG] }) });
+                            answerEmitted = true;
+                            emit({ type: "answer", text, submission: { blocks: [{ text, anchors: [] }], omitted: [ZERO_EVIDENCE_DATA_ASK_FLAG] }, ...replayReasoning });
+                        } else {
+                            emit({ type: "answer", text, ...replayReasoning });
+                        }
                     }
                 }
                 catch (error) {
-                    if (!controller.signal.aborted)
+                    emitAcceptedAnswer();
+                    if (!answerEmitted && !controller.signal.aborted)
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
                 }
                 finally {
+                    if (budgetNudge)
+                        clearTimeout(budgetNudge);
+                    try {
+                        if (session && bridgeCwd)
+                            persistStoreSnapshot(bridgeCwd, codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                    }
+                    catch {
+                    }
                     try {
                         await session?.abort();
                     }

@@ -1,6 +1,5 @@
 import argparse
 import datetime
-import difflib
 import hashlib
 import json
 import os
@@ -19,12 +18,7 @@ _SAMPLE_READ_BYTES = 8192
 _PACK_MEMBER = "data/warehouse.duckdb"
 CANONICAL_WAREHOUSE = Path.home() / "workspace" / "dime-r25-data" / "backend" / "data" / "warehouse-backfill.duckdb"
 DEFAULT_STAGE_DIR = Path.home() / "workspace" / "dime-data-release"
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FETCH_SH = REPO_ROOT / "scripts" / "fetch-data.sh"
-FETCH_ACTION_YML = REPO_ROOT / ".github" / "actions" / "fetch-warehouse" / "action.yml"
-README_MD = REPO_ROOT / "README.md"
 VERDICT_KEYS = ["drift", "tables_changed", "pack_path", "sha256", "fingerprint", "pack", "released_at"]
-_HEX = set("0123456789abcdefABCDEF")
 
 def sample_digest(path):
     path = Path(path)
@@ -86,70 +80,6 @@ def build_pack(warehouse_path, dest_zip):
         zf.write(warehouse_path, _PACK_MEMBER)
     return sha_file_hexdigest(dest_zip)
 
-def _swap_sha_token(text, new_sha):
-    parts = text.split('"')
-    for i in range(1, len(parts), 2):
-        token = parts[i]
-        if len(token) == 64 and all(c in _HEX for c in token):
-            parts[i] = new_sha
-    return '"'.join(parts)
-
-def _swap_tag(text, new_tag):
-    out = []
-    i = 0
-    while i < len(text):
-        if text.startswith("dime-data-", i):
-            j = i + len("dime-data-")
-            k = j
-            while k < len(text) and text[k].isdigit():
-                k += 1
-            if k - j == 8:
-                out.append(new_tag)
-                i = k
-                continue
-        out.append(text[i])
-        i += 1
-    return "".join(out)
-
-def _swap_zip_name(text, new_zip):
-    out = []
-    i = 0
-    while i < len(text):
-        if text.startswith("dime_data", i):
-            k = text.find(".zip", i)
-            if k != -1:
-                middle = text[i:k]
-                if all(c.isalnum() or c in "_-" for c in middle):
-                    out.append(new_zip)
-                    i = k + len(".zip")
-                    continue
-        out.append(text[i])
-        i += 1
-    return "".join(out)
-
-def _unified_diff(rel, old_text, new_text):
-    lines = list(difflib.unified_diff(
-        old_text.splitlines(), new_text.splitlines(),
-        fromfile=rel, tofile=rel, lineterm="",
-    ))
-    if not lines:
-        return ""
-    return "\n".join(lines) + "\n"
-
-def prepare_updates(tag, zip_name, sha256):
-    fetch_old = FETCH_SH.read_text()
-    fetch_new = _swap_tag(_swap_sha_token(fetch_old, sha256), tag)
-    action_old = FETCH_ACTION_YML.read_text()
-    action_new = _swap_tag(_swap_zip_name(_swap_sha_token(action_old, sha256), zip_name), tag)
-    readme_old = README_MD.read_text()
-    readme_new = _swap_tag(readme_old, tag)
-    return {
-        "scripts/fetch-data.sh": _unified_diff("scripts/fetch-data.sh", fetch_old, fetch_new),
-        ".github/actions/fetch-warehouse/action.yml": _unified_diff(
-            ".github/actions/fetch-warehouse/action.yml", action_old, action_new),
-        "README.md": _unified_diff("README.md", readme_old, readme_new),
-    }
-
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="release_pack.py",
@@ -164,10 +94,6 @@ def parse_args(argv=None):
                         help="Dir where new packs are staged and the default pack is found.")
     parser.add_argument("--name", default=None,
                         help="Stem for the new pack zip. Defaults to dime_data_YYYYMMDD.")
-    parser.add_argument("--prepare", action="store_true",
-                        help="Write pending file diffs for the new pack into the prepare dir.")
-    parser.add_argument("--prepare-dir", default=None,
-                        help="Dir for prepare diffs. Defaults to a scratch dir under the playground hidden files.")
     parser.add_argument("--lock-path", default=None,
                         help="Lock file for single flight. Defaults to a lock file in the stage dir.")
     return parser.parse_args(argv)
@@ -256,21 +182,6 @@ def _run(args, stage_dir):
         "pack": pack,
         "released_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
-    if args.prepare and drift:
-        tag = pack
-        zip_name = Path(pack_path).name
-        diffs = prepare_updates(tag, zip_name, sha256)
-        if args.prepare_dir:
-            prep_dir = Path(args.prepare_dir)
-        else:
-            prep_dir = (Path.home() / "workspace" / "goals" / "dime-playground"
-                        / "hidden_files" / ("release-pack-" + tag))
-        prep_dir.mkdir(parents=True, exist_ok=True)
-        (prep_dir / "fetch-data.sh.diff").write_text(diffs["scripts/fetch-data.sh"])
-        (prep_dir / "fetch-warehouse-action.yml.diff").write_text(
-            diffs[".github/actions/fetch-warehouse/action.yml"])
-        (prep_dir / "README.md.diff").write_text(diffs["README.md"])
-        print("release_pack: prepare diffs in " + str(prep_dir), file=sys.stderr)
     emit_verdict(verdict)
     return 0
 

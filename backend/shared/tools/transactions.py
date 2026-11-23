@@ -3,7 +3,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .. import store
-from ._core import coerce_team_id
+from ._core import coerce_team_id, team_error_message
 
 _TABLE = "silver_transactions"
 
@@ -162,7 +162,7 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
             tid = coerce_team_id(want_team)
         except ValueError:
             return {"tool": "get_transactions", "ok": False, "rows": [],
-                    "error": f"unknown team: {want_team}",
+                    "error": team_error_message(want_team),
                     "meta": {"source": f"warehouse:{_TABLE}",
                              "team": want_team,
                              "start": want_start, "end": want_end,
@@ -184,7 +184,16 @@ def get_transactions(team: str = "", start: str = "", end: str = "",
         clauses.append("txn_date <= ?")
         params.append(want_end)
     where = " AND ".join(clauses)
-    frame = store.read_frame(_TABLE, where, params)
+    try:
+        frame = store.read_frame(_TABLE, where, params)
+    except store.TableAbsent:
+        return {"tool": "get_transactions", "ok": False, "rows": [],
+                "error": f"warehouse table missing: {_TABLE}; "
+                         "run scripts/seed_transactions.py to load it",
+                "meta": {"source": f"warehouse:{_TABLE}",
+                         "team": want_team.upper() if want_team else "",
+                         "start": want_start, "end": want_end,
+                         "txn_type": canonical}}
     raws: list[dict[str, Any]] = []
     if frame is not None and frame.height > 0:
         try:

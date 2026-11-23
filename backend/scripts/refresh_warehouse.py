@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,28 +24,71 @@ SEEDERS = [
     ("injuries_news", "seed_injury_news.py", ["--season"], True),
     ("injury_entries", "normalize_injuries.py", [], True),
     ("tracking", "seed_tracking.py", [], True),
+    ("tracking_history", "seed_tracking.py", ["--seasons", "2013-14,2014-15,2015-16,2016-17,2017-18,2018-19,2019-20,2020-21,2021-22,2022-23,2023-24"], False),
     ("playoffs", "seed_historical_playoffs.py", ["--season"], False),
+    ("playoff_gamelogs", "seed_playoff_gamelogs.py", [], True),
     ("team_ratings", "seed_team_ratings.py", [], True),
     ("impact", "seed_bref_impact.py", [], True),
+    ("awards", "seed_bbref_awards.py", [], False),
     ("salaries", "seed_salaries.py", [], False),
-    ("stints", "seed_stints.py", [], True),
+    ("cap_history", "seed_cap_history.py", [], False),
+    ("hist_salaries", "seed_hist_salaries.py", [], False),
+    ("games_missed", "seed_games_missed.py", [], False),
+    ("combine_history", "seed_combine_history.py", [], False),
+    ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("shots", "seed_shots_2025_26.py", [], False),
     ("repair_shot_names", "repair_shot_names.py", [], False),
     ("draft_capital", "seed_draft_capital.py", [], False),
+    ("free_agents", "seed_free_agents.py", [], True),
+    ("prospects", "seed_prospects.py", [], True),
     ("four_factors_team", "build_team_four_factors.py", [], False),
 ]
 
 
+def _remote_head_sha(dataset: str, token: str | None) -> str | None:
+    try:
+        from huggingface_hub import HfApi
+        return HfApi(token=token).dataset_info(dataset, revision="main").sha
+    except Exception as exc:
+        print(f"remote main resolution failed ({exc!r}); "
+              "downloading default revision")
+        return None
+
+
+def _snapshot_sha(path: Path) -> str | None:
+    p = Path(path)
+    if p.parent.parent.name == "snapshots":
+        return p.parent.name
+    return None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+
+
+def _pid_cmdline(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        return raw.replace(b"\0", b" ").decode(errors="replace").strip()
+    except OSError:
+        return ""
+
+
 def pull_warehouse(dataset: str, work_dir: Path, token: str | None) -> Path:
     target = work_dir / "warehouse.duckdb"
+    remote_sha = _remote_head_sha(dataset, token)
     try:
         from huggingface_hub import hf_hub_download
         got = hf_hub_download(repo_id=dataset, filename="warehouse.duckdb",
-                              repo_type="dataset", token=token)
-        shutil.copy2(got, target)
-        print(f"pulled {dataset} warehouse -> {target}")
-        return target
+                              repo_type="dataset",
+                              revision=remote_sha or "main", token=token)
     except Exception as exc:
         print(f"hub pull failed ({exc!r}); falling back to local warehouse")
         if not LOCAL_WAREHOUSE.is_file():
@@ -53,6 +97,54 @@ def pull_warehouse(dataset: str, work_dir: Path, token: str | None) -> Path:
         shutil.copy2(LOCAL_WAREHOUSE, target)
         print(f"copied local warehouse -> {target}")
         return target
+    got_sha = _snapshot_sha(got)
+    print(f"serving snapshot {got_sha or 'unknown'} "
+          f"(remote main {remote_sha or 'unknown'})")
+    if remote_sha and got_sha and got_sha != remote_sha:
+        raise RuntimeError(
+            f"stale snapshot served: hub cache returned {got_sha} but "
+            f"remote main is {remote_sha}; refusing to seed a stale baseline")
+    shutil.copy2(got, target)
+    print(f"pulled {dataset} warehouse -> {target}")
+    return target
+
+
+def ensure_writable_workdir(work_dir: Path, warehouse: Path) -> None:
+    lock_path = work_dir / ".write.lock"
+    if lock_path.exists():
+        from shared import file_lock
+        holder = lock_path.read_text().strip()
+        fh = open(lock_path, "r+")
+        try:
+            try:
+                file_lock.try_lock_exclusive(fh)
+            except BlockingIOError:
+                detail = (f"pid {holder} ({_pid_cmdline(int(holder))})"
+                          if holder.isdigit() else "unknown holder")
+                raise RuntimeError(
+                    f"write lock {lock_path} held by a live process: "
+                    f"{detail}; stop it or use a fresh --work-dir")
+            file_lock.unlock(fh)
+        finally:
+            fh.close()
+        lock_path.unlink()
+        note = (f" (recorded pid {holder} is gone)" if holder else "")
+        print(f"cleared stale write lock {lock_path}{note}")
+    try:
+        import duckdb
+        con = duckdb.connect(str(warehouse))
+        con.close()
+    except Exception as exc:
+        msg = str(exc)
+        m = re.search(r"PID (\d+)", msg)
+        if m and _pid_alive(int(m.group(1))):
+            holder = f"pid {m.group(1)} ({_pid_cmdline(int(m.group(1)))})"
+            raise RuntimeError(
+                f"warehouse {warehouse} write-locked by a live process: "
+                f"{holder}; stop it or use a fresh --work-dir") from exc
+        raise RuntimeError(
+            f"warehouse {warehouse} not writable at refresh start: {msg}; "
+            "clear the stale process or use a fresh --work-dir") from exc
 
 
 def pull_manifest(dataset: str, token: str | None) -> dict:
@@ -116,8 +208,14 @@ def run_seeders(warehouse: Path, season: str, only: set[str] | None,
         if dry_run and supports_dry:
             cmd.append("--dry-run")
         print(f"=== seeder {name}: {' '.join(cmd)}", flush=True)
-        proc = subprocess.run(cmd, env=env, cwd=str(SCRIPTS_DIR.parent),
-                              capture_output=True, text=True, timeout=3600)
+        try:
+            proc = subprocess.run(cmd, env=env, cwd=str(SCRIPTS_DIR.parent),
+                                  capture_output=True, text=True,
+                                  timeout=3600)
+        except subprocess.TimeoutExpired:
+            print(f"seeder {name} timed out after 3600s")
+            failures.append(name)
+            continue
         tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-8:])
         print(tail)
         if proc.returncode != 0:
@@ -167,6 +265,11 @@ def main(argv: list[str] | None = None) -> int:
     if manifest:
         print(f"previous publish: sha256={manifest.get('sha256', '')[:12]} "
               f"size={manifest.get('size')}")
+    try:
+        ensure_writable_workdir(work_dir, warehouse)
+    except RuntimeError as exc:
+        print(f"FAILED: {exc}")
+        return 6
     backup = work_dir / "warehouse.rollback.duckdb"
     shutil.copy2(warehouse, backup)
     before = snapshot_counts(backup)
@@ -194,6 +297,13 @@ def main(argv: list[str] | None = None) -> int:
             return 4
     else:
         print("dry-run: row-count check skipped (seeders ran dry)")
+
+    from build_data_dictionary import write_dictionary
+    dictionary_path = write_dictionary(warehouse)
+    if warehouse.parent != LOCAL_WAREHOUSE.parent and LOCAL_WAREHOUSE.parent.is_dir():
+        local_dict = LOCAL_WAREHOUSE.parent / dictionary_path.name
+        shutil.copy2(dictionary_path, local_dict)
+        print(f"dictionary also staged at {local_dict}")
 
     if args.skip_publish:
         print("skip-publish: done, warehouse staged at", warehouse)

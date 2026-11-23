@@ -121,7 +121,7 @@ def register() -> dict[str, Any]:
         get_team_four_factors as _orig_get_team_four_factors,
         get_team_trajectory as _orig_get_team_trajectory,
     )
-    from shared.tools.lineup import get_lineup_stats as _orig_get_lineup_stats
+    from shared.tools.lineup import get_lineup_stats as _orig_get_lineup_stats, get_lineup_on_off as _orig_get_lineup_on_off
     try:
         from shared.tools.rest import get_rest_advantage as _orig_get_rest_advantage
     except ImportError:
@@ -183,6 +183,17 @@ def register() -> dict[str, Any]:
         res["columns"] = list(rows[0].keys()) if rows else default_cols
         if not res.get("ok"):
             enrich_error("get_lineup_stats", res)
+        return res
+
+    @tool("get_lineup_on_off", description=_orig_get_lineup_on_off.description)
+    def get_lineup_on_off(team: str | int, players: str = "", season: str | None = None,
+                          min_possessions: int = 100) -> dict:
+        res = call_sync(_orig_get_lineup_on_off, "get_lineup_on_off", {
+            "team": team, "players": players, "season": season,
+            "min_possessions": min_possessions,
+        })
+        if not res.get("ok"):
+            enrich_error("get_lineup_on_off", res)
         return res
 
     @tool("get_lineup_leaders", description=_orig_get_lineup_leaders.description)
@@ -297,6 +308,7 @@ def register() -> dict[str, Any]:
         "get_four_factors": get_four_factors,
         "get_team_four_factors": get_team_four_factors,
         "get_lineup_stats": get_lineup_stats,
+        "get_lineup_on_off": get_lineup_on_off,
         "get_lineup_leaders": get_lineup_leaders,
         "get_rest": get_rest,
         "get_rest_advantage": get_rest_advantage,

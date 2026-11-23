@@ -7,8 +7,12 @@ import ArtifactScatter from "@/components/dime/ArtifactScatter";
 import ArtifactShell from "@/components/dime/ArtifactShell";
 import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
 import ArtifactTable from "@/components/dime/ArtifactTable";
+import ArtifactMemo from "@/components/dime/ArtifactMemo";
 import ArtifactPlayerCard from "@/components/dime/ArtifactPlayerCard";
+import ArtifactTeamCard from "@/components/dime/ArtifactTeamCard";
+import PinButton from "@/components/dime/PinButton";
 import {
+  memoToMarkdown,
   originPhrase,
   undeclaredProvenance,
   type ChartSeriesPayload,
@@ -28,9 +32,11 @@ function toChartSeries(series: ChartSeriesPayload[]): ChartSeries[] {
 }
 
 export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
+  if (artifact.kind === "memo") return artifact.sections ? <ArtifactMemo artifact={artifact} /> : <div className="p-4"><p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{artifact.text}</p></div>;
   if (artifact.kind === "player_card") return <ArtifactPlayerCard artifact={artifact} />;
+  if (artifact.kind === "team_card") return <ArtifactTeamCard artifact={artifact} />;
   if (artifact.kind === "table") {
-    return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} />;
+    return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} footnote={artifact.footnote} />;
   }
   if (artifact.kind === "compare") {
     return (
@@ -56,6 +62,13 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
         footnote={artifact.footnote}
         unit={artifact.unit}
         xLabels={artifact.xLabels}
+        subtitle={artifact.subtitle}
+        variant={artifact.variant}
+        xLabel={artifact.xLabel}
+        yLabel={artifact.yLabel}
+        marks={artifact.marks}
+        annotations={artifact.annotations}
+        labelValues={artifact.labelValues}
       />
     );
   }
@@ -159,10 +172,20 @@ function escapeCsvCell(val: unknown): string {
 }
 
 export function artifactToCopyText(artifact: DimeArtifact): string {
-  if (artifact.kind === "player_card") {
-    return ["Player,Team,Metric,Value,Unit,Source,Row,Column", ...artifact.metrics.map(metric =>
-      [artifact.playerName, artifact.team, metric.label, metric.value, metric.unit, artifact.sourceRef, artifact.sourceRow, metric.column].map(escapeCsvCell).join(",")
-    )].join("\n");
+  if (artifact.kind === "memo") return memoToMarkdown(artifact);
+  if (artifact.kind === "player_card" || artifact.kind === "team_card") {
+    const name = artifact.kind === "player_card" ? artifact.playerName : artifact.teamName;
+    const team = artifact.kind === "player_card" ? artifact.team : undefined;
+    const lines = artifact.metrics.map(metric =>
+      ["", name, team, metric.label, metric.value, metric.unit, artifact.sourceRef, artifact.sourceRow, metric.column].map(escapeCsvCell).join(",")
+    );
+    for (const section of artifact.sections ?? []) {
+      for (const field of section.fields ?? [])
+        lines.push([section.label, name, team, field.label, field.value, "", section.sourceRef, section.sourceRow, field.column].map(escapeCsvCell).join(","));
+      for (const metric of section.metrics ?? [])
+        lines.push([section.label, name, team, metric.label, metric.value, metric.unit, section.sourceRef, section.sourceRow, metric.column].map(escapeCsvCell).join(","));
+    }
+    return ["Section,Player,Team,Metric,Value,Unit,Source,Row,Column", ...lines].join("\n");
   }
   if (artifact.kind === "table") {
     const header = artifact.columns.map((c) => escapeCsvCell(c.label || c.key)).join(",");
@@ -189,9 +212,9 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
     return [header, ...rows].join("\n");
   }
   if (artifact.kind === "shot_chart") {
-    const header = "X,Y,Attempts,Percentage";
+    const header = "Zone,X,Y,Attempts,Makes,FG%,Delta vs league";
     const rows = artifact.zones.map(
-      (z) => `${escapeCsvCell(z.x)},${escapeCsvCell(z.y)},${escapeCsvCell(z.att)},${escapeCsvCell(z.pct)}`,
+      (z) => [z.label, z.x, z.y, z.att, z.makes, z.pct, z.delta].map(escapeCsvCell).join(","),
     );
     return [header, ...rows].join("\n");
   }
@@ -213,6 +236,7 @@ export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
           title={artifact.title}
           source={artifact.source}
           copyText={artifactToCopyText(artifact)}
+          actions={<PinButton artifact={artifact} />}
         >
           <ArtifactBody artifact={artifact} />
           <ProvenancePanel provenance={artifact.provenance ?? undeclaredProvenance()} />

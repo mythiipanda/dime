@@ -197,6 +197,28 @@ def test_cap_new_schedule_and_wrapper(warehouse):
     assert wrapped['rows'][0]['players'][0]['future_salaries'] == {'2027-28': 110}
 
 
+def test_cap_table_all_teams_ranked(warehouse):
+    _new_warehouse(warehouse)
+    result = league.get_cap_table.invoke({})
+    assert result['ok']
+    rows = result['rows']
+    assert len(rows) == 30
+    assert [r['payroll'] for r in rows] == sorted((r['payroll'] for r in rows), reverse=True)
+    by_team = {r['team']: r for r in rows}
+    assert by_team['BOS']['payroll'] == 100
+    assert by_team['NYK']['payroll'] == 200
+    assert by_team['NYK']['over_tax'] is False
+    assert by_team['NYK']['room_under_apron2'] == result['meta']['apron2'] - 200
+    for key in ('cap', 'tax', 'apron1', 'apron2'):
+        assert key in result['meta']
+    assert 'source' in result['meta'] and 'salary_date' in result['meta']
+    from analyst.tools import cba
+    wrapped = cba.register()['get_cap_table'].invoke({})
+    assert wrapped['ok']
+    assert len(wrapped['rows']) == 30
+    assert list(wrapped['columns']) == list(wrapped['rows'][0].keys())
+
+
 def test_contract_value_id_join_and_name_fallback(warehouse):
     _new_warehouse(warehouse)
     result = league.get_contract_value.invoke({'season': '2025-26'})
@@ -208,6 +230,59 @@ def test_contract_value_id_join_and_name_fallback(warehouse):
     wrapped = cba.register()['get_contract_value'].invoke({'season': '2025-26'})
     assert wrapped['ok']
     assert wrapped['rows'][0]['years_remaining'] is not None
+
+
+def _low_sample_warehouse(path):
+    con = duckdb.connect(str(path))
+    con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, SALARY BIGINT, _season VARCHAR)')
+    con.execute("INSERT INTO silver_salaries VALUES ('Qualified A', 'AAA', 1, 100, '2026-27'), ('Qualified B', 'BBB', 2, 200, '2026-27'), ('Low Sample', 'CCC', 3, 300, '2026-27'), ('No Sample', 'DDD', 4, 400, '2026-27')")
+    con.execute('CREATE TABLE silver_leaders_pts (PLAYER VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GP INTEGER, PTS INTEGER, REB INTEGER, AST INTEGER, STL INTEGER, BLK INTEGER, TOV INTEGER, _season VARCHAR)')
+    con.execute("INSERT INTO silver_leaders_pts VALUES "
+                "('Qualified A', 'AAA', 1, 40, 800, 200, 200, 20, 20, 40, '2025-26'), "
+                "('Qualified B', 'BBB', 2, 40, 1600, 200, 200, 20, 20, 40, '2025-26'), "
+                "('Low Sample', 'CCC', 3, 16, 480, 80, 80, 8, 8, 16, '2025-26'), "
+                "('Low Sample', 'CCC', 3, 60, 1800, 300, 300, 30, 30, 60, '2024-25'), "
+                "('No Sample', 'DDD', 4, 55, 1100, 200, 200, 20, 20, 40, '2024-25')")
+    con.close()
+
+
+def test_contract_value_low_sample_estimate_is_flagged(warehouse):
+    _low_sample_warehouse(warehouse)
+    result = league.get_contract_value.invoke({'season': '2025-26', 'player': 'Low Sample'})
+    assert result['ok'], result
+    row = result['rows'][0]
+    assert row['LOW_SAMPLE'] is True
+    assert row['GP'] == 16
+    assert row['PRODUCTION_SEASON'] == '2025-26'
+    assert row['SALARY'] == 300
+    assert row['PREDICTED'] is not None
+    estimate = result['meta']['estimate']
+    assert estimate['estimate'] == 'low_sample'
+    assert estimate['games_played'] == 16
+    assert estimate['min_gp_threshold'] == 20
+    assert estimate['last_qualified_season'] == '2024-25'
+    assert 'unqualified sample' in result['meta']['estimate_note']
+
+
+def test_contract_value_falls_back_to_last_qualified_season(warehouse):
+    _low_sample_warehouse(warehouse)
+    result = league.get_contract_value.invoke({'season': '2025-26', 'player': 'No Sample'})
+    assert result['ok'], result
+    row = result['rows'][0]
+    assert row['FALLBACK_PRODUCTION'] is True
+    assert row['GP'] == 55
+    assert row['PRODUCTION_SEASON'] == '2024-25'
+    estimate = result['meta']['estimate']
+    assert estimate['estimate'] == 'fallback_season'
+    assert estimate['production_season'] == '2024-25'
+    assert result['meta']['production_season'] == '2024-25'
+
+
+def test_contract_value_player_with_no_history_still_errors(warehouse):
+    _low_sample_warehouse(warehouse)
+    result = league.get_contract_value.invoke({'season': '2025-26', 'player': 'Ghost Player'})
+    assert not result['ok']
+    assert 'no qualified value row' in result['error']
 
 
 def test_contract_value_legacy_cap_name_fallback(warehouse):

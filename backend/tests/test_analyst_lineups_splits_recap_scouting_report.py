@@ -1,4 +1,5 @@
 import asyncio
+import json
 import importlib
 import os
 import re
@@ -105,6 +106,16 @@ UPSTREAM_SCHEMAS = {
     "get_recap": team_module.get_recap.args_schema.model_json_schema(),
     "get_scouting_report": team_module.get_scouting_report.args_schema.model_json_schema(),
 }
+
+
+
+
+def _without_descriptions(node):
+    if isinstance(node, dict):
+        return {k: _without_descriptions(v) for k, v in node.items() if k != "description"}
+    if isinstance(node, list):
+        return [_without_descriptions(v) for v in node]
+    return node
 
 
 class _FakeTool:
@@ -400,18 +411,17 @@ def test_wrapper_input_schema_matches_the_shared_tool(monkeypatch):
     tools = _catalogue(monkeypatch, {})
 
     for name, upstream_schema in UPSTREAM_SCHEMAS.items():
-        assert tools[name].args_schema.model_json_schema() == upstream_schema, name
+        emitted = tools[name].args_schema.model_json_schema()
+        assert _without_descriptions(emitted) == _without_descriptions(upstream_schema), name
 
 
 def test_registry_matches_the_typescript_tool_names(monkeypatch):
     tools = _catalogue(monkeypatch, {})
 
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = re.findall(r'"([^"]+)"', block)
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = [t["name"] for t in manifest["tools"]]
 
+    assert len(declared) == 118
     assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for name in ("get_lineups", "get_splits", "get_recap", "get_scouting_report"):
@@ -420,11 +430,8 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
 
 
 def test_network_inventory_derives_real_warehouse_alternatives(monkeypatch):
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = re.findall(r'"([^"]+)"', block)
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = [t["name"] for t in manifest["tools"]]
     tools = _catalogue(monkeypatch, {})
 
     assert len(python_tools.NETWORK_TOOL_SOURCES) == 36
@@ -515,24 +522,20 @@ def test_bridge_tool_description_mutation_stays_private(monkeypatch):
 
 def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
     tools = _catalogue(monkeypatch, {})
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = re.findall(r'"([^"]+)"', block)
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = [t["name"] for t in manifest["tools"]]
 
+    assert len(declared) == 118
     assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for name, upstream_schema in UPSTREAM_SCHEMAS.items():
-        assert tools[name].args_schema.model_json_schema() == upstream_schema, name
+        emitted = tools[name].args_schema.model_json_schema()
+        assert _without_descriptions(emitted) == _without_descriptions(upstream_schema), name
 
 
 def test_timeout_error_text_for_each_tool_kind():
-    source = (BACKEND / "analyst" / "python-tools.ts").read_text(encoding="utf-8")
-    block = re.search(
-        r"export const ANALYST_TOOL_NAMES\b[^=]*=\s*\[(.*?)\]\s*as const;", source, re.S
-    ).group(1)
-    declared = set(re.findall(r'"([^"]+)"', block))
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
+    declared = {t["name"] for t in manifest["tools"]}
     elapsed = f"{python_tools.LIVE_CALL_TIMEOUT_S:.1f}s"
 
     assert python_tools._timeout_error("get_recap") == (

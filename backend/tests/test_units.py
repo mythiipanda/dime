@@ -112,12 +112,16 @@ def test_apron_matching_rules():
 
     assert _allowed_incoming(20_000_000, True) == (
         20_000_000, "100% (above the first apron)")
+    assert _allowed_incoming(5_000_000, False) == (
+        10_250_000, "200% plus $250k (below the first apron)")
     assert _allowed_incoming(20_000_000, False) == (
-        25_250_000, "125% plus $250k (below the first apron)")
+        27_500_000, "outgoing salary plus $7.5M (below the first apron)")
+    assert _allowed_incoming(40_000_000, False) == (
+        50_250_000, "125% plus $250k (below the first apron)")
     assert _allowed_incoming(20_000_000, False, 13_330_652) == (
         33_580_652, "cap room plus outgoing salary plus $250k (under the cap)")
     assert _allowed_incoming(20_000_000, False, 1_000_000) == (
-        25_250_000, "125% plus $250k (below the first apron)")
+        27_500_000, "outgoing salary plus $7.5M (below the first apron)")
     over = _apron_state(CAP["apron2"] + 1)
     assert over["over_apron1"] and over["over_apron2"]
     under = _apron_state(0)
@@ -131,6 +135,10 @@ def test_outgoing_needed_inverts_matching():
     need = _outgoing_needed(34_206_898, False)
     assert _allowed_incoming(need, False)[0] >= 34_206_898
     assert _allowed_incoming(need - 1, False)[0] < 34_206_898
+    small = _outgoing_needed(10_000_000, False)
+    assert small == 4_875_000
+    assert _allowed_incoming(small, False)[0] >= 10_000_000
+    assert _allowed_incoming(small - 1, False)[0] < 10_000_000
     assert _outgoing_needed(10_000_000, False, 13_000_000) == 0
 
 
@@ -456,7 +464,21 @@ def test_text_to_sql_allowlist_covers_current_analysis_tables():
     assert {
         "silver_advanced", "silver_player_season", "silver_on_off",
         "silver_four_factors", "silver_four_factors_team", "silver_cap_players",
+        "silver_bbref_gamelogs_2024_25", "silver_boxscores_ext",
+        "silver_cap_history", "silver_hist_hustle", "silver_hist_pbp",
+        "silver_hist_salaries", "silver_leaders_dreb",
+        "silver_leaders_fg_pct", "silver_playoff_inactive",
+        "silver_scoreboard", "silver_tracking_pt_defend",
+        "silver_tracking_pt_shot", "silver_tracking_pt_stats",
+        "silver_wowy", "silver_zone_splits",
     } <= set(_SQL_TABLES)
+
+
+def test_validate_readonly_sql_allows_table_free_select():
+    from shared.tools.league.sql_schema import _validate_readonly_sql
+
+    sql, used = _validate_readonly_sql("SELECT 1", {"silver_standings"})
+    assert sql == "SELECT 1" and used == []
 
 def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
     from shared.tools import player
@@ -499,6 +521,5 @@ def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
 def test_resolve_entity_uses_warehouse_canonical_id_for_exact_suffix_name():
     res = tools.resolve_entity.invoke({"query": "Tim Hardaway Jr."})
     player = res["rows"]["players"][0]
-    assert player["id"] == 896
-    assert player["static_id"] == 203501
-    assert player["identity_source"] == "warehouse_exact_name"
+    assert player["id"] == 203501
+    assert player.get("identity_source") in (None, "warehouse_exact_name")

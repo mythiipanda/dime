@@ -99,3 +99,12 @@ export function abbrForTeamFullName(name: string): string | null {
   if (typeof name !== "string") return null;
   return FULL_NAME_LOOKUP.get(name.trim().replace(/\s+/g, " ").toLowerCase()) ?? null;
 }
+
+export interface MorningTeam {
+  abbr: string;
+  name: string;
+}
+
+export const nbaTeams: MorningTeam[] = Object.entries(TEAM_ABBR_BY_FULL_NAME)
+  .map(([name, abbr]) => ({ abbr, name }))
+  .sort((a, b) => a.name.localeCompare(b.name));

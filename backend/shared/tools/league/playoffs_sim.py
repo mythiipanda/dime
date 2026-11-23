@@ -3,7 +3,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from .._core import coerce_team_id
+from .._core import coerce_team_id, team_error_message
 from ..sim import run_playoff_sim
 from ._helpers import _pkg
 
@@ -304,7 +304,7 @@ def get_win_prob(team_a: str = "", team_b: str = "", season: str | None = None,
         return {"tool": "get_win_prob", "ok": False, "error": "two abbreviations needed"}
     a, b = team_a.upper(), team_b.upper()
     home = (home_abbrev or "").upper()
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         rows = con.execute(
             """SELECT team_abbreviation, game_id, game_date, matchup, wl,
@@ -335,7 +335,7 @@ def get_win_prob(team_a: str = "", team_b: str = "", season: str | None = None,
 def get_elo(season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:
@@ -370,11 +370,11 @@ def _resolve_elo_anchor(elo: dict[str, float],
     try:
         opp_id = coerce_team_id(opponent)
     except ValueError:
-        return "", 1500, f"unknown team: {opponent}"
+        return "", 1500, team_error_message(opponent)
     by_id = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
     anchor_abbr = by_id.get(opp_id, "")
     if not anchor_abbr or anchor_abbr not in elo:
-        return "", 1500, f"unknown team: {opponent}"
+        return "", 1500, team_error_message(opponent)
     return anchor_abbr, round(elo[anchor_abbr]), None
 
 
@@ -383,7 +383,7 @@ def get_elo_standings(season: str | None = None, opponent: str | None = None,
                       limit: int = 30) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:

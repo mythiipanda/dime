@@ -6,7 +6,7 @@ from typing import Any
 import duckdb
 from langchain_core.tools import tool
 
-from ._core import clamp_season, resolve_season
+from ._core import clamp_season, resolve_season, team_error_message
 
 _REST_NOTE = (
     "Rest = calendar days since the team's previous game minus 1; "
@@ -185,7 +185,7 @@ def _classify_scoreboard_rows(
 def _load_scoreboard(
     season: str,
 ) -> tuple[list[dict[str, Any]], dict[str, int], str]:
-    season = resolve_season(season)
+    season = resolve_season(season, "silver_scoreboard")
     from .. import store as _store
 
     con = _store.connect(read_only=True)
@@ -225,7 +225,7 @@ def _game_row(g: TeamGame) -> dict[str, Any]:
 def get_rest_advantage(team: str = "league", season: str | None = None,
                        season_type: str = "all", date: str = "",
                        opponent: str = "") -> dict[str, Any]:
-    season = resolve_season(season)
+    season = resolve_season(season, "silver_scoreboard")
     season = clamp_season(season)
     args, err = _rest_args(team, season_type, date, opponent)
     if err is not None:
@@ -326,12 +326,12 @@ def _rest_args(team, season_type, date, opponent):
     if not want_all:
         abbr = _resolve_team(team)
         if abbr is None:
-            return None, f"unknown team: {team}"
+            return None, team_error_message(team)
     opp_abbr: str | None = None
     if opp_raw:
         opp_abbr = _resolve_team(opp_raw)
         if opp_abbr is None:
-            return None, f"unknown team: {opponent}"
+            return None, team_error_message(opponent)
     return (want_all, st, date_str, opp_raw, day, abbr, opp_abbr), None
 
 def _preview_result(games, by_team, abbr, opp_abbr, day,

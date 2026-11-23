@@ -1,3 +1,5 @@
+import difflib
+import re
 from typing import Any
 
 from langchain_core.tools import tool
@@ -8,6 +10,7 @@ from .common import (
     sanitize_for_wire,
 )
 from .errors import enrich_error
+from .sql_hints import schema_hint_for_sql_failure
 
 
 def _normalize_sql_result(res: dict[str, Any]) -> dict[str, Any]:
@@ -39,6 +42,59 @@ def _normalize_sql_result(res: dict[str, Any]) -> dict[str, Any]:
     return sanitize_for_wire(res)
 
 
+_RUN_PYTHON_RULES = [
+    (r"\bconsole\.(log|error|warn|info|debug)\b",
+     "run_python executes Python, not JavaScript",
+     "use print(), not console.log"),
+    (r"\b(fetchAll|fetchRows|queryAll|fetchOne)\s*\(",
+     "no fetchAll/queryAll-style helpers exist in this sandbox",
+     "query the warehouse via con.execute(sql).fetchall()"),
+    (r"\bfetch\s*\(|\baxios\b|\bXMLHttpRequest\b|\bawait\b|\brequire\s*\(",
+     "run_python executes Python, not JavaScript",
+     "no fetch/await/require - write synchronous Python"),
+    (r"^\s*(const|let|var)\s+\w+",
+     "run_python executes Python, not JavaScript",
+     "Python uses plain assignment, not const/let/var"),
+    (r"=>|\bfunction\s+\w+\s*\(",
+     "run_python executes Python, not JavaScript",
+     "use def or lambda, not =>/function"),
+    (r"\bduckdb\.connect\s*\(",
+     "con is provided - never call duckdb.connect()",
+     "the provided `con` is the read-only warehouse connection"),
+    (r"^\s*con\s*=(?!=)",
+     "con is provided - never reassign it",
+     "use `con` directly: con.execute(sql).fetchall()"),
+    (r"\bsqlite3\b|\.sqlite\b|\.db['\"]|\.duckdb['\"]",
+     "the warehouse is already connected via con - no file paths",
+     "query silver_* tables on `con`, never open a database file"),
+    (r"(?:import|from)\s+dime_analyst\b",
+     "dime_analyst is not a package in this sandbox",
+     "preloaded: con, pl, np, math, statistics; scientific imports "
+     "(scipy, statsmodels, sklearn, matplotlib, duckdb, polars) allowed"),
+    (r"(?:import|from)\s+(subprocess|socket|requests|urllib|http)\b",
+     "network/process imports are unavailable in the sandbox",
+     "allowed imports: scipy, statsmodels, sklearn, matplotlib, duckdb, "
+     "polars, json, pathlib + stdlib"),
+    (r"^return\b",
+     "code runs at module top level - return is a syntax error",
+     "assign `out = <value>` or print() the result"),
+]
+
+
+def _run_python_violations(code: str) -> list[dict[str, Any]]:
+    violations = []
+    if not isinstance(code, str):
+        return violations
+    for pattern, rule, fix in _RUN_PYTHON_RULES:
+        rx = re.compile(pattern)
+        for i, line in enumerate(code.split("\n"), start=1):
+            if rx.search(line):
+                violations.append({"line": i, "rule": rule, "fix": fix,
+                                   "code": line.strip()[:200]})
+                break
+    return violations
+
+
 def _select_schema_tables(columns: dict[str, Any], tables: list[str] | None) -> tuple[list[str], dict[str, Any] | None]:
     if tables is None:
         return list(columns), None
@@ -50,6 +106,11 @@ def _select_schema_tables(columns: dict[str, Any], tables: list[str] | None) -> 
         else:
             unknown.append(name)
     if unknown:
+        suggestions = {
+            name: difflib.get_close_matches(name, list(columns), n=3, cutoff=0.5)
+            for name in unknown
+        }
+        suggestions = {k: v for k, v in suggestions.items() if v}
         return [], sanitize_for_wire(enrich_error("warehouse_schema", {
             "tool": "warehouse_schema",
             "ok": False,
@@ -59,6 +120,7 @@ def _select_schema_tables(columns: dict[str, Any], tables: list[str] | None) -> 
             ),
             "tables": {},
             "columns": [],
+            "did_you_mean": suggestions,
         }))
     if not selected:
         return [], sanitize_for_wire(enrich_error("warehouse_schema", {
@@ -122,10 +184,17 @@ def register() -> dict[str, Any]:
                 res = {"tool": "sql_exec", "ok": False, "error": str(res)}
         except Exception as exc:
             res = {"tool": "sql_exec", "ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        hint = schema_hint_for_sql_failure(sql, res)
+        if hint is not None:
+            res["schema_hint"] = hint
         return _normalize_sql_result(res)
 
     @tool("warehouse_schema", description=schema_description)
-    def warehouse_schema(tables: list[str] | None = None) -> dict:
+    def warehouse_schema(tables: list[str] | None = None, table: str | None = None) -> dict:
+        if table is not None and not tables:
+            tables = [table]
+        elif table is not None and isinstance(tables, list):
+            tables = tables + [table]
         try:
             _, columns = _get_warehouse_schema()
         except Exception as exc:
@@ -160,6 +229,13 @@ def register() -> dict[str, Any]:
             "returned_table_count": len(selected),
             "negative_claim_scope": "returned declared tables and columns only",
         }
+        try:
+            from shared.tools.data_dictionary import dictionary_for_tables
+            dictionary = dictionary_for_tables(selected)
+        except Exception:
+            dictionary = None
+        if dictionary is not None:
+            annotated["data_dictionary"] = dictionary
         annotated["tool"] = "warehouse_schema"
         annotated["ok"] = True
         return sanitize_for_wire(annotated)
@@ -242,11 +318,20 @@ def register() -> dict[str, Any]:
             "ok": True, "tool": "get_dataset_freshness", "rows": rows, "columns": cols,
         })
 
-    @tool("run_python", description="Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations.")
+    @tool("run_python", description="Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations. Code runs at module top level in a fresh namespace per call: return results by assigning `out = <value>` or print() (never `return`), and never reassign `con` or call duckdb.connect() — the provided `con` is the warehouse.")
     def run_python(code: str) -> dict:
+        violations = _run_python_violations(code)
+        default_cols = ["printed", "out"]
+        if violations:
+            return sanitize_for_wire({
+                "tool": "run_python", "ok": False,
+                "error": "run_python code rejected before execution; fix each "
+                         "violation and resubmit",
+                "violations": violations,
+                "rows": [], "columns": default_cols,
+            })
         from shared.tools.shared import run_python as _orig_run_python
         res = call_sync(_orig_run_python, "run_python", {"code": code})
-        default_cols = ["printed", "out"]
         return finish_strict_rows(
             res, "run_python", default_cols, str(res.get("error") or "Python execution failed"),
             _python_rows,

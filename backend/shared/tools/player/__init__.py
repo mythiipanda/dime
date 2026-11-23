@@ -9,6 +9,8 @@ from .._core import (
     coerce_team_id,
     last_completed_season,
     resolve_season,
+    season_static,
+    season_to_date_meta,
 )
 from ..shots import ZONE_LEGEND as _SHOT_ZONE_LABELS
 from ..zone import ZONE_KEYS as _HIST_ZONE_KEYS
@@ -27,6 +29,7 @@ from ._helpers import (
     _season_line,
     _season_line_coverage,
     _season_line_seasons,
+    _std_context,
 )
 from .clutch_splits import (
     DPOY_MINUTES,
@@ -81,6 +84,13 @@ from .comps import (
     _pool_from_gamelogs,
     _pool_from_leaders,
     get_comps,
+    get_era_comps,
+)
+from .availability import (
+    get_availability_impact,
+)
+from .on_off_leaders import (
+    get_on_off_leaders,
 )
 from .on_off_wowy import (
     _HIST_LINEUP_FILTER,

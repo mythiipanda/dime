@@ -99,9 +99,16 @@ def _trade_value_rows(raw_rows: Any) -> list[dict[str, Any]]:
 def register() -> dict[str, Any]:
     from shared.tools.league import (
         get_cap_ledger as _orig_get_cap_ledger,
+        get_cap_scenario as _orig_get_cap_scenario,
+        get_cap_table as _orig_get_cap_table,
         get_contract_value as _orig_get_contract_value,
+        get_salary_history as _orig_get_salary_history,
+        get_draft_capital as _orig_get_draft_capital,
         get_trade_check as _orig_get_trade_check,
+        get_trade_legality as _orig_get_trade_legality,
+        get_value_contracts as _orig_get_value_contracts,
         get_trade_partners as _orig_get_trade_partners,
+        get_trade_targets as _orig_get_trade_targets,
         get_trade_value as _orig_get_trade_value,
     )
     try:
@@ -125,6 +132,28 @@ def register() -> dict[str, Any]:
             enrich_error("get_cap_ledger", res)
         return sanitize_for_wire(res)
 
+    @tool("get_cap_table", description=_orig_get_cap_table.description)
+    def get_cap_table(season: str | None = None) -> dict:
+        res = call_sync(_orig_get_cap_table, "get_cap_table", {"season": season})
+        return finish_dict_list(res, "get_cap_table", ["team", "payroll", "cap_room", "room_under_apron2", "over_tax", "over_apron1", "over_apron2"])
+
+    @tool("get_cap_scenario", description=_orig_get_cap_scenario.description)
+    def get_cap_scenario(team: str = "", signings: str = "",
+                         in_players: str = "", out_players: str = "",
+                         season: str | None = None) -> dict:
+        res = call_sync(_orig_get_cap_scenario, "get_cap_scenario", {
+            "team": team, "signings": signings, "in_players": in_players,
+            "out_players": out_players, "season": season,
+        })
+        default_cols = ["step", "kind", "detail", "delta", "payroll"]
+        rows = [r for r in res.get("rows") or [] if isinstance(r, dict)] if res.get("ok") else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else default_cols
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_cap_scenario", res)
+        return sanitize_for_wire(res)
+
     @tool("get_contract_value", description=_orig_get_contract_value.description)
     def get_contract_value(season: str | None = None, min_gp: int = 20, team: str = "", player: str = "") -> dict:
         res = call_sync(_orig_get_contract_value, "get_contract_value", {
@@ -144,6 +173,25 @@ def register() -> dict[str, Any]:
         res["ok"] = bool(res.get("ok", False))
         if not res["ok"]:
             enrich_error("get_trade_check", res)
+        return sanitize_for_wire(res)
+
+    @tool("get_trade_legality", description=_orig_get_trade_legality.description)
+    def get_trade_legality(legs: str = "", sign_and_trade: str = "",
+                           cash: str = "", tpe: str = "",
+                           season: str | None = None) -> dict:
+        res = call_sync(_orig_get_trade_legality, "get_trade_legality", {
+            "legs": legs, "sign_and_trade": sign_and_trade,
+            "cash": cash, "tpe": tpe, "season": season,
+        })
+        default_cols = ["team", "payroll_before", "payroll_after", "outgoing",
+                        "incoming", "allowed_incoming", "match_rule",
+                        "matching_ok", "hard_cap", "over_apron2"]
+        rows = [r for r in res.get("rows") or [] if isinstance(r, dict)] if res.get("ok") else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else default_cols
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_trade_legality", res)
         return sanitize_for_wire(res)
 
     @tool("get_trade_partners", description=_orig_get_trade_partners.description)
@@ -175,6 +223,56 @@ def register() -> dict[str, Any]:
             enrich_error("get_trade_value", res)
         return sanitize_for_wire(res)
 
+    @tool("get_draft_capital", description=_orig_get_draft_capital.description)
+    def get_draft_capital(team: str = "", draft_year: str = "",
+                          years_ahead: int | None = None) -> dict:
+        res = call_sync(_orig_get_draft_capital, "get_draft_capital", {
+            "team": team, "draft_year": draft_year,
+            "years_ahead": years_ahead,
+        })
+        return finish_dict_list(res, "get_draft_capital", ["draft_year", "round", "orig_team", "status", "held_by", "direction", "est_slot", "est_value_m"])
+
+
+    @tool("get_value_contracts", description=_orig_get_value_contracts.description)
+    def get_value_contracts(team: str = "", season: str | None = None,
+                            benchmark_team: str = "") -> dict:
+        res = call_sync(_orig_get_value_contracts, "get_value_contracts", {
+            "team": team, "season": season or None,
+            "benchmark_team": benchmark_team,
+        })
+        cols = ["player", "salary", "cap_share", "cap_band",
+                "mpg", "rotation", "value_score",
+                "value_per_m", "value_rank", "value_flag"]
+        if not isinstance(res, dict) or not res.get("ok"):
+            enrich_error("get_value_contracts", res)
+            if isinstance(res, dict):
+                res.setdefault("rows", [])
+                res.setdefault("columns", cols)
+            return sanitize_for_wire(res)
+        return finish_dict_list(res, "get_value_contracts", cols)
+
+    @tool("get_trade_targets", description=_orig_get_trade_targets.description)
+    def get_trade_targets(need: str = "", team: str = "", position: str = "",
+                          max_salary: float | None = None, min_gp: int = 25,
+                          min_mpg: float = 12.0, limit: int = 15,
+                          season: str | None = None) -> dict:
+        res = call_sync(_orig_get_trade_targets, "get_trade_targets", {
+            "need": need, "team": team, "position": position,
+            "max_salary": max_salary, "min_gp": min_gp,
+            "min_mpg": min_mpg, "limit": limit, "season": season,
+        })
+        cols = ["player", "team", "position", "age", "salary", "cap_share",
+                "cost_band", "contract_type", "gp", "mpg", "target_score",
+                "value_per_m", "def_rating", "net_rating", "ts_pct",
+                "rapm", "target_rank"]
+        if not isinstance(res, dict) or not res.get("ok"):
+            enrich_error("get_trade_targets", res)
+            if isinstance(res, dict):
+                res.setdefault("rows", [])
+                res.setdefault("columns", cols)
+            return sanitize_for_wire(res)
+        return finish_dict_list(res, "get_trade_targets", cols)
+
     @tool("get_transactions", description=_orig_get_transactions.description)
     def get_transactions(team: str = "", start: str = "", end: str = "", txn_type: str = "") -> dict:
         cols = ["txn_date", "txn_type", "player", "team", "detail"]
@@ -198,11 +296,33 @@ def register() -> dict[str, Any]:
         res["ok"] = True
         return sanitize_for_wire(res)
 
+
+    @tool("get_salary_history", description=_orig_get_salary_history.description)
+    def get_salary_history(player: str = "", team: str = "", season: str = "", top: int = 10) -> dict:
+        res = call_sync(_orig_get_salary_history, "get_salary_history", {
+            "player": player, "team": team, "season": season, "top": top,
+        })
+        cols = ["PLAYER_NAME", "TEAM", "salary", "salary_cap", "share_of_cap"]
+        rows = [r for r in res.get("rows") or [] if isinstance(r, dict)] if res.get("ok") else []
+        res["rows"] = rows
+        res["columns"] = list(rows[0].keys()) if rows else cols
+        res["ok"] = bool(res.get("ok", False))
+        if not res["ok"]:
+            enrich_error("get_salary_history", res)
+        return sanitize_for_wire(res)
+
     return {
         "get_cap_ledger": get_cap_ledger,
+        "get_salary_history": get_salary_history,
+        "get_cap_scenario": get_cap_scenario,
+        "get_cap_table": get_cap_table,
         "get_contract_value": get_contract_value,
+        "get_draft_capital": get_draft_capital,
         "get_trade_check": get_trade_check,
+        "get_trade_legality": get_trade_legality,
         "get_trade_partners": get_trade_partners,
+        "get_trade_targets": get_trade_targets,
+        "get_value_contracts": get_value_contracts,
         "get_trade_value": get_trade_value,
         "get_transactions": get_transactions,
     }

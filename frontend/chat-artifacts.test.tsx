@@ -153,6 +153,23 @@ test("streamed chart artifacts render custom unit and xLabels", () => {
   assert.ok(html.includes("Dec"), html);
 });
 
+test("streamed bar charts render marks, annotations and axis labels", () => {
+  const html = render({
+    kind: "chart",
+    title: "Five spots clear a full max slot",
+    variant: "bar",
+    unit: "$M",
+    xLabels: ["DET", "CHI", "ORL"],
+    xLabel: "Practical cap space",
+    series: [{ name: "2026 practical space", values: [74.2, 63.1, 54.6], tone: "accent" }],
+    marks: [{ value: 54.45, label: "Max-slot threshold" }],
+    annotations: [{ index: 2, text: "ORL is the last team that clears a full max" }],
+    labelValues: true,
+  });
+  assert.ok(html.includes("recharts-responsive-container"), html.slice(0, 120));
+  assert.ok(html.includes("ORL is the last team that clears a full max"), html);
+});
+
 test("streamed shot chart artifacts render a court", () => {
   const html = render({
     kind: "shot_chart",
@@ -180,6 +197,22 @@ test("streamed shot chart artifacts support court feet coordinates", () => {
   });
   assert.ok(html.includes("<svg"), html.slice(0, 120));
   assert.ok(html.includes('cx="250"'), html);
+});
+
+test("streamed shot chart artifacts color zones by league delta and show makes", () => {
+  const html = render({
+    kind: "shot_chart",
+    title: "Zone efficiency",
+    zones: [
+      { x: 0, y: 2, att: 120, pct: 64, makes: 77, delta: 5.2, label: "rim-C" },
+      { x: 22, y: 4, att: 60, pct: 30, makes: 18, delta: -6.1, label: "corner_3-R" },
+      { x: -14, y: 20, att: 45, pct: 40 },
+    ],
+  });
+  assert.ok(html.includes("var(--green)"), html);
+  assert.ok(html.includes("var(--orange)"), html);
+  assert.ok(html.includes("77/120 · 64"), html);
+  assert.ok(html.includes("vs league fg%"), html);
 });
 
 test("chart and shot artifacts with no data render nothing", () => {
@@ -731,6 +764,30 @@ test("artifactToCopyText formats table artifacts as CSV with proper header and e
   );
 });
 
+test("artifactToCopyText keeps card sections and shot zone context", () => {
+  const card: DimeArtifact = {
+    kind: "team_card", title: "Card", teamName: "OKC", sourceRef: "standings", sourceRow: 0, nameColumn: "team",
+    metrics: [{ column: "wins", label: "Wins", value: 41, unit: "games" }],
+    sections: [
+      { label: "Payroll", sourceRef: "cap", sourceRow: 1,
+        fields: [{ column: "apron", label: "Apron status", value: "below first apron" }],
+        metrics: [{ column: "payroll", label: "Payroll", value: 172, unit: "$M" }] },
+    ],
+  } as unknown as DimeArtifact;
+  const csv = artifactToCopyText(card);
+  assert.ok(csv.startsWith("Section,Player,Team,Metric,Value,Unit,Source,Row,Column"), csv);
+  assert.ok(csv.includes(",OKC,,Wins,41,games,standings,0,wins"), csv);
+  assert.ok(csv.includes("Payroll,OKC,,Apron status,below first apron,,cap,1,apron"), csv);
+  assert.ok(csv.includes("Payroll,OKC,,Payroll,172,$M,cap,1,payroll"), csv);
+
+  const shot: DimeArtifact = {
+    kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 120, makes: 79, pct: 65.8, label: "Rim", delta: 3.1 }],
+  };
+  const shotCsv = artifactToCopyText(shot);
+  assert.ok(shotCsv.startsWith("Zone,X,Y,Attempts,Makes,FG%,Delta vs league"), shotCsv);
+  assert.ok(shotCsv.includes("Rim,0,0,120,79,65.8,3.1"), shotCsv);
+});
+
 test("artifactToCopyText formats compare artifacts as CSV", () => {
   const compareArtifact: DimeArtifact = {
     kind: "compare",
@@ -809,7 +866,7 @@ test("artifactToCopyText formats shot chart zones as CSV", () => {
   const text = artifactToCopyText(shotArtifact);
   assert.equal(
     text,
-    "X,Y,Attempts,Percentage\n50,12,142,71\n32,22,88,52",
+    "Zone,X,Y,Attempts,Makes,FG%,Delta vs league\n,50,12,142,,71,\n,32,22,88,,52,",
   );
 });
 

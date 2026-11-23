@@ -60,7 +60,7 @@ test("final submission restores catalog artifacts without duplicating streamed o
   const stream = new DimeStream();
   stream.handle("custom_data", { artifacts: generativeFixtures });
   stream.handle("final_answer", { text: "Fixture answer", carry: { submission: { blocks: [{ text: "Fixture answer", anchors: [] }], artifacts: generativeFixtures } } });
-  assert.equal(stream.snapshot().artifacts.length, 3);
+  assert.equal(stream.snapshot().artifacts.length, generativeFixtures.length);
   const restored = new DimeStream();
   restored.handle("final_answer", { text: "Fixture answer", carry: { submission: { blocks: [{ text: "Fixture answer", anchors: [] }], artifacts: generativeFixtures } } });
   assert.deepEqual(restored.snapshot().artifacts, stream.snapshot().artifacts);
@@ -73,7 +73,7 @@ test("saved runs restore generative artifacts from stored submission sources", a
     : Response.json({ runs: [{ id: "saved-generative", question: "Question", answer: "Saved fixture", tables: [] }] });
   try {
     const [run] = await loadChatRuns("generative-restore");
-    assert.equal(run.snapshot.artifacts.length, 3);
+    assert.equal(run.snapshot.artifacts.length, generativeFixtures.length);
     assert.equal(run.snapshot.artifacts[0].kind, "player_card");
   } finally { globalThis.fetch = previous; }
 });
@@ -88,7 +88,7 @@ test("generative replay is development-only and completes through the real strea
     await replayStream("generative", { onEvent: (type, data) => stream.handle(type, data), onDone: () => stream.finish(), onError: message => assert.fail(message) });
     assert.equal(stream.snapshot().done, true);
     assert.match(stream.snapshot().text, /Fictional players/);
-    assert.deepEqual(stream.snapshot().artifacts.map(a => a.kind), ["player_card", "chart", "table"]);
+    assert.deepEqual(stream.snapshot().artifacts.map(a => a.kind), ["player_card", "chart", "chart", "table", "compare", "scatter", "shot_chart", "team_card", "memo"]);
   } finally { Object.assign(process.env, { NODE_ENV: previous }); }
 });
 

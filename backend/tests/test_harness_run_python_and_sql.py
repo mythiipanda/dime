@@ -151,3 +151,101 @@ def test_sql_exec_zero_rows_and_long_sql_and_recovery_hint(warehouse, monkeypatc
     assert res_err["ok"] is False
     assert "recovery_hint" in res_err
     assert "warehouse_schema" in res_err["recovery_hint"]
+
+    res_typo = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "SELECT WINSX FROM silver_standings"}))
+    assert res_typo["ok"] is False
+    assert "silver_standings.WINS" in res_typo["recovery_hint"]
+
+
+def test_sql_exec_refusal_hints_steer_to_warehouse_schema(warehouse):
+    res_describe = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "DESCRIBE silver_standings"}))
+    assert res_describe["ok"] is False
+    assert "SELECT or WITH" in res_describe["recovery_hint"]
+    assert "warehouse_schema" in res_describe["recovery_hint"]
+
+    res_show = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "SHOW TABLES"}))
+    assert res_show["ok"] is False
+    assert "warehouse_schema" in res_show["recovery_hint"]
+
+    res_info = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT table_name FROM information_schema.tables"}))
+    assert res_info["ok"] is False
+    assert "information_schema" in res_info["recovery_hint"]
+    assert "warehouse_schema" in res_info["recovery_hint"]
+
+    res_catalog_fn = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT * FROM warehouse_schema()"}))
+    assert res_catalog_fn["ok"] is False
+    assert "warehouse_schema" in res_catalog_fn["recovery_hint"]
+
+    res_guess = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT * FROM silver_bbref_gamelogs_2024_25"}))
+    assert res_guess["ok"] is False
+    assert "declared silver" in res_guess["recovery_hint"]
+    assert "warehouse_schema" in res_guess["recovery_hint"]
+def test_run_python_relative_connect_hint_points_at_con(warehouse, tmp_path, monkeypatch):
+    ws = tmp_path / "ws_scratch"
+    ws.mkdir()
+    monkeypatch.setenv("DIME_THREAD_WORKSPACE", str(ws))
+    res = shared_mod.run_python.invoke({"code": """
+import duckdb
+fresh = duckdb.connect("warehouse.duckdb")
+rows = fresh.execute("SELECT * FROM silver_boxscores LIMIT 5").fetchall()
+out = rows
+"""})
+    assert res["ok"] is False
+    assert "does not exist" in res["error"]
+    assert "preloaded `con`" in res["recovery_hint"]
+    assert "silver_standings" in res["recovery_hint"]
+    assert (ws / "warehouse.duckdb").exists()
+
+
+def test_run_python_syntax_hints_for_js_and_raw_sql(warehouse, tmp_path, monkeypatch):
+    ws = tmp_path / "ws_syn"
+    ws.mkdir()
+    monkeypatch.setenv("DIME_THREAD_WORKSPACE", str(ws))
+
+    res_js = shared_mod.run_python.invoke({"code":
+        "const rows = con.execute(`SELECT * FROM silver_standings`)"})
+    assert res_js["ok"] is False
+    assert "not JavaScript" in res_js["recovery_hint"]
+
+    res_ret = shared_mod.run_python.invoke({"code":
+        "tables = con.execute('SHOW TABLES').fetchall()\nreturn tables"})
+    assert res_ret["ok"] is False
+    assert "not JavaScript" in res_ret["recovery_hint"]
+
+    res_sql = shared_mod.run_python.invoke({"code":
+        "SELECT TEAM, WINS FROM silver_standings ORDER BY WINS DESC"})
+    assert res_sql["ok"] is False
+    assert "con.execute" in res_sql["recovery_hint"]
+    assert "sql_exec" in res_sql["recovery_hint"]
+
+    res_plain = shared_mod.run_python.invoke({"code":
+        "rows = con.execute('SELECT TEAM FROM silver_standings').fetchall()\nout = rows["})
+    assert res_plain["ok"] is False
+    assert "syntax" in res_plain["recovery_hint"].lower()
+
+    res_store = shared_mod.run_python.invoke({"code":
+        "store('cohort', [1, 2, 3])"})
+    assert res_store["ok"] is False
+    assert "codemode" in res_store["recovery_hint"]
+
+    res_load = shared_mod.run_python.invoke({"code":
+        "vals = load('cohort')\nout = vals"})
+    assert res_load["ok"] is False
+    assert "codemode" in res_load["recovery_hint"]
+
+
+def test_sql_exec_binder_hint_names_column_and_candidates(warehouse):
+    res = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT team_abbreviation FROM silver_standings"}))
+    assert res["ok"] is False
+    hint = res["recovery_hint"]
+    assert "'team_abbreviation'" in hint
+    assert "silver_standings" in hint
+
+    res_func = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
+        {"sql": "SELECT sum(TEAM) FROM silver_standings"}))
+    assert res_func["ok"] is False
+    assert "CAST" in res_func["recovery_hint"]

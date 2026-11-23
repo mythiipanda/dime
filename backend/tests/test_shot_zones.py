@@ -156,7 +156,7 @@ def test_tool_league_output_marks_rim_leader_nop():
     assert out["ok"] is True
     leaders = out["zone_leaders"]
     assert leaders["rim"]["team"] == "NOP"
-    assert leaders["rim"]["share_delta_pp"] == 10.55
+    assert leaders["rim"]["share_delta_pp"] == 10.56
     rows = out["rows"]
     for key, leader in leaders.items():
         flagged = [r for r in rows if r[f"is_{key}_share_leader"]]

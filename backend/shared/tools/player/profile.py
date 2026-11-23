@@ -120,6 +120,7 @@ def get_player_intel(player_id: str | int, season: str | None = None) -> dict[st
     if not rows:
         line = pkg._season_line(player_id, season)
         if line:
+            std = pkg._std_context(player_id, season, line)
             return {
                 "tool": "get_player_intel",
                 "ok": True,
@@ -129,6 +130,7 @@ def get_player_intel(player_id: str | int, season: str | None = None) -> dict[st
                     "season": season,
                     "coverage": "season_line",
                     "note": "game-by-game log not seeded for this player; showing season line",
+                    **({"season_to_date": std} if std else {}),
                 },
             }
         from ..splits import _resolve_name as _rname3
@@ -143,6 +145,9 @@ def get_player_intel(player_id: str | int, season: str | None = None) -> dict[st
                 "lines cover 2014-15 onward."
             ),
         }
+    std = pkg._std_context(player_id, season, None)
+    if std:
+        meta = {**meta, "season_to_date": std}
     out: dict[str, Any] = {"tool": "get_player_intel", "ok": True, "rows": rows, "meta": meta}
     try:
         from ..gamelog import playoff_inactive_note as _pin
@@ -190,6 +195,7 @@ def get_season_averages(player_id: str | int, season: str | None = None) -> dict
         f"{float(line['FG3_PCT']) * 100:.1f}% from three, and "
         f"{float(line['FT_PCT']) * 100:.1f}% at the line."
     )
+    std = pkg._std_context(pid, season, line)
     return {
         "tool": "get_season_averages",
         "ok": True,
@@ -199,6 +205,7 @@ def get_season_averages(player_id: str | int, season: str | None = None) -> dict
             "season": season,
             "coverage": "season_line",
             "deterministic_answer": answer,
+            **({"season_to_date": std} if std else {}),
         },
     }
 
@@ -223,7 +230,7 @@ def get_playoff_intel(player_id: str | int, season: str | None = None) -> dict[s
     )
     if not rows:
         try:
-            con = pkg.store.connect()
+            con = pkg.store.connect(read_only=True)
             try:
                 tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
                 if "silver_playoff_gamelogs" in tables:

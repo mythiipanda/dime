@@ -41,8 +41,11 @@ export interface DimeProvenance {
   origin: ProvenanceOrigin;
   capability?: string;
   warehouseId?: string;
+  dataset?: string;
   season?: string;
   asOf?: string;
+  as_of?: string;
+  sql?: string;
   liveSources: string[];
   liveSourceIds?: string[];
   evidence?: ProvenanceEvidence[];
@@ -82,6 +85,7 @@ export interface TableArtifactPayload {
   provenance?: DimeProvenance;
   columns: { key: string; label: string; numeric?: boolean }[];
   rows: (string | number)[][];
+  footnote?: string;
 }
 
 export interface CompareArtifactPayload {
@@ -102,15 +106,32 @@ export interface ChartSeriesPayload {
   tone?: ChartTone;
 }
 
+export interface ChartMark {
+  value: number;
+  label: string;
+}
+
+export interface ChartAnnotation {
+  index: number;
+  text: string;
+}
+
 export interface ChartArtifactPayload {
   kind: "chart";
   title: string;
+  subtitle?: string;
+  variant?: "line" | "bar";
   source?: string;
   provenance?: DimeProvenance;
   series: ChartSeriesPayload[];
   footnote?: string;
   unit?: string;
   xLabels?: string[];
+  xLabel?: string;
+  yLabel?: string;
+  marks?: ChartMark[];
+  annotations?: ChartAnnotation[];
+  labelValues?: boolean;
 }
 
 export interface ShotChartArtifactPayload {
@@ -118,7 +139,7 @@ export interface ShotChartArtifactPayload {
   title: string;
   source?: string;
   provenance?: DimeProvenance;
-  zones: { x: number; y: number; att: number; pct: number }[];
+  zones: { x: number; y: number; att: number; pct: number; label?: string; makes?: number; delta?: number }[];
   footnote?: string;
 }
 
@@ -135,6 +156,37 @@ export interface ScatterArtifactPayload {
   footnote?: string;
 }
 
+export interface PlayerCardSectionPayload {
+  label: string;
+  sourceRef: string;
+  sourceRow: number;
+  metrics?: { column: string; label: string; value: number | null; unit?: string }[];
+  fields?: { column: string; label: string; value: string | null }[];
+  provenance?: DimeProvenance;
+}
+
+export interface MemoAnchor {
+  ref: string;
+  row: number;
+  columns: string[];
+}
+
+export interface MemoSectionPayload {
+  heading: string;
+  body: string;
+  anchors?: MemoAnchor[];
+}
+
+export interface MemoArtifactPayload {
+  kind: "memo";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  subtitle?: string;
+  text: string;
+  sections?: MemoSectionPayload[];
+  footnote?: string;
+}
 export interface PlayerCardArtifactPayload {
   kind: "player_card";
   title: string;
@@ -147,6 +199,20 @@ export interface PlayerCardArtifactPayload {
   nameColumn: string;
   teamColumn?: string;
   metrics: { column: string; label: string; value: number | null; unit?: string }[];
+  sections?: PlayerCardSectionPayload[];
+}
+
+export interface TeamCardArtifactPayload {
+  kind: "team_card";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  teamName: string;
+  sourceRef: string;
+  sourceRow: number;
+  nameColumn: string;
+  metrics: { column: string; label: string; value: number | null; unit?: string }[];
+  sections?: PlayerCardSectionPayload[];
 }
 
 export type DimeArtifact =
@@ -155,7 +221,9 @@ export type DimeArtifact =
   | ChartArtifactPayload
   | ShotChartArtifactPayload
   | ScatterArtifactPayload
-  | PlayerCardArtifactPayload;
+  | PlayerCardArtifactPayload
+  | TeamCardArtifactPayload
+  | MemoArtifactPayload;
 
 export interface ArtifactEvent {
   type: "artifact";

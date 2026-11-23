@@ -1,0 +1,1008 @@
+{
+ "namespaces": {
+  "player": "Player impact, RAPM, on/off, splits, comps, scouting, and availability tools.",
+  "team": "Team ratings, four factors, 5-man lineups, standings, and Elo tools.",
+  "league": "League leaders, awards, draft, playoffs, briefings, and dataset tools.",
+  "cba": "2023 CBA salary cap ledgers, trade legality checks, contract values, and transactions.",
+  "spatial": "Shot zones, shot diets, optical tracking, and Synergy playtype tools.",
+  "matchup": "Game predictions, head-to-head matchups, boxscores, rest, and stint logs.",
+  "web": "Public web search and page fetch tools for current external sources."
+ },
+ "warehouse_query_tool": "get_dataset",
+ "warehouse_fallback_tool": "get_boxscore",
+ "shared_params": {
+  "season_type": "'regular-season' or 'playoffs'. Default: {d}.",
+  "player": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
+  "player_id": "nba_api numeric player id, e.g. 203081 (not the name).",
+  "player_ids": "Comma-separated nba_api player ids.",
+  "player_a": "First player's full name, e.g. 'Jayson Tatum'.",
+  "player_b": "Second player's full name.",
+  "team": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
+  "team_abbrev": "3-letter team abbreviation, e.g. 'BOS'.",
+  "team_id": "nba_api numeric team id (not the abbreviation).",
+  "team_a": "First team's 3-letter abbreviation, e.g. 'BOS'.",
+  "team_b": "Second team's 3-letter abbreviation.",
+  "teams": "Comma-separated 3-letter team abbreviations; blank = all teams.",
+  "home_abbrev": "3-letter abbreviation of the home team; blank = neutral site.",
+  "opponent": "Opposing team's 3-letter abbreviation, e.g. 'NYK'.",
+  "game_id": "nba_api game id, e.g. '0042500401'.",
+  "game_date": "Date as MM/DD/YYYY; blank = latest available.",
+  "date": "Date as MM/DD/YYYY; blank = latest available.",
+  "start": "Start date filter MM/DD/YYYY; blank = unbounded.",
+  "end": "End date filter MM/DD/YYYY; blank = unbounded.",
+  "start_date": "Start date filter ISO YYYY-MM-DD; omit for unbounded.",
+  "end_date": "End date filter ISO YYYY-MM-DD; omit for unbounded.",
+  "month": "Month name (e.g. 'march') or number (1-12).",
+  "seasons": "Comma-separated season ids 'YYYY-YY'; omit for all available.",
+  "start_season": "First season year, e.g. 2015.",
+  "end_season": "Last season year, e.g. 2026.",
+  "through_season": "Last season to include as 'YYYY-YY'; omit for latest.",
+  "seasons_back": "Seasons back from the latest to include. Default: {d}.",
+  "playoffs": "true for playoff games only. Default: {d}.",
+  "limit": "Maximum rows returned. Default: {d}.",
+  "top": "Rows returned when no specific entity is requested. Default: {d}.",
+  "top_units": "Maximum lineup units returned. Default: {d}.",
+  "n": "Window length in games. Default: {d}.",
+  "k": "Number of neighbors returned. Default: {d}.",
+  "sims": "Monte Carlo simulations run. Default: {d}.",
+  "n_sims": "Monte Carlo simulations run. Default: {d}.",
+  "seed": "RNG seed for reproducible simulation. Default: {d}.",
+  "window": "Window length for the search mode. Default: {d}.",
+  "weeks": "Weeks back for the comparison window. Default: {d}.",
+  "days": "Days back for the comparison snapshot. Default: {d}.",
+  "threshold": "Minimum streak length to report; omit for no floor.",
+  "blowout_margin": "Point margin treated as a blowout and excluded. Default: {d}.",
+  "clutch_margin": "Score margin in points defining clutch situations. Default: {d}.",
+  "clutch_seconds": "Seconds remaining defining clutch situations. Default: {d}.",
+  "max_age": "Age ceiling in years. Default: {d}.",
+  "max_packages": "Maximum trade packages returned. Default: {d}.",
+  "min_attempts": "Minimum volume floor on the ranked stat. Default: {d}.",
+  "min_games": "Minimum games-played floor. Default: {d}.",
+  "min_gp": "Minimum games-played floor. Default: {d}.",
+  "min_mpg": "Minimum minutes-per-game floor. Default: {d}.",
+  "years_ahead": "Draft-year horizon, counting forward from the first year in the table.",
+  "max_salary": "Maximum salary ceiling in dollars for a candidate.",
+  "need": "Declared roster need in plain words, e.g. 'a defensive wing under $20M'.",
+  "min_minutes": "Minimum minutes floor. Default: {d}.",
+  "min_possessions": "Minimum possessions floor. Default: {d}.",
+  "min_events": "Minimum event-count floor. Default: {d}.",
+  "min_value": "Minimum stat-value floor. Default: {d}.",
+  "min_points": "Minimum points filter.",
+  "min_rebounds": "Minimum rebounds filter.",
+  "min_assists": "Minimum assists filter.",
+  "min_pra": "Minimum points+rebounds+assists combined filter.",
+  "max_points": "Maximum points filter.",
+  "max_rebounds": "Maximum rebounds filter.",
+  "max_assists": "Maximum assists filter.",
+  "stat": "Stat category, e.g. 'PTS' (categories are listed in the tool description).",
+  "stat_category": "Stat category, e.g. 'PTS', 'REB', 'AST', 'STL', 'BLK'.",
+  "category": "Leaderboard category, e.g. 'pts', 'ast', 'reb'.",
+  "metric": "'offense' or 'defense'. Default: {d}.",
+  "requested_metric": "Metric to rank by, e.g. 'net'; blank = all metrics.",
+  "ranking_direction": "'desc' highest-first or 'asc' lowest-first. Default: {d}.",
+  "mode": "Query mode; valid values are in the tool description. Default: {d}.",
+  "scope": "'player' or 'team'. Default: {d}.",
+  "view": "Result view, e.g. 'winner' or 'voting'. Default: {d}.",
+  "award": "Award key, e.g. 'mvp', 'dpoy', 'roy'. Default: {d}.",
+  "kind": "'player' or 'team'. Default: {d}.",
+  "side": "'offense' or 'defense'. Default: {d}.",
+  "entity": "Player full name or 3-letter team abbreviation.",
+  "subject": "Player full name or 3-letter team abbreviation.",
+  "fmt": "Result format, e.g. 'json'. Default: {d}.",
+  "name": "Dataset or table name; warehouse_schema lists the catalog.",
+  "ids": "Comma-separated nba_api player/team ids as integers.",
+  "sql": "DuckDB SELECT query over the warehouse tables.",
+  "tables": "Comma-separated table names to describe; omit for all.",
+  "zones": "Comma-separated zones: rim, short_mid, long_mid, corner_3, atb_3; blank = all.",
+  "periods": "Comma-separated periods: 1-4, ot, 1h, 2h, 4th; blank = all.",
+  "late_clock": "Integer seconds-remaining filter, periods 4+ only.",
+  "include_ot": "'auto' (default), 'yes', or 'no' for overtime inclusion.",
+  "made": "'any', 'made', or 'miss'. Default: {d}.",
+  "group_by": "'' (no grouping), 'player', or 'team' leaderboard.",
+  "three_only": "true to restrict to three-point attempts. Default: {d}.",
+  "exclude_heaves": "true excludes beyond-halfcourt heaves. Default: {d}.",
+  "include_small": "true includes lineups below the sample floor. Default: {d}.",
+  "best_game": "true returns each player's best game only. Default: {d}.",
+  "league_wide": "true searches all teams, not one. Default: {d}.",
+  "team_wide": "true returns team rows instead of player rows. Default: {d}.",
+  "double_double": "true requires a double-double. Default: {d}.",
+  "triple_double": "true requires a triple-double. Default: {d}.",
+  "home_away": "'home' or 'away' venue filter.",
+  "per_mode": "'totals' or 'pergame'. Default: {d}.",
+  "measure_type": "Measure bundle; valid values are in the schema enum. Default: {d}.",
+  "period": "Period number (1-4, 5+ for overtime).",
+  "clock_range": "Clock range within the period as 'MM:SS-MM:SS'.",
+  "signings": "Comma-separated hypothetical signings: amounts (12000000, 12M, $12M) or name=amount pairs.",
+  "in_players": "Comma-separated players acquired (league-wide salary lookup).",
+  "out_players": "Comma-separated roster players whose salary leaves.",
+  "txn_type": "Transaction type filter, e.g. 'trade', 'signing', 'waiver'.",
+  "entity_id": "Entity identifier as stored in the product store.",
+  "entity_type": "'player' or 'team'.",
+  "payload": "JSON object carrying the artifact's section data.",
+  "table": "Warehouse table name to inspect.",
+  "query": "Free-text name or identifier to resolve.",
+  "code": "Python source to execute with the warehouse bound.",
+  "question": "Question the run answered.",
+  "answer": "Final answer text to persist.",
+  "run_id": "Run identifier to persist.",
+  "content": "Message body text.",
+  "owner": "Owner key for the record.",
+  "role": "Message role, e.g. 'user' or 'assistant'.",
+  "thread": "Thread identifier for the message.",
+  "a": "First side of the comparison; see tool description.",
+  "b": "Second side of the comparison; see tool description.",
+  "picks_a": "Comma-separated draft picks on side A, e.g. '2027 1st, 2029 2nd'.",
+  "picks_b": "Comma-separated draft picks on side B.",
+  "players_a": "Comma-separated player names outgoing on side A.",
+  "players_b": "Comma-separated player names outgoing on side B.",
+  "since": "ISO date filter YYYY-MM-DD; blank = recent default.",
+  "draft_year": "Draft class year, e.g. '2027'. Default: {d}.",
+  "fa_year": "Free-agent year, e.g. '2027'. Default: {d}.",
+  "position": "Position filter, e.g. 'PG', 'SG', 'SF', 'PF', 'C'; blank = all.",
+  "url": "Public HTTP(S) URL to fetch.",
+  "max_results": "Maximum search results returned. Default: {d}.",
+  "timelimit": "Freshness filter, e.g. 'd' day, 'w' week, 'm' month, 'y' year; omit for no limit.",
+  "region": "Search region code, e.g. 'us-en'. Default: {d}.",
+  "safesearch": "'on', 'moderate', or 'off'. Default: {d}.",
+  "players": "Comma-separated player full names to compare.",
+  "benchmark_team": "Optional comparison team for the value-contract audit (adds benchmark rows and summary deltas).",
+  "legs": "JSON array of trade legs: [{'from','to','players','picks'}], players as comma-separated names or array, picks as [{'year','round','swap','protection'}].",
+  "sign_and_trade": "JSON object for a sign-and-trade piece: {'player','new_salary','years'}.",
+  "cash": "JSON array of cash movements: [{'from','to','amount'}].",
+  "tpe": "JSON array of traded player exceptions used: [{'team','amount'}]."
+ },
+ "tools": [
+  {
+   "name": "sql_exec",
+   "description": "Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. DESCRIBE, SHOW TABLES,\ninformation_schema and catalog functions are refused as well; call\nwarehouse_schema for table and column listings. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.",
+   "guidelines": [
+    "Use for ad-hoc read-only SELECT/WITH analysis over declared silver tables when no specialized tool returns the needed grain. Do not use for writes, live sources, or Python-only reshaping; rows are query-grain output and declared units/season encodings must be preserved."
+   ]
+  },
+  {
+   "name": "warehouse_schema",
+   "schema_description": "Read declared warehouse columns, source units and season encodings.",
+   "guidelines": [
+    "Use before sql_exec or when columns, units, or season encodings are uncertain, especially with scoped table selection. Do not use as proof of freshness or complete inventory; catalog_scope limits negative claims to returned declared tables and columns."
+   ]
+  },
+  {
+   "name": "get_rapm",
+   "description": "RAPM-lite ratings. Blank player returns top list, else one row.",
+   "namespace": "player",
+   "schema_description": "RAPM-lite ratings. Blank player returns top list, else one row.",
+   "guidelines": [
+    "Use for RAPM-lite player ratings or a top list when a documented impact rating is needed. Do not treat blank-player output as a complete roster or compare across seasons without checking season and minimums; values are per-possession rating units."
+   ]
+  },
+  {
+   "name": "get_impact_rank",
+   "description": "Player impact and league rank for a season across all-in-one plus-minus metrics the warehouse covers: published BPM (basketball-reference advanced), rapm-lite estimates, and FiveThirtyEight RAPTOR for older seasons. One row per metric covering the season; rank is 1..N by value within that season's player pool. Player required; season optional. Warehouse only; each row cites its source.",
+   "namespace": "player"
+  },
+  {
+   "name": "get_game_prediction",
+   "description": "Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals. Model estimates with documented methodology, not betting picks. Two team names/abbrevs/ids; optional game_date (MM/DD/YYYY), n_sims, seed for reproducibility.",
+   "namespace": "matchup",
+   "schema_description": "Pre-game Monte Carlo prediction: win probability, projected score/total, and confidence intervals.",
+   "guidelines": [
+    "Use for pre-game Monte Carlo win probability, projected score/total, and intervals for two teams. Do not treat as betting picks or actual results; outputs are model estimates with simulation parameters."
+   ],
+   "params": {
+    "a": "Home team 3-letter abbreviation, e.g. 'BOS'.",
+    "b": "Away team 3-letter abbreviation, e.g. 'LAL'."
+   }
+  },
+  {
+   "name": "get_wpa_leaders",
+   "description": "WPA-by-play leaderboard for one season. Season is an end-year clamped to 2021..2025.\n\nDeltas come from the fitted win-probability model before and after\neach play, credited to the acting player. Documented estimates.",
+   "namespace": "league",
+   "schema_description": "WPA-by-play leaderboard for one season."
+  },
+  {
+   "name": "get_comps",
+   "description": "Nearest statistical neighbors by per-36 + advanced shape. Same-season only.",
+   "namespace": "player",
+   "schema_description": "Nearest statistical neighbors by per-36 + advanced shape. Same-season only.",
+   "guidelines": [
+    "Use for same-season nearest statistical neighbors by per-36 and advanced shape. Do not use as cross-era or career comps or causal peer groups; outputs are similarity-ranked player-season rows."
+   ]
+  },
+  {
+   "name": "get_era_comps",
+   "description": "Cross-era statistical neighbors for one player's season. Compares the target season's per-36 box-score shape and efficiency profile against every qualified player-season in the warehouse (1996-97 onward), with each feature z-scored within its own season so the match is era-relative shape, not raw level. Optional start_season/end_season window (e.g. '2003-04' to '2010-11') narrows the candidate pool. Same-season-only comps live in get_comps.",
+   "namespace": "player",
+   "schema_description": "Cross-era statistical neighbors for one player season, z-scored within each season (1996-97+).",
+   "params": {
+    "players": "Comma-separated list.",
+    "start_season": "Pool window start, e.g. '2003-04'.",
+    "end_season": "Pool window end, e.g. '2010-11'."
+   }
+  },
+  {
+   "name": "get_lineup_stats",
+   "description": "Per-unit five-man lineup ratings with possession floors for one team. Names, abbrevs, or ids. For all qualifying units sorted by minutes use get_lineups; for the league-wide board use get_lineup_leaders.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default.",
+   "namespace": "team",
+   "schema_description": "Five-man lineup ratings with sample floors. Names, abbrevs, or ids.",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for one team's five-man lineup ratings after sample floors. Do not compare raw plus/minus without checking possessions, minutes, or sample flags; rows are lineup-season units rated per 100 possessions."
+   ]
+  },
+  {
+   "name": "get_lineup_on_off",
+   "description": "On/off-court splits for an arbitrary 2-5 player combination on one team, computed from possession-level data. Names or ids, comma-separated. For single-player splits use get_on_off; for a named two-player pair use get_wowy; for whole-lineup ratings use get_lineup_stats.\n\nReturns possessions, points for/against, and per-100 OFF/DEF/NET ratings\nfor the unit together versus all other possessions by that team, plus\nthe on-minus-off delta. Possessions flagged as garbage time are excluded.\nUnits under min_possessions (default 100) are flagged as tiny-sample, not\ndropped; blowout-heavy splits are flagged at the same share rule as\nget_lineup_stats.",
+   "namespace": "team"
+  },
+  {
+   "name": "get_win_prob",
+   "description": "Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side.",
+   "namespace": "matchup",
+   "schema_description": "Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side.",
+   "guidelines": [
+    "Use for a quick real-ELO win probability between two team abbreviations. Do not use for matchup analysis or when home court matters unless home_abbrev is set; output is a single probability."
+   ]
+  },
+  {
+   "name": "get_on_off",
+   "description": "On and off splits for one player on one team. Possession level.",
+   "namespace": "player",
+   "schema_description": "On and off splits for one player on one team. Possession level.",
+   "network_source": "pbpstats",
+   "guidelines": [
+    "Use for one player's on/off possession-level splits on one team. Do not attribute lineup effects to the player alone or ignore opponent and teammate context; rows are stat-split units from warehouse possessions."
+   ]
+  },
+  {
+   "name": "get_availability_impact",
+   "description": "Game-level availability impact: split a team's results into the games a player played versus the games they missed (game counts, record, win pct, average margin). Pass a player for the single-player split; add teammate to split that player's own per-game scoring/FGA/plus-minus by the teammate's presence; or leave player empty for a league-wide ranking of high-minute one-team players by win-rate drop when sitting (min_minutes/min_missed qualifiers). Warehouse coverage: 2015-16 onward, regular season.",
+   "namespace": "player",
+   "schema_description": "Game-level availability splits: a team's record, win pct, and average margin in games a player played vs missed; optional teammate-presence per-game scoring split; or a league-wide win-drop ranking when player is blank. Warehouse 2015-16+.",
+   "params": {
+    "teammate": "Optional second player; splits the first player's own per-game PTS/FGA/plus-minus by this teammate's presence. Default: {d}.",
+    "min_missed": "Ranking mode only: minimum games missed to qualify. Default: {d}."
+   }
+  },
+  {
+   "name": "get_on_off_leaders",
+   "description": "Stint-level on/off splits from the possessions warehouse. Modes: pass player + team for one player's on/off split (per-100 OFF/DEF/NET each way); pass team alone for that team's board ranked by on-court possessions; pass pair as 'A,B' (+ team if known) for a two-player 2x2 (both on / each alone / both off); pass neither for a league board of qualifying players ranked by on-minus-off net gap (min_on_possessions/min_off_possessions floors). Use for 'better/worse with X on the floor', on-off net rating gaps, and rotation-impact asks. Coverage 2009-10 onward, regular season.",
+   "namespace": "player",
+   "schema_description": "Stint-level on/off splits: league board ranked by on-minus-off net gap with possession floors, one team's board by on-court possessions, a single player's on/off split, or a two-player 2x2. Warehouse silver_stints 2009-10+.",
+   "params": {
+    "pair": "Two players as 'A,B' for a 2x2 split (both on / each alone / both off). Default: {d}.",
+    "team": "Team name, abbreviation, or id. With player: that player's split; alone: team board by on-court possessions. Default: {d}.",
+    "min_on_possessions": "League board only: minimum on-court possessions to qualify. Default: {d}.",
+    "min_off_possessions": "League board only: minimum off-court possessions to qualify. Default: {d}."
+   }
+  },
+  {
+   "name": "get_shot_zones",
+   "description": "Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones below min_attempts (default 50, clamped 10..200) are excluded.",
+   "namespace": "spatial",
+   "schema_description": "Zone splits for one player id: rim, midrange, three with shares.",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for one player's shot-zone volume and efficiency shares by zone. Do not use for team diet or shot-level examples; zones below min_attempts are excluded and values are zone-level FG/eFG shares."
+   ]
+  },
+  {
+   "name": "get_phase_shot_splits",
+   "description": "Regular season vs playoffs shooting splits for one player or team in one season: zone diet and eFG plus shot-family splits (catch-and-shoot vs pull-up vs rim) with playoff-minus-regular deltas in percentage points. Warehouse-first from silver_hist_shots; measured tracking splits appear when seeded. Give exactly one of player or team.",
+   "namespace": "spatial",
+   "schema_description": "Regular season vs playoffs shooting splits for one player or team: zone eFG/share plus catch-and-shoot vs pull-up family splits with deltas and cited warehouse sources."
+  },
+  {
+   "name": "get_four_factors",
+   "description": "Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive\nmirrors), computed offline from warehouse team game rows. Use for\n\"why are the Thunder good\", \"team identity\", or any four-factors\nask. Pass a team name/abbrev to scope to one team; empty returns\nthe full 30-team board.",
+   "namespace": "team",
+   "schema_description": "Team four factors breakdown (eFG%, TOV%, ORB%, FT rate, plus defensive mirrors)."
+  },
+  {
+   "name": "get_clutch_stats",
+   "description": "Clutch stats (last 5 min, margin 5 or less), player or team scope.",
+   "namespace": "player",
+   "schema_description": "NBA clutch statistics (last 5 min, margin <= 5) for player or team scope.",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_competitive_ratings",
+   "description": "Competitive MOV: what happens to a team's MOV when blowouts are dropped.\n\nteam: 3-letter abbrev, full name, nickname, city, or \"league\"/\"\" for\nall teams. season: \"YYYY-YY\" or \"all\" for every warehouse season\n(multi-season output is pooled across seasons, not a single\nteam-season -- see meta.season_note). season_type: regular (default),\nplayoffs, or all; matched against the actual distinct warehouse values\nbefore aggregating. NOTE: the default changed from \"all\" to \"regular\"\non 2026-09-10 so season-scoped queries no longer silently mix playoff\ngames in; pass \"all\" explicitly to include playoffs.\nblowout_margin: games with abs(plus_minus) above this are excluded from\nthe competitive set (clamped to [1, 40]). min_games: floor on\ncompetitive games; rows below it are flagged low_sample and carry\nnumbers with no interpretation. Warehouse only; plus_minus is each\nteam's own MOV per game.",
+   "namespace": "team",
+   "schema_description": "Competitive Margin of Victory (MOV excluding blowouts)."
+  },
+  {
+   "name": "get_hustle",
+   "description": "Hustle leaders, player or team scope. Contests, deflections, charges.",
+   "namespace": "player",
+   "schema_description": "NBA hustle leaders for player or team scope.",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_injuries",
+   "description": "Injury report, optional team abbreviation or player filter.\n\nWith a player name, also joins playoff inactive listings so\n'is X injured?' surfaces 'inactive for the entire playoff run'\ninstead of a bare 'active' (F45).",
+   "namespace": "player",
+   "schema_description": "NBA injury and availability report.",
+   "network_source": "ESPN"
+  },
+  {
+   "name": "get_news_feed",
+   "description": "Recent NBA news items from warehouse-seeded RSS feeds (headline, published, url, players/teams mentioned). Optional team abbreviation or player-name filter. Reads the warehouse only; refresh with seed_injury_news.py.",
+   "namespace": "league"
+  },
+  {
+   "name": "get_team_daily_brief",
+   "description": "GM morning brief for one team: injuries, news, transactions, last result, standing, and upcoming schedule since a date. Each item is dated and cited to its warehouse table. Reads the warehouse only; never calls live endpoints.",
+   "namespace": "league"
+  },
+  {
+   "name": "get_award_results",
+   "description": "Recorded NBA award results read from published ballots.\n\nview=winner returns every subject sharing the leading rank for one award in\none season. view=winner_history returns the leading-rank subject(s) for that\naward in every covered season through the requested season. view=field returns\nthe whole ranked ballot with vote shares and vote counts. view=player_awards\nreturns one player's award record through the named season. Use get_award_race\nfor a model score, never for a result.",
+   "namespace": "league",
+   "schema_description": "Historical recorded NBA award voting results.",
+   "params": {
+    "view": "'winner' (winners only) or 'voting' (full ballot). Default: {d}."
+   }
+  },
+  {
+   "name": "get_briefing",
+   "description": "Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest.",
+   "namespace": "league",
+   "schema_description": "Morning briefing: scoreboard plus top scorers. Date MM/DD/YYYY, blank means latest.",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_standings",
+   "description": "League standings for one season like 2025-26.",
+   "namespace": "team",
+   "schema_description": "NBA regular-season conference and league standings for any season.",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_rest",
+   "description": "Back-to-back plus rest-day splits from history game dates.",
+   "namespace": "matchup",
+   "schema_description": "Back-to-back and rest-day schedule splits for any team."
+  },
+  {
+   "name": "get_team_trajectory",
+   "description": "Multi-season regular-season records for one team, newest first.\n\nThis is a trajectory evidence primitive, not a trend opinion. It reads\ncomplete historical standings and returns record and win percentage for\na bounded number of seasons ending at through_season.",
+   "namespace": "team",
+   "schema_description": "Multi-season regular-season records and win percentages for any team."
+  },
+  {
+   "name": "get_ratings",
+   "description": "Team ratings, optionally bound to one requested ranked metric.\n\nWhen ``requested_metric`` and ``ranking_direction`` are set, rows are\nordered by that metric field and the payload owns the leader claim.\n``team`` narrows a direct team-ratings question.",
+   "namespace": "team",
+   "schema_description": "Team offensive, defensive, net ratings, and pace (league-wide or team specific).",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_rookie_leaders",
+   "description": "Current rookie class leaderboard (first-year NBA players only).\n\nRookies are defined structurally: a player in the current-season\nstats table with NO row in any prior season (hist or warehouse).\nNever an age proxy, never historical seasons (F46: a \"rookies 20+\nppg\" query answered from 2023-24 listed Edwards/LaMelo/Wemby; the\nright answer was the current draft class, e.g. Cooper Flagg).\nstat is a per-game column: ppg, rpg, apg, spg, bpg, mpg.",
+   "namespace": "player",
+   "schema_description": "Current rookie class leaderboard (first-year NBA players only, verified against historical seasons)."
+  },
+  {
+   "name": "get_cap_ledger",
+   "description": "Payroll plus apron room for one abbreviation. 2026-27 thresholds.",
+   "namespace": "cba",
+   "schema_description": "Payroll, luxury tax position, and first/second apron room for one team.",
+   "guidelines": [
+    "Use for one team's payroll, cap space, luxury tax, and apron-room snapshot under declared CBA thresholds. Do not use for trade legality or player value; figures are season-specific ledger totals, not per-game rates."
+   ]
+  },
+  {
+   "name": "get_cap_scenario",
+   "description": "Cap-scenario arithmetic for one team. \"signings\" takes comma-separated amounts or name=amount pairs like \"Player=12M, 3000000\". \"in_players\" adds real contracts by name (league-wide lookup), \"out_players\" removes roster salaries. Returns the arithmetic trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA restrictions that trigger, and the matching verdict when a trade portion is present. REACH FOR THIS for any \"can X afford/sign Y\" or \"what if they waive/trade for Z\" ask: \"can the Warriors sign Player for $12M?\", \"what happens to Phoenix payroll if they waive Beal?\", \"does taking back $30M push DEN over the second apron?\" It computes post-move apron status and CBA restrictions directly - do not rebuild that arithmetic from get_cap_ledger rows.",
+   "namespace": "cba",
+   "schema_description": "Cap-scenario arithmetic: post-move payroll vs cap/tax/aprons plus the 2023 CBA restrictions that trigger, for hypothetical signings and player moves on one team."
+  },
+  {
+   "name": "get_cap_table",
+   "description": "League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.",
+   "namespace": "cba",
+   "schema_description": "League-wide payroll, luxury tax position, and first/second apron room for all 30 teams, ranked by payroll.",
+   "guidelines": [
+    "Use for a league-wide payroll, tax, and apron-room comparison across all 30 teams, ranked by payroll. Do not use for one team's player-level ledger rows; figures are season-specific team totals, not per-game rates."
+   ]
+  },
+  {
+   "name": "get_leaders",
+   "description": "Qualified league leaderboard for one stat category.\n\nranking_direction is ``desc`` for highest-first or ``asc`` for\nlowest-first. min_attempts carries an explicit user volume floor for\npercentage metrics; zero keeps the league qualification.\n\nPercentage boards use the NBA minimums carried by the warehouse\ninstead of an arbitrary attempts floor. For 3P%, the qualification is\n82 made threes over an 82-game season. This keeps the board comparable\nto the official league leaderboard and excludes tiny samples.",
+   "namespace": "league",
+   "schema_description": "Qualified league statistical leaders for any category.",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_lineup_leaders",
+   "description": "League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).",
+   "namespace": "team",
+   "schema_description": "League-wide 5-man lineup net-rating leaderboard with minutes qualification floor.",
+   "guidelines": [
+    "Use for the league-wide five-man net-rating leaderboard with the stated minutes floor. Do not use tiny-sample lineups or mixed qualification floors; values are per-48-minute net ratings."
+   ]
+  },
+  {
+   "name": "get_playoffs",
+   "description": "Playoff wins per team plus champion for one season.",
+   "namespace": "league",
+   "schema_description": "Playoff series wins per team, finals matchup, and champion for any season.",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_team_leaders",
+   "description": "Team totals leaderboard for a counting stat (PTS, REB, AST, STL,\nBLK): player game logs summed by team, with per-game averages.\nUse for \"which team leads in total assists\" - get_leaders is\nplayer-level only.",
+   "namespace": "team",
+   "schema_description": "Team totals leaderboard for a counting stat (PTS, REB, AST, STL, BLK)."
+  },
+  {
+   "name": "get_team_compare",
+   "description": "Top-N team compare on one counting stat: total, per-game, games\nplayed, and the win-loss record joined from standings, in one\nboard. Use for multi-metric team compares (\"compare the top 3\nscoring teams: totals, per-game, and wins\") - get_team_leaders has\nno records and a delegate fan-out composes nameless tables with\nempty cells or invented numbers (F66). The answer is built\ndeterministically from the rows into meta.deterministic_answer;\ncompose ships it verbatim (v67 design law).",
+   "namespace": "team",
+   "schema_description": "Top-N team comparison on a counting stat joined with win-loss records."
+  },
+  {
+   "name": "get_elo_standings",
+   "description": "ELO power ratings as standings: implied win pct, win equivalents, and Elo-implied spreads. ROADMAP Appendix #3.",
+   "namespace": "team",
+   "schema_description": "ELO power ratings as standings with implied win pct, win equivalents, and Elo-implied spreads."
+  },
+  {
+   "name": "get_draft_board",
+   "description": "Draft board: college production plus combine measurements, blended rank.",
+   "namespace": "league",
+   "schema_description": "Blended draft board rankings combining college production and combine testing.",
+   "network_source": "barttorvik college stats"
+  },
+  {
+   "name": "get_combine",
+   "description": "Draft combine measurements plus shooting drills for one draft year.",
+   "namespace": "league",
+   "schema_description": "Anthropometric measurements (height, wingspan, reach, weight) and athletic drills.",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_young_player_usage",
+   "description": "Qualified usage-rate board for young players from silver_advanced.\n\nUses total minutes (GP * per-game MIN) as the sample floor. The default\nmeans age 22 or younger with at least 1,000 minutes in the asked season.\nA hard 500-total-minute floor is ALWAYS enforced: the caller may raise\nit but never undercut it.",
+   "namespace": "player",
+   "schema_description": "Usage-rate leaderboard for young players with customizable age ceilings and minute floors."
+  },
+  {
+   "name": "get_contract_value",
+   "description": "Contract value residuals from production vs salary.\n\nReturns league leaders by default; pass team for one roster or player for\none named player's modeled salary and residual.",
+   "namespace": "cba",
+   "schema_description": "Contract value residuals from production vs salary.",
+   "guidelines": [
+    "Use for production-vs-salary residuals or modeled contract value by player, team, or season. Do not treat residual sign alone as trade value or cap legality; rows are player-season estimates with declared salary units."
+   ]
+  },
+  {
+   "name": "get_salary_history",
+   "description": "Historical player salaries (1984-85 through 2020-21) with league salary-cap, luxury-tax and apron context. One of: a player name (career salary by season), a team abbreviation plus a season (payroll vs cap, ranked in the league), or a season alone (cap figures plus the top individual salaries). For current contracts and cap sheets use get_cap_ledger or get_cap_table; for contract efficiency use get_contract_value or get_value_contracts. REACH FOR THIS for any salary-before-2022 or cap-history ask: \"what did LeBron earn in 2016?\", \"how did GSW payroll rank in 2019?\", \"what was the 2017 cap?\"",
+   "namespace": "cba",
+   "schema_description": "Historical player salaries 1984-85 through 2020-21 with cap/tax/apron context: a player's salary by season, a team's payroll vs cap for a season, or a season's league salary landscape."
+  },
+  {
+   "name": "get_trade_check",
+   "description": "Trade legality check. Player names comma separated per side.\n\n2023 CBA matching below the first apron: 200 percent plus 250k when\noutgoing is up to 7.5M, outgoing plus 7.5M up to 29M, 125 percent\nplus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Cash and exceptions stay out.",
+   "namespace": "cba",
+   "schema_description": "CBA trade legality check under 2023 CBA apron and salary matching rules.",
+   "guidelines": [
+    "Use to test whether a named two-team player trade is CBA-legal under the simplified 2023 rules. Do not use for value, picks, or transactions; inputs are comma-separated player names and output is legality/matching diagnostics, not a recommended trade."
+   ]
+  },
+  {
+   "name": "get_trade_legality",
+   "description": "Trade legality verdict across 2+ teams. \"legs\" is a JSON array: [{\"from\":\"BOS\",\"to\":\"DEN\",\"players\":\"Jayson Tatum, Sam Hauser\",\"picks\":[{\"year\":2028,\"round\":1,\"protection\":\"top-4\"},{\"year\":2030,\"round\":1,\"swap\":true}]}]. Optional \"sign_and_trade\" = {\"player\":\"...\",\"new_salary\":0,\"years\":3} (3-year minimum, BYC handled), \"cash\" = [{\"from\",\"to\",\"amount\"}], \"tpe\" = [{\"team\",\"amount\"}]. Checks 2023 CBA salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, the frozen second-apron pick, and Stepien consecutive-first rules. REACH FOR THIS for any trade-legality ask beyond a trivial two-team player swap: sign-and-trade, multi-team, picks/Stepien, apron aggregation, TPE or cash involved. For a simple two-team salary match get_trade_check is enough.",
+   "namespace": "cba",
+   "schema_description": "Full CBA trade legality verdict for a proposed multi-team deal: salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, sign-and-trade minimums, and Stepien pick rules."
+  },
+  {
+   "name": "get_trade_value",
+   "description": "Trade value grade: estimated production value vs salary per side, plus picks.\n\nReasoning layer on top of get_trade_check (which covers cap legality).\nAll dollar figures are rough estimates from the latest completed\nproduction season versus the current salary sheet. Picks like \"2029 FRP\"\nor \"2030 FRP top-4 protected\".",
+   "namespace": "cba",
+   "schema_description": "Trade value grade: estimated production surplus value vs salary per side plus pick equity.",
+   "guidelines": [
+    "Use to compare estimated production surplus and pick equity for a proposed trade after legality is clear. Do not treat estimates as cap legality or exact market value; dollar figures are modeled production-versus-salary units."
+   ]
+  },
+  {
+   "name": "get_draft_capital",
+   "description": "Future draft pick ownership and capital audit: who holds each team's 2027+ picks, protections, swap rights and forfeits, valued on an empirical draft-value curve. With team + optional years_ahead horizon: per-year kept/incoming/outgoing inventory, Stepien-rule first-round coverage, and net draft-capital liquidity. Requires seeded silver_future_picks.",
+   "namespace": "cba",
+   "schema_description": "Future draft pick ownership (2027+) with protections, swaps and forfeits, plus empirical pick value. With a team: per-year kept/incoming/outgoing inventory, Stepien-rule first-round coverage, and net draft-capital liquidity over an optional years_ahead horizon."
+  },
+  {
+   "name": "get_trade_partners",
+   "description": "Find CBA-legal salary-matching trade packages for one player across the league. Player name; season defaults to 2026-27; teams optionally restricts partners (comma-separated abbreviations); max_packages caps rows per team (default 3). Each row is a roster package (up to 3 players) whose salary satisfies both sides' matching rules under the same simplified 2023 CBA as get_trade_check.",
+   "namespace": "cba"
+  },
+  {
+   "name": "get_trade_targets",
+   "description": "Trade-target screening list for a declared roster need. Scans every non-acquirer contract on the latest salary sheet and ranks eligible candidates on the pinned production score (PTS + 1.2REB + 1.5AST + 2STL + 2BLK - 1.5TOV per game). Filters: 'position' (G/F/C or guard/wing/big), 'max_salary', 'min_gp', 'min_mpg'. Each row carries contract cost (salary, cap share, cheap/mid/expensive band, option flags), age, production rates, defensive indicators (def_rating, deflections, contested shots, rapm) and value-per-$1M so the fit reasoning can happen on real numbers. 'team' is the acquiring team - its roster is excluded from the target pool.",
+   "namespace": "cba",
+   "schema_description": "Trade-target screening list for a declared roster need: league-wide candidates filtered by position group, salary ceiling and production floor, ranked on contract cost (years, guaranteed money, salary band) plus on-court production and defensive indicators. The acquiring team is excluded from its own results."
+  },
+  {
+   "name": "get_value_contracts",
+   "description": "Value-contract depth audit for one team. Ranks the roster by production per cap dollar: salary, cap share, pinned value score (PTS + 1.2REB + 1.5AST + 2STL + 2BLK - 1.5TOV per game), value per $1M, and cheap/expensive depth flags (Presti rule: rotation players under ~10% of cap). 'benchmark_team' adds the same audit for a comparison roster plus summary deltas.",
+   "namespace": "cba",
+   "schema_description": "Value-contract depth audit for one team: salary, cap share, pinned production-per-dollar score, value-per-$1M rank, and cheap/expensive/neutral depth flags (rotation players under ~10% of cap). Optional benchmark_team adds the same audit for a comparison roster."
+  },
+  {
+   "name": "get_situational_splits",
+   "description": "Clutch situational splits for one player or team: score state plus venue.",
+   "namespace": "player",
+   "schema_description": "Clutch situational splits for one player or team across score margins, time thresholds, and venues.",
+   "params": {
+    "season_type": "'regular' or 'playoffs'. Default: {d}."
+   }
+  },
+  {
+   "name": "get_playoff_sim",
+   "description": "Simulated title and finals odds from ratings, Monte Carlo brackets.",
+   "namespace": "league",
+   "schema_description": "Simulated championship and finals odds from power ratings via Monte Carlo brackets.",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for simulated title and finals odds from power ratings and Monte Carlo brackets. Do not interpret as deterministic outcomes or single-game predictions; outputs are probabilistic season-level estimates."
+   ]
+  },
+  {
+   "name": "get_playoff_team_ratings",
+   "description": "Team offensive, defensive, and net ratings from playoff game logs.",
+   "namespace": "team",
+   "schema_description": "Team offensive, defensive, and net ratings from playoff game logs."
+  },
+  {
+   "name": "get_player_risers",
+   "description": "Player risers and fallers: last-N games scoring/efficiency vs the\nplayer's own season average, warehouse only. Use this for\nplayer-level 'who is rising/falling/hot' asks; get_risers is the\nTEAM version (win-rate windows).",
+   "namespace": "player",
+   "schema_description": "Player risers and fallers: last-N games scoring and efficiency versus season baseline.",
+   "params": {
+    "n": "Last-N games window for the riser check. Default: {d}."
+   }
+  },
+  {
+   "name": "get_standings_deep",
+   "description": "Standings deep cuts: clutch records, comeback kings, blown leads, monthly momentum.",
+   "namespace": "team",
+   "schema_description": "Standings deep cuts: clutch records, comeback kings, blown leads, and monthly momentum."
+  },
+  {
+   "name": "get_warehouse_freshness",
+   "description": "Warehouse freshness panel: every silver table, row count, last fetch, stale flag.",
+   "namespace": "league",
+   "schema_description": "Warehouse freshness and data recency panel across all silver tables."
+  },
+  {
+   "name": "get_finder",
+   "description": "Team finder across history seasons. Modes: streak, versus, span,\nplayer_streak, head2head.",
+   "namespace": "league",
+   "schema_description": "Historical multi-season search across streaks, versus, span, player_streak, and head2head.",
+   "params": {
+    "mode": "'streak', 'versus', 'span', 'player_streak', or 'head2head'. Default: {d}."
+   }
+  },
+  {
+   "name": "get_draft_model",
+   "description": "Star-probability classifier from college production (honest proxy).",
+   "namespace": "league",
+   "schema_description": "Prospect star-probability classifier from college production.",
+   "network_source": "college stats"
+  },
+  {
+   "name": "get_leaderboard_deltas",
+   "description": "Scoring leaderboard movers: latest snapshot vs the one from days ago.",
+   "namespace": "league",
+   "schema_description": "Scoring leaderboard movers: latest snapshot vs the one from days ago."
+  },
+  {
+   "name": "get_player_ratings",
+   "description": "Qualified player on-court offensive or defensive rating leaderboard.\n\nThese are lineup results while the player was on court, not an individual\ndefensive-value metric. A hard 500-total-minute floor is ALWAYS enforced:\nthe caller cannot undercut it, so garbage-time players can never top the\nboard (a 0-minute floor once crowned a 53.3 on-court DEF_RATING from\n~15 total minutes as the \"best defensive player\").",
+   "namespace": "player",
+   "schema_description": "Qualified player on-court offensive or defensive rating leaderboard."
+  },
+  {
+   "name": "get_risers",
+   "description": "Risers and fallers: last-N win pct vs season win pct, warehouse only.",
+   "namespace": "team",
+   "schema_description": "Team risers and fallers: last-N weeks win percentage versus season win percentage."
+  },
+  {
+   "name": "get_team_four_factors",
+   "description": "Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive\nmirrors), computed offline from warehouse team game rows. Use for\n\"why are the Thunder good\", \"team identity\", or any four-factors\nask. Pass a team name/abbrev to scope to one team; empty returns\nthe full 30-team board.",
+   "namespace": "team",
+   "schema_description": "Full-board or team-specific Four Factors (eFG%, TOV%, ORB%, FT rate, and defensive mirrors)."
+  },
+  {
+   "name": "get_streaks",
+   "description": "Longest or currently-active streaks, ranked league-wide.\n\nstat: points/rebounds/assists/threes/steals/blocks/double-doubles/\ntriple-doubles, or wins/losses for team scope. threshold: minimum per\ngame (defaults: 30 pts, 10 reb/ast, 4 threes, 3 stl/blk; ignored for\ndouble-doubles, triple-doubles, wins, losses). scope: player or team.\nmode: longest or active. Warehouse only; active means the streak\nincludes the holder's latest game on record.",
+   "namespace": "league",
+   "schema_description": "Longest or currently-active streaks, ranked league-wide.",
+   "params": {
+    "mode": "'longest' all-time or 'active' currently running. Default: {d}."
+   }
+  },
+  {
+   "name": "get_playtype_profile",
+   "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile per play type on offense or defense. If Synergy playtypes are absent, team offense returns warehouse possession start-type PPP proxies without live endpoints.",
+   "namespace": "spatial",
+   "schema_description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile; team offense falls back to warehouse possession start-type PPP proxies when Synergy is absent.",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for one player's or team's Synergy play-type frequency, PPP, and percentile. Do not confuse PPP with team efficiency or ignore possession share; rows are subject-playtype-season offense/defense units."
+   ]
+  },
+  {
+   "name": "get_defensive_matchups",
+   "description": "One defender's defended-shot profile: frequency and shooter results.",
+   "namespace": "matchup",
+   "schema_description": "One defender's defended-shot profile: frequency and shooter results."
+  },
+  {
+   "name": "get_head_to_head",
+   "description": "How a player has done against one opponent team.\n\nplayer: name, nickname, or id (same resolution as every other tool).\nopponent: team name, abbreviation, or id, e.g. \"Knicks\" or \"NYK\".\nseason: 2025-26 only in the warehouse; other seasons clamp.\n\nReturns the player's game logs against the opponent (most recent\nfirst), vs-opponent averages next to the season baseline, the deltas\nbetween them, and the player's team record in those games. Fewer\nthan 5 games sets small_sample and says so plainly. Warehouse only;\nplayer-vs-player is not supported.\nIf `opponent` names a PLAYER (e.g. \"Shai Gilgeous-Alexander\"), it\nresolves to that player's current team so the lane still answers the\nmeetings between the two players' teams instead of erroring; the\nresolution is disclosed in the note.",
+   "namespace": "matchup",
+   "schema_description": "Player matchup history vs one opponent team or opposing player's team."
+  },
+  {
+   "name": "get_lineup_matchup_matrix",
+   "description": "Lineup-vs-lineup matrix for a team matchup. Names, abbrevs, or ids.\n\nCrosses every qualifying 5-man unit of team A against every qualifying\nunit of team B over their shared play-level possessions: shared minutes,\nnet rating in those minutes, sample-size flags. Lineups qualify at\nmin_minutes season minutes (poss/2); shared minutes are estimated from\npossessions (~2 per minute), never play-clock minutes.",
+   "namespace": "matchup",
+   "schema_description": "Lineup-vs-lineup matrix for a team matchup crossing qualifying 5-man units.",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for lineup-vs-lineup shared-minute net ratings between two teams' qualifying five-man units. Do not treat estimated shared minutes as play-clock minutes or ignore sample flags; cells are unit-pair matchup grains."
+   ]
+  },
+  {
+   "name": "get_transactions",
+   "description": "Team transactions: signings, waivers, trades by team and date range.",
+   "namespace": "cba",
+   "schema_description": "Team front-office transactions: signings, waivers, trades, and conversions.",
+   "params": {
+    "start": "Start date filter YYYY-MM-DD; blank = unbounded.",
+    "end": "End date filter YYYY-MM-DD; blank = unbounded."
+   }
+  },
+  {
+   "name": "get_wowy",
+   "description": "With-or-without-you (WOWY) 4-way lineup combination splits for two players.\n\nAccepts player_a and player_b by name or id, or comma-separated player_ids.\nComputes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,\noffensive rating, defensive rating, and net rating from warehouse lineups.",
+   "namespace": "player",
+   "schema_description": "With-or-without-you (WOWY) 4-way lineup combination splits for two players.",
+   "network_source": "pbpstats",
+   "guidelines": [
+    "Use for two players' four-way with/without-you lineup splits. Do not infer individual causation from small cells; rows are lineup-state minutes and ratings per possession."
+   ],
+   "params": {
+    "season_type": "'regular-season' or 'playoffs'. Default: {d}."
+   }
+  },
+  {
+   "name": "get_shot_compare",
+   "description": "Shot-diet showdown: zone eFG and share for two players.\n\nMissing zone data stays null, never 0.0: a player without a seeded\nzone row has NO data there, not a 0% shooter. Edges and the verdict\nare computed only where BOTH players have data; takeaways must never\nbe built on a missing cell.",
+   "namespace": "spatial",
+   "schema_description": "Shot-diet showdown: zone eFG and share for two players.",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for two players' zone-by-zone shot diet comparison. Do not fill missing cells as zeros or mix seasons; each row is a zone with both-player availability caveats."
+   ]
+  },
+  {
+   "name": "get_raptor_history",
+   "description": "Season-by-season RAPTOR and WAR for one player name. Warehouse only.",
+   "namespace": "player",
+   "schema_description": "Season-by-season RAPTOR and WAR for one player name."
+  },
+  {
+   "name": "get_season_series",
+   "description": "Head-to-head between two TEAMS: every meeting this season, regular\nseason and playoffs, with winner and scores when tracked. Use for\n\"how did X do against Y\", \"X vs Y record\", \"season series\".",
+   "namespace": "matchup",
+   "schema_description": "Head-to-head between two teams across a season: every meeting (regular season and playoffs) with winner, scores, date, matchup."
+  },
+  {
+   "name": "get_team_game_log",
+   "description": "A team's recent games, most recent first: date, matchup, W/L,\nteam and opponent points, plus team REB/AST/STL/BLK/TOV. Use for\n\"show me the <team> last N games\" asks - this is the TEAM game log,\nnever search_game_logs (that tool is per-player and its team_wide\nmode returns match counts, not games). team: name, nickname,\nabbreviation, or id. limit: 1-30. playoffs: read silver_playoffs\n(team-level playoff rows) instead of the regular-season table.\nWarehouse only; 2025-26 only.",
+   "namespace": "team",
+   "schema_description": "A team's recent games (regular season or playoffs): date, matchup, W/L, team PTS, opp PTS, REB, AST, STL, BLK, TOV."
+  },
+  {
+   "name": "get_zone_deltas",
+   "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).",
+   "namespace": "spatial",
+   "schema_description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs pooled league-average FG% with percentage-point deltas across court zones.",
+   "guidelines": [
+    "Use for one player's zone efficiency versus pooled league FG% in percentage points. Do not use for shot volume or team context; season is end-year and small zones are excluded by min_attempts."
+   ]
+  },
+  {
+   "name": "search_shots",
+   "description": "Conversational shot finder: filter warehouse shots by player, team,\nzone, period, makes, and late-clock window, with zone/period aggregates\nplus optional per-player/per-team leaderboards. Warehouse shots cover\nthe 2025-26 season only.\n\nzones: rim, short_mid, long_mid, corner_3, atb_3 (comma-separated;\n\"\" = all). periods: 1-4, ot, 1h, 2h, 4th (comma-separated; \"\" = all).\nlate_clock: integer seconds remaining (periods 4+, time-based only, not\nscore-aware). group_by: \"\" | \"player\" | \"team\" -- per-player/per-team\nvolume + efficiency leaderboards sorted by attempts (this is how you\nanswer \"who takes over fourth quarters\"). include_ot: auto (default --\novertime is included when a 4th-quarter/2nd-half window is selected,\nwhen overtime is explicitly selected (periods='ot'), or when late_clock\nis given without an explicit period filter), yes, no.\nperiods='4th' includes overtime by default; pass include_ot=no to get\nexactly the 4th quarter. Zero matches return ok True with empty\naggregates and an explanatory note, never silent zeros. Results are\ntime-based only, never score-aware (meta.clutch_safe=false); TS% is not\nshown because the table has no free-throw attempts.",
+   "namespace": "spatial",
+   "schema_description": "Conversational shot finder: filter warehouse shots by player, team, zone, period, makes, and late-clock window with zone and period aggregates.",
+   "guidelines": [
+    "Use to find or aggregate warehouse shot attempts by player, team, zone, period, or clock filters. Do not use for score-aware clutch or free-throw-inclusive efficiency; results are shot-level rows or group_by leaderboards with declared time-based filters."
+   ]
+  },
+  {
+   "name": "get_shot_chart",
+   "description": "Half-court shot chart data from the warehouse silver shots table for one\nplayer or one team: per-region attempt counts, makes, FG% and the\nleague-average FG% delta for the same season, plus court-center\ncoordinates ready for the shot_chart artifact. Supply player or team\n(name or abbreviation). season is the _season label (e.g. \"2025-26\").\nplayoffs restricts to playoff games (regular season otherwise).\nopponent restricts to games vs that team (name or abbreviation).\nRegions split by shot zone and court side; each row carries x/y in\nfeet, att, makes, pct, league_pct and delta_pp. Always pair this tool\nwith the shot_chart artifact, passing these zones through with\nprovenance, and keep full names in the title.",
+   "namespace": "spatial",
+   "schema_description": "Half-court shot chart data for one player or team: per-region attempts, makes, FG% and league-average delta with court coordinates for the shot_chart artifact."
+  },
+  {
+   "name": "get_stint_timeline",
+   "description": "Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings.",
+   "namespace": "matchup",
+   "schema_description": "Ordered 5-man stint timeline for one game: lineups, clocks, scores, swings."
+  },
+  {
+   "name": "get_possession_log",
+   "description": "Possession-by-possession log for one game: order, clocks, offense, events, points, WPA swings.",
+   "namespace": "matchup",
+   "schema_description": "Possession-by-possession log for one game: order, clocks, offense, events, points, WPA swings."
+  },
+  {
+   "name": "get_elo",
+   "description": "ELO power ratings from warehouse game results for one season.",
+   "namespace": "team",
+   "schema_description": "ELO power ratings from warehouse game results for one season."
+  },
+  {
+   "name": "get_team_shot_zones",
+   "description": "League-wide team shot-zone diet: per-zone attempt share and eFG\nwith league baselines and deltas. teams is \"league\" or a comma-separated\nlist of team names/abbrevs/ids. Zones: rim, short_mid, long_mid,\ncorner_3, atb_3.",
+   "namespace": "spatial",
+   "schema_description": "League-wide team shot-zone diet: per-zone attempt share and eFG with league baselines and deltas.",
+   "guidelines": [
+    "Use for team-level shot-zone diet shares and eFG deltas versus league baselines. Do not use for individual player zones or possession outcomes; rows are team-season-zone units."
+   ]
+  },
+  {
+   "name": "get_historical_leaders",
+   "description": "League leaders per season or best single seasons from history. Seasons are end-years (2026 means 2025-26), clamped to 2015..2026.\n\nSeasons are end-years clamped to 2015..2026. Values are per-game\nwarehouse estimates. Empty ranges report honestly, never fabricated.",
+   "namespace": "league",
+   "schema_description": "League leaders per season or best single seasons from history (2015-2026).",
+   "params": {
+    "mode": "'leaders' per-season boards or 'best' single-season records. Default: {d}."
+   }
+  },
+  {
+   "name": "get_today",
+   "description": "Today home view: last night's results, tonight's games, leaderboard movers, streaks.",
+   "namespace": "league",
+   "schema_description": "Today home view: last night's results, tonight's games, leaderboard movers, streaks."
+  },
+  {
+   "name": "get_morning_briefing",
+   "description": "Morning briefing: today's games, watchlist updates, leaderboard movers.\n\nDeterministic pipeline for app open. Combines get_today, get_watchlist,\nand get_leaderboard_deltas into one response.",
+   "namespace": "league",
+   "schema_description": "Morning briefing: today's games, watchlist updates, leaderboard movers."
+  },
+  {
+   "name": "get_tracking_profile",
+   "description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+   "namespace": "spatial",
+   "schema_description": "Player or team tracking profile: drives, shooting, touches, rebounding, speed.",
+   "guidelines": [
+    "Use for player or team tracking aggregates such as drives, touches, rebounding, and speed. Do not treat tracking percentages as play-by-play events; rows are subject-season-measure long-form stat units."
+   ]
+  },
+  {
+   "name": "get_rest_advantage",
+   "description": "Rest advantage: who had the fresher legs before each game.\n\nteam: 3-letter abbrev, full team name, or \"league\"/\"\" for all 30\nteams. season_type: regular, playoffs, or all (default). Games are\nfiltered to the season_type BEFORE rest gaps are computed, so rest\nnever leaks across the filter boundary. Warehouse only; the first\ngame in scope has no rest baseline and reports None.\ndate: optional YYYY-MM-DD; team mode only. With date and no\nopponent, returns the team's single game on that date (summary\nstill covers the full season as quotable context). opponent:\noptional second team; team mode only. Team + opponent + date\nreturns the completed matchup on that date when one exists, else a\npre-tip-off preview projecting each side's rest from its last\ncompleted game before that date (preview mode: not a warehouse\ngame record). Team + opponent with no date returns their most\nrecent completed matchup.",
+   "namespace": "matchup",
+   "schema_description": "Rest advantage: who had the fresher legs before each game.",
+   "params": {
+    "season_type": "Game scope filter. Default: {d}."
+   }
+  },
+  {
+   "name": "get_rapm_prior",
+   "description": "Prior-informed RAPM for one player.\n\nBlends current-season silver_rapm with silver_rapm_prior seasons.\nReturns a documented estimate, or an honest empty when missing.",
+   "namespace": "player",
+   "schema_description": "Prior-informed RAPM for one player blending current season with historical priors.",
+   "guidelines": [
+    "Use for one player's prior-blended RAPM estimate when current-season sample is thin. Do not present it as observed current-season RAPM or use it for lineup decisions without caveats; output is an estimate with current and prior components."
+   ]
+  },
+  {
+   "name": "search_game_logs",
+   "description": "Filter game logs by stat thresholds, opponent, time, or home/away.\n\nplayer: name, nickname, or id (same resolution as every other tool).\nRequired unless league_wide=True or team_wide=True.\nleague_wide: when True, ignore player and return per-player match\ncounts across the whole warehouse (answers \"who had the most\n50-point games this season\").\nteam_wide: when True, ignore player and return per-team match\ncounts across the whole warehouse (answers \"which team had the\nmost 50-point games this season\"). Each matched game counts for\nthe team the player was on that night (first token of MATCHUP,\ne.g. \"LAL vs. BOS\" -> \"LAL\"), so a mid-season trade attributes\neach game to the team at game time, not the current team.\nplayoffs: when True, read silver_playoff_gamelogs instead of the\nregular-season table.\nmin_points / min_rebounds / min_assists: per-game stat floors\n(e.g. min_points=40 for 40-point games). min_pra: points + rebounds\n+ assists floor. max_points / max_rebounds / max_assists: per-game\nstat ceilings, exclusive (max_points=20 keeps 0-19 games -\n\"under 20\"). triple_double / double_double: keep only games\nwith 10+ in 3 (or 2) of PTS/REB/AST/STL/BLK. opponent: team name or\nabbreviation, e.g. \"Knicks\" or \"NYK\". month: name, number, or\nYYYY-MM. start_date / end_date: YYYY-MM-DD, inclusive. home_away:\n\"home\" or \"away\". season: 2025-26 only in the warehouse.\nbest_game: when True, ignore the limit and return only the single\nhighest-scoring game (answers \"best game\" / \"career high\" phrasing).\nReturns matching games, most recent first, with the total match\ncount (rows beyond limit are counted, not returned). A player with\nno rows in the chosen scope is an explicit ok:False error, never a\nsilent 0.\nWarehouse only; 2025-26 only.",
+   "namespace": "player",
+   "schema_description": "Filter game logs by stat thresholds, opponent, time, or home/away."
+  },
+  {
+   "name": "get_dataset",
+   "description": "Query the Dime Data Engine for standardized silver analytical datasets (standings, leaders, ratings, injuries, player_gamelogs, team_games, scoreboard, shots, lineups, on_off, wowy, four_factors, hustle, combine, playoffs, draft, raptor, player_seasons).",
+   "namespace": "league",
+   "schema_description": "Query standard silver dataset tables or live upstream extracts.",
+   "network_source": "upstream sources",
+   "params": {
+    "stat": "Stat column to aggregate, e.g. 'PTS', 'AST'. Default: {d}."
+   }
+  },
+  {
+   "name": "get_dataset_freshness",
+   "description": "Query current ingestion freshness and coverage timestamps across all Dime Data Engine silver warehouse tables.",
+   "namespace": "league",
+   "schema_description": "Query freshness status across silver warehouse tables."
+  },
+  {
+   "name": "get_career_arc",
+   "description": "Query year-over-year career trajectory, statistical evolution, scoring efficiency, and RAPTOR ratings for an NBA player across multiple seasons.",
+   "namespace": "player"
+  },
+  {
+   "name": "run_python",
+   "description": "Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations. Code runs at module top level in a fresh namespace per call: return results by assigning `out = <value>` or print() (never `return`), and never reassign `con` or call duckdb.connect() \u2014 the provided `con` is the warehouse.",
+   "guidelines": [
+    "Use for statistical modeling, custom aggregation, shrinkage, regression, or multi-step Polars/DuckDB work that domain tools do not cover. Do not use for simple lookups already served by specialized tools; preserve source units and treat stdout/rows as derived Python output."
+   ]
+  },
+  {
+   "name": "get_matchup_preview",
+   "description": "Narrative preview of a scheduled NBA game: recent form, key player matchups, injury impact, x-factors, why-watch. Pass two team names/abbrevs/ids, or a date (MM/DD/YYYY) to preview that day's marquee game. Never predicts scores.",
+   "namespace": "matchup",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_matchup_splits",
+   "description": "Situational splits over the last N games: defense tier, home/away, rest.",
+   "namespace": "matchup",
+   "network_source": "stats.nba.com",
+   "params": {
+    "n": "Last-N games window for the splits. Default: {d}."
+   }
+  },
+  {
+   "name": "get_regression_check",
+   "description": "Sustainability check on a hot stat line: window vs season plus drivers (true shooting, minutes, shot volume, opponent defense). Returns verdict and narrative driver analysis.",
+   "namespace": "player",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use when checking whether a recent hot stat line is sustainable versus season baseline and drivers. Do not use as a forecast guarantee or for multi-stat player evaluation; output is a heuristic verdict on a stat window."
+   ]
+  },
+  {
+   "name": "get_scout_pack",
+   "description": "One-call next-opponent brief: record, net rating, top lineup only, injuries.",
+   "namespace": "player",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for a compact next-opponent dossier when preparing matchup context. Do not use as a substitute for deep lineup or spatial analysis; output is a bundled brief with mixed grains."
+   ]
+  },
+  {
+   "name": "get_opponent_scout",
+   "description": "Opponent scouting dossier for game prep. Returns the opponent's recent form (last 10), four factors on offense and defense, shot-zone profile, top 5-man lineups, current injuries, and this season's head-to-head vs team. Each section carries its season and warehouse source. Warehouse only; sections degrade with a note when a table is not seeded for the season.",
+   "namespace": "matchup"
+  },
+  {
+   "name": "get_rotation_check",
+   "description": "Rotation and closing-unit check from warehouse five-man units, minutes, and cached on/off.",
+   "namespace": "player",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for rotation and closing-unit checks from five-man units, minutes, and cached on/off. Do not use as lineup causal proof or for teams without enough unit sample; output is diagnostic rows across rotation contexts."
+   ]
+  },
+  {
+   "name": "get_injury_impact",
+   "description": "Injury impact in one call: outs, net rating, last-10, heuristic impact.",
+   "namespace": "player",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for one-call injury availability plus heuristic team impact. Do not treat heuristic impact as a full simulation or replace checking current injury rows; output mixes availability and estimated net-rating context."
+   ]
+  },
+  {
+   "name": "get_matchup_brief",
+   "description": "Two-team matchup brief with ratings, form, injuries, season series, and win probability.",
+   "namespace": "matchup",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_watchlist",
+   "description": "List followed entities with their latest snapshot.\n\nPlayers carry per-game PTS/REB/AST from silver_leaders_pts.\nTeams carry W/L from silver_standings.",
+   "namespace": "league"
+  },
+  {
+   "name": "get_games_on_date",
+   "description": "Scoreboard for one date. Date format is MM/DD/YYYY.",
+   "namespace": "matchup",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_boxscore",
+   "description": "Traditional boxscore player stats for one game id.",
+   "namespace": "matchup",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_award_race",
+   "description": "Award race top 5 for MVP/DPOY/ROY/6MOY.\n\nThe formula is computed from warehouse stats only and listed in meta.",
+   "namespace": "league"
+  },
+  {
+   "name": "get_last_x",
+   "description": "Last n games for one player id, most recent first.",
+   "namespace": "player",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_player_report",
+   "description": "Multi-part player report: season line, advanced profile, recent shot log sample, clutch. Not a zone-diet source \u2014 use get_shot_zones or get_zone_deltas for zone splits.",
+   "namespace": "player",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_team_hub",
+   "description": "Game log plus roster for one team id. Warehouse first.",
+   "namespace": "team",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_lineups",
+   "description": "Five-man lineup stats for one team: all qualifying units sorted by minutes. For per-unit ratings with sample floors use get_lineup_stats; for the league-wide board use get_lineup_leaders.",
+   "namespace": "team",
+   "network_source": "stats.nba.com",
+   "guidelines": [
+    "Use for one team's five-man units by minutes with explicit season_type, measure_type, and per_mode defaults. Do not mix totals/pergame or base/advanced variants; rows are lineup-variant units and advanced ratings require matching advanced rows."
+   ]
+  },
+  {
+   "name": "get_splits",
+   "description": "Home/away plus monthly, wins/losses, last-10, starter splits from the game log.",
+   "namespace": "player",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "get_recap",
+   "description": "Post-game recap data: boxscore top five plus team totals.",
+   "namespace": "league",
+   "network_source": "stats.nba.com",
+   "live_only_fallback": "get_boxscore"
+  },
+  {
+   "name": "get_scouting_report",
+   "description": "One-call dossier: record, roster, top lineup only, leaders context. For the full qualifying-unit set use get_lineups or get_lineup_stats.",
+   "namespace": "player",
+   "network_source": "stats.nba.com"
+  },
+  {
+   "name": "web_search",
+   "description": "Search the public web for current NBA news, rumors, transactions, and external context. Returns cited rows with rank, title, URL, snippet, domain, and published date when available. Use only when warehouse or live NBA tools cannot answer, or when current external reporting is needed; snippets are discovery evidence, so call web_fetch before relying on page details.",
+   "namespace": "web"
+  },
+  {
+   "name": "web_fetch",
+   "description": "Fetch one public HTTP(S) page and extract readable text. Use after web_search or when the user supplies a URL. Returns a cited row with final URL, title, publisher, extracted text, and content hash. Fetch only pages needed for the answer; web_search snippets are not a substitute for page evidence.",
+   "namespace": "web"
+  },
+  {
+   "name": "get_free_agents",
+   "description": "Free agency and cap planning: the upcoming free agent class by team or league-wide (UFA, player/team options, two-way), estimated cap holds, and each team's projected cap room and exceptions for the next cap season. Warehouse only; refresh with seed_free_agents.py. Hold and cap figures are CBA-formula estimates, marked ESTIMATED. REACH FOR THIS for any 'who is a free agent' or 'who has cap space' ask: 'top 2027 free agents', 'which teams can offer a max slot?', 'who are the Nets' free agents?' It returns the FA list plus each team's projected room/tax/apron lines in one call - do not assemble this from get_cap_ledger, which only shows one team's current committed salary. For one team's keep-vs-renounce decision tree use get_fa_plan; for hypothetical signing amounts use get_cap_scenario.",
+   "namespace": "league"
+  },
+  {
+   "name": "get_fa_plan",
+   "description": "Free-agent / extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table - keep all holds vs renounce all vs per-player renounce/keep-only - against the team's projected cap room and exceptions. Holds are CBA-formula estimates (150% of prior salary), marked ESTIMATED. Warehouse only; refresh with seed_free_agents.py. REACH FOR THIS for any forward-looking free-agency or cap-space decision ask: 'can the Lakers keep Reaves and still sign a wing?', 'what is Boston's cap room if they renounce X?', 'walk me the Knicks' 2027 offseason.' It returns the answer-shaped scenario table directly, so do not rebuild hold/room arithmetic from get_cap_ledger or get_cap_table - those show current committed salary only and cannot answer keep-vs-renounce questions. Pair with get_free_agents for the league-wide class and get_cap_scenario for explicit hypothetical signing amounts.",
+   "namespace": "league",
+   "schema_description": "Free-agent and extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table (keep all holds / renounce all / per-player renounce or keep-only) against projected cap room and exceptions."
+  },
+  {
+   "name": "get_prospect",
+   "description": "Prospect lookup for the upcoming draft: public big-board/mock placement, current college production stats, pick-slot comps from historical drafts, and nearest historical combine measurables. Player name; draft_year defaults to the current class (2027). Warehouse only; refresh with seed_prospects.py. International prospects carry board/physical data without college stats.",
+   "namespace": "league"
+  },
+  {
+   "name": "get_roster_fit",
+   "description": "Roster gap and fit profile for one team and season (default current): rotation shares by skill archetype (spacing, creation, rim protection, defense, bench depth) versus league and top-8 contender baselines, returning the biggest gaps. Reads silver_leaders_pts and standings; warehouse only."
+  },
+  {
+   "name": "get_expectations",
+   "description": "Actual or season-to-date record and net rating versus preseason expectations (projected win total, playoff/title odds) for one team, per season. Warehouse-backed: silver_preseason_projections plus standings/ratings tables. Pass a team id, abbreviation or name; optional season like '2025-26', else the most recent seasons."
+  }
+ ]
+}

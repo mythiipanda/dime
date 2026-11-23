@@ -28,7 +28,11 @@ def last_completed_season() -> str | None:
         seasons = store.completed_seasons_across_tables()
     except Exception:
         return None
-    value = seasons[-1] if seasons else None
+    if not seasons:
+        return None
+    cal = calendar_last_completed_season()
+    done = [s for s in seasons if s <= cal] if cal else seasons
+    value = done[-1] if done else seasons[-1]
     _LAST_SEASON_KEY = key
     _LAST_SEASON_VALUE = value
     return value
@@ -49,6 +53,22 @@ def completed_season_for_date(day: object) -> str | None:
     start = year - 1 if month >= 7 else year - 2
     return f"{start}-{(start + 1) % 100:02d}"
 
+def current_season(today: object = None) -> str | None:
+    if today is None:
+        import datetime as _dt
+
+        today = _dt.date.today()
+    try:
+        year = int(today.year)
+        month = int(today.month)
+    except Exception:
+        return None
+    if month < 1 or month > 12:
+        return None
+    start = year if month >= 7 else year - 1
+    return f"{start}-{(start + 1) % 100:02d}"
+
+
 def calendar_last_completed_season(today: object = None) -> str | None:
     if today is None:
         import datetime as _dt
@@ -60,7 +80,8 @@ def resolve_season(season: object | None = None,
                    table: str | None = None) -> str | None:
     text = "" if season is None else str(season).strip()
     if text:
-        return text
+        slug = _canonical_parts(text) or _bare_year_slug(text)
+        return slug if slug is not None else text
     if table:
         try:
             from shared.coverage import parse_season_start
@@ -166,6 +187,7 @@ TOOL_LABELS = {
     "get_playoff_intel": "Pulling playoff logs",
     "get_trade_check": "Checking trade math",
     "get_trade_value": "Grading trade value",
+    "get_draft_capital": "Checking future pick ownership",
     "get_award_race": "Ranking award races",
     "get_award_results": "Reading award results",
     "get_last_x": "Pulling recent game logs",
@@ -580,16 +602,130 @@ def _team_alias_index() -> dict[str, list[int]]:
             index.setdefault(key, []).append(team_id)
     return index
 
+_TEAM_ABBR_ALIASES = {"brk": "bkn", "pho": "phx", "phc": "phx"}
+
 _TEAM_ALIAS_INDEX = _team_alias_index()
+
+_TEAM_INPUT_GUIDE = ("pass an NBA abbreviation like 'BOS', a numeric "
+                     "team_id, or a full team name like 'Boston Celtics'")
+
+_LEAGUE_SCOPE_TOKENS = {"all", "league", "nba", "every", "league-wide",
+                        "league_wide", "any"}
+
+_HISTORICAL_TEAMS = {
+    "SEA": "the Seattle SuperSonics, who relocated to Oklahoma City in 2008 (use OKC)",
+    "NJN": "the New Jersey Nets, who relocated to Brooklyn in 2012 (use BKN)",
+    "NOH": "the New Orleans Hornets, renamed the Pelicans in 2013 (use NOP)",
+    "NOK": "the New Orleans/Oklahoma City Hornets, a temporary 2005-07 relocation (use NOP)",
+    "CHO": "the Charlotte Hornets, who relocated to New Orleans in 2002; "
+           "the current Charlotte franchise began as the 2004-05 Bobcats (use CHA)",
+    "VAN": "the Vancouver Grizzlies, who relocated to Memphis in 2001 (use MEM)",
+    "SDC": "the San Diego Clippers, who relocated to Los Angeles in 1984 (use LAC)",
+    "KCK": "the Kansas City Kings, who relocated to Sacramento in 1985 (use SAC)",
+}
+
+_HISTORICAL_TEAM_NAMES = {
+    "seattle": "SEA", "supersonics": "SEA", "sonics": "SEA",
+    "seattle supersonics": "SEA",
+    "new jersey": "NJN", "new jersey nets": "NJN",
+    "vancouver": "VAN", "vancouver grizzlies": "VAN",
+    "charlotte bobcats": "CHO", "bobcats": "CHO",
+    "new orleans hornets": "NOH",
+    "new orleans oklahoma city hornets": "NOK",
+    "san diego clippers": "SDC", "kansas city kings": "KCK",
+    "kansas city": "KCK",
+}
+
+_TEAM_ID_ABBR = {tid: abbr for abbr, _full, tid in _STATIC_TEAMS}
+
+
+def _historical_team_note(raw: str) -> str:
+    key = " ".join(str(raw or "").lower().replace("-", " ")
+                   .replace("_", " ").split())
+    abbr = _HISTORICAL_TEAM_NAMES.get(key)
+    if abbr is None and key.upper() in _HISTORICAL_TEAMS:
+        abbr = key.upper()
+    return _HISTORICAL_TEAMS.get(abbr or "", "")
+
+
+def _suggest_teams(raw: str, limit: int = 3) -> list[str]:
+    import difflib as _dl
+    key = " ".join(str(raw or "").lower().replace("-", " ")
+                   .replace("_", " ").split())
+    if not key:
+        return []
+    matches = _dl.get_close_matches(key, sorted(_TEAM_ALIAS_INDEX), n=limit * 2,
+                                    cutoff=0.6)
+    seen = []
+    for match in matches:
+        for tid in _TEAM_ALIAS_INDEX.get(match, []):
+            abbr = _TEAM_ID_ABBR.get(tid)
+            if abbr and abbr not in seen:
+                seen.append(abbr)
+    return seen[:limit]
+
+
+def team_error_message(value: object) -> str:
+    raw = str(value or "").strip()
+    key = " ".join(raw.lower().split())
+    if not key or key in _LEAGUE_SCOPE_TOKENS:
+        return (f"unknown team: {raw or 'empty team'} is not a team: this "
+                f"tool needs one specific team ({_TEAM_INPUT_GUIDE}). For a "
+                "league-wide ranking, use a leaders tool or one sql_exec "
+                "over the silver_hist_* tables instead of per-team calls.")
+    hist = _historical_team_note(raw)
+    if hist:
+        return f"{raw} is {hist}; it has no rows for current-season data"
+    suggestions = _suggest_teams(raw)
+    hint = (f" Closest current teams: {', '.join(suggestions)}."
+            if suggestions else "")
+    return f"unknown team: {value!r}.{hint} {_TEAM_INPUT_GUIDE}"
+
+
+def covered_seasons(con: object, table: str) -> list[str]:
+    try:
+        rows = con.execute(
+            f"SELECT DISTINCT _season FROM {table} ORDER BY 1").fetchall()
+    except Exception:
+        return []
+    return [str(r[0]) for r in rows if r and r[0]]
+
+
+def season_rows_error(con: object, table: str, season: str,
+                      team: str = "") -> str:
+    owned = con is None
+    if owned:
+        try:
+            con = store.connect(read_only=True)
+        except Exception:
+            con = None
+    try:
+        available = covered_seasons(con, table) if con is not None else []
+    finally:
+        if owned and con is not None:
+            try:
+                con.close()
+            except Exception:
+                pass
+    subject = f"{team} {season}" if team else str(season)
+    if available:
+        return (f"no rows for {subject} in {table} - "
+                f"available seasons: {', '.join(available)}")
+    return f"no rows for {subject} in {table}"
+
+
+def _unknown_team(value: object) -> ValueError:
+    return ValueError(team_error_message(value))
 
 def _static_team_id(value: object, raw: str) -> int:
     name = " ".join(raw.lower().replace("-", " ").replace("_", " ").split())
+    name = _TEAM_ABBR_ALIASES.get(name, name)
     if not name:
-        raise ValueError(f"unknown team: {value}")
+        raise _unknown_team(value)
     hits = _TEAM_ALIAS_INDEX.get(name, [])
     if len(hits) == 1:
         return hits[0]
-    raise ValueError(f"unknown team: {value}")
+    raise _unknown_team(value)
 
 def coerce_team_id(value: object) -> int:
     raw = str(value).strip()
@@ -598,14 +734,14 @@ def coerce_team_id(value: object) -> int:
     except (TypeError, ValueError):
         pass
     if not raw:
-        raise ValueError(f"unknown team: {value}")
+        raise _unknown_team(value)
     raw = NICKNAMES.get(raw.lower(), raw)
     raw = raw.replace("-", " ").replace("_", " ")
     name = raw.lower()
     if not name.strip():
-        raise ValueError(f"unknown team: {value}")
+        raise _unknown_team(value)
     if len(name) < 3:
-        raise ValueError(f"unknown team: {value}")
+        raise _unknown_team(value)
     return _static_team_id(value, raw)
 
 
@@ -662,6 +798,64 @@ def season_static(season: str) -> bool:
         return False
     end_year = 2000 + int(s[5:])
     return _dt.date.today() > _dt.date(end_year, 7, 15)
+
+def league_games_played_baseline(season: str) -> int | None:
+    season = resolve_season(season)
+    if not season:
+        return None
+    try:
+        con = store.connect(read_only=True)
+        try:
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            row = None
+            if "silver_hist_gamelogs" in tables:
+                row = con.execute(
+                    "SELECT MAX(cnt) FROM (SELECT COUNT(*) AS cnt FROM "
+                    "silver_hist_gamelogs WHERE _season = ? "
+                    "AND season_type = 'regular-season' GROUP BY team_id)",
+                    [season]).fetchone()
+            elif "silver_team_games" in tables:
+                row = con.execute(
+                    "SELECT MAX(cnt) FROM (SELECT COUNT(DISTINCT Game_ID) AS cnt "
+                    "FROM silver_team_games WHERE _season = ? GROUP BY _entity)",
+                    [season]).fetchone()
+        finally:
+            con.close()
+    except Exception:
+        return None
+    if not row or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def season_to_date_meta(season: str | None,
+                        games_played: object = None,
+                        prior_full_season: dict | None = None) -> dict[str, Any]:
+    resolved = resolve_season(season)
+    out: dict[str, Any] = {"season": resolved}
+    try:
+        gp = int(games_played) if games_played is not None else None
+    except (TypeError, ValueError):
+        gp = None
+    baseline = league_games_played_baseline(resolved) if resolved else None
+    if gp is not None:
+        out["games_played"] = gp
+    if baseline is not None:
+        out["league_games_played_baseline"] = baseline
+    if gp is not None:
+        in_progress = not season_static(resolved)
+        early = gp < 30
+        behind = baseline is not None and gp < 0.7 * baseline
+        out["small_sample"] = bool(early or behind)
+        if out["small_sample"]:
+            out["small_sample_reason"] = (
+                "early in the season" if early and in_progress
+                else "well under the league games-played baseline" if behind
+                else "fewer than 30 games played")
+    if prior_full_season:
+        out["prior_full_season"] = prior_full_season
+    return out
+
 
 def _bound_warehouse_read(table, where, params):
 

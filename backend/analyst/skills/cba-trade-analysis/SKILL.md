@@ -7,6 +7,14 @@ description: Evaluate NBA trade feasibility, salary matching brackets, first and
 
 This playbook outlines the structural trade rules, luxury tax apron thresholds, salary matching math, and draft pick restrictions enacted under the 2023 NBA Collective Bargaining Agreement (CBA).
 
+## 0. Mechanism Selection (decide before computing)
+
+Every legality question starts with one branch — pick the mechanism before any math:
+
+1. **Tier each side first.** Compute each team's payroll from `silver_salaries` (`SUM(SALARY)` per `TEAM` for the relevant `_season` — `SALARY` is the row's `_season` cap hit; the `SALARY_20XX_YY` columns are contract-year values, so for a "20XX-YY payroll" use `SALARY` or `SALARY_20XX_YY`, never a different year's column) and place it in the tier ladder (Under Cap / Over Cap Non-Tax / Taxpayer / First Apron / Second Apron) using the thresholds stated in the question. Evaluate **both** sides of a proposed trade independently — a deal legal for one side can be illegal for the other.
+2. **Under-cap teams absorb into cap space, not matching bands.** If the team finishes the trade at or under the salary cap, it may take back more salary than it sends out — the ceiling is `outgoing + cap_room` (room = cap − payroll). Do not apply the percentage bands to a team with room; conversely do not claim "cap space" for an over-cap team — it uses the matching rules instead. Absorption trades (sending a player to a team with open room for minimal salary back) are legal whenever the receiving side stays under the cap after.
+3. **Apron and taxpayer teams use salary matching, never cap room.** First Apron teams may take back at most 100% of outgoing; Second Apron teams additionally cannot aggregate multiple salaries for one larger contract. The bands below apply to non-apron over-cap teams.
+
 ## 1. Cap & Apron Structure
 
 The 2023 CBA establishes progressive financial thresholds that impose both monetary tax penalties and severe roster construction restrictions:
@@ -52,6 +60,21 @@ Teams operating at or above the Second Apron face the most punitive roster restr
 
 ---
 
+## 2.5 Solving for Minimum Outgoing Salary
+
+When a question asks for the *smallest* outgoing package that legalizes a target incoming salary, invert the matching bands — work top-down, since each band's range implies its own outgoing floor:
+
+- **100% apron match**: `outgoing ≥ incoming`. The ceiling and floor coincide; any outgoing below incoming fails outright (and a Second Apron team additionally cannot combine contracts to reach it).
+- **High band (> $29M outgoing)**: `outgoing ≥ (incoming − $250,000) / 1.25`. Valid only if the solution lands above $29M.
+- **Mid band ($7.5M–$29M)**: `outgoing ≥ incoming − $7,500,000`. Valid only if the solution lands inside the band.
+- **Low band (≤ $7.5M)**: `outgoing ≥ (incoming − $250,000) / 2`. Valid only if the solution lands at or under $7.5M.
+
+Compute the floor under each band that can contain the answer, then take the smallest valid one — plus the cap-space route: if outgoing can be zero and `incoming ≤ cap_room`, no matching is needed at all. When comparing rule vintages (e.g. historical vs current matching), state which rule set you applied and why the question's stipulated year controls it.
+
+Worked example: to take back $35M as a non-apron over-cap team — high-band floor is $(35.0 − 0.25)/1.25 = $27.8M`, which is *below* $29M so the high band doesn't apply; mid-band floor is $35.0 − 7.5 = $27.5M`, valid inside the band → minimum outgoing is **$27.5M**.
+
+---
+
 ## 3. Contract Extensions & Valuations
 
 - **Designated Veteran Player Extension (Supermax / DVPE)**:
@@ -67,3 +90,13 @@ Teams operating at or above the Second Apron face the most punitive roster restr
 
 - **Trade Check Summaries**: Use `compare` artifacts to contrast incoming and outgoing player profiles, salaries, and net ratings.
 - **Roster Cap Ledger**: Use `table` artifacts displaying player salaries, luxury tax tiers, and team apron room/deficit.
+
+---
+
+## 5. Season-Aware Team Checks (Stale Premises)
+
+A player's team depends on the season being graded:
+- **Current-season questions** use the current season and current rosters from the salary sheet. A player who changed teams shows up with his new team.
+- **Historical questions** pass the past season explicitly; team checks then use that season's production rows, so a departed player still grades against his old team.
+
+When `get_trade_check` answers "salary data lists {player} with {TEAM}, not {TEAM2} in season {SEASON}", the question's team premise is stale for that season. Say so plainly, then either re-grade with the reported team (for a current question) or re-run with the historical season the user meant. Never silently grade the trade as asked when the team check failed.

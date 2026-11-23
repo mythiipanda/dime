@@ -1,26 +1,40 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
+DATASET="${DIME_WAREHOUSE_DATASET:-mythiix/dime-warehouse}"
+REVISION="${DIME_WAREHOUSE_REVISION:-main}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
-fetch() {
-  if curl -fL -o "$TMP/dime_data.zip" "$1"; then
-    ACTUAL="$(sha256sum "$TMP/dime_data.zip" | awk '{print $1}')"
-    if [ "$ACTUAL" = "$2" ]; then
-      echo "fetch-data: using $3"
-      return 0
-    fi
-    echo "fetch-data: checksum mismatch for $3 (got $ACTUAL)" >&2
+mkdir -p backend/data
+base="https://huggingface.co/datasets/${DATASET}/resolve/${REVISION}"
+hf_curl() {
+  if [ -n "${HF_TOKEN:-}" ]; then
+    curl -fL --retry 3 -H "Authorization: Bearer ${HF_TOKEN}" "$@"
+  else
+    curl -fL --retry 3 "$@"
   fi
-  return 1
 }
-WAREHOUSE_URL="${DIME_WAREHOUSE_URL:-https://dimewarehouse.blob.core.windows.net/warehouse/dime_data_full.zip}"
-if fetch "$WAREHOUSE_URL" "5566409dd71881194edc6dd6ddddbf56a316824a9c34340b3ddb34d6c7a95ea8" "dime-data-20260930"; then
-  :
-else
-  echo "fetch-data: download failed" >&2
+hf_curl -o "$TMP/warehouse.duckdb.sha256" "${base}/warehouse.duckdb.sha256"
+expected="$(awk '{print $1}' "$TMP/warehouse.duckdb.sha256")"
+case "$expected" in
+  *[!0-9a-fA-F]*) echo "fetch-data: invalid checksum in warehouse.duckdb.sha256" >&2; exit 1 ;;
+esac
+if [ "${#expected}" -ne 64 ]; then
+  echo "fetch-data: invalid checksum length in warehouse.duckdb.sha256" >&2
   exit 1
 fi
-unzip -q -o "$TMP/dime_data.zip" -d backend
+actual=""
+if [ -f backend/data/warehouse.duckdb ]; then
+  actual="$(sha256sum backend/data/warehouse.duckdb | awk '{print $1}')"
+fi
+if [ "$actual" != "$expected" ]; then
+  hf_curl -o "$TMP/warehouse.duckdb" "${base}/warehouse.duckdb"
+  actual="$(sha256sum "$TMP/warehouse.duckdb" | awk '{print $1}')"
+  if [ "$actual" != "$expected" ]; then
+    echo "fetch-data: checksum mismatch for warehouse.duckdb (got $actual)" >&2
+    exit 1
+  fi
+  mv "$TMP/warehouse.duckdb" backend/data/warehouse.duckdb
+fi
 ls -la backend/data/warehouse.duckdb
-echo "fetch-data: warehouse ready at backend/data/warehouse.duckdb"
+echo "fetch-data: warehouse ready at backend/data/warehouse.duckdb ($expected)"

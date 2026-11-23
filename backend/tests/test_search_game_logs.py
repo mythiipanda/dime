@@ -285,8 +285,9 @@ def test_integration_league_wide_50pt_leaders():
     con = _store.connect(read_only=True)
     try:
         total50 = con.execute(
-            "SELECT COUNT(*) FROM silver_player_gamelogs"
-            " WHERE _season = '2025-26' AND CAST(PTS AS DOUBLE) >= 50"
+            "SELECT COUNT(*) FROM (SELECT DISTINCT Player_ID, GAME_DATE"
+            " FROM silver_player_gamelogs"
+            " WHERE _season = '2025-26' AND CAST(PTS AS DOUBLE) >= 50)"
         ).fetchone()[0]
     finally:
         con.close()

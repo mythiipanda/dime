@@ -16,6 +16,7 @@ import { createAnalystSession } from "./dist/runtime.js";
 import { createPiExecution } from "./dist/pi-execution.js";
 import { createAnalyst } from "./dist/analyst.js";
 import { priorSourceTool } from "./dist/pi-context.js";
+import { sourceResult } from "./dist/python-tools.js";
 
 function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
   const result = error !== undefined ? { rows, error } : { rows };
@@ -607,6 +608,238 @@ test("createPiExecution canonical text overrides trailing prose, retains sources
   await rm(cwd, { recursive: true, force: true });
 });
 
+test("createPiExecution steers a substantial unsubmitted answer through submit_answer, once", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-turn-end-steer-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const longText = "MEM went 56-26 in the 2021-22 regular season. The early split was 30-10 and the late split 26-16, with the defensive rating tightening after the deadline and the rotation settling. The roster's top-eight minute share concentrated on the closing five.";
+  const canonical = "MEM's 2021-22 record: 56-26.";
+
+  let execRequests = 0;
+  let submitOnSteer = true;
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      let msg;
+      if (execRequests === 1) {
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "text", text: longText }],
+          stopReason: "stop",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      } else if (execRequests === 2 && submitOnSteer) {
+        const code = `await tools.submit_answer({ blocks: [{ text: ${JSON.stringify(canonical)}, anchors: [] }] }); return { done: true };`;
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "toolCall", id: "call-sub", name: "codemode", arguments: { code } }],
+          stopReason: "toolUse",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      } else {
+        msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "text", text: submitOnSteer ? "Submitted." : longText }],
+          stopReason: "stop",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+      }
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = {
+    tools: [],
+    results: new Map(),
+    pid: 12345,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const run = async () => {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "What was MEM's record in 2021-22?",
+      history: [],
+      model: "fixture:fixture",
+      sources: [makeSourceRecord("prior-mem", { rows: [{ team: "MEM", season: "2021-22", wins: 56, losses: 26 }] })],
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    return events;
+  };
+
+  let events = await run();
+  assert.equal(execRequests, 3);
+  const steerCall = events.find((e) => e.type === "tool_call" && e.name === "turn_end_steer");
+  assert.ok(steerCall, "turn_end_steer record should be emitted");
+  const answer = events.find((e) => e.type === "answer");
+  assert.ok(answer.submission, "answer should carry the submission");
+  assert.equal(answer.text, canonical);
+
+  submitOnSteer = false;
+  execRequests = 0;
+  events = await run();
+  assert.equal(execRequests, 2);
+  const steers = events.filter((e) => e.type === "tool_call" && e.name === "turn_end_steer");
+  assert.equal(steers.length, 1, "steer fires exactly once");
+  const plain = events.find((e) => e.type === "answer");
+  assert.equal(plain.submission, undefined);
+  assert.equal(plain.text, longText);
+
+  await rm(cwd, { recursive: true, force: true });
+});
+
+test("createPiExecution reprompts once when a sourceless data ask ends in plain text with zero data calls", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-zero-evidence-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const longText = "Giannis Antetokounmpo leads the league in restricted-area frequency at 41.2 percent of his shot diet, with Shai Gilgeous-Alexander and Anthony Edwards rounding out the top three on sustained rim pressure across the 2024-25 season, while Denver's Nikola Jokic trails the group on lower drive volume.";
+  const canonical = "Top guards by ts% in 2024-25: Giannis leads restricted-area frequency at 41.2%.";
+  const bridgeResults = new Map();
+  const fakeSqlExec = {
+    name: "sql_exec",
+    label: "SQL",
+    description: "Run SQL",
+    parameters: { type: "object", properties: {} },
+    async execute(callId) {
+      const record = makeSourceRecord("fake-ev-1", { rows: [{ player: "Giannis", ts_pct: 41.2 }] });
+      bridgeResults.set(record.ref, record);
+      return sourceResult(record);
+    },
+  };
+
+  let execRequests = 0;
+  let mode = "reprompt";
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      let msg;
+      if (execRequests === 1) {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: longText }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else if (execRequests === 2) {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: longText }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else if (execRequests === 3 && mode === "reprompt") {
+        const code = `await tools.sql_exec({ sql: "select player, ts_pct from silver_leaders where season='2024-25' and pos='guard' order by ts_pct desc limit 10", intent: "rank top guards by ts% in 2024-25" }); await tools.submit_answer({ blocks: [{ text: ${JSON.stringify(canonical)}, anchors: [{ ref: "fake-ev-1", row: 0, columns: ["ts_pct"] }] }], artifacts: [{ kind: "table", title: "Leaders", columns: [{ key: "ts_pct", label: "TS%", numeric: true }], rows: [{ player: "Giannis", ts_pct: 41.2 }] }] }); return { done: true };`;
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-sub", name: "codemode", arguments: { code } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: "Submitted." }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      }
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = { tools: [fakeSqlExec], results: bridgeResults, pid: 12345, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const run = async (extra = {}) => {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "Rank the top guards by ts% in 2024-25",
+      history: [],
+      model: "fixture:fixture",
+      sources: [],
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+      ...extra,
+    })) {
+      events.push(event);
+    }
+    return events;
+  };
+
+  let events = await run();
+  const reprompts = events.filter((e) => e.type === "tool_call" && e.name === "zero_evidence_reprompt");
+  assert.equal(reprompts.length, 1, "forced reprompt fires exactly once");
+  const answer = events.find((e) => e.type === "answer");
+  assert.equal(answer.text, canonical);
+
+  mode = "land";
+  execRequests = 0;
+  bridgeResults.clear();
+  events = await run({ runTimeoutMs: 1 });
+  const reprompts2 = events.filter((e) => e.type === "tool_call" && e.name === "zero_evidence_reprompt");
+  assert.equal(reprompts2.length, 0, "reprompt skipped when budget cannot allow it");
+  const landed = events.find((e) => e.type === "answer");
+  assert.deepEqual(landed.submission?.omitted, ["zero data tool calls and no evidence sources before submitting a data-grounded answer"]);
+  assert.equal(landed.text, longText);
+
+  await rm(cwd, { recursive: true, force: true });
+});
+
 test("createAnalyst downstream verification remains unassessed and preserves submission carry", async () => {
   const dir = await mkdtemp(join(tmpdir(), "analyst-downstream-"));
   try {
@@ -714,6 +947,150 @@ test("validateAnswerSubmission permits omitted anchors and normalizes shot_chart
   assert.equal(validated.artifacts[0].zones[1].pct, 42.5);
 });
 
+test("validateAnswerSubmission accepts valid typed artifacts for every known kind", () => {
+  const artifacts = [
+    {
+      kind: "table",
+      title: "Top scorers",
+      columns: [
+        { key: "player", label: "Player" },
+        { key: "ppg", label: "PPG", numeric: true },
+        { key: "gp", label: "GP", numeric: true },
+      ],
+      rows: [
+        { player: "Player One", ppg: 30.1, gp: 72 },
+        { player: "Player Two", ppg: null, gp: 68 },
+      ],
+      footnote: "n=2 fixture rows · season 2025-26",
+    },
+    {
+      kind: "table",
+      title: "Array rows",
+      columns: [
+        { key: "player", label: "Player" },
+        { key: "ppg", label: "PPG", numeric: true },
+      ],
+      rows: [["Player One", 30.1], ["Player Two", ""]],
+    },
+    {
+      kind: "compare",
+      title: "Head to head",
+      aName: "Player One",
+      bName: "Player Two",
+      rows: [
+        { label: "Points per game", a: 30.1, b: 27.4 },
+        { label: "True shooting", a: 61.2, b: 59.8 },
+      ],
+    },
+    {
+      kind: "chart",
+      title: "Scoring trend",
+      unit: "PPG",
+      xLabels: ["G1-5", "G6-10"],
+      series: [
+        { name: "Player One", values: [31.2, null], tone: "accent" },
+        { name: "Baseline", values: [33.9, 33.9], tone: "muted" },
+      ],
+      footnote: "Fixture values.",
+    },
+    {
+      kind: "shot_chart",
+      title: "Shot diet",
+      zones: [
+        { x: 0, y: 0, att: 380, pct: 0.684 },
+        { x: 22, y: 5, att: 40, pct: 0.395 },
+      ],
+      footnote: "Fixture zones.",
+    },
+    {
+      kind: "scatter",
+      title: "Usage vs efficiency",
+      xLabel: "Usage rate",
+      yLabel: "True shooting",
+      xMid: 20,
+      yMid: 57.5,
+      points: [
+        { label: "Player One", x: 29.5, y: 66.8, highlight: true },
+        { label: "League average", x: 20, y: 57.5 },
+      ],
+    },
+  ];
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture answer." }], artifacts }, () => undefined);
+  assert.equal(validated.artifacts.length, artifacts.length);
+  assert.deepEqual(validated.artifacts[0], artifacts[0]);
+  assert.deepEqual(validated.artifacts[1], artifacts[1]);
+  assert.deepEqual(validated.artifacts[2], artifacts[2]);
+  assert.deepEqual(validated.artifacts[3], artifacts[3]);
+  assert.equal(validated.artifacts[4].zones[0].pct, 68.4);
+  assert.equal(validated.artifacts[4].zones[1].pct, 39.5);
+  assert.deepEqual(validated.artifacts[5], artifacts[5]);
+});
+
+test("validateAnswerSubmission rejects malformed typed artifacts with actionable errors", () => {
+  const cases = [
+    [{ kind: "table", title: "Bad", rows: [] }, /Invalid table artifact at artifacts\[0\].*\/rows: must not have fewer than 1 items/i],
+    [{ kind: "table", title: "Bad", columns: [], rows: [{}] }, /Invalid table artifact.*\/columns: must not have fewer than 1 items/i],
+    [{ kind: "table", title: "Bad", columns: [{ key: "player", label: "Player" }], rows: [{ other: "x" }] }, /missing column 'player'/],
+    [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [[1, 2]] }, /expected 1 cell\(s\)/],
+    [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [[{}]] }, /string, number or null/],
+    [{ kind: "table", title: "Bad", columns: [{ key: "ppg", label: "PPG" }], rows: [{ ppg: 30 }], subtitle: "x" }, /must not have additional properties|additional propert/i],
+    [{ kind: "compare", title: "Bad", aName: "A", bName: "B", rows: [] }, /Invalid compare artifact/],
+    [{ kind: "compare", title: "Bad", aName: "A", bName: "B", rows: [{ label: "PPG", a: "30", b: 27 }] }, /\/rows\/0\/a: must be number/i],
+    [{ kind: "chart", title: "Bad", series: [] }, /Invalid chart artifact.*\/series: must not have fewer than 1 items/i],
+    [{ kind: "chart", title: "Bad", series: [{ name: "A", values: [] }] }, /\/series\/0\/values: must not have fewer than 1 items/i],
+    [{ kind: "chart", title: "Bad", series: [{ name: "A", values: [null] }] }, /every series value is null/],
+    [{ kind: "chart", title: "Bad", series: [{ name: "A", values: [1], tone: "neon" }] }, /\/series\/0\/tone/i],
+    [{ kind: "shot_chart", title: "Bad", zones: [] }, /Invalid shot_chart artifact.*\/zones: must not have fewer than 1 items/i],
+    [{ kind: "shot_chart", title: "Bad", zones: [{ x: 0, y: 0, att: 10 }] }, /\/zones\/0: must have required properties pct/i],
+    [{ kind: "shot_chart", title: "Bad", zones: [{ x: 0, y: 0, att: -3, pct: 50 }] }, /\/zones\/0\/att: must be >= 0/i],
+    [{ kind: "scatter", title: "Bad", xLabel: "USG", yLabel: "TS", points: [] }, /Invalid scatter artifact.*\/points: must not have fewer than 1 items/i],
+    [{ kind: "scatter", title: "Bad", xLabel: "USG", yLabel: "TS", points: [{ label: "A", y: 60 }] }, /\/points\/0: must have required properties x/i],
+    [{ kind: "scatter", title: "Bad", xLabel: "USG", yLabel: "TS", xMid: "20", points: [{ label: "A", x: 1, y: 2 }] }, /\/xMid: must be number/i],
+  ];
+  for (const [artifact, pattern] of cases) {
+    assert.throws(
+      () => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, () => undefined),
+      error => {
+        assert.match(error.message, pattern);
+        assert.match(error.message, /visual-artifacts skill/);
+        return true;
+      },
+      `expected rejection for ${JSON.stringify(artifact)}`
+    );
+  }
+  assert.throws(
+    () => validateAnswerSubmission({
+      blocks: [{ text: "ok" }, { text: "never reached" }],
+      artifacts: [
+        { kind: "future_kind", title: "Future", payload: { nested: true } },
+        { kind: "compare", title: "Bad", aName: "A", bName: "B", rows: [{ label: "X", a: 1 }] },
+      ],
+    }, () => undefined),
+    /Invalid compare artifact at artifacts\[1\]/
+  );
+});
+
+test("shot_chart zones carry optional label, makes and league-delta fields", () => {
+  const validated = validateAnswerSubmission({
+    blocks: [{ text: "Shot diet" }],
+    artifacts: [
+      {
+        kind: "shot_chart",
+        title: "Zone efficiency vs league",
+        zones: [
+          { x: 0, y: 4, att: 380, makes: 260, pct: 68.4, delta: 8.1, label: "rim-C" },
+          { x: -14, y: 14, att: 120, makes: 56, pct: 46.5, delta: -3.4, label: "long_mid-L" },
+        ],
+      },
+    ],
+  }, () => undefined);
+  const zone = validated.artifacts[0].zones[0];
+  assert.equal(zone.label, "rim-C");
+  assert.equal(zone.makes, 260);
+  assert.equal(zone.delta, 8.1);
+  assert.equal(zone.pct, 68.4);
+});
+
 function playerCardInput(overrides = {}) {
   return { kind: "player_card", title: "Player snapshot", ref: "card-source", row: 0, nameColumn: "player", teamColumn: "team",
     metrics: [{ column: "pts", label: "Points" }, { column: "missed", label: "Missed" }, { column: "impact", label: "Impact" }], ...overrides };
@@ -722,7 +1099,7 @@ function playerCardInput(overrides = {}) {
 function playerCardSource() {
   const source = makeSourceRecord("card-source", { rows: [{ player: "Alex Example", team: "Fixture City", pts: 24.6, missed: 0, impact: null }] });
   source.response.structuredContent.declared_column_semantics = { pts: { unit: "points/game" }, missed: { unit: "games" } };
-  source.response.structuredContent.meta = { season: "fixture-season" };
+  source.response.structuredContent.meta = { season: "fixture-season", sql: "SELECT player, team, pts FROM fixture WHERE player = ?" };
   return source;
 }
 
@@ -738,6 +1115,7 @@ test("player cards resolve identity, exact values and declared units from one so
   assert.deepEqual(card.metrics, [{ column: "pts", label: "Points", value: 24.6, unit: "points/game" }, { column: "missed", label: "Missed", value: 0, unit: "games" }, { column: "impact", label: "Impact", value: null }]);
   assert.equal(card.provenance.origin, "undeclared");
   assert.equal(card.provenance.season, "fixture-season");
+  assert.equal(card.provenance.sql, "SELECT player, team, pts FROM fixture WHERE player = ?");
   assert.deepEqual(input, original);
 });
 
@@ -768,4 +1146,310 @@ test("player cards use source units fallback and refuse non-finite or string met
     source.response.structuredContent.rows[0].pts = value;
     assert.throws(validate);
   }
+});
+
+test("player card sections resolve values and provenance from their own source rows", () => {
+  const header = playerCardSource();
+  const contract = makeSourceRecord("contract-src", { rows: [{ salary: 30000000, contract_type: "DVET-EXT" }] });
+  contract.response.structuredContent.meta = { season: "2026-27", source: "bref_contracts" };
+  const injury = makeSourceRecord("injury-src", { rows: [{ status: "Questionable", detail: "Ankle" }] });
+  injury.response.structuredContent.meta = { season: "2026-27", source: "espn" };
+  const sources = new Map([[header.ref, header], [contract.ref, contract], [injury.ref, injury]]);
+  const input = playerCardInput({
+    sections: [
+      { label: "Contract", ref: "contract-src", row: 0,
+        metrics: [{ column: "salary", label: "Salary" }],
+        fields: [{ column: "contract_type", label: "Deal" }] },
+      { label: "Availability", ref: "injury-src", row: 0,
+        fields: [{ column: "status", label: "Status" }, { column: "detail", label: "Detail" }] },
+    ],
+  });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  const card = result.artifacts[0];
+  assert.equal(card.sections.length, 2);
+  const [contractSection, injurySection] = card.sections;
+  assert.equal(contractSection.label, "Contract");
+  assert.equal(contractSection.sourceRef, "contract-src");
+  assert.deepEqual(contractSection.metrics, [{ column: "salary", label: "Salary", value: 30000000 }]);
+  assert.deepEqual(contractSection.fields, [{ column: "contract_type", label: "Deal", value: "DVET-EXT" }]);
+  assert.equal(contractSection.provenance.season, "2026-27");
+  assert.equal(contractSection.provenance.dataset, "bref_contracts");
+  assert.equal(contractSection.provenance.capability, "sql_exec");
+  assert.deepEqual(injurySection.fields, [{ column: "status", label: "Status", value: "Questionable" }, { column: "detail", label: "Detail", value: "Ankle" }]);
+  assert.equal(injurySection.metrics, undefined);
+  assert.equal(injurySection.provenance.dataset, "espn");
+});
+
+test("player card sections reject bad selectors, forged values and empty sections", () => {
+  const header = playerCardSource();
+  const other = makeSourceRecord("other-src", { rows: [{ val: 5, status: "ok" }] });
+  const sources = new Map([[header.ref, header], [other.ref, other]]);
+  const validate = input => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  for (const sections of [
+    [],
+    Array.from({ length: 7 }, () => ({ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }] })),
+    [{ label: "S", ref: "other-src", row: 0 }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [], fields: [] }],
+    [{ label: "S", ref: "missing-src", row: 0, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 3, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "missing", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "status", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "val", label: "F" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "status", label: "F", value: "forged" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }], provenance: { origin: "warehouse" } }],
+  ]) assert.throws(() => validate(playerCardInput({ sections })));
+});
+
+function teamCardInput(overrides = {}) {
+  return { kind: "team_card", title: "Team snapshot", ref: "team-src", row: 0, nameColumn: "team_name",
+    metrics: [{ column: "wins", label: "W" }, { column: "losses", label: "L" }, { column: "net_rating", label: "Net Rtg" }], ...overrides };
+}
+
+function teamCardSource() {
+  const source = makeSourceRecord("team-src", { rows: [{ team_name: "Example City Club", wins: 42, losses: 22, net_rating: 4.1 }] });
+  source.response.structuredContent.declared_column_semantics = { net_rating: { unit: "points/100 possessions" } };
+  source.response.structuredContent.meta = { season: "2026-27" };
+  return source;
+}
+
+test("team cards resolve identity, metrics and sections with per-section provenance", () => {
+  const header = teamCardSource();
+  const cap = makeSourceRecord("cap-src", { rows: [{ total_salary: 187000000, apron_room: -12000000, cap_status: "Above first apron" }] });
+  cap.response.structuredContent.meta = { season: "2026-27", source: "bref_cap" };
+  const fourFactors = makeSourceRecord("4f-src", { rows: [{ efg_pct: 0.56, rank_efg: 4, tov_pct: 0.128 }] });
+  fourFactors.response.structuredContent.meta = { season: "2026-27", source: "nba_four_factors" };
+  const picks = makeSourceRecord("picks-src", { rows: [{ pick_summary: "Own 2027-2032" }] });
+  picks.response.structuredContent.meta = { season: "2026-27", source: "picks" };
+  const sources = new Map([header, cap, fourFactors, picks].map(s => [s.ref, s]));
+  const input = teamCardInput({
+    sections: [
+      { label: "Payroll", ref: "cap-src", row: 0,
+        metrics: [{ column: "total_salary", label: "Payroll" }, { column: "apron_room", label: "Apron room" }],
+        fields: [{ column: "cap_status", label: "Cap status" }] },
+      { label: "Four factors", ref: "4f-src", row: 0,
+        metrics: [{ column: "efg_pct", label: "eFG%" }, { column: "rank_efg", label: "eFG rank" }] },
+      { label: "Draft capital", ref: "picks-src", row: 0,
+        fields: [{ column: "pick_summary", label: "Picks" }] },
+    ],
+  });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  const card = result.artifacts[0];
+  assert.equal(card.kind, "team_card");
+  assert.equal(card.teamName, "Example City Club");
+  assert.equal(card.sourceRef, "team-src");
+  assert.deepEqual(card.metrics[2], { column: "net_rating", label: "Net Rtg", value: 4.1, unit: "points/100 possessions" });
+  assert.equal(card.provenance.season, "2026-27");
+  assert.equal(card.sections.length, 3);
+  const [capSection, fourFactorSection, pickSection] = card.sections;
+  assert.deepEqual(capSection.metrics, [{ column: "total_salary", label: "Payroll", value: 187000000 }, { column: "apron_room", label: "Apron room", value: -12000000 }]);
+  assert.deepEqual(capSection.fields, [{ column: "cap_status", label: "Cap status", value: "Above first apron" }]);
+  assert.equal(capSection.provenance.dataset, "bref_cap");
+  assert.equal(fourFactorSection.metrics[1].value, 4);
+  assert.equal(fourFactorSection.provenance.dataset, "nba_four_factors");
+  assert.equal(pickSection.fields[0].value, "Own 2027-2032");
+});
+
+test("team cards reject forged values, bad rows and invalid selectors", () => {
+  const source = teamCardSource();
+  const other = makeSourceRecord("other-src", { rows: [{ val: 5, note: "ok" }] });
+  const sources = new Map([[source.ref, source], [other.ref, other]]);
+  const validate = input => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  for (const overrides of [
+    { row: -1 }, { row: 1 }, { nameColumn: "missing" }, { nameColumn: "wins" }, { teamName: "Forged" },
+    { metrics: [] }, { metrics: [{ column: "wins", label: "W", value: 42 }] },
+    { metrics: [{ column: "team_name", label: "Name" }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0 }] },
+    { sections: [{ label: "S", ref: "missing-src", row: 0, metrics: [{ column: "val", label: "V" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "val", label: "F" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "note", label: "V" }] }] },
+    { sections: [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V", unit: "%" }] }] },
+  ]) assert.throws(() => validate(teamCardInput(overrides)));
+});
+test("player card sections resolve values and provenance from their own source rows", () => {
+  const header = playerCardSource();
+  const contract = makeSourceRecord("contract-src", { rows: [{ salary: 30000000, contract_type: "DVET-EXT" }] });
+  contract.response.structuredContent.meta = { season: "2026-27", source: "bref_contracts" };
+  const injury = makeSourceRecord("injury-src", { rows: [{ status: "Questionable", detail: "Ankle" }] });
+  injury.response.structuredContent.meta = { season: "2026-27", source: "espn" };
+  const sources = new Map([[header.ref, header], [contract.ref, contract], [injury.ref, injury]]);
+  const input = playerCardInput({
+    sections: [
+      { label: "Contract", ref: "contract-src", row: 0,
+        metrics: [{ column: "salary", label: "Salary" }],
+        fields: [{ column: "contract_type", label: "Deal" }] },
+      { label: "Availability", ref: "injury-src", row: 0,
+        fields: [{ column: "status", label: "Status" }, { column: "detail", label: "Detail" }] },
+    ],
+  });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  const card = result.artifacts[0];
+  assert.equal(card.sections.length, 2);
+  const [contractSection, injurySection] = card.sections;
+  assert.equal(contractSection.label, "Contract");
+  assert.equal(contractSection.sourceRef, "contract-src");
+  assert.deepEqual(contractSection.metrics, [{ column: "salary", label: "Salary", value: 30000000 }]);
+  assert.deepEqual(contractSection.fields, [{ column: "contract_type", label: "Deal", value: "DVET-EXT" }]);
+  assert.equal(contractSection.provenance.season, "2026-27");
+  assert.equal(contractSection.provenance.dataset, "bref_contracts");
+  assert.equal(contractSection.provenance.capability, "sql_exec");
+  assert.deepEqual(injurySection.fields, [{ column: "status", label: "Status", value: "Questionable" }, { column: "detail", label: "Detail", value: "Ankle" }]);
+  assert.equal(injurySection.metrics, undefined);
+  assert.equal(injurySection.provenance.dataset, "espn");
+});
+
+test("player card sections reject bad selectors, forged values and empty sections", () => {
+  const header = playerCardSource();
+  const other = makeSourceRecord("other-src", { rows: [{ val: 5, status: "ok" }] });
+  const sources = new Map([[header.ref, header], [other.ref, other]]);
+  const validate = input => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => sources.get(ref));
+  for (const sections of [
+    [],
+    Array.from({ length: 7 }, () => ({ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }] })),
+    [{ label: "S", ref: "other-src", row: 0 }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [], fields: [] }],
+    [{ label: "S", ref: "missing-src", row: 0, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 3, metrics: [{ column: "val", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "missing", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "status", label: "V" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "val", label: "F" }] }],
+    [{ label: "S", ref: "other-src", row: 0, fields: [{ column: "status", label: "F", value: "forged" }] }],
+    [{ label: "S", ref: "other-src", row: 0, metrics: [{ column: "val", label: "V" }], provenance: { origin: "warehouse" } }],
+  ]) assert.throws(() => validate(playerCardInput({ sections })));
+});
+test("priorSubmissions returns thread submissions in order and compactPriorSubmissions bounds them", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "prior-subs-"));
+  try {
+    const store = new ProductStore(join(dir, "conversations.sqlite3"), join(dir, "sources"));
+    const identity = { owner: "owner-a", thread: "thread-a" };
+    const source = makeSourceRecord("src-a", { rows: [{ v: 1 }] });
+    const submission1 = { blocks: [{ text: "First answer." }], artifacts: [{ kind: "table", title: "T1", columns: [{ key: "v", label: "V" }], rows: Array.from({ length: 30 }, (_, i) => ({ v: i })) }] };
+    const submission2 = { blocks: [{ text: "Second answer." }] };
+    store.saveSources("run-" + "a".repeat(32), [source], [source], submission1);
+    store.append(identity, "Q1", "A1", "run-" + "a".repeat(32));
+    store.saveSources("run-" + "b".repeat(32), [source], [source]);
+    store.append(identity, "Q2", "A2", "run-" + "b".repeat(32));
+    store.saveSources("run-" + "c".repeat(32), [source], [source], submission2);
+    store.append(identity, "Q3", "A3", "run-" + "c".repeat(32));
+
+    const priors = store.priorSubmissions(identity);
+    assert.equal(priors.length, 2);
+    assert.equal(priors[0].run_id, "run-" + "a".repeat(32));
+    assert.equal(priors[1].run_id, "run-" + "c".repeat(32));
+    assert.equal(priors[0].submission.blocks[0].text, "First answer.");
+    assert.deepEqual(store.priorSubmissions({ owner: "other", thread: "thread-a" }), []);
+
+    const { compactPriorSubmissions } = await import("./dist/pi-execution.js");
+    const compact = compactPriorSubmissions(priors);
+    assert.equal(compact.length, 2);
+    assert.equal(compact[0].run_id, "run-" + "c".repeat(32));
+    assert.equal(compact[1].run_id, "run-" + "a".repeat(32));
+    const table = compact[1].artifacts[0];
+    assert.equal(table.kind, "table");
+    assert.equal(table.rows.length, 25);
+    assert.equal(table.rows[24], "…6 more");
+    const longText = compactPriorSubmissions([{ run_id: "run-x", submission: { blocks: [{ text: "t".repeat(800) }] } }]);
+    assert.equal(longText[0].blocks[0].text.length, 501);
+    assert(longText[0].blocks[0].text.endsWith("…"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+test("memo artifacts validate section anchors like block anchors", () => {
+  const sources = new Map([
+    ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],
+  ]);
+  const memo = {
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [
+      { heading: "Cap position", body: "Orlando sits under the first apron.", anchors: [{ ref: "cap-source", row: 0, columns: ["team", "payroll"] }] },
+      { heading: "Options", body: "Aggregate mid-tier salary." },
+    ],
+  };
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [memo] }, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].kind, "memo");
+  assert.equal(validated.artifacts[0].sections[0].anchors[0].ref, "cap-source");
+});
+
+test("memo artifacts reject anchors to unknown refs, bad rows and missing columns", () => {
+  const source = makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] });
+  const memo = anchors => ({
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [{ heading: "Cap position", body: "Body.", anchors }],
+  });
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, ref => ref === "cap-source" ? source : undefined);
+  assert.throws(() => validate(memo([{ ref: "ghost", row: 0, columns: ["team"] }])), /Unknown source ref/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
+});
+
+test("unknown and empty artifact kinds are dropped with a warning the agent sees", async () => {
+  const source = makeSourceRecord("src-1", { rows: [{ stat: "reb", value: 10 }] });
+  let accepted = null;
+  const tool = createSubmitAnswerTool(
+    () => [source],
+    sub => { accepted = sub; }
+  );
+  const submission = {
+    blocks: [{ text: "Done." }],
+    artifacts: [
+      { kind: "pie", title: "Playstyle pie" },
+      { kind: "chart", title: "Empty trend" },
+      { kind: "memo", title: "No sections", sections: [] },
+      { kind: "table", title: "Rebounds", columns: [{ key: "stat", label: "Stat" }, { key: "value", label: "Value" }], rows: [["reb", 10]] },
+    ],
+  };
+  const result = await tool.execute("call-2", submission);
+  assert.equal(accepted.artifacts.length, 1);
+  assert.equal(accepted.artifacts[0].kind, "table");
+  const text = result.content[0].text;
+  assert.match(text, /unknown artifact kind "pie"/);
+  assert.match(text, /"chart" artifact has no series/);
+  assert.match(text, /"memo" artifact has no sections/);
+  assert.match(text, /Supported kinds: .*memo/);
+});
+
+test("validateAnswerSubmission drops rejected artifacts but keeps valid ones", () => {
+  const warnings = [];
+  const validated = validateAnswerSubmission(
+    { blocks: [{ text: "x" }], artifacts: [{ kind: "mystery", title: "?" }, { kind: "scatter", title: "ok", xLabel: "USG", yLabel: "TS", points: [{ label: "p", x: 1, y: 2 }] }] },
+    () => undefined,
+    undefined,
+    warnings,
+  );
+  assert.equal(validated.artifacts.length, 1);
+  assert.equal(validated.artifacts[0].kind, "scatter");
+  assert.deepEqual(warnings, ['dropped artifact: unknown artifact kind "mystery"']);
+});
+test("memo artifacts validate section anchors like block anchors", () => {
+  const sources = new Map([
+    ["cap-source", makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] })],
+  ]);
+  const memo = {
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [
+      { heading: "Cap position", body: "Orlando sits under the first apron.", anchors: [{ ref: "cap-source", row: 0, columns: ["team", "payroll"] }] },
+      { heading: "Options", body: "Aggregate mid-tier salary." },
+    ],
+  };
+  const validated = validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [memo] }, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].kind, "memo");
+  assert.equal(validated.artifacts[0].sections[0].anchors[0].ref, "cap-source");
+});
+
+test("memo artifacts reject anchors to unknown refs, bad rows and missing columns", () => {
+  const source = makeSourceRecord("cap-source", { rows: [{ team: "ORL", payroll: 172400000 }] });
+  const memo = anchors => ({
+    kind: "memo",
+    title: "Cap & roster strategy",
+    sections: [{ heading: "Cap position", body: "Body.", anchors }],
+  });
+  const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [artifact] }, ref => ref === "cap-source" ? source : undefined);
+  assert.throws(() => validate(memo([{ ref: "ghost", row: 0, columns: ["team"] }])), /Unknown source ref/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
+  assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
 });

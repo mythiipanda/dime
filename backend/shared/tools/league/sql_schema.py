@@ -20,6 +20,8 @@ _SQL_TABLES = [
     "silver_hist_standings", "silver_hist_possessions",
     "silver_hist_shots", "silver_hist_lineups", "silver_salaries",
     "silver_hist_draft", "silver_hist_team_seasons", "silver_raptor_player",
+    "silver_free_agents", "silver_cap_room",
+    "silver_draft_boards", "silver_prospect_stats",
     "silver_raptor_team",
     "silver_hist_player_seasons", "silver_player_season", "silver_advanced",
     "silver_on_off", "silver_four_factors", "silver_four_factors_team",
@@ -28,6 +30,13 @@ _SQL_TABLES = [
     "silver_bbref_awards", "silver_combine", "silver_rosters",
     "silver_schedule", "silver_stints", "silver_playoff_gamelogs",
     "silver_transactions", "silver_contracts", "silver_preseason_projections",
+    "silver_future_picks", "silver_draft_value_curve",
+    "silver_bbref_gamelogs_2024_25", "silver_boxscores_ext",
+    "silver_cap_history", "silver_hist_hustle", "silver_hist_pbp",
+    "silver_hist_salaries", "silver_leaders_dreb", "silver_leaders_fg_pct",
+    "silver_playoff_inactive", "silver_scoreboard",
+    "silver_tracking_pt_defend", "silver_tracking_pt_shot",
+    "silver_tracking_pt_stats", "silver_wowy", "silver_zone_splits",
 ]
 
 RERUN_ROW_CAP = 25
@@ -269,6 +278,12 @@ _WRITE_RE = _re_mod.compile(
     r"vacuum|detach)\b")
 _TABLE_REF_RE = _re_mod.compile(r"(?i)from\s+(\w+)|join\s+(\w+)")
 
+_TABLE_FREE_UNSAFE_NODES = {
+    "read_csv", "readcsv", "read_parquet", "read_json", "parquet_scan",
+    "csv_scan", "json_scan", "sqlite_scan", "glob",
+    "pragma_table_info", "read_blob", "read_text",
+}
+
 
 def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]:
     sql = (sql or "").strip().rstrip(";").strip()
@@ -289,6 +304,7 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]
         statement = _parse_one(sql, read="duckdb")
     except _ParseError as exc:
         raise ValueError("invalid SQL syntax") from exc
+    present_by_lower = {name.lower(): name for name in present}
     used = set()
     for scope in _traverse_scope(statement):
         for source in scope.sources.values():
@@ -297,9 +313,20 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]
             if (not isinstance(source, _sql_exp.Table) or source.db
                     or source.catalog or not source.name):
                 raise ValueError("unknown or unavailable tables")
-            used.add(source.name)
-    if not used or not used.issubset(present):
-        raise ValueError("unknown or unavailable tables")
+            used.add(present_by_lower.get(source.name.lower(), source.name))
+    if not used:
+        unsafe = {type(node).__name__.lower() for node in statement.walk()}
+        unsafe |= {
+            str(node.name).lower()
+            for node in statement.walk()
+            if isinstance(node, _sql_exp.Anonymous)
+        }
+        if unsafe & _TABLE_FREE_UNSAFE_NODES:
+            raise ValueError("unknown or unavailable tables")
+    elif not used.issubset(present):
+        rejected = sorted(used - present)
+        suffix = f": {', '.join(rejected)}" if rejected else ""
+        raise ValueError(f"unknown or unavailable tables{suffix}")
     return sql, sorted(used)
 
 
@@ -332,8 +359,21 @@ _TEXT_TO_SQL_EXAMPLES = (
     "FROM silver_hist_gamelogs WHERE team_abbreviation = 'OKC' "
     "AND _season IN ('2025-26', '2024-25', '2023-24') GROUP BY _season\n"
     "Q: Which 5 teams have the highest total payroll?\n"
-    "SQL: SELECT TEAM, SUM(SALARY) AS payroll FROM silver_salaries "
-    "GROUP BY TEAM ORDER BY payroll DESC LIMIT 5\n"
+    "Note: silver_salaries stores per-year salary columns named "
+    "SALARY_YYYY_YY (e.g. SALARY_2025_26); always filter _season and "
+    "pick the column for the asked year - there is no bare SALARY column.\n"
+    "SQL: SELECT TEAM, SUM(SALARY_2025_26) AS payroll FROM silver_salaries "
+    "WHERE _season = '2026-27' GROUP BY TEAM ORDER BY payroll DESC LIMIT 5\n"
+    "Q: Which team pays the most per win this season?\n"
+    "Note: join payroll to wins on the team abbreviation; wins come from "
+    "silver_team_games via split_part(MATCHUP, ' ', 1). LEFT JOIN so no "
+    "team silently drops out of the comparison.\n"
+    "SQL: SELECT s.TEAM, SUM(s.SALARY_2025_26) AS payroll, "
+    "COUNT(w.WL) AS games, SUM(CASE WHEN w.WL = 'W' THEN 1 ELSE 0 END) AS wins "
+    "FROM silver_salaries s LEFT JOIN ("
+    "SELECT split_part(MATCHUP, ' ', 1) AS TEAM, WL FROM silver_team_games "
+    "WHERE _season = '2025-26') w ON w.TEAM = s.TEAM "
+    "WHERE s._season = '2026-27' GROUP BY s.TEAM ORDER BY payroll DESC\n"
     "Q: Who has the best clutch FG% with at least 10 GP?\n"
     "SQL: SELECT PLAYER_NAME, FG_PCT FROM silver_clutch "
     "WHERE GP >= 10 ORDER BY FG_PCT DESC LIMIT 5\n"
@@ -435,7 +475,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         except ValueError as vexc:
             feedback = f"\nPrevious reply was rejected: {vexc}. Reply with SQL only."
             continue
-        con = pkg.store.connect()
+        con = pkg.store.connect(read_only=True)
         try:
             rows = con.execute(sql).fetchall()
             names = [d[0] for d in con.description]

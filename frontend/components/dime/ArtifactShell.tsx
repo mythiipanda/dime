@@ -25,6 +25,7 @@ const SOURCE_LABELS: Record<string, string> = {
   get_wpa_leaders: "WPA leaderboard",
   get_comps: "Player comps",
   get_lineup_stats: "Lineup ratings",
+  get_lineup_on_off: "Unit on/off splits",
   get_win_prob: "Win probability",
   get_on_off: "On/off splits",
   get_shot_zones: "Shot zones",
@@ -56,6 +57,7 @@ const SOURCE_LABELS: Record<string, string> = {
   get_combine: "Combine testing",
   get_young_player_usage: "Young player usage",
   get_contract_value: "Contract value",
+  get_salary_history: "Salary history",
   get_trade_check: "Trade check",
   get_trade_value: "Trade value",
   get_situational_splits: "Situational splits",
@@ -123,11 +125,13 @@ export default function ArtifactShell({
   title,
   source,
   copyText,
+  actions,
   children,
 }: {
   title: string;
   source?: string;
   copyText?: string;
+  actions?: React.ReactNode;
   delay?: number;
   children: React.ReactNode;
 }) {
@@ -155,7 +159,7 @@ export default function ArtifactShell({
     <Surface className="relative min-w-0 overflow-hidden">
       <header className="flex flex-wrap items-start justify-between gap-2 border-b border-line px-4 py-3">
         <div className="min-w-0 flex-1"><h3 className="break-words text-[13px] font-medium text-ink">{title}</h3>{label && <p className="mt-1 break-words text-xs text-ink-3">{label}</p>}</div>
-        <Button size="icon" variant="quiet" aria-label={copied ? "Copied" : copyText ? "Copy data" : "Copy"} title={copied ? "Copied" : copyText ? "Copy data" : "Copy"} onClick={copy}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</Button>
+        <div className="flex items-center gap-1">{actions}<Button size="icon" variant="quiet" aria-label={copied ? "Copied" : copyText ? "Copy data" : "Copy"} title={copied ? "Copied" : copyText ? "Copy data" : "Copy"} onClick={copy}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</Button></div>
       </header>
       <div className="min-w-0">{children}</div>
       <p role="status" className={error ? "px-4 pb-3 text-xs text-red" : "sr-only"}>{error ? "Could not copy. Select the visible data and copy it manually." : copied ? "Data copied." : ""}</p>
