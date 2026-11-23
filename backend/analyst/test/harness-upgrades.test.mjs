@@ -13,10 +13,7 @@ import {
   createProviderRetryStormGuard,
   flagAcknowledgedByOmissions,
   listWorkspaceArtifacts,
-  auditGapFlagStrings,
-  autoLandedSubmission,
   normalizeLoopArgs,
-  submitAuditRejectionMessage,
 } from "../dist/pi-execution.js";
 import {
   createSubmitAnswerTool,
@@ -1918,6 +1915,7 @@ test("verify_answer_numbers flags required stat terms absent from prose and payl
   );
   assert.equal(noQuestion.metric_value_gaps.length, 0);
 });
+
 test("verify_answer_numbers flags stat-shaped figures tracing to no tool output", async () => {
   const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
   const sources = [
@@ -1965,114 +1963,6 @@ test("verify_answer_numbers flags stat-shaped figures tracing to no tool output"
   );
   assert.equal(metaNarration.unsupported_claims.length, 0);
 });
-test("verify_answer_numbers flags artifact kinds the ask does not call for", async () => {
-  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
-  const sources = [makePayloadSourceRecord("src-1", { rows: [{ player: "Jayson Tatum", ts_pct: 61.9 }] })];
-
-  const leadersQuestion = "Who are the true shooting percentage leaders in 2024-25?";
-  const offAsk = auditAnswerNumbers(
-    {
-      blocks: [{ text: "Jayson Tatum leads at 61.9%." }],
-      artifacts: [
-        { kind: "table", title: "TS% leaders", columns: [{ key: "ts_pct", label: "TS%", numeric: true }], rows: [{ player: "Tatum", ts_pct: 61.9 }] },
-        { kind: "memo", title: "Trade review", sections: [{ heading: "Trades", body: "..." }] },
-        { kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 10, pct: 50 }] },
-      ],
-    },
-    sources,
-    leadersQuestion,
-  );
-  assert.deepEqual([...offAsk.artifact_kind_irrelevance].sort(), [
-    "memo on leaderboard ask",
-    "shot_chart on leaderboard ask",
-  ]);
-
-  const onAsk = auditAnswerNumbers(
-    {
-      blocks: [{ text: "Jayson Tatum leads at 61.9%." }],
-      artifacts: [{ kind: "chart", title: "TS% leaders", series: [{ name: "TS%", values: [61.9] }] }],
-    },
-    sources,
-    leadersQuestion,
-  );
-  assert.equal(onAsk.artifact_kind_irrelevance.length, 0);
-
-  const multiPart = auditAnswerNumbers(
-    {
-      blocks: [{ text: "See artifacts." }],
-      artifacts: [
-        { kind: "compare", title: "H2H", aName: "A", bName: "B", rows: [{ label: "PTS", a: 1, b: 2 }] },
-        { kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 10, pct: 50 }] },
-      ],
-    },
-    sources,
-    "Compare Tatum and Brown's shot diet and where each shoots best.",
-  );
-  assert.equal(multiPart.artifact_kind_irrelevance.length, 0);
-
-  const noMatch = auditAnswerNumbers(
-    {
-      blocks: [{ text: "Denver won 56 games." }],
-      artifacts: [{ kind: "memo", title: "M", sections: [{ heading: "H", body: "B" }] }],
-    },
-    sources,
-    "How did Denver finish in 2023-24?",
-  );
-  assert.equal(noMatch.artifact_kind_irrelevance.length, 0);
-
-  const underscored = auditAnswerNumbers(
-    {
-      blocks: [{ text: "See artifacts." }],
-      artifacts: [{ kind: "shot_chart", title: "Zones", zones: [{ x: 0, y: 0, att: 10, pct: 50 }] }],
-    },
-    sources,
-    "Build a comparative shot_chart deliverable for LeBron James vs Luka Dončić using silver_shots.",
-  );
-  assert.equal(underscored.artifact_kind_irrelevance.length, 0);
-});
-test("verify_answer_numbers flags data asks submitted with zero data tool calls", async () => {
-  const { auditAnswerNumbers, isDataAsk } = await import("../dist/verify-answer.js");
-  const sources = [];
-
-  const parametric = auditAnswerNumbers(
-    { blocks: [{ text: "Giannis leads the league in restricted-area frequency at 41.2%." }] },
-    sources,
-    "Which players lead the league in restricted-area shot frequency in 2024-25?",
-    undefined,
-    0,
-  );
-  assert.equal(parametric.no_evidence_on_data_ask.length, 1);
-
-  const withCalls = auditAnswerNumbers(
-    { blocks: [{ text: "Giannis leads the league in restricted-area frequency at 41.2%." }] },
-    sources,
-    "Which players lead the league in restricted-area shot frequency in 2024-25?",
-    undefined,
-    4,
-  );
-  assert.equal(withCalls.no_evidence_on_data_ask.length, 0);
-
-  const withSources = auditAnswerNumbers(
-    { blocks: [{ text: "Giannis leads the league in restricted-area frequency at 41.2%." }] },
-    [makePayloadSourceRecord("src-1", { rows: [{ player: "Giannis", freq: 0.412 }] })],
-    "Which players lead the league in restricted-area shot frequency in 2024-25?",
-    undefined,
-    0,
-  );
-  assert.equal(withSources.no_evidence_on_data_ask.length, 0);
-
-  const conceptual = auditAnswerNumbers(
-    { blocks: [{ text: "Conditioning on outcome creates a collider bias." }] },
-    sources,
-    "Explain why conditioning on the outcome cannot establish causality",
-    undefined,
-    0,
-  );
-  assert.equal(conceptual.no_evidence_on_data_ask.length, 0);
-  assert.equal(isDataAsk("Explain why conditioning on the outcome cannot establish causality"), false);
-  assert.equal(isDataAsk("Rank the top guards by ts% in 2024-25"), true);
-  assert.equal(isDataAsk(undefined), false);
-});
 
 test("flagAcknowledgedByOmissions matches omitted entries to flagged asks", () => {
   const flag = "corner=3PT and abs(x_legacy)>=220 and y_legacy<=92.5";
@@ -2095,27 +1985,6 @@ test("missingRequiredTables flags question-named warehouse tables never queried"
     ["silver_boxscores", "silver_team_ids"],
   );
 });
-
-test("submit veto forces immediate resubmit when the run budget is nearly spent", async () => {
-  const gaps = { metric_value_gaps: ["pw_net absent from prose and payloads"] };
-
-  const normal = submitAuditRejectionMessage(gaps, 1, 300_000, false);
-  assert.match(normal, /Produce the requested artifact kinds/);
-  assert.doesNotMatch(normal, /same payload/);
-
-  const lowBudget = submitAuditRejectionMessage(gaps, 2, 45_000, false);
-  assert.match(lowBudget, /~45s left/);
-  assert.match(lowBudget, /same payload plus omitted set to every flag string above verbatim/);
-  assert.match(lowBudget, /metric_value_gaps/);
-  assert.doesNotMatch(lowBudget, /Produce the requested artifact kinds/);
-
-  const lastTurn = submitAuditRejectionMessage(gaps, 2, undefined, true);
-  assert.match(lastTurn, /same payload plus omitted set to every flag string above verbatim/);
-
-  const boundary = submitAuditRejectionMessage(gaps, 1, 61_000, false);
-  assert.match(boundary, /Produce the requested artifact kinds/);
-});
-
 test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct player of one tool, once", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "dime-pool-fanout-"));
   const agentDir = join(cwd, "agent");
@@ -2218,30 +2087,6 @@ test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct player of 
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
-});
-
-test("auto-land merges vetoed payload omitted with outstanding flag strings", async () => {
-  const gaps = {
-    uncovered_asks: ["Validate the roster premise"],
-    metric_value_gaps: ["min (asked via \"minutes\")"],
-    ignored_scalar: 7,
-  };
-  assert.deepEqual(auditGapFlagStrings(gaps), [
-    "Validate the roster premise",
-    'min (asked via "minutes")',
-  ]);
-
-  const submission = {
-    blocks: [{ text: "Partial answer text." }],
-    sources: ["src-1"],
-    omitted: ["Validate the roster premise"],
-  };
-  const landed = autoLandedSubmission(submission, auditGapFlagStrings(gaps));
-  assert.deepEqual(landed.omitted, ["Validate the roster premise", 'min (asked via "minutes")']);
-  assert.equal(landed.blocks[0].text, "Partial answer text.");
-
-  const noOmitted = autoLandedSubmission({ blocks: [{ text: "x" }] }, ["flag a", "flag b"]);
-  assert.deepEqual(noOmitted.omitted, ["flag a", "flag b"]);
 });
 
 test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct team for lineup tools, once", async () => {

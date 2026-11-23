@@ -19,8 +19,6 @@ export type NumericAudit = {
     metric_value_gaps: string[];
     unsupported_claims: string[];
     unevidenced_asks: string[];
-    artifact_kind_irrelevance: string[];
-    no_evidence_on_data_ask: string[];
 };
 
 const SEASON_RE = /\b(?:19|20)\d{2}\s*[-/–—]\s*\d{2,4}\b/g;
@@ -256,79 +254,6 @@ const STATS_VOCABULARY: Record<string, StatTerm> = {
 const STAT_TERM_BOUNDARY = (term: string) =>
     new RegExp(`(?<![\\w%+/-])${term.replace(/[.*+?^${}()|[\]\\%]/g, "\\$&")}(?![\\w%+/-])`, "i");
 
-type AskType = { terms: string[]; kinds: string[] };
-
-const UNIVERSAL_ARTIFACT_KINDS = new Set(["table"]);
-
-const ASK_TYPES: Record<string, AskType> = {
-    leaderboard: {
-        terms: ["leaders", "leaderboard", "league leaders", "top", "most", "highest", "lowest", "rank", "ranking", "rankings", "standings", "who led", "who leads", "who is the best", "who was the best", "best", "worst", "fewest"],
-        kinds: ["chart", "player_card", "compare"],
-    },
-    player_profile: {
-        terms: ["player card", "player profile", "player snapshot", "player overview", "season line", "tell me about"],
-        kinds: ["player_card", "chart", "shot_chart"],
-    },
-    team_profile: {
-        terms: ["team card", "team profile", "team overview", "team snapshot", "roster breakdown"],
-        kinds: ["team_card", "chart", "memo"],
-    },
-    head_to_head: {
-        terms: ["compare", "comparing", "comparison", "versus", "vs", "head to head", "head-to-head", "against each other"],
-        kinds: ["compare", "chart"],
-    },
-    shot_diet: {
-        terms: ["shot chart", "shot diet", "shooting zones", "shot zones", "court zones", "where does", "where did", "shot locations", "shooting locations", "zones"],
-        kinds: ["shot_chart", "scatter"],
-    },
-    trend: {
-        terms: ["trajectory", "trend", "trends", "over time", "game log", "game logs", "streak", "recent form", "month by month", "season over season", "progression", "improvement", "development", "last games"],
-        kinds: ["chart"],
-    },
-    trade_cap: {
-        terms: ["trade", "trades", "trade machine", "cap space", "salary cap", "apron", "salary matching", "sign and trade", "sign-and-trade", "free agency", "free agent", "free agents", "extension", "contract", "salary", "salaries", "cap room", "cap hold", "cap holds", "tax"],
-        kinds: ["memo", "compare", "chart"],
-    },
-    scouting_draft: {
-        terms: ["draft", "prospect", "prospects", "scouting report", "scout", "scouting", "draft board", "draft capital", "pick", "picks", "game prep", "opponent"],
-        kinds: ["memo"],
-    },
-    lineup: {
-        terms: ["lineup", "lineups", "rotation", "rotations", "five man", "5-man", "five-man", "on off", "on-off", "bench", "starters"],
-        kinds: ["chart"],
-    },
-    scatter_relationship: {
-        terms: ["correlation", "correlated", "relationship between", "scatter", "scatterplot"],
-        kinds: ["scatter", "chart"],
-    },
-    exec_memo: {
-        terms: ["memo", "briefing", "brief", "report", "writeup", "write-up", "presentation", "for the gm", "for ownership", "executive"],
-        kinds: ["memo", "chart", "scatter", "compare"],
-    },
-};
-
-export function auditArtifactKindRelevance(
-    question: string,
-    input: Pick<AnswerSubmission, "artifacts">
-): string[] {
-    const normalized = question.replace(/_/g, " ");
-    const matched = Object.entries(ASK_TYPES)
-        .filter(([, askType]) => askType.terms.some(term => STAT_TERM_BOUNDARY(term.replace(/_/g, " ")).test(normalized)))
-        .map(([name]) => name);
-    if (matched.length === 0)
-        return [];
-    const allowed = new Set(UNIVERSAL_ARTIFACT_KINDS);
-    for (const name of matched)
-        for (const kind of ASK_TYPES[name].kinds)
-            allowed.add(kind);
-    return (input.artifacts ?? [])
-        .map(artifact => (typeof artifact.kind === "string" ? artifact.kind : ""))
-        .filter(kind => kind !== "" && !allowed.has(kind))
-        .map(kind => `${kind} on ${matched.join("/")} ask`);
-}
-
-export const ZERO_EVIDENCE_DATA_ASK_FLAG = "zero data tool calls and no evidence sources before submitting a data-grounded answer";
-
 const CAP_ASK_VOCABULARY: string[] = [
     "salary cap", "cap space", "cap room", "cap sheet", "cap hold", "cap table",
     "apron", "first apron", "second apron", "hard cap", "hard-capped", "hardcapped",
@@ -369,18 +294,17 @@ export function auditMetricCoverage(
     question: string,
     input: Pick<AnswerSubmission, "blocks" | "artifacts">
 ): string[] {
-    const normalized = question.replace(/_/g, " ");
     const haystack = (
         input.blocks.map(block => block.text).join(" ") + " " +
         JSON.stringify(input.artifacts ?? [])
-    ).toLowerCase().replace(/_/g, " ");
+    ).toLowerCase();
     const gaps: string[] = [];
     for (const [metric, term] of Object.entries(STATS_VOCABULARY)) {
-        const asked = term.ask.find(form => STAT_TERM_BOUNDARY(form.replace(/_/g, " ")).test(normalized));
+        const asked = term.ask.find(form => STAT_TERM_BOUNDARY(form).test(question));
         if (!asked)
             continue;
         const present = [...term.ask, ...term.present]
-            .some(form => STAT_TERM_BOUNDARY(form.replace(/_/g, " ")).test(haystack));
+            .some(form => STAT_TERM_BOUNDARY(form).test(haystack));
         if (!present)
             gaps.push(`${metric} (asked via "${asked}")`);
     }
@@ -477,8 +401,7 @@ export function auditAnswerNumbers(
     input: Pick<AnswerSubmission, "blocks" | "artifacts">,
     sources: readonly SourceRecord[],
     question?: string,
-    extraEvidenceText?: string,
-    dataToolCalls?: number
+    extraEvidenceText?: string
 ): NumericAudit {
     const proseClaims: NumericClaim[] = [];
     const proseSeen = new Set<string>();
@@ -523,18 +446,14 @@ export function auditAnswerNumbers(
     const unevidenced_asks = question
         ? auditEvidenceCoverage(question, input, (collectEvidenceText(sources) + " " + (extraEvidenceText ?? "")).toLowerCase()).slice(0, 10)
         : [];
-    const artifact_kind_irrelevance = question ? auditArtifactKindRelevance(question, input) : [];
-    const no_evidence_on_data_ask = dataToolCalls === 0 && sources.length === 0 && isDataAsk(question)
-        ? [ZERO_EVIDENCE_DATA_ASK_FLAG]
-        : [];
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks, artifact_kind_irrelevance, no_evidence_on_data_ask };
+    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[], question?: string) {
     return defineTool({
         name: "verify_answer_numbers",
         label: "Verify answer numbers",
-        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, asks for tables/compares/charts with zero artifacts, stat-shaped figures tracing to no tool output (unsupported_claims), ask facets narrated in the answer but absent from every tool result and call (unevidenced_asks), artifact kinds the ask does not call for (artifact_kind_irrelevance), and answers to data asks submitted with zero data tool calls (no_evidence_on_data_ask); it does not submit the answer.",
+        description: "Audit a draft submit_answer payload: numeric literals vs successful tool results, prose figures missing from artifact payloads, question clauses with no matching terms in the answer, required stat/metric terms from the question absent from both prose and payloads, asks for tables/compares/charts with zero artifacts, stat-shaped figures tracing to no tool output (unsupported_claims), and ask facets narrated in the answer but absent from every tool result and call (unevidenced_asks); it does not submit the answer.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const audit = auditAnswerNumbers(args, getContextSources(), question);
@@ -545,3 +464,5 @@ export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRec
         }
     });
 }
+
+export const ZERO_EVIDENCE_DATA_ASK_FLAG = "zero data tool calls and no evidence sources before submitting a data-grounded answer";
