@@ -15,7 +15,7 @@ DATA = Path(__file__).resolve().parent.parent / "data" / "history"
 
 TAG = "nba_stats_pbp"
 TABLE = "silver_hist_pbp"
-PATTERN = "play_by_play_{y}.parquet"
+PATTERN = "nba_play_by_play_{y}.parquet"
 
 MIN_ROWS = 100_000
 
@@ -91,9 +91,9 @@ def parse_years(raw: str) -> list[int]:
     if 2026 in years:
         print("refusing end-year 2026: pbp seed covers 2021..2025 only")
         raise SystemExit(1)
-    bad = [y for y in years if y < 2021 or y > 2025]
+    bad = [y for y in years if y < 1997 or y > 2025]
     if bad:
-        print(f"season out of range {bad}: pbp seed covers 2021..2025 only")
+        print(f"season out of range {bad}: pbp seed covers 1997..2025")
         raise SystemExit(1)
     if not years:
         print("no seasons requested")
