@@ -1028,7 +1028,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emit({ type: "tool_result", name: "retry_budget_steer", status: "ok" });
                         session?.agent.steer({
                             role: "user",
-                            content: `The provider lane is saturated: this run has already spent ~${Math.round(burnedMs / 1000)}s waiting on retry backoffs, and each further call may stall again. Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats a slow full attempt. Skip this only if submit_answer already ran.`,
+                            content: `Provider calls are hitting retry backoffs (latency, not an outage): this run has already spent ~${Math.round(burnedMs / 1000)}s waiting on them. The warehouse tools still work normally — keep using them for the remaining sub-questions and do not spend calls speculating about availability. When the verified work is enough to answer the core ask, submit with it and list uncovered sub-questions in omitted. Skip this only if submit_answer already ran.`,
                             timestamp: Date.now()
                         });
                     }, deps.retryTimeBudgetMs);
