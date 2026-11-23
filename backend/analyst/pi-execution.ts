@@ -628,6 +628,7 @@ export function retryBudgetSteerText(burnedMs: number, evidenceFree: boolean) {
 }
 
 const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
+const SQL_STEER_SKIP_TOOLS = new Set(["sql_exec", "run_python", "web_search", "web_fetch", "warehouse_schema", "get_warehouse_freshness", "load_skill", "run_status"]);
 
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
@@ -645,7 +646,20 @@ function wrapBridgeTools(
     const poolSigs = new Map<string, Set<string>>();
     const poolSteered = new Set<string>();
     let capWarehouseSteered = false;
+    const namedToolSteered = new Set<string>();
     const capAsk = isCapAsk(question);
+    const namedToolSqlSteer = (tool: { name: string }, domain: Record<string, unknown>, result: { content?: unknown }, reason: "failed" | "no_rows") => {
+        if (namedToolSteered.has(tool.name) || SQL_STEER_SKIP_TOOLS.has(tool.name))
+            return false;
+        namedToolSteered.add(tool.name);
+        domain.named_tool_steer = reason === "failed"
+            ? `${tool.name} failed for this ask. The warehouse usually covers this class directly: run sql_exec over silver_hist_player_seasons (per-player season rows — _season, player_name, team_abbreviation, age, gp, min, pts/reb/ast/stl/blk/tov per game, fg3_pct, ts_pct, usg_pct, off/def/net_rating, pie), silver_hist_team_seasons (team rows with *_rank league ranks), or the draft tables silver_draft_boards, silver_draft_value_curve, silver_future_picks and silver_hist_draft for prospect/pick asks — applying the stated season and pool filter. Scouting, percentile, comp, fit and draft-board asks resolve there instead of through this named tool.`
+            : `${tool.name} returned no rows for this ask — a coverage gap, not necessarily an empty answer. The warehouse usually covers this class directly: run sql_exec over silver_hist_player_seasons (per-player season rows — _season, player_name, team_abbreviation, age, gp, min, pts/reb/ast/stl/blk/tov per game, fg3_pct, ts_pct, usg_pct, off/def/net_rating, pie), silver_hist_team_seasons (team rows with *_rank league ranks), or the draft tables silver_draft_boards, silver_draft_value_curve, silver_future_picks and silver_hist_draft for prospect/pick asks — applying the stated season and pool filter.`;
+        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+        emit({ type: "tool_call", name: "named_tool_sql_steer", args: { tool: tool.name, reason } });
+        emit({ type: "tool_result", name: "named_tool_sql_steer", status: "ok" });
+        return true;
+    };
     return tools.map(tool => ({
         ...tool,
         async execute(...args: Parameters<typeof tool.execute>) {
@@ -742,10 +756,13 @@ function wrapBridgeTools(
                         domain.recovery_hint = "Treat as a data limitation: note the gap and move to the next sub-question instead of retrying.";
                         result.content = [{ type: "text", text: JSON.stringify(domain) }];
                     }
+                    namedToolSqlSteer(tool, domain, result, "failed");
                 }
                 else if (!failed)
                     lastErrors.delete(tool.name);
                 if (!failed && domain) {
+                    if (Array.isArray(domain.rows) && domain.rows.length === 0)
+                        namedToolSqlSteer(tool, domain, result, "no_rows");
                     if (!capWarehouseSteered && capAsk && WEB_TOOLS.has(tool.name)) {
                         capWarehouseSteered = true;
                         domain.warehouse_steer = "This is a cap/trade question the warehouse answers directly. Prefer the cap tools — get_cap_scenario, get_trade_legality, get_fa_plan, get_draft_capital, get_cap_ledger, get_cap_table — or sql_exec over silver_salaries, silver_cap_room, silver_contracts, silver_future_picks: they carry committed salaries, projected cap/tax/apron lines, and the outgoing/incoming pick ledger. Web search is a fallback only when the warehouse lacks the input (e.g. a live news claim); cite the warehouse figures for the numbers.";

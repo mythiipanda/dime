@@ -2557,3 +2557,133 @@ test("cap-ask does not steer web calls on non-cap questions", async () => {
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("wrapBridgeTools steers a failed named data tool to sql_exec once per tool", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-named-steer-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const msg = turn === 1
+      ? {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "toolCall", id: "call-mix", name: "codemode", arguments: { code: `
+          const r1 = await tools.get_raptor_history({ player: "Player A" });
+          const r2 = await tools.get_raptor_history({ player: "Player B" });
+          const r3 = await tools.sql_exec({ sql: "SELECT 1" });
+          const r4 = await tools.web_search({ q: "nba" });
+          return { r1, r2, r3, r4 };
+        ` } }],
+        stopReason: "toolUse", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      }
+      : {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  let execCount = 0;
+  const failingTool = (name) => ({
+    name, label: name, description: name,
+    parameters: Type.Object({}),
+    async execute(callId) {
+      execCount++;
+      const ref = `src-${name}-${execCount}`;
+      const payload = { ok: false, error: `no coverage in ${name}` };
+      resultsMap.set(ref, { ref, callId, tool: name, response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: true } });
+      return { content: [], details: undefined, structuredContent: { ref, tool: name, result: payload, isError: true }, isError: true };
+    },
+  });
+  const mockBridge = {
+    tools: [failingTool("get_raptor_history"), failingTool("sql_exec"), failingTool("web_search")],
+    results: resultsMap, pid: 1006, close: async () => {},
+  };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+  try {
+    const events = [];
+    for await (const event of pi.stream({ q: "Project this player's role", history: [], model: "fixture:fixture", cwd, agentDir, bridge: { python: "fake", cwd, env: {} } }))
+      events.push(event);
+    const steers = events.filter((e) => e.type === "tool_result" && e.name === "named_tool_sql_steer");
+    assert.equal(steers.length, 1, "steer fires once per tool, never for sql_exec/web tools");
+    const steerCall = events.find((e) => e.type === "tool_call" && e.name === "named_tool_sql_steer");
+    assert.equal(steerCall?.args?.tool, "get_raptor_history");
+    assert.equal(steerCall?.args?.reason, "failed");
+    const raptorResults = events.filter((e) => e.type === "tool_result" && e.name === "get_raptor_history");
+    assert.ok(raptorResults.every((e) => e.status === "fail"), "steer never masks the failure");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("wrapBridgeTools steers a zero-row named tool result to sql_exec once", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-named-steer-rows-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const msg = turn === 1
+      ? {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "toolCall", id: "call-empty", name: "codemode", arguments: { code: `
+          const r1 = await tools.get_leaders({ stat: "pie" });
+          const r2 = await tools.get_leaders({ stat: "pie" });
+          return { r1, r2 };
+        ` } }],
+        stopReason: "toolUse", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      }
+      : {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  let execCount = 0;
+  const emptyTool = {
+    name: "get_leaders", label: "get_leaders", description: "league leaders",
+    parameters: Type.Object({ stat: Type.String() }),
+    async execute(callId) {
+      execCount++;
+      const ref = `src-leaders-${execCount}`;
+      const payload = { rows: [] };
+      resultsMap.set(ref, { ref, callId, tool: "get_leaders", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: false } });
+      return { content: [], details: undefined, structuredContent: { ref, tool: "get_leaders", result: payload, isError: false }, isError: false };
+    },
+  };
+  const mockBridge = { tools: [emptyTool], results: resultsMap, pid: 1007, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+  try {
+    const events = [];
+    for await (const event of pi.stream({ q: "Rank the pool", history: [], model: "fixture:fixture", cwd, agentDir, bridge: { python: "fake", cwd, env: {} } }))
+      events.push(event);
+    const steers = events.filter((e) => e.type === "tool_result" && e.name === "named_tool_sql_steer");
+    assert.equal(steers.length, 1, "zero-row steer fires once even on repeat empty results");
+    const steerCall = events.find((e) => e.type === "tool_call" && e.name === "named_tool_sql_steer");
+    assert.equal(steerCall?.args?.reason, "no_rows");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
