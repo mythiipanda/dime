@@ -780,6 +780,8 @@ function wrapBridgeTools(
                     throw new Error("Tool result has no source record");
                 emit({ type: "source", record });
                 const domain = objectValue(result.structuredContent.result);
+                if (domain && tracker.budgetMs !== undefined)
+                    domain.budget_remaining_ms = Math.max(0, Math.round(tracker.budgetMs - (Date.now() - tracker.startedAt)));
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
                 if (!failed)
