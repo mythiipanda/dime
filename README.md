@@ -41,10 +41,15 @@ The live component reference is available at `/design-system`.
   four factors, on/off splits, clutch numbers, shot zones,
   lineups, rest advantage, game predictions, head-to-heads.
   Trade checks against the 2026-27 cap ledger, award races,
-  and draft history back to 1996-97.
-- History: game logs, shots, possessions, lineups, and
-  standings for 2009-10 through 2025-26, play-by-play for
-  2020-21 through 2024-25, and RAPTOR back to 1976-77.
+  and draft history back to 1947.
+- History: player and team seasons back to 1946-47, game
+  logs, shots, possessions, lineups, and standings for
+  2009-10 through 2025-26, play-by-play for 2020-21
+  through 2024-25, and RAPTOR back to 1976-77. Injuries,
+  salaries back to 1984-85, cap and apron history,
+  draft-combine measurements, Synergy play types, hustle
+  stats, coach staffs, officials, G League seasons, and
+  player bios.
 - Fixed answers come from code, not recall. Records, four
   factors, Finals results, and rankings are computed from
   warehouse rows. Outside the coverage window, the answer
@@ -124,13 +129,14 @@ builds derived tables at image time before pushing
 warehouse with `backend/scripts/publish_warehouse.py` after ingest.
 The warehouse is the primary source at answer time; on misses, some datasets fall back to live sources (nba_stats, ESPN) where configured, and that fallback can fail or time out.
 
-The current dataset holds 69 tables. A fresh backfill covers
+The current dataset holds 74 tables. A fresh backfill covers
 2015-16 through 2024-25 with 330,485 boxscore rows and 40,000
 lineup rows. The dataset also carries the historical tables:
 RAPTOR, RAPM, shots, advanced stats, on/off splits, clutch
 splits, leaders, salaries, zone splits, transactions, and
-the `hist_*` tables — game logs back to 1996-97 and shots to
-2009-10, both through 2025-26. Derived tables
+the `hist_*` tables — player seasons, team seasons and drafts
+back to 1946-47, game logs to 1996-97, and shots to 2009-10,
+all through 2025-26 where the source reaches. Derived tables
 (four factors, draft capital, injury entries, team season
 summaries) are rebuilt by `backend/scripts/refresh_warehouse.py`
 and published with `backend/scripts/publish_warehouse.py`.
@@ -146,7 +152,7 @@ dime-internal checkout:
 python evals/benchmark-pack/runner.py --url http://127.0.0.1:8010 --out reports/run.json
 ```
 
-The pytest suite (`backend/tests/`, 173 test files) covers
+The pytest suite (`backend/tests/`, 218 test files) covers
 routing, the pinned lanes, warehouse contracts, and
 streaming:
 
