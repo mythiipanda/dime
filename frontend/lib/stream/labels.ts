@@ -32,6 +32,7 @@ const TOOL_LABELS: Record<string, ToolNarration> = {
   get_wpa_leaders: { running: "Pulling WPA leaders", done: "Pulled WPA leaders" },
   get_comps: { running: "Finding player comps", done: "Found player comps" },
   get_lineup_stats: { running: "Analyzing lineup ratings", done: "Analyzed lineup ratings" },
+  get_lineup_on_off: { running: "Comparing unit on/off splits", done: "Compared unit on/off splits" },
   get_win_prob: { running: "Computing ELO win probabilities\u2026", done: "Computed ELO win probabilities" },
   get_on_off: { running: "Calculating on/off net ratings\u2026", done: "Calculated on/off net ratings" },
   get_shot_zones: { running: "Analyzing shot distribution zones\u2026", done: "Analyzed shot distribution zones" },
