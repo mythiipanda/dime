@@ -13,7 +13,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createAnalystSession } from "./dist/runtime.js";
-import { createPiExecution } from "./dist/pi-execution.js";
+import { createPiExecution, extractProseSubmission } from "./dist/pi-execution.js";
 import { createAnalyst } from "./dist/analyst.js";
 import { priorSourceTool } from "./dist/pi-context.js";
 import { sourceResult } from "./dist/python-tools.js";
@@ -1452,4 +1452,93 @@ test("memo artifacts reject anchors to unknown refs, bad rows and missing column
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 5, columns: ["team"] }])), /out of bounds/);
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0, columns: ["salary"] }])), /does not exist/);
   assert.throws(() => validate(memo([{ ref: "cap-source", row: 0 }])), /Invalid memo section anchor/);
+});
+test("extractProseSubmission finds submit-shaped payloads only", () => {
+  const payload = JSON.stringify({ blocks: [{ text: "MEM went 56-26." }], omitted: [] });
+  assert.deepEqual(extractProseSubmission(`**Submission**\n\`\`\`json\n${payload}\n\`\`\``), JSON.parse(payload));
+  assert.deepEqual(extractProseSubmission(payload), JSON.parse(payload));
+  const nested = JSON.stringify({ blocks: [{ text: "x" }], artifacts: [{ kind: "chart", spec: { series: [{ points: [{ x: 1, y: 2 }] }] } }] });
+  assert.deepEqual(extractProseSubmission(`\`\`\`json\n${nested}\n\`\`\``), JSON.parse(nested));
+  assert.equal(extractProseSubmission("plain prose with no payload"), null);
+  assert.equal(extractProseSubmission("```json\n{\"notes\": [\"a\"]}\n```"), null);
+  assert.equal(extractProseSubmission("```python\nprint('{\"blocks\": []}')\n```"), null);
+});
+
+test("createPiExecution rescues a prose-dumped submission payload through the audit", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-prose-rescue-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const canonical = "MEM went 56-26 in the 2021-22 regular season, with the late split tightening on defense.";
+  const dumped = `**Submission** — the submit_answer tool was not exposed in this sandbox, so the payload follows.\n\`\`\`json\n${JSON.stringify({ blocks: [{ text: canonical }], omitted: ["secondary splits"] })}\n\`\`\``;
+
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model) {
+      const msg = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content: [{ type: "text", text: dumped }],
+        stopReason: "stop",
+        timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = { tools: [], results: new Map(), pid: 12345, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const events = [];
+  for await (const event of pi.stream({
+    q: "What was MEM's record in 2021-22?",
+    history: [],
+    model: "fixture:fixture",
+    sources: [makeSourceRecord("prior-mem", { rows: [{ team: "MEM", season: "2021-22", wins: 56, losses: 26 }] })],
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+
+  const rescue = events.find((e) => e.type === "tool_call" && e.name === "prose_submit_rescue");
+  assert.ok(rescue, "prose_submit_rescue record should be emitted");
+  const rescueResult = events.find((e) => e.type === "tool_result" && e.name === "prose_submit_rescue");
+  assert.equal(rescueResult.status, "ok");
+  assert.equal(events.filter((e) => e.type === "tool_call" && e.name === "turn_end_steer").length, 0);
+  const answer = events.find((e) => e.type === "answer");
+  assert.ok(answer.submission, "dumped payload should land as the submission");
+  assert.equal(answer.text, canonical);
+
+  await rm(cwd, { recursive: true, force: true });
 });

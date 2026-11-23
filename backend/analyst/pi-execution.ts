@@ -6,7 +6,7 @@ import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
-import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
+import { createSubmitAnswerTool, submitAnswerSchema, validateAnswerSubmission, type AnswerSubmission } from "./submit-tool.js";
 import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
@@ -462,6 +462,67 @@ export function submitAuditRejectionMessage(gaps: Record<string, unknown>, rejec
 
 export function auditGapFlagStrings(gaps: Record<string, unknown>): string[] {
     return Object.values(gaps).flatMap(value => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
+}
+
+function firstBalancedJson(text: string): string | null {
+    const start = text.indexOf("{");
+    if (start === -1)
+        return null;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < text.length; i += 1) {
+        const ch = text[i];
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (ch === "\\")
+                escaped = true;
+            else if (ch === "\"")
+                inString = false;
+            continue;
+        }
+        if (ch === "\"")
+            inString = true;
+        else if (ch === "{")
+            depth += 1;
+        else if (ch === "}") {
+            depth -= 1;
+            if (depth === 0)
+                return text.slice(start, i + 1);
+        }
+    }
+    return null;
+}
+
+function hasSubmissionShape(value: unknown): value is { blocks: unknown[] } {
+    if (typeof value !== "object" || value === null)
+        return false;
+    const blocks = (value as { blocks?: unknown }).blocks;
+    return Array.isArray(blocks) && blocks.some(
+        block => typeof block === "object" && block !== null
+            && typeof (block as { text?: unknown }).text === "string"
+            && (block as { text: string }).text.trim().length > 0
+    );
+}
+
+export function extractProseSubmission(text: string): Record<string, unknown> | null {
+    const candidates: string[] = [];
+    for (const match of text.matchAll(/```[^\n`]*\n?([\s\S]*?)```/g))
+        candidates.push(match[1]);
+    candidates.push(text);
+    for (const candidate of candidates) {
+        const jsonText = firstBalancedJson(candidate);
+        if (jsonText === null)
+            continue;
+        try {
+            const parsed: unknown = JSON.parse(jsonText);
+            if (hasSubmissionShape(parsed))
+                return parsed as Record<string, unknown>;
+        } catch {
+        }
+    }
+    return null;
 }
 
 export function autoLandedSubmission(submission: AnswerSubmission, flags: string[]): AnswerSubmission {
@@ -963,15 +1024,14 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     const consultedTables = new Set<string>();
                     const toolArgsText: string[] = [];
                     let dataToolCalls = 0;
-                    const submitTool = createSubmitAnswerTool(
-                        () => [...(start.sources ?? []), ...connected.results.values()],
-                        (submission) => {
-                            tracker.submitted = true;
-                            acceptedSubmission = submission;
-                            if (submission.artifacts && submission.artifacts.length > 0)
-                                emit({ type: "custom_data", artifacts: submission.artifacts });
-                        },
-                        (submission) => {
+                    const collectContextSources = () => [...(start.sources ?? []), ...connected.results.values()];
+                    const acceptSubmission = (submission: AnswerSubmission) => {
+                        tracker.submitted = true;
+                        acceptedSubmission = submission;
+                        if (submission.artifacts && submission.artifacts.length > 0)
+                            emit({ type: "custom_data", artifacts: submission.artifacts });
+                    };
+                    const runSubmitAudit = (submission: AnswerSubmission) => {
                             if (submitAuditRejections >= SUBMIT_AUDIT_MAX_REJECTIONS)
                                 return null;
                             const audit = auditAnswerNumbers(
@@ -1031,8 +1091,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
                                 : undefined;
                             return submitAuditRejectionMessage(gaps, submitAuditRejections, remainingMs, submitSteerUsed);
-                        }
-                    );
+                    };
+                    const submitTool = createSubmitAnswerTool(collectContextSources, acceptSubmission, runSubmitAudit);
                     const verifyTool = createVerifyAnswerNumbersTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         start.q
@@ -1159,6 +1219,28 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
                         if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
                             break;
+                        const dumpedSubmission = extractProseSubmission(text);
+                        if (dumpedSubmission !== null) {
+                            emit({ type: "tool_call", name: "prose_submit_rescue" });
+                            try {
+                                const sourceMap = new Map(collectContextSources().map(record => [record.ref, record]));
+                                const warnings: string[] = [];
+                                const validated = validateAnswerSubmission(dumpedSubmission, (ref: string) => sourceMap.get(ref), [...sourceMap.keys()], warnings);
+                                const rejection = runSubmitAudit(validated);
+                                if (rejection === null) {
+                                    tracker.submitted = true;
+                                    acceptedSubmission = validated;
+                                    if (validated.artifacts && validated.artifacts.length > 0)
+                                        emit({ type: "custom_data", artifacts: validated.artifacts });
+                                    emit({ type: "tool_result", name: "prose_submit_rescue", status: "ok" });
+                                } else {
+                                    emit({ type: "tool_result", name: "prose_submit_rescue", status: "fail", error: "audit gaps recorded; submission lands through the veto path" });
+                                }
+                            } catch (rescueError) {
+                                emit({ type: "tool_result", name: "prose_submit_rescue", status: "fail", error: rescueError instanceof Error ? rescueError.message : String(rescueError) });
+                            }
+                            break;
+                        }
                         if (!submitSteerUsed) {
                             submitSteerUsed = true;
                             emit({ type: "tool_call", name: "turn_end_steer" });
