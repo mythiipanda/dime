@@ -39,7 +39,7 @@ const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens:
 
 function isProvider(name: string): name is Provider { return Object.hasOwn(policies, name); }
 
-const order: Provider[] = ["groq", "agnes", "zai", "cerebras", "nvidia", "openrouter", "mistral", "gemini", "inception"];
+const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception"];
 const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception"]);
 const reasoningReplay = new Set<Provider>(["reflection", "nvidia"]);
 const thinkingAsTextModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
@@ -107,7 +107,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
         catalog() {
             const defaultProvider = order.find(available) ?? "mistral";
             const availability = Object.fromEntries(Object.keys(policies).filter(isProvider).filter(name => !gated.has(name) || available(name)).map(name => [name, available(name)]));
-            return { models: ["gemini", "nvidia", "openrouter", "cerebras", "mistral", "groq", "agnes", "zai", "reflection", "inception"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
+            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
         },
         resolve(id?: string) {
             const { provider, model } = selection(id);
