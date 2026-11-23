@@ -8,8 +8,8 @@ from shared import store
 from shared.sources.hist_salaries import history
 
 TABLE = "silver_hist_salaries"
-MIN_ROWS = 14_000
-MIN_SEASONS = 34
+MIN_ROWS = 15_000
+MIN_SEASONS = 37
 
 
 def _save(res):
