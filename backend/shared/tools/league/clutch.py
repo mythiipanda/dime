@@ -449,7 +449,10 @@ def _clutch_team_abbr(value: object) -> str | None:
     return None
 
 
-@tool(description='Clutch stats (last 5 min, margin 5 or less), player or team scope.')
+@tool(description='Clutch stats (last 5 min, margin 5 or less), player or team scope. '
+                  'For league-wide clutch leaderboards or qualifying counts, run one '
+                  'sql_exec GROUP BY over silver_clutch with GROUP_SET=\'Players\' '
+                  '(the table multiplexes group sets) — never loop this tool per player.')
 def get_clutch(scope: str = "player", season: str | None = None,
                player: str = "",
                clutch_seconds: int = _CLUTCH_SECONDS_DEFAULT,

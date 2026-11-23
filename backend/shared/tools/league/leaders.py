@@ -363,7 +363,7 @@ def _leaders_lead_answer(pinned: list, lead_answer: tuple, season: str):
             f"{_cleared(pinned[0], qualification)}.")
 
 
-@tool(description='Qualified league leaderboard for one stat category.\n\nranking_direction is ``desc`` for highest-first or ``asc`` for\nlowest-first. min_attempts carries an explicit user volume floor for\npercentage metrics; zero keeps the league qualification.\n\nPercentage boards use the NBA minimums carried by the warehouse\ninstead of an arbitrary attempts floor. For 3P%, the qualification is\n82 made threes over an 82-game season. This keeps the board comparable\nto the official league leaderboard and excludes tiny samples.')
+@tool(description='Qualified league leaderboard for one stat category.\n\nranking_direction is ``desc`` for highest-first or ``asc`` for\nlowest-first. min_attempts carries an explicit user volume floor for\npercentage metrics; zero keeps the league qualification.\n\nPercentage boards use the NBA minimums carried by the warehouse\ninstead of an arbitrary attempts floor. For 3P%, the qualification is\n82 made threes over an 82-game season. This keeps the board comparable\nto the official league leaderboard and excludes tiny samples.\n\nCovers standard box-score categories. Shot-location boards (corner-3,\nabove-break, rim, midrange) or position-pool counts are not here —\nrun one sql_exec GROUP BY over silver_hist_shots (zone geometry is\ndocumented on get_zone_deltas), joining silver_boxscores for position\nfilters; GROUP BY PLAYER_ID gives player-season totals and\nCOUNT of qualifying rows gives the pool size.')
 def get_leaders(
     stat_category: str = "PTS", season: str | None = None,
     ranking_direction: str = "desc", min_attempts: int = 0,
