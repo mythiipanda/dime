@@ -315,7 +315,7 @@ def get_standings_deep(season: str | None = None, top: int = 5) -> dict[str, Any
     except (TypeError, ValueError):
         top = 5
 
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         if "silver_standings" not in {
                 r[0] for r in con.execute("SHOW TABLES").fetchall()}:

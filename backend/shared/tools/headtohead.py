@@ -154,7 +154,7 @@ def get_head_to_head(player: str, opponent: str,
             if opp_pid:
                 for _ in range(3):
                     try:
-                        con = _store.connect()
+                        con = _store.connect(read_only=True)
                         try:
                             _rows = con.execute(
                                 "SELECT MATCHUP FROM silver_player_gamelogs"

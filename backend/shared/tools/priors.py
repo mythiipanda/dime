@@ -52,7 +52,7 @@ def get_rapm_prior(player: str = "", seasons: object = None) -> dict[str, Any]:
         return {"tool": "get_rapm_prior", "ok": False, "rows": {},
                 "meta": {}, "error": "no usable prior seasons"}
     labels = [PRIOR_SEASONS[y] for y in want]
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_rapm_prior" not in tables:

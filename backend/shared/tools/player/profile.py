@@ -230,7 +230,7 @@ def get_playoff_intel(player_id: str | int, season: str | None = None) -> dict[s
     )
     if not rows:
         try:
-            con = pkg.store.connect()
+            con = pkg.store.connect(read_only=True)
             try:
                 tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
                 if "silver_playoff_gamelogs" in tables:

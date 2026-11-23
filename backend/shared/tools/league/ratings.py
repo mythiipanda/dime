@@ -355,7 +355,7 @@ def get_team_four_factors(team: str = "", season: str | None = None) -> dict[str
     pkg = _pkg()
     season = pkg.resolve_season(season)
     try:
-        _con = pkg.store.connect()
+        _con = pkg.store.connect(read_only=True)
         try:
             tables = {r[0] for r in _con.execute("SHOW TABLES").fetchall()}
         finally:
@@ -472,7 +472,7 @@ def get_hustle(scope: str = "player", season: str | None = None) -> dict[str, An
 def get_rapm(player: str = "", top: int = 10, season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_rapm" not in tables:
@@ -583,7 +583,7 @@ def get_impact_rank(player: str = "", season: str | None = None) -> dict[str, An
 def get_rest(team_abbrev: str = "", season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:
@@ -655,7 +655,7 @@ def get_risers(season: str | None = None, weeks: int = 4) -> dict[str, Any]:
     except (TypeError, ValueError):
         weeks = 4
     n = max(5, min(round(weeks * 2.5), 15))
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_hist_gamelogs" not in tables:
@@ -709,7 +709,7 @@ def get_player_risers(season: str | None = None, n: int = 10) -> dict[str, Any]:
         n = max(5, min(int(n or 10), 15))
     except (TypeError, ValueError):
         n = 10
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_player_gamelogs" not in tables:

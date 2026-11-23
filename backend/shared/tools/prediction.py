@@ -295,7 +295,7 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
     if found and game_date and resolved != game_date:
         return _err(f"{_abbrev(a)} and {_abbrev(b)} do not play on {game_date}")
 
-    con = store.connect()
+    con = store.connect(read_only=True)
     try:
         ratings, ratings_source = season_team_ratings(con, season)
         league = _league_ratings(ratings)

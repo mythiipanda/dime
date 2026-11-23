@@ -14,7 +14,7 @@ def _preview_rating_row(season: str, tid: int, full_by_id: dict[int, str]) -> di
     try:
         from ... import store as _store
 
-        _con = _store.connect()
+        _con = _store.connect(read_only=True)
         try:
             _row = _con.execute(
                 "SELECT OFF_RATING, DEF_RATING, PACE FROM silver_team_ratings"

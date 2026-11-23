@@ -236,7 +236,7 @@ def _payroll(team: str, con: object = None,
              season: str | None = None) -> tuple[int, list[dict]]:
     own = con is None
     if own:
-        con = _pkg().store.connect()
+        con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
@@ -363,7 +363,7 @@ def _season_player_team(con: object, name: str, season: str,
 def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
     own = con is None
     if own:
-        con = _pkg().store.connect()
+        con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" not in tables:
@@ -386,7 +386,7 @@ def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
 def _payroll_source(con: object = None) -> str:
     own = con is None
     if own:
-        con = _pkg().store.connect()
+        con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
@@ -405,7 +405,7 @@ def _payroll_source(con: object = None) -> str:
 def _salary_date(con: object = None) -> str | None:
     own = con is None
     if own:
-        con = _pkg().store.connect()
+        con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         for table in ("silver_salaries", "silver_cap_players"):
@@ -438,7 +438,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
     except (ValueError, StopIteration):
         return {"tool": "get_cap_ledger", "ok": False,
                 "error": team_error_message(team)}
-    con = _pkg().store.connect()
+    con = _pkg().store.connect(read_only=True)
     try:
         try:
             total, players = _payroll(team, con)
@@ -464,7 +464,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
 @tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.')
 def get_cap_table(season: str | None = None) -> dict[str, Any]:
     from nba_api.stats.static import teams as _teams
-    con = _pkg().store.connect()
+    con = _pkg().store.connect(read_only=True)
     try:
         rows = []
         missing = []
@@ -561,7 +561,7 @@ def _unknown_player_hints(unknown: list[str], con: object = None) -> list[str]:
     hints: list[str] = []
     own = con is None
     try:
-        con2 = _pkg().store.connect() if own else con
+        con2 = _pkg().store.connect(read_only=True) if own else con
         try:
             for u in unknown:
                 base = u.split(" (suggestions")[0].strip()

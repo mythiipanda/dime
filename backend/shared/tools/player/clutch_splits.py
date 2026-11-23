@@ -210,7 +210,7 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
     name = (player or "").strip()
     if not name:
         return {"tool": "get_raptor_history", "ok": False, "error": "empty player name"}
-    con = pkg.store.connect()
+    con = pkg.store.connect(read_only=True)
     try:
         q = (
             "SELECT * FROM silver_raptor_player WHERE LOWER(PLAYER_NAME) = LOWER(?)"

@@ -454,7 +454,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         except ValueError as vexc:
             feedback = f"\nPrevious reply was rejected: {vexc}. Reply with SQL only."
             continue
-        con = pkg.store.connect()
+        con = pkg.store.connect(read_only=True)
         try:
             rows = con.execute(sql).fetchall()
             names = [d[0] for d in con.description]

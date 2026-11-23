@@ -17,7 +17,7 @@ def _competitive_lineup_nets(
     season = pkg.resolve_season(season)
     from ... import store as _store
 
-    con = _store.connect()
+    con = _store.connect(read_only=True)
     try:
         pros = con.execute(
             "SELECT offense_team_id, defense_team_id, points,"
