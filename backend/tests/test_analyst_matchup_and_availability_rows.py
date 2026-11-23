@@ -184,11 +184,11 @@ DEFENSIVE_MATCHUPS = {
     "name": "get_defensive_matchups",
     "module": "shared.tools.tracking",
     "attribute": "get_defensive_matchups",
-    "arguments": {"player": "Synthetic Defender", "season": "2025-26"},
+    "arguments": {"player": "Draymond Green", "season": "2025-26"},
     "description": "One defender's defended-shot profile: frequency and shooter results.",
     "upstream_row": {
         "CLOSE_DEF_PERSON_ID": 424242,
-        "PLAYER_NAME": "Synthetic Defender",
+        "PLAYER_NAME": "Draymond Green",
         "PLAYER_LAST_TEAM_ABBREVIATION": "TST",
         "GP": 41,
         "FREQ": 0.312,
@@ -210,7 +210,7 @@ TRACKING_PROFILE = {
 
 TRACKING_IDENTITY_VALUES = {
     "PLAYER_ID": 2544,
-    "PLAYER_NAME": "Synthetic Scorer",
+    "PLAYER_NAME": "LeBron James",
     "TEAM_ID": 1610612747,
     "TEAM_ABBREVIATION": "TST",
     "TEAM_NAME": "Test Team",
@@ -244,10 +244,10 @@ PLAYTYPE_PROFILE = {
     "name": "get_playtype_profile",
     "module": "shared.tools.playtypes",
     "attribute": "get_playtype_profile",
-    "arguments": {"subject": "Synthetic Scorer", "kind": "player",
+    "arguments": {"subject": "LeBron James", "kind": "player",
                   "side": "offense", "season": "2025-26"},
     "description": "Synergy play-type profile for one player or team and season: frequency share, PPP, and percentile.",
-    "subject": "Synthetic Scorer",
+    "subject": "LeBron James",
     "default_columns": ["play_type", "poss_pct", "ppp", "percentile", "gp", "poss"],
     "play_types": [
         {"play_type": "Pick and Roll", "poss_pct": 0.31, "ppp": 1.02,
@@ -266,7 +266,7 @@ STREAKS = {
     "default_columns": ["holder", "streak", "start_date", "end_date", "active"],
     "emitted_columns": ["holder", "holder_id", "streak", "start_date", "end_date", "active"],
     "streak_rows": [
-        {"holder": "Synthetic Scorer", "holder_id": 2544, "streak": 12,
+        {"holder": "LeBron James", "holder_id": 2544, "streak": 12,
          "start_date": "2026-01-02", "end_date": "2026-01-20", "active": True},
         {"holder": "Synthetic Wing", "holder_id": 2545, "streak": 8,
          "start_date": "2026-02-01", "end_date": "2026-02-12", "active": False},
@@ -277,7 +277,7 @@ HEAD_TO_HEAD = {
     "name": "get_head_to_head",
     "module": "shared.tools.headtohead",
     "attribute": "get_head_to_head",
-    "arguments": {"player": "Synthetic Scorer", "opponent": "OPP",
+    "arguments": {"player": "LeBron James", "opponent": "BOS",
                   "season": "2025-26"},
     "description": "Head-to-head game log between two players.",
     "literal_columns": ["date", "matchup", "wl", "min", "pts", "reb", "ast",
@@ -387,7 +387,7 @@ SEARCH_SHOTS = {
     "module": "shared.tools.shots",
     "attribute": "search_shots",
     "arguments": {
-        "player": "Synthetic Scorer",
+        "player": "LeBron James",
         "team": "BOS",
         "zones": "",
         "periods": "",
@@ -506,7 +506,7 @@ def _get_today_result(monkeypatch, upstream_rows):
 def _search_shot_row(clock="3:24", **overrides):
     row = {
         "player_id": 2544,
-        "player": "Synthetic Scorer",
+        "player": "LeBron James",
         "team_id": 1610612747,
         "team": "BOS",
         "period": 3,
@@ -1291,7 +1291,7 @@ def test_search_shots_parses_real_upstream_clock_string(monkeypatch):
     assert row["minutes_remaining"] == "3"
     assert row["seconds_remaining"] == "24"
     assert row["game_id"] == "0022400001"
-    assert row["player_name"] == "Synthetic Scorer"
+    assert row["player_name"] == "LeBron James"
     assert row["period"] == 3
     assert row["shot_distance"] == 23.7
     assert row["zone"] == "left_corner_three"
@@ -1341,7 +1341,7 @@ def _tracking_result(monkeypatch, rows, arguments=None):
     })
     tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
     return _invoke(tools[spec["name"]], arguments or {
-        "player": "Synthetic Scorer", "season": "2025-26",
+        "player": "LeBron James", "season": "2025-26",
         "measure_type": "CatchShoot",
     })
 
@@ -1351,7 +1351,7 @@ def test_tracking_profile_emits_concrete_measure_stat_value_pairs(monkeypatch):
                 ("Defense", DEFENSE_MEASURES))
     for measure_type, measures in families:
         res = _tracking_result(monkeypatch, [_tracking_row(measure_type, measures)], {
-            "player": "Synthetic Scorer", "season": "2025-26",
+            "player": "LeBron James", "season": "2025-26",
             "measure_type": measure_type,
         })
 
@@ -1363,7 +1363,7 @@ def test_tracking_profile_emits_concrete_measure_stat_value_pairs(monkeypatch):
         assert {row["stat"]: row["value"] for row in res["rows"]} == measures, measure_type
         for row in res["rows"]:
             assert list(row.keys()) == TRACKING_PROFILE["columns"], measure_type
-            assert row["subject"] == "Synthetic Scorer", measure_type
+            assert row["subject"] == "LeBron James", measure_type
             assert row["season"] == "2025-26", measure_type
             assert row["measure_type"] == measure_type, measure_type
         assert "overall" not in {row["stat"] for row in res["rows"]}, measure_type
@@ -1402,7 +1402,7 @@ def test_tracking_profile_error_paths_keep_rows_and_columns(monkeypatch):
         fake = _FakeTool(spec["description"], result=result, exc=exc)
         tools = _catalogue(monkeypatch, {(spec["module"], spec["attribute"]): fake})
         res = _invoke(tools[spec["name"]], {
-            "player": "Synthetic Scorer", "season": "2025-26",
+            "player": "LeBron James", "season": "2025-26",
             "measure_type": "CatchShoot",
         })
 
@@ -1423,12 +1423,12 @@ SEARCH_GAME_LOGS = {
 
 GAME_LOG_COLUMNS = ["date", "game_id", "opponent", "matchup", "home", "pts", "reb", "ast", "stl", "blk", "tov", "min", "wl"]
 
-LEAGUE_LEADER_ROW = {"player": "Synthetic Scorer", "player_id": 2544, "count": 7}
+LEAGUE_LEADER_ROW = {"player": "LeBron James", "player_id": 2544, "count": 7}
 TEAM_LEADER_ROW = {"team_abbr": "TST", "team": "Test Team", "count": 9}
 PLAYER_MATCH_ROW = {
     "date": "2026-01-04",
     "game_id": "0022400001",
-    "opponent": "OPP",
+    "opponent": "BOS",
     "matchup": "TST vs. OPP",
     "home": True,
     "pts": 31,
@@ -1448,7 +1448,7 @@ PLAYER_MATCH_ROW = {
 
 LEAGUE_WIDE_ARGS = {"league_wide": True, "min_points": 50, "season": "2025-26"}
 TEAM_WIDE_ARGS = {"team_wide": True, "min_points": 50, "season": "2025-26"}
-PLAYER_MODE_ARGS = {"player": "Synthetic Scorer", "season": "2025-26"}
+PLAYER_MODE_ARGS = {"player": "LeBron James", "season": "2025-26"}
 
 
 def _game_log_fake(result=None, exc=None):
@@ -1511,7 +1511,7 @@ def test_game_log_wide_columns_follow_emitted_rows(monkeypatch):
 
 def test_game_log_player_mode_unchanged(monkeypatch):
     rows = {
-        "player": "Synthetic Scorer",
+        "player": "LeBron James",
         "player_id": 2544,
         "matches": [dict(PLAYER_MATCH_ROW)],
     }

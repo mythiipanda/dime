@@ -60,8 +60,9 @@ def test_invalid_season_error_includes_season_recovery_hint(monkeypatch):
     tools = python_tools.catalogue()
     res = tools["get_standings"].invoke({"season": "badseason"})
     assert res["ok"] is False
-    assert "2024-25" in res["recovery_hint"]
-    assert "get_warehouse_freshness" in res["next_actions"]
+    assert res["arg_miss"]["field"] == "season"
+    assert res["arg_miss"]["kind"] == "season"
+    assert res["arg_miss"]["value"] == "badseason"
 
 
 def test_unknown_entity_error_includes_entity_recovery_hint(monkeypatch):
@@ -77,8 +78,8 @@ def test_unknown_entity_error_includes_entity_recovery_hint(monkeypatch):
     tools = python_tools.catalogue()
     res = tools["get_player_report"].invoke({"player": "Nobody Here"})
     assert res["ok"] is False
-    assert isinstance(res["summary"], str) and "get_player_report" in res["summary"]
-    assert "get_standings" in res["next_actions"]
+    assert res["arg_miss"]["field"] == "player"
+    assert res["arg_miss"]["kind"] == "player"
 
 
 def test_sql_column_error_attaches_schema_hint(monkeypatch):
