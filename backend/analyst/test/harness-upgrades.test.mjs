@@ -2687,3 +2687,81 @@ test("wrapBridgeTools steers a zero-row named tool result to sql_exec once", asy
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("wrapBridgeTools runs a bounded warehouse fallback when a mapped named tool fails", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-named-fallback-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    const msg = turn === 1
+      ? {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "toolCall", id: "call-fb", name: "codemode", arguments: { code: `
+          const r1 = await tools.get_scouting_report({ player_name: "Jalen Williams", season: "2024-25" });
+          return { r1 };
+        ` } }],
+        stopReason: "toolUse", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      }
+      : {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  let execCount = 0;
+  const sqlCalls = [];
+  const failingScout = {
+    name: "get_scouting_report", label: "get_scouting_report", description: "get_scouting_report",
+    parameters: Type.Object({}),
+    async execute(callId) {
+      execCount++;
+      const ref = `src-scout-${execCount}`;
+      const payload = { ok: false, error: "invalid team_id" };
+      resultsMap.set(ref, { ref, callId, tool: "get_scouting_report", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: true } });
+      return { content: [], details: undefined, structuredContent: { ref, tool: "get_scouting_report", result: payload, isError: true }, isError: true };
+    },
+  };
+  const sqlExec = {
+    name: "sql_exec", label: "sql_exec", description: "sql_exec",
+    parameters: Type.Object({}),
+    async execute(callId, args) {
+      sqlCalls.push(args.sql);
+      const ref = `src-sql-${execCount}`;
+      const payload = { ok: true, rows: [{ player_name: "Jalen Williams", season: "2024-25", pts: 21.6, ts_pct: 0.607 }] };
+      resultsMap.set(ref, { ref, callId, tool: "sql_exec", response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: false } });
+      return { content: [], details: undefined, structuredContent: { ref, tool: "sql_exec", result: payload, isError: false }, isError: false };
+    },
+  };
+  const mockBridge = { tools: [failingScout, sqlExec], results: resultsMap, pid: 1007, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+  try {
+    const events = [];
+    for await (const event of pi.stream({ q: "Scout Jalen Williams", history: [], model: "fixture:fixture", cwd, agentDir, bridge: { python: "fake", cwd, env: {} } }))
+      events.push(event);
+    assert.equal(sqlCalls.length, 1, "one bounded fallback query ran");
+    assert.match(sqlCalls[0], /silver_hist_player_seasons/);
+    assert.match(sqlCalls[0], /player_name ILIKE '%Jalen Williams%'/);
+    assert.match(sqlCalls[0], /season = 2025/);
+    assert.match(sqlCalls[0], /LIMIT 25/);
+    const fbResult = events.find((e) => e.type === "tool_result" && e.name === "named_tool_sql_fallback");
+    assert.equal(fbResult?.status, "ok");
+    const steerCall = events.find((e) => e.type === "tool_call" && e.name === "named_tool_sql_steer");
+    assert.equal(steerCall?.args?.fallback, true);
+  }
+  finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

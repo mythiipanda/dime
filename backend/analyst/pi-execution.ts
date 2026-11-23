@@ -630,6 +630,59 @@ export function retryBudgetSteerText(burnedMs: number, evidenceFree: boolean) {
 const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
 const SQL_STEER_SKIP_TOOLS = new Set(["sql_exec", "run_python", "web_search", "web_fetch", "warehouse_schema", "get_warehouse_freshness", "load_skill", "run_status"]);
 
+type FallbackSpec = { table: string; nameCol?: string; teamCol?: string; seasonCol?: string; seasonText?: boolean; idCol?: string; orderCol?: string };
+const TOOL_FALLBACK_TABLE: Record<string, FallbackSpec> = {};
+{
+    const playerSeasons: FallbackSpec = { table: "silver_hist_player_seasons", nameCol: "player_name", teamCol: "team_abbreviation", seasonCol: "season", idCol: "player_id", orderCol: "season" };
+    for (const t of ["get_scouting_report", "get_raptor_history", "get_percentiles", "get_comps", "get_player_report", "get_player_evaluation", "get_player_intel", "get_player_ratings", "get_player_rankings", "get_season_averages", "get_career_arc", "get_career_totals", "get_compare", "get_splits", "get_situational_splits", "get_roster_fit", "get_young_player_usage", "get_impact_rank", "get_impact_estimate", "get_rapm", "get_rapm_prior", "get_award_race", "get_award_results", "get_risers", "get_player_risers", "get_leaderboard_deltas", "get_leaders", "get_historical_leaders", "get_rookie_leaders", "get_clutch_stats", "get_clutch", "get_last_x", "get_trend", "get_streaks", "get_head_to_head", "get_competitive_ratings", "get_debate_card", "get_matchup_brief", "get_opponent_scout", "get_scout_pack", "get_finder", "get_wpa_leaders", "get_hustle_boards", "get_team_leaders"])
+        TOOL_FALLBACK_TABLE[t] = playerSeasons;
+    const teamSeasons: FallbackSpec = { table: "silver_hist_team_seasons", teamCol: "team_name", seasonCol: "season", orderCol: "season" };
+    for (const t of ["get_team_compare", "get_team_season_summary", "get_team_hub", "get_standings", "get_standings_deep", "get_team_splits", "get_team_trajectory", "get_team_daily_brief"])
+        TOOL_FALLBACK_TABLE[t] = teamSeasons;
+    const draftBoard: FallbackSpec = { table: "silver_draft_boards", nameCol: "PLAYER_NAME", seasonCol: "_season", seasonText: true, orderCol: "\"ORDER\"" };
+    for (const t of ["get_draft_board", "get_draft_model", "get_prospect", "get_combine"])
+        TOOL_FALLBACK_TABLE[t] = draftBoard;
+    TOOL_FALLBACK_TABLE["get_draft_capital"] = { table: "silver_future_picks", teamCol: "ORIG_TEAM", seasonCol: "DRAFT_YEAR" };
+    TOOL_FALLBACK_TABLE["get_draft_history"] = { table: "silver_hist_draft", nameCol: "PLAYER_NAME", teamCol: "TEAM_ABBREVIATION", seasonCol: "SEASON", idCol: "PERSON_ID" };
+}
+const FALLBACK_LIMIT = 25;
+
+function fallbackWhere(spec: FallbackSpec, toolArgs: unknown): string[] {
+    const args = (toolArgs && typeof toolArgs === "object" ? toolArgs : {}) as Record<string, unknown>;
+    const parts: string[] = [];
+    const esc = (v: unknown) => String(v).replace(/'/g, "''");
+    for (const [key, raw] of Object.entries(args)) {
+        const k = key.toLowerCase();
+        if (typeof raw === "number" && (k === "player_id" || k === "person_id")) {
+            if (spec.idCol)
+                parts.push(`${spec.idCol} = ${Math.trunc(raw)}`);
+            continue;
+        }
+        if (typeof raw !== "string" || !raw.trim())
+            continue;
+        const v = esc(raw.trim());
+        if (spec.nameCol && /player.*name|^name$|^player$/.test(k))
+            parts.push(`${spec.nameCol} ILIKE '%${v}%'`);
+        else if (spec.teamCol && /team(_(abbreviation|name|abbr))?$|^team$/.test(k))
+            parts.push(`${spec.teamCol} ILIKE '%${v}%'`);
+        else if (spec.seasonCol && /season|draft_year|^year$/.test(k)) {
+            const m = v.match(/^(\d{4})(?:-(\d{2}))?/);
+            if (m) {
+                const end = m[2] ? Number(m[1]) + 1 : Number(m[1]);
+                parts.push(spec.seasonText ? `${spec.seasonCol} = '${end}'` : `${spec.seasonCol} = ${end}`);
+            }
+        }
+    }
+    return parts;
+}
+
+function fallbackSql(spec: FallbackSpec, toolArgs: unknown): string | null {
+    const parts = fallbackWhere(spec, toolArgs);
+    if (parts.length === 0)
+        return null;
+    return `SELECT * FROM ${spec.table} WHERE ${parts.join(" AND ")}${spec.orderCol ? ` ORDER BY ${spec.orderCol} DESC` : ""} LIMIT ${FALLBACK_LIMIT}`;
+}
+
 function wrapBridgeTools(
     tools: Awaited<ReturnType<typeof connectPythonTools>>["tools"],
     results: Map<string, SourceRecord>,
@@ -648,15 +701,38 @@ function wrapBridgeTools(
     let capWarehouseSteered = false;
     const namedToolSteered = new Set<string>();
     const capAsk = isCapAsk(question);
-    const namedToolSqlSteer = (tool: { name: string }, domain: Record<string, unknown>, result: { content?: unknown }, reason: "failed" | "no_rows") => {
+    const sqlExecTool = tools.find(t => t.name === "sql_exec");
+    const namedToolSqlSteer = async (tool: { name: string }, domain: Record<string, unknown>, result: { content?: unknown }, reason: "failed" | "no_rows", toolArgs: unknown, callArgs: readonly unknown[]) => {
         if (namedToolSteered.has(tool.name) || SQL_STEER_SKIP_TOOLS.has(tool.name))
             return false;
         namedToolSteered.add(tool.name);
         domain.named_tool_steer = reason === "failed"
             ? `${tool.name} failed for this ask. The warehouse usually covers this class directly: run sql_exec over silver_hist_player_seasons (per-player season rows — _season, player_name, team_abbreviation, age, gp, min, pts/reb/ast/stl/blk/tov per game, fg3_pct, ts_pct, usg_pct, off/def/net_rating, pie), silver_hist_team_seasons (team rows with *_rank league ranks), or the draft tables silver_draft_boards, silver_draft_value_curve, silver_future_picks and silver_hist_draft for prospect/pick asks — applying the stated season and pool filter. Scouting, percentile, comp, fit and draft-board asks resolve there instead of through this named tool.`
             : `${tool.name} returned no rows for this ask — a coverage gap, not necessarily an empty answer. The warehouse usually covers this class directly: run sql_exec over silver_hist_player_seasons (per-player season rows — _season, player_name, team_abbreviation, age, gp, min, pts/reb/ast/stl/blk/tov per game, fg3_pct, ts_pct, usg_pct, off/def/net_rating, pie), silver_hist_team_seasons (team rows with *_rank league ranks), or the draft tables silver_draft_boards, silver_draft_value_curve, silver_future_picks and silver_hist_draft for prospect/pick asks — applying the stated season and pool filter.`;
+        const spec = TOOL_FALLBACK_TABLE[tool.name];
+        const sql = spec ? fallbackSql(spec, toolArgs) : null;
+        if (sql && sqlExecTool) {
+            emit({ type: "tool_call", name: "named_tool_sql_fallback", args: { tool: tool.name, table: spec!.table, sql } });
+            try {
+                const fb = await sqlExecTool.execute(`fb_${tool.name}_${tracker.toolCalls}`, { sql }, callArgs[2] as never, callArgs[3] as never, callArgs[4] as never);
+                const fbDomain = objectValue((fb?.structuredContent as Record<string, unknown> | undefined)?.result);
+                const fbRows = Array.isArray(fbDomain?.rows) ? (fbDomain.rows as unknown[]) : [];
+                if (fbRows.length > 0) {
+                    domain.warehouse_fallback = {
+                        table: spec!.table,
+                        sql,
+                        rows: fbRows.slice(0, FALLBACK_LIMIT),
+                        note: `${tool.name} ${reason === "failed" ? "failed" : "returned no rows"} — these warehouse rows answer the ask directly. Build the answer from them (and further sql_exec over this table for aggregates/percentiles) instead of retrying the named tool.`,
+                    };
+                }
+                emit({ type: "tool_result", name: "named_tool_sql_fallback", status: fbRows.length > 0 ? "ok" : "fail", rows: fbRows.length });
+            }
+            catch {
+                emit({ type: "tool_result", name: "named_tool_sql_fallback", status: "fail", error: "fallback query failed" });
+            }
+        }
         result.content = [{ type: "text", text: JSON.stringify(domain) }];
-        emit({ type: "tool_call", name: "named_tool_sql_steer", args: { tool: tool.name, reason } });
+        emit({ type: "tool_call", name: "named_tool_sql_steer", args: { tool: tool.name, reason, fallback: Boolean(domain.warehouse_fallback) } });
         emit({ type: "tool_result", name: "named_tool_sql_steer", status: "ok" });
         return true;
     };
@@ -756,13 +832,13 @@ function wrapBridgeTools(
                         domain.recovery_hint = "Treat as a data limitation: note the gap and move to the next sub-question instead of retrying.";
                         result.content = [{ type: "text", text: JSON.stringify(domain) }];
                     }
-                    namedToolSqlSteer(tool, domain, result, "failed");
+                    await namedToolSqlSteer(tool, domain, result, "failed", args[1], args);
                 }
                 else if (!failed)
                     lastErrors.delete(tool.name);
                 if (!failed && domain) {
                     if (Array.isArray(domain.rows) && domain.rows.length === 0)
-                        namedToolSqlSteer(tool, domain, result, "no_rows");
+                        await namedToolSqlSteer(tool, domain, result, "no_rows", args[1], args);
                     if (!capWarehouseSteered && capAsk && WEB_TOOLS.has(tool.name)) {
                         capWarehouseSteered = true;
                         domain.warehouse_steer = "This is a cap/trade question the warehouse answers directly. Prefer the cap tools — get_cap_scenario, get_trade_legality, get_fa_plan, get_draft_capital, get_cap_ledger, get_cap_table — or sql_exec over silver_salaries, silver_cap_room, silver_contracts, silver_future_picks: they carry committed salaries, projected cap/tax/apron lines, and the outgoing/incoming pick ledger. Web search is a fallback only when the warehouse lacks the input (e.g. a live news claim); cite the warehouse figures for the numbers.";
