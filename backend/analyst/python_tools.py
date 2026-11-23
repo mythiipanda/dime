@@ -17,6 +17,8 @@ from analyst.tools import (
     LIVE_ONLY_TOOLS,
     NETWORK_TOOL_SOURCES,
     PARAM_SCHEMA_DESCRIPTIONS as _PARAM_DESCRIPTIONS,
+    TOOL_DESCRIPTIONS as _TOOL_DESCRIPTIONS,
+    TOOL_ORDER,
     TOOL_PARAM_DESCRIPTIONS as _TOOL_PARAM_DESCRIPTIONS,
     TOOL_SCHEMA_DESCRIPTIONS as _TOOL_SCHEMA_DESCRIPTIONS,
     WAREHOUSE_ALTERNATIVES,
@@ -48,125 +50,7 @@ _flatten_sections = _common._flatten_sections
 _section_object_result = _common._section_object_result
 _sectioned_result = _common._sectioned_result
 
-_TOOL_ORDER = (
-    "sql_exec",
-    "warehouse_schema",
-    "get_rapm",
-    "get_impact_rank",
-    "get_game_prediction",
-    "get_wpa_leaders",
-    "get_comps",
-    "get_era_comps",
-    "get_lineup_stats",
-    "get_lineup_on_off",
-    "get_win_prob",
-    "get_on_off",
-    "get_availability_impact",
-    "get_shot_zones",
-    "get_phase_shot_splits",
-    "get_four_factors",
-    "get_clutch_stats",
-    "get_competitive_ratings",
-    "get_hustle",
-    "get_injuries",
-    "get_news_feed",
-    "get_team_daily_brief",
-    "get_award_results",
-    "get_briefing",
-    "get_standings",
-    "get_rest",
-    "get_team_trajectory",
-    "get_ratings",
-    "get_rookie_leaders",
-    "get_cap_ledger",
-    "get_cap_scenario",
-    "get_cap_table",
-    "get_leaders",
-    "get_lineup_leaders",
-    "get_playoffs",
-    "get_team_leaders",
-    "get_team_compare",
-    "get_elo_standings",
-    "get_draft_board",
-    "get_combine",
-    "get_young_player_usage",
-    "get_contract_value",
-    "get_salary_history",
-    "get_trade_check",
-    "get_trade_legality",
-    "get_trade_value",
-    "get_draft_capital",
-    "get_trade_partners",
-    "get_trade_targets",
-    "get_value_contracts",
-    "get_situational_splits",
-    "get_playoff_sim",
-    "get_playoff_team_ratings",
-    "get_player_risers",
-    "get_standings_deep",
-    "get_warehouse_freshness",
-    "get_finder",
-    "get_draft_model",
-    "get_leaderboard_deltas",
-    "get_player_ratings",
-    "get_risers",
-    "get_team_four_factors",
-    "get_streaks",
-    "get_playtype_profile",
-    "get_defensive_matchups",
-    "get_head_to_head",
-    "get_lineup_matchup_matrix",
-    "get_transactions",
-    "get_wowy",
-    "get_shot_compare",
-    "get_raptor_history",
-    "get_season_series",
-    "get_team_game_log",
-    "get_zone_deltas",
-    "search_shots",
-    "get_shot_chart",
-    "get_stint_timeline",
-    "get_possession_log",
-    "get_elo",
-    "get_team_shot_zones",
-    "get_historical_leaders",
-    "get_today",
-    "get_morning_briefing",
-    "get_tracking_profile",
-    "get_rest_advantage",
-    "get_rapm_prior",
-    "search_game_logs",
-    "get_dataset",
-    "get_dataset_freshness",
-    "get_career_arc",
-    "run_python",
-    "get_matchup_preview",
-    "get_matchup_splits",
-    "get_regression_check",
-    "get_scout_pack",
-    "get_opponent_scout",
-    "get_rotation_check",
-    "get_injury_impact",
-    "get_matchup_brief",
-    "get_watchlist",
-    "get_games_on_date",
-    "get_boxscore",
-    "get_award_race",
-    "get_last_x",
-    "get_player_report",
-    "get_team_hub",
-    "get_lineups",
-    "get_splits",
-    "get_recap",
-    "get_scouting_report",
-    "web_search",
-    "web_fetch",
-    "get_free_agents",
-    "get_fa_plan",
-    "get_prospect",
-    "get_roster_fit",
-    "get_expectations",
-)
+_TOOL_ORDER = TOOL_ORDER
 
 _REGISTRARS = (
     _core_tools,
@@ -205,6 +89,10 @@ def _param_doc(tool_name: str, field_name: str, field: Any) -> str | None:
 
 
 def _apply_tool_metadata(registry: dict[str, Any]) -> None:
+    for tool_name, tool in registry.items():
+        manifest_description = _TOOL_DESCRIPTIONS.get(tool_name)
+        if manifest_description:
+            tool.description = manifest_description
     for network_name in NETWORK_TOOL_SOURCES:
         network_tool = registry[network_name].model_copy(deep=True)
         registry[network_name] = network_tool
@@ -242,6 +130,9 @@ def catalogue() -> dict[str, Any]:
     pool: dict[str, Any] = {}
     for mod in _REGISTRARS:
         pool.update(mod.register())
+    unlisted = sorted(set(pool) - set(_TOOL_ORDER))
+    if unlisted:
+        raise ValueError(f"registered tools missing from tools/manifest.json: {unlisted}")
     registry = {name: pool[name] for name in _TOOL_ORDER}
     _apply_tool_metadata(registry)
     return registry
