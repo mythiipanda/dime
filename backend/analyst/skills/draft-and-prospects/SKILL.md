@@ -15,7 +15,7 @@ Use this playbook for big boards, prospect comps, draft-capital valuation, pick-
 | `get_draft_model` | The model's own prospect grade/tier for a class. | Tier-based reads ("is this a top-5 tier or a top-3 tier class"). |
 | `get_prospect` / `get_combine` | One prospect's profile or anthropometric combine numbers. | Wingspan-to-height, no-shoe height, lane agility vs position norms. |
 | `get_draft_capital` / `get_trade_value` | A team's pick inventory or the value of a pick package. | "What does pick 11 + 29 + a swap cost" questions. |
-| `get_draft_value_curve` / `silver_draft_value_curve` | Expected value by pick slot from committed data. | Weighting pick trades: value(pick_n) - value(pick_m) from the curve, not vibes. |
+| `silver_draft_value_curve` (via `sql_exec`) | Expected value by pick slot from committed data. | Weighting pick trades: value(pick_n) - value(pick_m) from the curve, not vibes. |
 | `silver_prospect_stats` | College/Intl counting lines (GP, PTS, REB, AST, TS_PCT, USG). | Stats-based prospect reads; thin coverage — verify a player exists before ranking him. |
 | `silver_hist_draft` | Historical draft outcomes (pick -> career). | Hit-rate-by-slot and comp-by-draft-position claims. |
 | `silver_combine` | Full combine measurements table (~72 cols: heights with/without shoes, wingspan, agility). | Positional measurement comps; note TEMP_PLAYER_ID vs PLAYER_ID joins. |

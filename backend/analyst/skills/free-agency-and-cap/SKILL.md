@@ -17,6 +17,14 @@ Use this playbook for free-agent fits, cap-room computations, contract value com
 | `silver_free_agents` | The FA pool for a `FA_YEAR`: type (unrestricted/restricted/ETO), prior salary, cap-hold estimate. | "Who is available this summer" and what each hold does to room. |
 | `silver_transactions` | Executed signings/trades/extensions with dates. | What actually happened, and the date context (July moratorium, trade deadline). |
 
+| Tool | Answers | Reach for it when |
+|---|---|---|
+| `get_free_agents` | The upcoming FA class by team or league-wide: type, prior salary, estimated cap holds, projected room and exceptions. | "Who is available this summer" — the assembled version of `silver_free_agents` + `silver_cap_room`. |
+| `get_fa_plan` | One team's FA class with deterministic keep-vs-renounce scenarios against projected room. | "What should X do with its own free agents" — the scenario table is the answer's backbone. |
+| `get_cap_scenario` | Post-move payroll vs cap/tax/aprons for named signings, incoming players, or removed contracts. | "Can they afford Y at $ZM" — the arithmetic trace answers it, not prose. |
+| `get_salary_history` | A player's year-by-year salary with cap/tax/apron context, team payroll history, or the league cap table. | Historical contract questions and market anchors for what a comp signed at. |
+| `get_trade_legality` | Full multi-team trade verdict: salary matching, apron aggregation, sign-and-trade, TPE/cash, Stepien picks. | Concrete multi-team or sign-and-trade proposals — `get_trade_check` covers the simple two-team case. |
+
 ## 1. Cap Room Is an Estimate, Not a Number
 
 - A team's usable room is `PROJECTED_ROOM` from `silver_cap_room` minus what the scenario consumes: cap holds (`FA_HOLDS_EST`), incomplete-roster charges, and any signing you add. Report the components, not just the headline room.
@@ -33,7 +41,7 @@ Use this playbook for free-agent fits, cap-room computations, contract value com
 
 1. Establish the pool: `silver_free_agents` for the `FA_YEAR` — filter by `FA_TYPE` (unrestricted vs restricted vs option-year) before ranking.
 2. Establish the budget: `silver_cap_room` for the cap season — room vs exceptions-only.
-3. Match need to profile: pull the player's production (`get_player_season`/`get_impact`/`get_raptor`/`get_rapm`) and role indicators (usage, on-ball share) — a "fit" claim needs both the money math and the basketball case.
+3. Match need to profile: pull the player's production (`get_player_ratings`/`get_impact_rank`/`get_raptor_history`/`get_rapm`) and role indicators (usage, on-ball share) — a "fit" claim needs both the money math and the basketball case.
 4. State the contract shape implied: max-tier (25/30/35% of cap by service), mid-level band, or minimum — and sanity-check `PRIOR_SALARY` + `CAP_HOLD_EST` as the market anchor.
 
 ## 4. Contract & Extension Comparisons
