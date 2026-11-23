@@ -127,6 +127,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   get_competitive_ratings: "Competitive ratings",
   get_comps: "Comparisons",
   get_contract_value: "Contract values",
+  get_salary_history: "Salary history",
   get_dataset: "Data engine",
   get_dataset_freshness: "Data freshness",
   get_debate_card: "Debate cards",
@@ -334,7 +335,7 @@ const AWARD_FAILURE_NOTES: Record<string, string> = {
   subject_absent: "That pick isn't on the ballot.",
 };
 
-const SALARY_TOOLS = ["get_cap_ledger", "get_trade_check", "get_trade_value"];
+const SALARY_TOOLS = ["get_cap_ledger", "get_trade_check", "get_trade_value", "get_salary_history"];
 
 const SALARY_FAILURE_NOTES: Record<string, string> = {
   salary_column_unmatched: "Salary data doesn't cover that season.",
