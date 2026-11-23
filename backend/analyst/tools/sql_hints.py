@@ -36,6 +36,45 @@ _MAX_HINT_COLUMNS = 40
 _MAX_COLUMN_MATCHES = 12
 _MAX_DECLARED_TABLES = 48
 
+_TABLE_CONSTANTS: dict[str, dict[str, Any]] = {
+    "silver_hist_shots": {
+        "season_type_id": (
+            "2=regular season, 4=playoffs, 5=play-in, 6=in-season tournament; "
+            "seasons before 2025-26 store NULL (regular-season games only)"
+        ),
+        "corner_3": "ABS(x_legacy)>=220 AND y_legacy<=92.5",
+        "above_the_break_3": "shot_value=3 AND NOT (ABS(x_legacy)>=220 AND y_legacy<=92.5)",
+        "rim": "shot_distance<=4",
+        "midrange": "shot_value=2 AND shot_distance>4",
+        "coords": "x_legacy,y_legacy are in tenths of feet",
+    },
+    "silver_shots": {
+        "SHOT_ZONE_BASIC": (
+            "'Left Corner 3','Right Corner 3','Above the Break 3','Mid-Range',"
+            "'Restricted Area','In The Paint (Non-RA)','Backcourt'"
+        ),
+        "corner_3": "SHOT_ZONE_BASIC in ('Left Corner 3','Right Corner 3')",
+        "rim": "SHOT_ZONE_BASIC='Restricted Area'",
+        "midrange": "SHOT_ZONE_BASIC='Mid-Range'",
+        "above_the_break_3": "SHOT_ZONE_BASIC='Above the Break 3'",
+    },
+    "silver_zone_splits": {
+        "ZONE": "'0-3ft','3-10ft','10-16ft','16ft-3P','3P'",
+    },
+    "silver_clutch": {
+        "GROUP_SET": "filter GROUP_SET='Players' for player rows; other group sets multiplex the table",
+    },
+}
+
+
+def _constants_for_tables(table_names: list[str]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for name in table_names:
+        consts = _TABLE_CONSTANTS.get(str(name))
+        if consts:
+            out[str(name)] = dict(consts)
+    return out
+
 
 def _warehouse_columns() -> dict[str, Any]:
     try:
@@ -110,6 +149,9 @@ def schema_hint_for_sql_failure(sql: str, res: dict[str, Any]) -> dict[str, Any]
         hint["referenced_tables"] = {
             name: _column_names(columns[name])[:_MAX_HINT_COLUMNS] for name in referenced
         }
+        constants = _constants_for_tables(referenced)
+        if constants:
+            hint["table_constants"] = constants
     missing_column = _first_capture(_MISSING_COLUMN_RES, error_text)
     if missing_column:
         matches = _column_matches(missing_column, columns)
@@ -147,4 +189,40 @@ def schema_hint_for_sql_failure(sql: str, res: dict[str, Any]) -> dict[str, Any]
         hint["syntax_error"] = entry
     if not hint:
         return None
+    return hint
+
+
+def _result_rows(res: dict[str, Any]) -> list[Any]:
+    rows = res.get("rows")
+    if isinstance(rows, list):
+        return rows
+    if isinstance(rows, dict):
+        return [rows] if rows else []
+    return []
+
+
+def schema_hint_for_sql_empty(sql: str, res: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(res, dict) or not res.get("ok"):
+        return None
+    if _result_rows(res):
+        return None
+    columns = _warehouse_columns()
+    if not columns:
+        return None
+    referenced = _referenced_tables(sql or "", columns)
+    if not referenced:
+        return None
+    hint: dict[str, Any] = {
+        "empty_result": (
+            "query ran but returned 0 rows; check filter values against the "
+            "column domains below (encodings, enum values, NULL semantics) "
+            "before assuming the data is absent"
+        ),
+        "referenced_tables": {
+            name: _column_names(columns[name])[:_MAX_HINT_COLUMNS] for name in referenced
+        },
+    }
+    constants = _constants_for_tables(referenced)
+    if constants:
+        hint["table_constants"] = constants
     return hint

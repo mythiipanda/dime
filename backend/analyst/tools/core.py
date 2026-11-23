@@ -10,7 +10,7 @@ from .common import (
     sanitize_for_wire,
 )
 from .errors import enrich_error
-from .sql_hints import schema_hint_for_sql_failure
+from .sql_hints import schema_hint_for_sql_empty, schema_hint_for_sql_failure
 
 
 def _normalize_sql_result(res: dict[str, Any]) -> dict[str, Any]:
@@ -187,6 +187,9 @@ def register() -> dict[str, Any]:
         hint = schema_hint_for_sql_failure(sql, res)
         if hint is not None:
             res["schema_hint"] = hint
+        empty_hint = schema_hint_for_sql_empty(sql, res)
+        if empty_hint is not None:
+            res["schema_hint"] = empty_hint
         return _normalize_sql_result(res)
 
     @tool("warehouse_schema", description=schema_description)
