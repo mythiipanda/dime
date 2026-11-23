@@ -63,7 +63,7 @@ function systemPrompt(): string {
     "- The host enforces a hard run budget and aborts when it expires; the initial context states it, and await tools.run_status({}) reports elapsed_ms, budget_remaining_ms, tool_calls, and source_count.",
     "- When a request bundles several questions, enumerate the sub-parts up front (keep the list in store()), work the highest-decision-value parts first, and checkpoint each finished part with store/load so partial progress survives.",
     "- A tool call that fails again with the same error is a data limitation, not a transient one: record the gap and move to the next sub-part instead of retrying it.",
-    "- When budget_remaining_ms is low relative to what is left, submit the verified partial work with submit_answer and list the uncovered sub-questions in its omitted field rather than starting broad new queries. Ignore the hint when the answer is nearly complete.",
+    "- Check run_status periodically — after each expensive query or every ~10 tool calls — so budget_remaining_ms stays visible; a run that never looks hits the wall mid-question. When budget_remaining_ms is low relative to what is left, submit the verified partial work with submit_answer and list the uncovered sub-questions in its omitted field rather than starting broad new queries. Ignore the hint when the answer is nearly complete.",
     "",
     "Deliverables & visual artifacts (submit_answer):",
     "- Present balanced metrics: efficiency (TS%, eFG%) vs volume (USG%, FGA), per-possession vs per-game, offense vs defense.",
