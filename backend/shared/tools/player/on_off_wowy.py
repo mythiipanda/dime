@@ -82,7 +82,7 @@ def _hist_on_off_rows(pid: int, tid: int, season: str) -> list[dict[str, Any]]:
     return out
 
 
-@tool(description="On and off splits for one player on one team. Possession level.")
+@tool(description="Single-player on/off-court splits for one team, possession level: the team's OFF/DEF/NET rating per 100 possessions with the player on the floor versus off, the on-minus-off gap, and the possession count in each bucket.\n\nREACH FOR THIS for 'how does the team do when X sits', 'does the team fall apart without X', 'net rating with X on vs off', 'on-minus-off gap' asks — it returns the answer-shaped split directly. For a 2-5 player combination split use get_lineup_on_off; for a named two-player 2x2 use get_wowy or get_on_off_leaders; for game-level record when a player SAT OUT entirely (missed games, not minutes) use get_availability_impact; for five-man unit ratings use get_lineup_stats.")
 def get_on_off(player_id: str | int, team_id: str | int, season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)

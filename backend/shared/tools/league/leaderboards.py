@@ -77,7 +77,7 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
     }
 
 
-@tool(description="League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).")
+@tool(description="League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.")
 def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
                        season: str | None = None, playoffs: bool = False) -> dict[str, Any]:
     pkg = _pkg()

@@ -354,7 +354,7 @@
     },
     "get_lineup_stats": {
       "name": "get_lineup_stats",
-      "description": "Per-unit five-man lineup ratings with possession floors for one team. Names, abbrevs, or ids. For all qualifying units sorted by minutes use get_lineups; for the league-wide board use get_lineup_leaders.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default. Warehouse-backed with live fallback.",
+      "description": "Per-unit five-man lineup ratings with possession floors for one team. Names, abbrevs, or ids. For all qualifying units sorted by minutes use get_lineups; for the league-wide board use get_lineup_leaders.\n\nUnits under min_possessions (default 100) are hidden; blowout-heavy\nunits are flagged. Ratings are per 100 possessions, warehouse-first.\nThe best lineup (highest NET_RATING among units meeting the floor) is\nreturned in the top-level best_net_unit field and flagged per-row as\nis_best_net_unit, so it is never the most-used unit by default.\nFor a player on-versus-off split (not unit ratings) use get_on_off or\nget_on_off_leaders. Warehouse-backed with live fallback.",
       "args_schema": {
         "description": "Five-man lineup ratings with sample floors. Names, abbrevs, or ids.",
         "properties": {
@@ -505,7 +505,7 @@
     },
     "get_on_off": {
       "name": "get_on_off",
-      "description": "On and off splits for one player on one team. Possession level. Warehouse-backed with live fallback.",
+      "description": "Single-player on/off-court splits for one team, possession level: the team's OFF/DEF/NET rating per 100 possessions with the player on the floor versus off, the on-minus-off gap, and the possession count in each bucket.\n\nREACH FOR THIS for 'how does the team do when X sits', 'does the team fall apart without X', 'net rating with X on vs off', 'on-minus-off gap' asks — it returns the answer-shaped split directly. For a 2-5 player combination split use get_lineup_on_off; for a named two-player 2x2 use get_wowy or get_on_off_leaders; for game-level record when a player SAT OUT entirely (missed games, not minutes) use get_availability_impact; for five-man unit ratings use get_lineup_stats. Warehouse-backed with live fallback.",
       "args_schema": {
         "description": "On and off splits for one player on one team. Possession level.",
         "properties": {
@@ -557,7 +557,7 @@
     },
     "get_availability_impact": {
       "name": "get_availability_impact",
-      "description": "Game-level availability impact: split a team's results into the games a player played versus the games they missed (game counts, record, win pct, average margin). Pass a player for the single-player split; add teammate to split that player's own per-game scoring/FGA/plus-minus by the teammate's presence; or leave player empty for a league-wide ranking of high-minute one-team players by win-rate drop when sitting (min_minutes/min_missed qualifiers). Warehouse coverage: 2015-16 onward, regular season.",
+      "description": "Game-level availability impact: split a team's results into the games a player played versus the games they missed (game counts, record, win pct, average margin). Pass a player for the single-player split; add teammate to split that player's own per-game scoring/FGA/plus-minus by the teammate's presence; or leave player empty for a league-wide ranking of high-minute one-team players by win-rate drop when sitting (min_minutes/min_missed qualifiers). Warehouse coverage: 2015-16 onward, regular season. Possession-level net rating with the player on vs off the floor is a different question — use get_on_off (one player) or get_on_off_leaders (boards and pairs).",
       "args_schema": {
         "description": "Game-level availability splits: a team's record, win pct, and average margin in games a player played vs missed; optional teammate-presence per-game scoring split; or a league-wide win-drop ranking when player is blank. Warehouse 2015-16+.",
         "properties": {
@@ -1380,7 +1380,7 @@
     },
     "get_lineup_leaders": {
       "name": "get_lineup_leaders",
-      "description": "League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).",
+      "description": "League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.",
       "args_schema": {
         "description": "League-wide 5-man lineup net-rating leaderboard with minutes qualification floor.",
         "properties": {
@@ -4276,7 +4276,7 @@
     },
     "get_lineups": {
       "name": "get_lineups",
-      "description": "Five-man lineup stats for one team: all qualifying units sorted by minutes. For per-unit ratings with sample floors use get_lineup_stats; for the league-wide board use get_lineup_leaders. Warehouse-backed with live fallback.",
+      "description": "Five-man lineup stats for one team: all qualifying units sorted by minutes. For per-unit ratings with sample floors use get_lineup_stats; for the league-wide board use get_lineup_leaders; for a player on-versus-off split (not units) use get_on_off. Warehouse-backed with live fallback.",
       "args_schema": {
         "properties": {
           "team_id": {
