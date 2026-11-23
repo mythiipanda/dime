@@ -111,6 +111,13 @@ def listener_pid(port: int) -> str | None:
     return None
 
 
+def free_port(start: int, span: int = 50) -> int | None:
+    for candidate in range(start, start + span):
+        if listener_pid(candidate) is None:
+            return candidate
+    return None
+
+
 def log_path_for(args: argparse.Namespace) -> Path:
     if args.host_log:
         return Path(args.host_log)
@@ -354,8 +361,13 @@ def main(argv: list[str] | None = None) -> int:
 
     held_by = listener_pid(args.port)
     if held_by is not None:
-        print(f"port {args.port} already listening, held by pid {held_by}", file=sys.stderr)
-        return 1
+        picked = free_port(args.port + 1)
+        if picked is None:
+            print(f"port {args.port} already listening, held by pid {held_by}; no free port in the next 50", file=sys.stderr)
+            return 1
+        print(f"port {args.port} already listening, held by pid {held_by}; using {picked} instead", file=sys.stderr)
+        args.port = picked
+        env["PORT"] = str(args.port)
 
     warehouse_errors, warehouse_tables = verify_runtime_warehouse()
     if warehouse_errors:
