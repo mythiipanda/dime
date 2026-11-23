@@ -29,7 +29,7 @@ export default function ArtifactChart({ series, height = 220, footnote, unit, xL
   ]));
   const numbered = variant === "bar" && count > 8;
   const rows = variant === "bar"
-    ? data.map((row, i) => (numbered ? { ...row, label: `${i + 1}. ${row.label}` } : row)).reverse()
+    ? data.map((row, i) => (numbered ? { ...row, label: `${i + 1}. ${row.label}` } : row))
     : data;
   const barHeight = Math.max(height, count * 34 + 48);
   const chartHeight = variant === "bar" ? barHeight : height;
