@@ -197,12 +197,16 @@ def register() -> dict[str, Any]:
         return res
 
     @tool("get_lineup_leaders", description=_orig_get_lineup_leaders.description)
-    def get_lineup_leaders(min_minutes: int = 100, limit: int = 10, season: str | None = None, playoffs: bool = False) -> dict:
-        args = {"min_minutes": min_minutes, "limit": limit, "season": season}
+    def get_lineup_leaders(min_minutes: int = 100, limit: int = 10, season: str | None = None, playoffs: bool = False,
+                           metric: str = "net_rating", order: str = "best", team: str | int | None = None) -> dict:
+        args = {"min_minutes": min_minutes, "limit": limit, "season": season,
+                "metric": metric, "order": order}
         if playoffs:
             args['playoffs'] = playoffs
+        if team not in (None, ""):
+            args['team'] = team
         res = call_sync(_orig_get_lineup_leaders, "get_lineup_leaders", args)
-        return finish_dict_list(res, "get_lineup_leaders", ["team_abbreviation", "group_name", "gp", "min", "plus_minus", "net48"])
+        return finish_dict_list(res, "get_lineup_leaders", ["team_abbreviation", "group_name", "gp", "min", "net_rating", "off_rating", "def_rating", "pace"])
 
     @tool("get_rest", description=_orig_get_rest.description)
     def get_rest(team_abbrev: str = "", season: str | None = None) -> dict:

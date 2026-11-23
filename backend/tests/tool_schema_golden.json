@@ -1380,9 +1380,9 @@
     },
     "get_lineup_leaders": {
       "name": "get_lineup_leaders",
-      "description": "League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.",
+      "description": "League-wide five-man lineup leaderboard - the ranked board for any 'best/worst/fastest/highest-scoring/most-used five-man lineup' ask. One call returns the whole cohort sorted by `metric`: 'net_rating' (default), 'off_rating', 'def_rating', 'pace', 'possessions', 'minutes', 'points', 'points_per_game', 'plus_minus'. `order` flips it: 'worst' (or 'asc'/'desc') inverts the natural best direction. `team` (optional abbrev, id, or name) filters to one franchise; `playoffs` switches to playoff lineups. A minimum-minutes floor (default 100) is always applied and stated: a +3 in 4 minutes is a junk slice and never tops the board (F50). Ratings are per-100 possessions. For a player on-versus-off split (not units) use get_on_off or get_on_off_leaders; for one team's per-unit ratings use get_lineup_stats; for one team's full unit list by minutes use get_lineups.",
       "args_schema": {
-        "description": "League-wide 5-man lineup net-rating leaderboard with minutes qualification floor.",
+        "description": "League-wide five-man lineup leaderboard ranked by metric (net/off/def rating, pace, minutes, points) with a minutes qualification floor.",
         "properties": {
           "min_minutes": {
             "default": 100,
@@ -1414,6 +1414,34 @@
             "description": "true for playoff games only. Default: False.",
             "title": "Playoffs",
             "type": "boolean"
+          },
+          "metric": {
+            "default": "net_rating",
+            "description": "Leaderboard stat: 'net_rating' (default), 'off_rating', 'def_rating', 'pace', 'possessions', 'minutes', 'points', 'points_per_game', or 'plus_minus'. Default: net_rating.",
+            "title": "Metric",
+            "type": "string"
+          },
+          "order": {
+            "default": "best",
+            "description": "'best' (natural direction for the metric), 'worst', 'asc', or 'desc'. Default: best.",
+            "title": "Order",
+            "type": "string"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional team filter: 3-letter abbreviation, id, or full name. Default: None.",
+            "title": "Team"
           }
         },
         "title": "get_lineup_leaders",

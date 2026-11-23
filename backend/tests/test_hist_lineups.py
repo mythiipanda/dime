@@ -119,8 +119,33 @@ def test_hist_lineup_leaders_qualified_base_totals():
     res = get_lineup_leaders.invoke({'season': SEASON, 'min_minutes': 100, 'limit': 1})
     assert res['ok']
     assert res['rows'][0]['TEAM_ABBREVIATION'] == 'GSW'
-    assert res['rows'][0]['MIN'] == 169.9
-    assert res['rows'][0]['NET48'] == 21.2
+    assert res['rows'][0]['MIN'] == 331.0
+    assert res['rows'][0]['NET_RATING'] == 21.9
+
+def test_lineup_leaders_metric_and_worst_order():
+    from shared.tools.league import get_lineup_leaders
+    res = get_lineup_leaders.invoke({'season': SEASON, 'min_minutes': 100,
+                                     'metric': 'defensive_rating', 'limit': 3})
+    assert res['ok']
+    defs = [r['DEF_RATING'] for r in res['rows']]
+    assert defs == sorted(defs)
+    res = get_lineup_leaders.invoke({'season': SEASON, 'min_minutes': 100,
+                                     'metric': 'net_rating', 'order': 'worst',
+                                     'limit': 3})
+    assert res['ok']
+    nets = [r['NET_RATING'] for r in res['rows']]
+    assert nets == sorted(nets)
+    assert nets[0] < 0
+
+def test_lineup_leaders_team_filter_and_bad_metric():
+    from shared.tools.league import get_lineup_leaders
+    res = get_lineup_leaders.invoke({'season': SEASON, 'min_minutes': 100,
+                                     'metric': 'pace', 'team': 'BOS', 'limit': 5})
+    assert res['ok']
+    assert all(r['TEAM_ABBREVIATION'] == 'BOS' for r in res['rows'])
+    res = get_lineup_leaders.invoke({'season': SEASON, 'metric': 'bogus'})
+    assert res['ok'] is False
+    assert 'unknown metric' in res['error']
 
 
 @pytest.mark.parametrize('season_type,measure_type,per_mode', [

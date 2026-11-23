@@ -280,7 +280,7 @@ export const TOOL_PROMPT_GUIDELINES: Partial<Record<string, string[]>> = {
         "Use for a league-wide payroll, tax, and apron-room comparison across all 30 teams, ranked by payroll. Do not use for one team's player-level ledger rows; figures are season-specific team totals, not per-game rates.",
     ],
     "get_lineup_leaders": [
-        "Use for the league-wide five-man net-rating leaderboard with the stated minutes floor. Do not use tiny-sample lineups or mixed qualification floors; values are per-48-minute net ratings.",
+        "Use for any league-wide five-man lineup ranking: best or worst net rating, fastest pace, best defense, most-used, highest scoring. Set metric to the asked stat, order to worst when asked for the bottom, team to scope to one franchise, playoffs for playoff lineups. Do not fan out get_lineup_stats over 30 teams - this returns the whole cohort in one call.",
     ],
     "get_contract_value": [
         "Use for production-vs-salary residuals or modeled contract value by player, team, or season. Do not treat residual sign alone as trade value or cap legality; rows are player-season estimates with declared salary units.",

@@ -77,72 +77,196 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
     }
 
 
-@tool(description="League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.")
+_LINEUP_LEADER_METRICS = {
+    "net_rating": {"expr": "net_rating", "measure": "advanced",
+                   "dir": "DESC",
+                   "label": "net rating (per 100 possessions)"},
+    "off_rating": {"expr": "off_rating", "measure": "advanced",
+                   "dir": "DESC",
+                   "label": "offensive rating (per 100 possessions)"},
+    "def_rating": {"expr": "def_rating", "measure": "advanced",
+                   "dir": "ASC",
+                   "label": "defensive rating (per 100 possessions, "
+                            "lower is better)"},
+    "pace": {"expr": "pace", "measure": "advanced", "dir": "DESC",
+             "label": "pace (possessions per 48 minutes)"},
+    "possessions": {"expr": "poss", "measure": "advanced", "dir": "DESC",
+                    "label": "total possessions"},
+    "minutes": {"expr": "min", "measure": "base", "dir": "DESC",
+                "label": "total minutes"},
+    "points": {"expr": "pts", "measure": "base", "dir": "DESC",
+               "label": "total points"},
+    "points_per_game": {"expr": "pts / NULLIF(gp, 0)", "measure": "base",
+                        "dir": "DESC", "label": "points per game"},
+    "plus_minus": {"expr": "plus_minus", "measure": "base", "dir": "DESC",
+                   "label": "raw plus/minus"},
+}
+
+_LINEUP_LEADER_ALIASES = {
+    "net": "net_rating", "netrating": "net_rating",
+    "net_rtg": "net_rating", "rtg": "net_rating",
+    "off": "off_rating", "offense": "off_rating",
+    "offensive_rating": "off_rating", "off_rtg": "off_rating",
+    "def": "def_rating", "defense": "def_rating",
+    "defensive_rating": "def_rating", "def_rtg": "def_rating",
+    "min": "minutes", "mins": "minutes",
+    "pts": "points", "ppg": "points_per_game",
+    "pts_per_game": "points_per_game",
+    "plusminus": "plus_minus", "pm": "plus_minus",
+    "poss": "possessions",
+}
+
+
+@tool(description="League-wide five-man lineup leaderboard - the ranked board for any "
+                  "'best/worst/fastest/highest-scoring/most-used five-man lineup' ask. "
+                  "One call returns the whole cohort sorted by `metric`: 'net_rating' "
+                  "(default), 'off_rating', 'def_rating', 'pace', 'possessions', "
+                  "'minutes', 'points', 'points_per_game', 'plus_minus'. `order` flips "
+                  "it: 'worst' (or 'asc'/'desc') inverts the natural best direction. "
+                  "`team` (optional abbrev, id, or name) filters to one franchise; "
+                  "`playoffs` switches to playoff lineups. A minimum-minutes floor "
+                  "(default 100) is always applied and stated: a +3 in 4 minutes is a "
+                  "junk slice and never tops the board (F50). Ratings are per-100 "
+                  "possessions. For a player on-versus-off split (not units) use "
+                  "get_on_off or get_on_off_leaders; for one team's per-unit ratings "
+                  "use get_lineup_stats; for one team's full unit list by minutes "
+                  "use get_lineups.")
 def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
-                       season: str | None = None, playoffs: bool = False) -> dict[str, Any]:
+                       season: str | None = None, playoffs: bool = False,
+                       metric: str = "net_rating", order: str = "best",
+                       team: str | int | None = None) -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
     min_minutes = max(25, min(float(min_minutes), 5000))
 
-    sql = """
-        SELECT TEAM_ABBREVIATION, GROUP_NAME, GP,
-               ROUND(MIN, 1) AS MIN, PLUS_MINUS,
-               ROUND(PLUS_MINUS / NULLIF(MIN, 0) * 48, 1) AS NET48
-        FROM silver_lineups
-        WHERE _season = ? AND MIN >= ?
-        ORDER BY PLUS_MINUS / NULLIF(MIN, 0) DESC NULLS LAST
+    key = str(metric or "net_rating").strip().lower().replace("-", "_").replace(" ", "_")
+    key = _LINEUP_LEADER_ALIASES.get(key, key)
+    spec = _LINEUP_LEADER_METRICS.get(key)
+    if spec is None:
+        return {"tool": "get_lineup_leaders", "ok": False,
+                "error": (f"unknown metric {metric!r}: pick one of "
+                          f"{sorted(_LINEUP_LEADER_METRICS)}")}
+
+    o = str(order or "best").strip().lower()
+    if o in {"asc", "ascending", "lowest", "bottom"}:
+        direction = "ASC"
+    elif o in {"desc", "descending", "highest", "top"}:
+        direction = "DESC"
+    elif o == "worst":
+        direction = "ASC" if spec["dir"] == "DESC" else "DESC"
+    elif o in {"best", ""}:
+        direction = spec["dir"]
+    else:
+        return {"tool": "get_lineup_leaders", "ok": False,
+                "error": ("unknown order " + repr(order) +
+                          ": use 'best', 'worst', 'asc', or 'desc'")}
+
+    team_abbr = ""
+    if team not in (None, ""):
+        from .._core import _TEAM_ID_ABBR, coerce_team_id, team_error_message
+        try:
+            team_abbr = _TEAM_ID_ABBR.get(coerce_team_id(team), "")
+        except (ValueError, TypeError):
+            return {"tool": "get_lineup_leaders", "ok": False,
+                    "error": team_error_message(team)}
+        if not team_abbr:
+            return {"tool": "get_lineup_leaders", "ok": False,
+                    "error": team_error_message(team)}
+
+    measure = spec["measure"]
+    if measure == "advanced":
+        cols = ("team_abbreviation AS TEAM_ABBREVIATION, "
+                "group_name AS GROUP_NAME, gp AS GP, "
+                "ROUND(min, 1) AS MIN, poss AS POSS, "
+                "off_rating AS OFF_RATING, def_rating AS DEF_RATING, "
+                "net_rating AS NET_RATING, pace AS PACE")
+        live_cols = ("TEAM_ABBREVIATION, GROUP_NAME, GP, "
+                     "ROUND(MIN, 1) AS MIN, POSS, "
+                     "OFF_RATING, DEF_RATING, NET_RATING, PACE")
+    else:
+        cols = ("team_abbreviation AS TEAM_ABBREVIATION, "
+                "group_name AS GROUP_NAME, gp AS GP, "
+                "ROUND(min, 1) AS MIN, pts AS PTS, "
+                "ROUND(pts / NULLIF(gp, 0), 1) AS PTS_PG, "
+                "plus_minus AS PLUS_MINUS")
+        live_cols = ("TEAM_ABBREVIATION, GROUP_NAME, GP, "
+                     "ROUND(MIN, 1) AS MIN, PTS, "
+                     "ROUND(PTS / NULLIF(GP, 0), 1) AS PTS_PG, "
+                     "PLUS_MINUS")
+
+    hist_sql = f"""
+        SELECT {cols}
+        FROM silver_hist_lineups
+        WHERE _season = ? AND season_type = ?
+          AND measure_type = ? AND per_mode = 'totals'
+          AND min >= ?
+        ORDER BY {spec['expr']} {direction} NULLS LAST
         LIMIT ?
     """
+    hist_args = [season, 'playoffs' if playoffs else 'regular-season',
+                 measure, float(min_minutes), int(limit) * 2]
+    team_clause = ""
+    if team_abbr:
+        team_clause = " AND team_abbreviation = ?"
+        hist_args.insert(-1, team_abbr)
+        hist_sql = hist_sql.replace("AND min >= ?",
+                                    f"AND min >= ?{team_clause}")
+
+    raw: list[dict[str, Any]] = []
+    hist = False
     try:
         con = pkg.store.connect(read_only=True)
         try:
-            raw = con.execute(
-                sql, [season, float(min_minutes), int(limit) * 2]
-            ).fetchdf().to_dict("records")
-            hist = False
-            if not raw or playoffs:
-                raw = con.execute(
-                    """
-                    SELECT team_abbreviation AS TEAM_ABBREVIATION,
-                           group_name AS GROUP_NAME, gp AS GP,
-                           ROUND(min, 1) AS MIN, plus_minus AS PLUS_MINUS,
-                           ROUND(plus_minus / NULLIF(min, 0) * 48, 1)
-                               AS NET48
-                    FROM silver_hist_lineups
-                    WHERE _season = ? AND min >= ?
-                      AND season_type = ?
-                      AND measure_type = 'base' AND per_mode = 'totals'
-                    ORDER BY plus_minus / NULLIF(min, 0) DESC NULLS LAST
+            if not playoffs:
+                live_measure = (f"MEASURE = '{measure}'" if measure == "advanced"
+                                else "COALESCE(MEASURE, 'base') = 'base'")
+                live_sql = f"""
+                    SELECT {live_cols}
+                    FROM silver_lineups
+                    WHERE _season = ? AND {live_measure} AND MIN >= ?{team_clause}
+                    ORDER BY {spec['expr'].upper()} {direction} NULLS LAST
                     LIMIT ?
-                    """,
-                    [season, float(min_minutes), 'playoffs' if playoffs else 'regular-season', int(limit) * 2],
-                ).fetchdf().to_dict("records")
+                """
+                live_args = [season, float(min_minutes)]
+                if team_abbr:
+                    live_args.append(team_abbr)
+                live_args.append(int(limit) * 2)
+                raw = con.execute(live_sql, live_args).fetchdf().to_dict("records")
+            if not raw:
+                raw = con.execute(hist_sql, hist_args).fetchdf().to_dict("records")
                 hist = bool(raw)
         finally:
             con.close()
     except Exception as exc:
         return {"tool": "get_lineup_leaders", "ok": False,
                 "error": f"warehouse read failed: {str(exc)[:160]}"}
+
     seen = set()
     rows = []
     for r in raw:
-        key = (r.get("TEAM_ABBREVIATION"), r.get("GROUP_NAME"))
-        if key in seen:
+        k = (r.get("TEAM_ABBREVIATION"), r.get("GROUP_NAME"))
+        if k in seen:
             continue
-        seen.add(key)
+        seen.add(k)
         rows.append(r)
         if len(rows) >= int(limit):
             break
     meta = {
         "season": season,
-        "formula": "NET48 = PLUS_MINUS per 48 minutes",
+        "season_type": 'playoffs' if playoffs else 'regular-season',
+        "metric": key,
+        "metric_label": spec["label"],
+        "order": direction,
         "floor": f"MIN >= {int(min_minutes)} (stated volume floor; "
                  "small-sample units are excluded, F50)"}
+    if team_abbr:
+        meta["team"] = team_abbr
     if hist:
         meta["coverage"] = "historical_lineups"
     if not rows:
         return {"tool": "get_lineup_leaders", "ok": False,
-                "error": (f"No lineup data on file for {season} at "
+                "error": (f"No lineup data on file for {season} "
+                          f"({'playoffs' if playoffs else 'regular season'}) at "
                           f"that minutes floor; lineups cover 2009-10 "
                           f"through the current season. Try a lower "
                           f"minutes floor for short seasons.")}
