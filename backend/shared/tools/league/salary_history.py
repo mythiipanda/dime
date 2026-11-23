@@ -47,7 +47,7 @@ def _cap_fields(r: dict) -> dict:
     return out
 
 
-@tool(description='Historical player salaries (1984-85 through 2020-21) with league salary-cap, luxury-tax and apron context. One of: a player name (career salary by season), a team abbreviation plus a season (payroll vs cap, ranked in the league), or a season alone (cap figures plus the top individual salaries). For current contracts and cap sheets use get_cap_ledger or get_cap_table; for contract efficiency use get_contract_value or get_value_contracts.')
+@tool(description='Historical player salaries (1984-85 through 2020-21) with league salary-cap, luxury-tax and apron context. One of: a player name (career salary by season), a team abbreviation plus a season (payroll vs cap, ranked in the league), or a season alone (cap figures plus the top individual salaries). For current contracts and cap sheets use get_cap_ledger or get_cap_table; for contract efficiency use get_contract_value or get_value_contracts. REACH FOR THIS for any salary-before-2022 or cap-history ask: "what did LeBron earn in 2016?", "how did GSW payroll rank in 2019?", "what was the 2017 cap?"')
 def get_salary_history(
     player: str = "", team: str = "", season: str = "", top: int = 10,
 ) -> dict[str, Any]:

@@ -1206,7 +1206,7 @@
     },
     "get_cap_scenario": {
       "name": "get_cap_scenario",
-      "description": "Cap-scenario arithmetic for one team. \"signings\" takes comma-separated amounts or name=amount pairs like \"Player=12M, 3000000\". \"in_players\" adds real contracts by name (league-wide lookup), \"out_players\" removes roster salaries. Returns the arithmetic trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA restrictions that trigger, and the matching verdict when a trade portion is present.",
+      "description": "Cap-scenario arithmetic for one team. \"signings\" takes comma-separated amounts or name=amount pairs like \"Player=12M, 3000000\". \"in_players\" adds real contracts by name (league-wide lookup), \"out_players\" removes roster salaries. Returns the arithmetic trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA restrictions that trigger, and the matching verdict when a trade portion is present. REACH FOR THIS for any \"can X afford/sign Y\" or \"what if they waive/trade for Z\" ask: \"can the Warriors sign Player for $12M?\", \"what happens to Phoenix payroll if they waive Beal?\", \"does taking back $30M push DEN over the second apron?\" It computes post-move apron status and CBA restrictions directly - do not rebuild that arithmetic from get_cap_ledger rows.",
       "args_schema": {
         "description": "Cap-scenario arithmetic: post-move payroll vs cap/tax/aprons plus the 2023 CBA restrictions that trigger, for hypothetical signings and player moves on one team.",
         "properties": {
@@ -1607,7 +1607,7 @@
     },
     "get_salary_history": {
       "name": "get_salary_history",
-      "description": "Historical player salaries (1984-85 through 2020-21) with league salary-cap, luxury-tax and apron context. One of: a player name (career salary by season), a team abbreviation plus a season (payroll vs cap, ranked in the league), or a season alone (cap figures plus the top individual salaries). For current contracts and cap sheets use get_cap_ledger or get_cap_table; for contract efficiency use get_contract_value or get_value_contracts.",
+      "description": "Historical player salaries (1984-85 through 2020-21) with league salary-cap, luxury-tax and apron context. One of: a player name (career salary by season), a team abbreviation plus a season (payroll vs cap, ranked in the league), or a season alone (cap figures plus the top individual salaries). For current contracts and cap sheets use get_cap_ledger or get_cap_table; for contract efficiency use get_contract_value or get_value_contracts. REACH FOR THIS for any salary-before-2022 or cap-history ask: \"what did LeBron earn in 2016?\", \"how did GSW payroll rank in 2019?\", \"what was the 2017 cap?\"",
       "args_schema": {
         "description": "Historical player salaries 1984-85 through 2020-21 with cap/tax/apron context: a player's salary by season, a team's payroll vs cap for a season, or a season's league salary landscape.",
         "properties": {
@@ -1690,7 +1690,7 @@
     },
     "get_trade_legality": {
       "name": "get_trade_legality",
-      "description": "Trade legality verdict across 2+ teams. \"legs\" is a JSON array:\n[{\"from\":\"BOS\",\"to\":\"DEN\",\"players\":\"Jayson Tatum, Sam Hauser\",\"picks\":[{\"year\":2028,\"round\":1,\"protection\":\"top-4\"},{\"year\":2030,\"round\":1,\"swap\":true}]}].\nOptional \"sign_and_trade\" = {\"player\":\"...\",\"new_salary\":0,\"years\":3} (3-year minimum, BYC handled), \"cash\" = [{\"from\",\"to\",\"amount\"}], \"tpe\" = [{\"team\",\"amount\"}]. Checks 2023 CBA salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, the frozen second-apron pick, and Stepien consecutive-first rules.",
+      "description": "Trade legality verdict across 2+ teams. \"legs\" is a JSON array:\n[{\"from\":\"BOS\",\"to\":\"DEN\",\"players\":\"Jayson Tatum, Sam Hauser\",\"picks\":[{\"year\":2028,\"round\":1,\"protection\":\"top-4\"},{\"year\":2030,\"round\":1,\"swap\":true}]}].\nOptional \"sign_and_trade\" = {\"player\":\"...\",\"new_salary\":0,\"years\":3} (3-year minimum, BYC handled), \"cash\" = [{\"from\",\"to\",\"amount\"}], \"tpe\" = [{\"team\",\"amount\"}]. Checks 2023 CBA salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, the frozen second-apron pick, and Stepien consecutive-first rules. REACH FOR THIS for any trade-legality ask beyond a trivial two-team player swap: sign-and-trade, multi-team, picks/Stepien, apron aggregation, TPE or cash involved. For a simple two-team salary match get_trade_check is enough.",
       "args_schema": {
         "description": "Full CBA trade legality verdict for a proposed multi-team deal: salary matching tiers, apron aggregation bans, post-trade hard caps, TPE/cash bans, sign-and-trade minimums, and Stepien pick rules.",
         "properties": {
@@ -4463,7 +4463,7 @@
     },
     "get_free_agents": {
       "name": "get_free_agents",
-      "description": "Free agency and cap planning: the upcoming free agent class by team or league-wide (UFA, player/team options, two-way), estimated cap holds, and each team's projected cap room and exceptions for the next cap season. Warehouse only; refresh with seed_free_agents.py. Hold and cap figures are CBA-formula estimates, marked ESTIMATED.",
+      "description": "Free agency and cap planning: the upcoming free agent class by team or league-wide (UFA, player/team options, two-way), estimated cap holds, and each team's projected cap room and exceptions for the next cap season. Warehouse only; refresh with seed_free_agents.py. Hold and cap figures are CBA-formula estimates, marked ESTIMATED. REACH FOR THIS for any 'who is a free agent' or 'who has cap space' ask: 'top 2027 free agents', 'which teams can offer a max slot?', 'who are the Nets' free agents?' It returns the FA list plus each team's projected room/tax/apron lines in one call - do not assemble this from get_cap_ledger, which only shows one team's current committed salary. For one team's keep-vs-renounce decision tree use get_fa_plan; for hypothetical signing amounts use get_cap_scenario.",
       "args_schema": {
         "properties": {
           "team": {
@@ -4485,7 +4485,7 @@
     },
     "get_fa_plan": {
       "name": "get_fa_plan",
-      "description": "Free-agent / extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table - keep all holds vs renounce all vs per-player renounce/keep-only - against the team's projected cap room and exceptions. Holds are CBA-formula estimates (150% of prior salary), marked ESTIMATED. Warehouse only; refresh with seed_free_agents.py.",
+      "description": "Free-agent / extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table - keep all holds vs renounce all vs per-player renounce/keep-only - against the team's projected cap room and exceptions. Holds are CBA-formula estimates (150% of prior salary), marked ESTIMATED. Warehouse only; refresh with seed_free_agents.py. REACH FOR THIS for any forward-looking free-agency or cap-space decision ask: 'can the Lakers keep Reaves and still sign a wing?', 'what is Boston's cap room if they renounce X?', 'walk me the Knicks' 2027 offseason.' It returns the answer-shaped scenario table directly, so do not rebuild hold/room arithmetic from get_cap_ledger or get_cap_table - those show current committed salary only and cannot answer keep-vs-renounce questions. Pair with get_free_agents for the league-wide class and get_cap_scenario for explicit hypothetical signing amounts.",
       "args_schema": {
         "description": "Free-agent and extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table (keep all holds / renounce all / per-player renounce or keep-only) against projected cap room and exceptions.",
         "properties": {

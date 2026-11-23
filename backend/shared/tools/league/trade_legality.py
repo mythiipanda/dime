@@ -152,7 +152,11 @@ def _salary_season_start(season: str) -> int | None:
     '(3-year minimum, BYC handled), "cash" = [{"from","to","amount"}], '
     '"tpe" = [{"team","amount"}]. Checks 2023 CBA salary matching tiers, '
     'apron aggregation bans, post-trade hard caps, TPE/cash bans, the '
-    'frozen second-apron pick, and Stepien consecutive-first rules.')
+    'frozen second-apron pick, and Stepien consecutive-first rules. '
+    'REACH FOR THIS for any trade-legality ask beyond a trivial two-team '
+    'player swap: sign-and-trade, multi-team, picks/Stepien, apron '
+    'aggregation, TPE or cash involved. For a simple two-team salary '
+    'match get_trade_check is enough.')
 def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                        cash: str = "", tpe: str = "",
                        season: str | None = None) -> dict[str, Any]:

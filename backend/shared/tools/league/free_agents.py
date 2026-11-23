@@ -25,7 +25,14 @@ def _rows(con, sql: str, params: list, cols: list[str]) -> list[dict]:
     "or league-wide (UFA, player/team options, two-way), estimated cap "
     "holds, and each team's projected cap room and exceptions for the "
     "next cap season. Warehouse only; refresh with seed_free_agents.py. "
-    "Hold and cap figures are CBA-formula estimates, marked ESTIMATED."))
+    "Hold and cap figures are CBA-formula estimates, marked ESTIMATED. "
+    "REACH FOR THIS for any 'who is a free agent' or 'who has cap space' "
+    "ask: 'top 2027 free agents', 'which teams can offer a max slot?', "
+    "'who are the Nets' free agents?' It returns the FA list plus each "
+    "team's projected room/tax/apron lines in one call - do not assemble "
+    "this from get_cap_ledger, which only shows one team's current "
+    "committed salary. For one team's keep-vs-renounce decision tree use "
+    "get_fa_plan; for hypothetical signing amounts use get_cap_scenario."))
 def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
     _pkg()
     raw_team = str(team or "").strip()
