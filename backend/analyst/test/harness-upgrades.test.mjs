@@ -11,7 +11,6 @@ import {
   canonicalArgsKey,
   createPiExecution,
   createProviderRetryStormGuard,
-  retryBudgetSteerText,
   flagAcknowledgedByOmissions,
   listWorkspaceArtifacts,
   auditGapFlagStrings,
@@ -654,16 +653,6 @@ test("provider retry storm guard fires the retry-time budget once on cumulative 
   guard({ type: "auto_retry_start", attempt: 7, maxAttempts: 6, delayMs: 5000, errorMessage: "429" });
   assert.equal(burned, 30_000);
   assert.equal(stoppedWith, null);
-});
-
-test("retryBudgetSteerText steers to a data call on evidence-free runs and to submit otherwise", () => {
-  const evidenceFree = retryBudgetSteerText(95_000, true);
-  assert.match(evidenceFree, /~95s/);
-  assert.match(evidenceFree, /run locally and do not depend on the lane/);
-  assert.match(evidenceFree, /data tool NOW/);
-  const withEvidence = retryBudgetSteerText(95_000, false);
-  assert.match(withEvidence, /submit_answer now with the verified partial work/);
-  assert.doesNotMatch(withEvidence, /run locally/);
 });
 
 test("wrapBridgeTools terminates the run on the 4th blocked repeat of a failing call", async () => {
