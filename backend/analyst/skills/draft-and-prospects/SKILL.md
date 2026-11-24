@@ -15,7 +15,7 @@ Use this playbook for big boards, prospect comps, draft-capital valuation, pick-
 | `get_draft_model` | The model's own prospect grade/tier for a class. | Tier-based reads ("is this a top-5 tier or a top-3 tier class"). |
 | `get_prospect` / `get_combine` | One prospect's profile or anthropometric combine numbers. | Wingspan-to-height, no-shoe height, lane agility vs position norms. |
 | `get_draft_capital` / `get_trade_value` | A team's pick inventory or the value of a pick package. | "What does pick 11 + 29 + a swap cost" questions. |
-| `silver_draft_value_curve` (via `sql_exec`) | Expected value by pick slot from committed data. | Weighting pick trades: value(pick_n) - value(pick_m) from the curve, not vibes. |
+| `silver_draft_value_curve` (via `sql_exec`) | Expected value by pick slot from committed data: `SLOT`, `VALUE_INDEX` (plus `MEDIAN_CAREER_WAR`, `HIT_RATE`). | Weighting pick trades: value(pick_n) - value(pick_m) from the curve, not vibes. |
 | `silver_prospect_stats` | College/Intl counting lines (GP, PTS, REB, AST, TS_PCT, USG). | Stats-based prospect reads; thin coverage — verify a player exists before ranking him. |
 | `silver_hist_draft` | Historical draft outcomes (pick -> career). | Hit-rate-by-slot and comp-by-draft-position claims. |
 | `silver_combine` | Full combine measurements table (~72 cols: heights with/without shoes, wingspan, agility). | Positional measurement comps; note TEMP_PLAYER_ID vs PLAYER_ID joins. |
@@ -27,6 +27,7 @@ Use this playbook for big boards, prospect comps, draft-capital valuation, pick-
 - When the task gives weights ("rank by 60% talent, 40% fit"), implement them literally — order by the weighted score and show both component ranks, never blend silently.
 - Tier beats ordinal: consecutive picks (4 vs 6) inside one tier are closer than a tier boundary (8 vs 10). Where the model/board exposes tiers, report the tier cut before the raw order.
 - Class depth is part of every pick answer: "pick 9 in a shallow class" and "pick 9 in 2021" are different assets — compare against the slot's expected value from `silver_draft_value_curve` or `silver_hist_draft` hit rates.
+- Value-curve arithmetic is one query, not a pipeline: `SELECT SLOT, VALUE_INDEX FROM silver_draft_value_curve` returns all 60 slots (~4 KB), then sums, shares, deltas and biggest-drop reads are prose-level math — reaching for `run_python` on these burns calls on code that only needs addition.
 
 ## 2. Prospect Comps — Explicit Distance Metric
 
