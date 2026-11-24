@@ -16,6 +16,7 @@ const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md
 const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
 const WORKSPACE_ARTIFACT_LIMIT = 40;
 const TURN_END_STEER_MIN_CHARS = 240;
+const TOOL_UNAVAILABLE_CLAIM_RE = /submit_answer[\s\S]{0,120}?(not available|unavailable|does not exist|doesn't exist|no such tool|not present)|(?:not available|unavailable|does not exist|doesn't exist|no such tool)[\s\S]{0,120}?submit_answer/i;
 const SUBMIT_FORCE_REMAINING_MS = 60_000;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
@@ -1040,7 +1041,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             lastRejectedSubmission = submission;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. A submission whose blocks only announce or confirm the analysis ("Submitted.", "Done", "see above") is never acceptable — copy the computed figures and tables into the blocks themselves even when gaps remain; when an artifact kind genuinely cannot be produced, deliver that content as a markdown table inside a block and name it in omitted. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. The submit_answer tool is available and working; this is a content rejection, not a tool failure — fix the gaps and call it again. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. A submission whose blocks only announce or confirm the analysis ("Submitted.", "Done", "see above") is never acceptable — copy the computed figures and tables into the blocks themselves even when gaps remain; when an artifact kind genuinely cannot be produced, deliver that content as a markdown table inside a block and name it in omitted. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
@@ -1151,6 +1152,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     kind = "model";
                     await session.prompt(start.q);
                     let submitSteerUsed = false;
+                    let toolUnavailableCorrected = false;
                     let text = "";
                     let reasoning = "";
                     for (;;) {
@@ -1162,6 +1164,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         }
                         text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                         reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
+                        if (!acceptedSubmission && !toolUnavailableCorrected && TOOL_UNAVAILABLE_CLAIM_RE.test(text)) {
+                            toolUnavailableCorrected = true;
+                            emit({ type: "tool_call", name: "tool_unavailable_correction" });
+                            emit({ type: "tool_result", name: "tool_unavailable_correction", status: "ok" });
+                            await session.prompt("tools.submit_answer exists and is callable — your claim that it is unavailable is wrong; a prior rejection was a content audit result, not a tool failure. Put your answer text into blocks with its artifacts, source anchors and omitted, and call it now.");
+                            continue;
+                        }
                         if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
                             break;
                         if (!submitSteerUsed) {
