@@ -425,7 +425,7 @@ def _salary_date(con: object = None) -> str | None:
     return None
 
 
-@tool(description='Payroll plus apron room for one abbreviation. 2026-27 thresholds.')
+@tool(description='Payroll plus apron room for one abbreviation, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total.')
 def get_cap_ledger(team: str = "") -> dict[str, Any]:
     if not team:
         return {"tool": "get_cap_ledger", "ok": False, "error": "team needed"}
@@ -461,7 +461,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      **{k: v for k, v in CAP.items()}}}
 
 
-@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll. 2026-27 thresholds.')
+@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits or over-the-line scans against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total.')
 def get_cap_table(season: str | None = None) -> dict[str, Any]:
     from nba_api.stats.static import teams as _teams
     con = _pkg().store.connect(read_only=True)
