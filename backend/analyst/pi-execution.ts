@@ -1181,6 +1181,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     kind = "model";
                     await session.prompt(start.q);
                     let submitSteerUsed = false;
+                    let giveUpSteerUsed = false;
                     let text = "";
                     let reasoning = "";
                     for (;;) {
@@ -1214,6 +1215,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 emit({ type: "tool_call", name: "zero_evidence_reprompt" });
                                 emit({ type: "tool_result", name: "zero_evidence_reprompt", status: "ok" });
                                 await session.prompt("This is a data question and you have run zero data tools — do not answer from memory. Call at least one data tool (query the warehouse or an analyst tool) for the figures your answer relies on, then call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
+                                continue;
+                            }
+                        }
+                        if (!giveUpSteerUsed) {
+                            const remainingMs = start.runTimeoutMs !== undefined
+                                ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
+                                : undefined;
+                            if (remainingMs === undefined || remainingMs > SUBMIT_FORCE_REMAINING_MS) {
+                                giveUpSteerUsed = true;
+                                emit({ type: "tool_call", name: "give_up_correction_steer" });
+                                emit({ type: "tool_result", name: "give_up_correction_steer", status: "ok" });
+                                await session.prompt("tools.submit_answer is available and working — it is a codemode function you invoke as a tool call, not something you narrate in the answer text. Any earlier rejection was a content audit, not a tool failure. Call tools.submit_answer now: move your drafted answer into its blocks field, attach the artifacts and source anchors it names, list anything left out in omitted, and submit.");
                                 continue;
                             }
                         }
