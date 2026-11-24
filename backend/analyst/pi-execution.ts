@@ -489,6 +489,19 @@ function buildBreakerRecord(
 const LOOP_STOP_AFTER_INJECTIONS = 3;
 const SUBMIT_AUDIT_MAX_REJECTIONS = 3;
 
+const META_SUBMISSION_RE = /submit_?answer|tools\.submit|has been submitted|was already submitted|already been submitted|no further action|further action (?:is )?(?:needed|required)/i;
+const BARE_ANNOUNCE_RE = /^\s*(submitted\.?|done\.?|see above\.?)\s*$/i;
+const META_SUBMISSION_MAX_CHARS = 1500;
+
+export function isMetaSubmission(submission: AnswerSubmission): boolean {
+    const joined = submission.blocks.map(block => block.text).join("\n").trim();
+    if (joined.length === 0)
+        return true;
+    if (BARE_ANNOUNCE_RE.test(joined))
+        return true;
+    return joined.length < META_SUBMISSION_MAX_CHARS && META_SUBMISSION_RE.test(joined);
+}
+
 export function flagAcknowledgedByOmissions(flag: string, omitted: string[]): boolean {
     const tokens = flag.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
     if (tokens.length === 0)
@@ -1001,7 +1014,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
                         },
                         (submission) => {
-                            if (submitAuditRejections >= SUBMIT_AUDIT_MAX_REJECTIONS)
+                            const meta = isMetaSubmission(submission);
+                            if (submitAuditRejections >= SUBMIT_AUDIT_MAX_REJECTIONS && !meta)
                                 return null;
                             const audit = auditAnswerNumbers(
                                 submission,
@@ -1031,10 +1045,12 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 && (start.sources?.length ?? 0) === 0
                                 && connected.results.size === 0
                                 && isDataAsk(start.q);
-                            if (!zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && missingEntities.length === 0)
+                            if (!meta && !zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && missingEntities.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
+                            if (meta)
+                                gaps.meta_submission = ["blocks announce or reference the submission instead of carrying the answer"];
                             if (missingArtifacts.length > 0)
                                 gaps.missing_in_artifacts = missingArtifacts;
                             if (uncoveredAsks.length > 0)
