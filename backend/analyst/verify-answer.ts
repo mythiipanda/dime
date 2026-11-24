@@ -188,6 +188,84 @@ function numbersClose(a: number, b: number): boolean {
     return diff <= Math.max(Math.abs(a), Math.abs(b)) * 0.002;
 }
 
+function collectArtifactColumns(value: unknown, columns: Map<string, number[]>, rowCounts: number[]) {
+    if (value === null || value === undefined)
+        return;
+    if (Array.isArray(value)) {
+        const rowLike = value.filter(item => item !== null && typeof item === "object");
+        if (rowLike.length > 1)
+            rowCounts.push(rowLike.length);
+        for (const item of value)
+            collectArtifactColumns(item, columns, rowCounts);
+        return;
+    }
+    if (typeof value !== "object")
+        return;
+    const record = value as Record<string, unknown>;
+    const shotZone = typeof record.att === "number" && typeof record.pct === "number";
+    const columnNames = Array.isArray(record.columns) ? record.columns.filter(cell => typeof cell === "string") as string[] : [];
+    for (const [key, item] of Object.entries(record)) {
+        if (ARTIFACT_SKIP_KEYS.has(key))
+            continue;
+        if (shotZone && (key === "x" || key === "y"))
+            continue;
+        if (key === "rows" && columnNames.length > 0 && Array.isArray(item)) {
+            for (const row of item) {
+                if (!Array.isArray(row))
+                    continue;
+                row.forEach((cell, index) => {
+                    const num = typeof cell === "number" && Number.isFinite(cell) ? cell
+                        : typeof cell === "string" && NUMERIC_STRING_RE.test(cell.trim()) ? Number(cell.replace(/,/g, ""))
+                        : NaN;
+                    if (Number.isFinite(num)) {
+                        const name = columnNames[index] ?? `col${index}`;
+                        const list = columns.get(name) ?? [];
+                        list.push(num);
+                        columns.set(name, list);
+                    }
+                });
+            }
+            continue;
+        }
+        if (typeof item === "number" || typeof item === "string") {
+            const num = typeof item === "number" && Number.isFinite(item) ? item
+                : typeof item === "string" && NUMERIC_STRING_RE.test(item.trim()) ? Number(item.replace(/,/g, ""))
+                : NaN;
+            if (Number.isFinite(num)) {
+                const list = columns.get(key) ?? [];
+                list.push(num);
+                columns.set(key, list);
+            }
+            continue;
+        }
+        collectArtifactColumns(item, columns, rowCounts);
+    }
+}
+
+function derivedArtifactValues(columns: Map<string, number[]>, rowCounts: number[]): number[] {
+    const out: number[] = [...rowCounts];
+    const named = [...columns.entries()].filter(([, values]) => values.length > 0);
+    for (const [, values] of named) {
+        const sum = values.reduce((acc, value) => acc + value, 0);
+        const low = Math.min(...values);
+        const high = Math.max(...values);
+        out.push(sum, sum / values.length, low, high, high - low);
+    }
+    for (const [keyA, a] of named)
+        for (const [keyB, b] of named) {
+            if (keyA === keyB || a.length !== b.length || b.some(weight => weight <= 0))
+                continue;
+            let weightedSum = 0;
+            let weightTotal = 0;
+            for (let i = 0; i < a.length; i++) {
+                weightedSum += a[i] * b[i];
+                weightTotal += b[i];
+            }
+            out.push(weightedSum / weightTotal);
+        }
+    return out;
+}
+
 const ASK_ANCHOR_RE = /\b[A-Z][A-Z0-9]{1,}\b|\b[a-z]+[A-Z][\w%]*|\b\d+(?:[.,]\d+)*%?\b|\b[A-Z][a-z]{2,}\b/g;
 const ASK_STOPWORDS = new Set([
     "the", "and", "for", "with", "which", "what", "each", "both", "using", "across",
@@ -465,8 +543,12 @@ export function auditAnswerNumbers(
     })();
     const echoesQuestion = (claim: NumericClaim) =>
         claim.values.every(value => questionValues.some(asked => numbersClose(value, asked)));
+    const artifactColumns = new Map<string, number[]>();
+    const artifactRowCounts: number[] = [];
+    (input.artifacts ?? []).forEach(artifact => collectArtifactColumns(artifact, artifactColumns, artifactRowCounts));
+    const artifactCoverage = artifactValues.concat(derivedArtifactValues(artifactColumns, artifactRowCounts));
     const missing_in_artifacts = (input.artifacts ?? []).length > 0
-        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactValues) && !echoesQuestion(claim))
+        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactCoverage) && !echoesQuestion(claim))
         : [];
     const uncovered_asks = question ? auditAskCoverage(question, input) : [];
     const metric_value_gaps = question ? auditMetricCoverage(question, input) : [];
