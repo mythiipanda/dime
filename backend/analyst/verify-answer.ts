@@ -200,6 +200,21 @@ const ASK_STOPWORDS = new Set([
 ]);
 const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
 const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?)\b/gi;
+const ARTIFACT_SHAPE_KIND: Array<[RegExp, string]> = [
+    [/\b(?:rank|ranked|ranking|leader|leaderboard|board|top[ -]?\d+|breakdown|list)s?\b/i, "table"],
+    [/\b(?:compare|comparison|versus|vs\.?|against|side[ -]by[ -]side|head[ -]to[ -]head)\b/i, "compare"],
+    [/\b(?:trend|over[ -]?time|trajectory|progression|month[ -]by[ -]month|chart|graph|plot)s?\b/i, "chart"],
+    [/\b(?:shot[ -]?(?:chart|map|diet|zones?)|zone[ -]?diet|spatial)\b/i, "shot_chart"],
+];
+export function impliedArtifactKinds(question: string | undefined): string[] {
+    if (!question)
+        return [];
+    const kinds = new Set<string>();
+    for (const [re, kind] of ARTIFACT_SHAPE_KIND)
+        if (re.test(question))
+            kinds.add(kind);
+    return [...kinds];
+}
 export const WAREHOUSE_TABLE_RE = /\b(?:silver|gold|bronze)_[a-z0-9_]+\b/gi;
 
 export function missingRequiredTables(question: string | undefined, consulted: ReadonlySet<string>): string[] {
