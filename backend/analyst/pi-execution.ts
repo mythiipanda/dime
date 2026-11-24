@@ -627,7 +627,7 @@ export function createProviderRetryStormGuard(
 
 const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
 const SQL_STEER_SKIP_TOOLS = new Set(["sql_exec", "run_python", "web_search", "web_fetch", "warehouse_schema", "get_warehouse_freshness", "load_skill", "run_status"]);
-const DATA_PULL_TOOLS = new Set(["sql_exec", "run_python"]);
+const META_TOOLS = new Set(["load_skill", "warehouse_schema", "get_warehouse_freshness", "get_dataset_freshness", "run_status", "submit_answer"]);
 const DATA_PULL_SYNTH_AT = 12;
 
 type FallbackSpec = { table: string; nameCol?: string; teamCol?: string; seasonCol?: string; seasonText?: boolean; idCol?: string; orderCol?: string };
@@ -846,7 +846,7 @@ function wrapBridgeTools(
                         await namedToolSqlSteer(tool, domain, result, "no_rows", args[1], args);
                     const total = (toolTotals.get(tool.name) ?? 0) + 1;
                     toolTotals.set(tool.name, total);
-                    if (DATA_PULL_TOOLS.has(tool.name)) {
+                    if (!META_TOOLS.has(tool.name)) {
                         dataPulls += 1;
                         domain.data_pulls = dataPulls;
                         if (dataPulls === DATA_PULL_SYNTH_AT) {
