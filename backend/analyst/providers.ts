@@ -44,7 +44,7 @@ function isProvider(name: string): name is Provider { return Object.hasOwn(polic
 
 const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception", "numes", "packet"];
 const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis", "numes", "packet"]);
-const reasoningReplay = new Set<Provider>(["reflection", "nvidia"]);
+const reasoningReplay = new Set<Provider>(["reflection", "nvidia", "packet"]);
 const thinkingAsTextModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
 const limitSchema = Type.Object({ contextWindow: Type.Integer(), maxTokens: Type.Integer() }, { additionalProperties: true });
