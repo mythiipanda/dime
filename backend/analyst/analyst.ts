@@ -278,13 +278,19 @@ export function createAnalyst(options: AnalystOptions) {
                     if (mapped)
                         yield mapped;
                 }
-                if (signal?.aborted)
+                if (signal?.aborted) {
+                    if (state.records.length || state.answer || state.submission)
+                        await persistCompletedRun(options, store, identity, input.q, run, state).catch(() => undefined);
                     return;
+                }
                 await persistCompletedRun(options, store, identity, input.q, run, state);
             }
             catch {
-                if (signal?.aborted)
+                if (signal?.aborted) {
+                    if (state.records.length || state.answer || state.submission)
+                        await persistCompletedRun(options, store, identity, input.q, run, state).catch(() => undefined);
                     return;
+                }
                 state.failed = true;
                 yield { type: "failure", data: { kind: "transport", message: "Dime could not finish this run." } };
             }
