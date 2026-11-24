@@ -19,6 +19,7 @@ export type NumericAudit = {
     metric_value_gaps: string[];
     unsupported_claims: string[];
     unevidenced_asks: string[];
+    missing_entities: string[];
 };
 
 const SEASON_RE = /\b(?:19|20)\d{2}\s*[-/–—]\s*\d{2,4}\b/g;
@@ -378,6 +379,38 @@ export function auditEvidenceCoverage(
     return unevidenced;
 }
 
+const TEAM_ENTITIES: Record<string, string[]> = {
+    ATL: ["atl", "atlanta", "hawks"], BOS: ["bos", "boston", "celtics"], BKN: ["bkn", "brooklyn", "nets"],
+    CHA: ["cha", "charlotte", "hornets"], CHI: ["chi", "chicago", "bulls"], CLE: ["cle", "cleveland", "cavaliers", "cavs"],
+    DAL: ["dal", "dallas", "mavericks", "mavs"], DEN: ["den", "denver", "nuggets"], DET: ["det", "detroit", "pistons"],
+    GSW: ["gsw", "golden state", "warriors"], HOU: ["hou", "houston", "rockets"], IND: ["ind", "indiana", "pacers"],
+    LAC: ["lac", "la clippers", "los angeles clippers", "clippers"], LAL: ["lal", "la lakers", "los angeles lakers", "lakers"],
+    MEM: ["mem", "memphis", "grizzlies"], MIA: ["mia", "miami", "heat"], MIL: ["mil", "milwaukee", "bucks"],
+    MIN: ["min", "minnesota", "timberwolves", "wolves"], NOP: ["nop", "new orleans", "pelicans"], NYK: ["nyk", "new york", "knicks"],
+    OKC: ["okc", "oklahoma city", "thunder"], ORL: ["orl", "orlando", "magic"], PHI: ["phi", "philadelphia", "76ers", "sixers"],
+    PHX: ["phx", "phoenix", "suns"], POR: ["por", "portland", "trail blazers", "blazers"], SAC: ["sac", "sacramento", "kings"],
+    SAS: ["sas", "san antonio", "spurs"], TOR: ["tor", "toronto", "raptors"], UTA: ["uta", "utah", "jazz"],
+    WAS: ["was", "washington", "wizards"],
+};
+
+export function auditEntityRecall(
+    question: string,
+    input: Pick<AnswerSubmission, "blocks" | "artifacts">
+): string[] {
+    const haystack = (
+        input.blocks.map(block => block.text).join(" ") + " " +
+        JSON.stringify(input.artifacts ?? [])
+    ).toLowerCase();
+    const missing: string[] = [];
+    for (const [code, variants] of Object.entries(TEAM_ENTITIES)) {
+        const named = new RegExp(`\\b${code}\\b`, "i").test(question)
+            || variants.slice(1).some(variant => new RegExp(`\\b${variant.replace(/ /g, "\\s+")}\\b`, "i").test(question));
+        if (named && !variants.some(variant => new RegExp(`\\b${variant.replace(/ /g, "\\s+")}\\b`).test(haystack)))
+            missing.push(code);
+    }
+    return missing;
+}
+
 export function auditAskCoverage(
     question: string,
     input: Pick<AnswerSubmission, "blocks" | "artifacts">
@@ -461,7 +494,8 @@ export function auditAnswerNumbers(
     const unevidenced_asks = question
         ? auditEvidenceCoverage(question, input, (collectEvidenceText(sources) + " " + (extraEvidenceText ?? "")).toLowerCase()).slice(0, 10)
         : [];
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks };
+    const missing_entities = question ? auditEntityRecall(question, input) : [];
+    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks, missing_entities };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[], question?: string) {
