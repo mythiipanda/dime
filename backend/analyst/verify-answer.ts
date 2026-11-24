@@ -199,7 +199,8 @@ const ASK_STOPWORDS = new Set([
     "over", "under", "between", "against", "versus", "vs", "per", "during"
 ]);
 const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
-const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?)\b/gi;
+const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?|scatters?|shot_?charts?|memos?|cards?|visualizations?|visualisations?|deliverables?|dashboards?|payloads?|artifacts?|artefacts?|specs?)\b/gi;
+const ARTIFACT_KIND_TOKENS: Record<string, string> = { table: "table", tables: "table", compare: "compare", comparison: "compare", chart: "chart", charts: "chart", graph: "chart", graphs: "chart", scatter: "scatter", scatters: "scatter", shot_chart: "shot_chart", shotchart: "shot_chart", memo: "memo", memos: "memo", card: "card", cards: "card" };
 const ARTIFACT_SHAPE_KIND: Array<[RegExp, string]> = [
     [/\b(?:rank|ranked|ranking|leader|leaderboard|board|top[ -]?\d+|breakdown|list)s?\b/i, "table"],
     [/\b(?:compare|comparison|versus|vs\.?|against|side[ -]by[ -]side|head[ -]to[ -]head)\b/i, "compare"],
@@ -444,8 +445,22 @@ export function auditAnswerNumbers(
         : [];
     const uncovered_asks = question ? auditAskCoverage(question, input) : [];
     const metric_value_gaps = question ? auditMetricCoverage(question, input) : [];
-    const no_artifacts_on_artifact_ask = question && (input.artifacts ?? []).length === 0
-        ? [...new Set((question.match(ARTIFACT_ASK_RE) ?? []).map(token => token.toLowerCase()))]
+    const no_artifacts_on_artifact_ask = question
+        ? (() => {
+            const tokens = [...new Set((question.match(ARTIFACT_ASK_RE) ?? []).map(token => token.toLowerCase()))];
+            if (tokens.length === 0)
+                return [];
+            const concrete = tokens.filter(token => token in ARTIFACT_KIND_TOKENS);
+            const artifacts = (input.artifacts ?? []) as Record<string, unknown>[];
+            if (artifacts.length === 0)
+                return concrete.length > 0 ? tokens.filter(token => token in ARTIFACT_KIND_TOKENS || !/^(artifacts?|artefacts?|specs?)$/.test(token)) : ["artifact"];
+            const kinds = new Set(artifacts.map(artifact => String(artifact.kind ?? "").toLowerCase()));
+            const wantedKinds = [...new Set(concrete.map(token => ARTIFACT_KIND_TOKENS[token.replace(/ /g, "_")]))];
+            if (wantedKinds.length === 0)
+                return [];
+            const matched = wantedKinds.some(kind => kinds.has(kind) || (kind === "card" && (kinds.has("player_card") || kinds.has("team_card"))));
+            return matched ? [] : wantedKinds;
+        })()
         : [];
     const questionValues = (() => {
         const questionClaims: NumericClaim[] = [];
