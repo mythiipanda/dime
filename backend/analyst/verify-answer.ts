@@ -201,6 +201,8 @@ const ASK_STOPWORDS = new Set([
 ]);
 const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
 const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?|scatters?|shot_?charts?|memos?|cards?|visualizations?|visualisations?|deliverables?|dashboards?|payloads?|artifacts?|artefacts?|specs?)\b/gi;
+const ARTIFACT_SHAPE_TABLE_RE = /\b(?:top\s*-?\s*\d+|bottom\s*-?\s*\d+|rank(?:ing|ed|s)?|leaderboards?|breakdowns?|list(?:ing|s|ed)?)\b/i;
+const ARTIFACT_SHAPE_COMPARE_RE = /\b(?:head[- ]to[- ]head|side[- ]by[- ]side|versus|\bvs\.?\b|face[- ]off)\b/i;
 const ARTIFACT_KIND_TOKENS: Record<string, string> = { table: "table", tables: "table", compare: "compare", comparison: "compare", chart: "chart", charts: "chart", graph: "chart", graphs: "chart", scatter: "scatter", scatters: "scatter", shot_chart: "shot_chart", shotchart: "shot_chart", memo: "memo", memos: "memo", card: "card", cards: "card" };
 export const WAREHOUSE_TABLE_RE = /\b(?:silver|gold|bronze)_[a-z0-9_]+\b/gi;
 
@@ -466,8 +468,15 @@ export function auditAnswerNumbers(
     const no_artifacts_on_artifact_ask = question
         ? (() => {
             const tokens = [...new Set((question.match(ARTIFACT_ASK_RE) ?? []).map(token => token.toLowerCase()))];
-            if (tokens.length === 0)
+            if (tokens.length === 0) {
+                if ((input.artifacts ?? []).length > 0)
+                    return [];
+                if (ARTIFACT_SHAPE_COMPARE_RE.test(question))
+                    return ["compare"];
+                if (ARTIFACT_SHAPE_TABLE_RE.test(question))
+                    return ["table"];
                 return [];
+            }
             const concrete = tokens.filter(token => token in ARTIFACT_KIND_TOKENS);
             const artifacts = (input.artifacts ?? []) as Record<string, unknown>[];
             if (artifacts.length === 0)

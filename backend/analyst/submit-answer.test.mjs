@@ -807,7 +807,7 @@ test("createPiExecution reprompts once when a sourceless data ask ends in plain 
   const run = async (extra = {}) => {
     const events = [];
     for await (const event of pi.stream({
-      q: "Rank the top guards by ts% in 2024-25",
+      q: "What was Giannis's ts% in 2024-25?",
       history: [],
       model: "fixture:fixture",
       sources: [],
@@ -909,7 +909,7 @@ test("createPiExecution rejects a zero-evidence submit_answer on a data ask", as
 
   const events = [];
   for await (const event of pi.stream({
-    q: "Rank the top guards by ts% in 2024-25",
+    q: "What was Giannis's ts% in 2024-25?",
     history: [],
     model: "fixture:fixture",
     sources: [],
