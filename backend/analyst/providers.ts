@@ -39,6 +39,12 @@ const EXTRA_LIMITS: Partial<Record<Provider, Record<string, TokenLimits>>> = {
         "gemini-4-hydrogen": { contextWindow: 1048576, maxTokens: 65536 },
         "gemini-4-neon": { contextWindow: 1048576, maxTokens: 65536 },
     },
+    packet: {
+        "nvidia-deepseek-v4-1-flash-nvfp4": { contextWindow: 131072, maxTokens: 65536 },
+        "minimaxai-minimax-m3-1-flash": { contextWindow: 131072, maxTokens: 65536 },
+    },
+    coarena: { "deepseek-v4-1-flash-1017": { contextWindow: 131072, maxTokens: 65536 } },
+    seek100m: { "deepseek-v4.1-flash-free": { contextWindow: 131072, maxTokens: 65536 } },
 };
 
 const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens: 16384 };
