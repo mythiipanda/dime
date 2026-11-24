@@ -24,6 +24,7 @@ Use this playbook for big boards, prospect comps, draft-capital valuation, pick-
 ## 1. Big-Board Ranking With Stated Weights
 
 - Say which board(s) you are using before you rank anyone: a media board order is an opinion input, not ground truth; `silver_draft_boards.BOARD` names the source per row.
+- Board-plus-production blends, cohort sizes and pool asks are `sql_exec` over `silver_draft_boards` joined or filtered against `silver_prospect_stats` — `get_draft_board` returns a paged slice of one board, so cohorts built from it drop members and land the wrong counts.
 - When the task gives weights ("rank by 60% talent, 40% fit"), implement them literally — order by the weighted score and show both component ranks, never blend silently.
 - Tier beats ordinal: consecutive picks (4 vs 6) inside one tier are closer than a tier boundary (8 vs 10). Where the model/board exposes tiers, report the tier cut before the raw order.
 - Class depth is part of every pick answer: "pick 9 in a shallow class" and "pick 9 in 2021" are different assets — compare against the slot's expected value from `silver_draft_value_curve` or `silver_hist_draft` hit rates.
@@ -34,6 +35,7 @@ Use this playbook for big boards, prospect comps, draft-capital valuation, pick-
 - Comps are a distance computation, not a name pulled from memory: define the feature vector first (production profile — PTS/REB/AST/TS/USG — plus body tools — wingspan, no-shoe height — plus age and position), then rank candidates by it.
 - Use `get_comps` for established-player similarity; for draft prospects pull the candidate pool from `silver_prospect_stats`/`silver_hist_draft` and compute the distance in `run_python` — state the metric ("euclidean over z-scored PTS/REB/AST/TS_PCT/USG within position group") in the answer.
 - Never present a comp as a projection: report it as "closest historical profile", and name the dimension where the fit breaks (age, shooting, defensive role).
+- A comps answer is a ranked list — the honesty audit rejects stat lines that live only in prose blocks. Emit a `table` artifact whose rows carry every figure the blocks state (comp name, team, distance, and the target's own stat line), then keep the same figures verbatim in the blocks.
 
 ## 3. Pick Swaps, Protections & Resolution
 
