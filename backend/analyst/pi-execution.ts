@@ -963,6 +963,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridgePid: number | undefined;
                 let modelApiKey: string | undefined;
                 let budgetNudge: ReturnType<typeof setTimeout> | undefined;
+                let narrationSalvage: ReturnType<typeof setTimeout> | undefined;
                 const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
@@ -1163,6 +1164,19 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             });
                         }, nudgeAtMs);
                         budgetNudge.unref();
+                        const salvageAtMs = Math.max(5000, Math.min(runTimeoutMs * 0.88, nudgeAtMs + 10000));
+                        narrationSalvage = setTimeout(() => {
+                            if (acceptedSubmission || answerEmitted || !session)
+                                return;
+                            if (!session.messages.some(message => message.role === "toolResult"))
+                                return;
+                            const narrated = salvageNarrationSubmission(session.messages);
+                            if (!narrated)
+                                return;
+                            acceptedSubmission = narrated;
+                            emitAcceptedAnswer();
+                        }, salvageAtMs);
+                        narrationSalvage.unref();
                     }
                     kind = "model";
                     await session.prompt(start.q);
@@ -1212,8 +1226,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             acceptedSubmission = drafted;
                     }
                     if (acceptedSubmission) {
-                        const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
-                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
+                        if (!answerEmitted) {
+                            const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
+                            emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
+                            answerEmitted = true;
+                        }
                     } else {
                         if (!text.trim())
                             throw new Error("Model returned no answer");
@@ -1244,8 +1261,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             emitAcceptedAnswer();
                         }
                     }
-                    if (!answerEmitted && !acceptedSubmission && session
-                        && session.messages.some(message => message.role === "toolResult")) {
+                    if (!answerEmitted && !acceptedSubmission && session && session.messages.some(message => message.role === "toolResult")) {
                         const narrated = salvageNarrationSubmission(session.messages);
                         if (narrated) {
                             acceptedSubmission = narrated;
@@ -1258,6 +1274,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 finally {
                     if (budgetNudge)
                         clearTimeout(budgetNudge);
+                    if (narrationSalvage)
+                        clearTimeout(narrationSalvage);
                     try {
                         if (session && bridgeCwd)
                             persistStoreSnapshot(bridgeCwd, codemodeStoreSnapshot(session.sessionManager.getBranch()));
