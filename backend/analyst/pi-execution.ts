@@ -1147,6 +1147,21 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             });
                         }, nudgeAtMs);
                         budgetNudge.unref();
+                        const wrapAtMs = Math.max(5000, Math.min(runTimeoutMs * 0.6, nudgeAtMs - 30000));
+                        const wrapNudge = setTimeout(() => {
+                            if (acceptedSubmission)
+                                return;
+                            const evidenceCount = (start.sources?.length ?? 0) + connected.results.size + dataToolCalls;
+                            if (evidenceCount === 0)
+                                return;
+                            const remaining = Math.max(0, Math.round((runTimeoutMs - (Date.now() - startedAt)) / 1000));
+                            agent.steer({
+                                role: "user",
+                                content: `~${remaining}s of host budget left and ${evidenceCount} evidence results already in hand — start synthesizing now: pull only the figures the ask still names, write the deliverable, and call tools.submit_answer with anything left out in omitted.`,
+                                timestamp: Date.now()
+                            });
+                        }, wrapAtMs);
+                        wrapNudge.unref();
                     }
                     kind = "model";
                     await session.prompt(start.q);
