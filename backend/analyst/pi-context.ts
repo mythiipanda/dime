@@ -51,9 +51,9 @@ export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.
         try {
             for (let attempt = 0; ; attempt++) {
                 const res = await realFetch(input, init);
-                if (res.status === 400 && attempt < UVARC_RETRY_ATTEMPTS - 1) {
+                if ((res.status === 400 || res.status === 429) && attempt < UVARC_RETRY_ATTEMPTS - 1) {
                     const body = await res.clone().text().catch(() => "");
-                    if (body.includes("'messages'")) {
+                    if (res.status === 429 || body.includes("'messages'")) {
                         await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
                         continue;
                     }
