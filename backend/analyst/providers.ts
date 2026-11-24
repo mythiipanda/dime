@@ -21,6 +21,7 @@ const policies = {
     packet: { models: ["nvidia-deepseek-v4-1-flash-nvfp4", "minimaxai-minimax-m3-1-flash"], key: "PACKET_API_KEY", url: "https://api.packet.ai/v1" },
     kilo: { models: ["nvidia/nemotron-3.5-lightning:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "reflection/beam-free"], key: "KILO_API_KEY", url: "https://api.kilo.ai/api/gateway" },
     seek100m: { models: ["deepseek-v4.1-flash-free"], key: "SEEK100M_API_KEY", url: "https://100milionseek.top/v1" },
+    uvarc: { models: ["Kimi K2.5"], key: "UVARC_RELAY_API_KEY", url: "" },
 };
 
 type Provider = keyof typeof policies;
@@ -39,15 +40,27 @@ const EXTRA_LIMITS: Partial<Record<Provider, Record<string, TokenLimits>>> = {
         "gemini-4-hydrogen": { contextWindow: 1048576, maxTokens: 65536 },
         "gemini-4-neon": { contextWindow: 1048576, maxTokens: 65536 },
     },
+    packet: {
+        "nvidia-deepseek-v4-1-flash-nvfp4": { contextWindow: 131072, maxTokens: 65536 },
+        "minimaxai-minimax-m3-1-flash": { contextWindow: 131072, maxTokens: 65536 },
+    },
+    coarena: { "deepseek-v4-1-flash-1017": { contextWindow: 131072, maxTokens: 65536 } },
+    seek100m: { "deepseek-v4.1-flash-free": { contextWindow: 131072, maxTokens: 65536 } },
+    kilo: {
+        "nvidia/nemotron-3.5-lightning:free": { contextWindow: 131072, maxTokens: 65536 },
+        "nvidia/nemotron-3-ultra-550b-a55b:free": { contextWindow: 131072, maxTokens: 65536 },
+        "reflection/beam-free": { contextWindow: 131072, maxTokens: 65536 },
+    },
+    numes: { "nvidia/nemotron-3-ultra-550b-a55b:free": { contextWindow: 131072, maxTokens: 65536 } },
 };
 
 const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens: 16384 };
 
 function isProvider(name: string): name is Provider { return Object.hasOwn(policies, name); }
 
-const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception", "numes", "coarena", "packet", "kilo", "seek100m"];
-const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet", "kilo", "seek100m"]);
-const reasoningReplay = new Set<Provider>(["reflection", "nvidia", "packet"]);
+const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception", "numes", "coarena", "packet", "kilo", "seek100m", "uvarc"];
+const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet", "kilo", "seek100m", "uvarc"]);
+const reasoningReplay = new Set<Provider>(["reflection", "nvidia", "packet", "uvarc"]);
 const thinkingAsTextModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
 const limitSchema = Type.Object({ contextWindow: Type.Integer(), maxTokens: Type.Integer() }, { additionalProperties: true });
@@ -78,7 +91,7 @@ function resolveLimits(provider: Provider, model: string): TokenLimits {
 export function providerPolicy(env: NodeJS.ProcessEnv) {
     const enabled = (name: Provider) => !gated.has(name) || ["true", "1", "yes", "on"].includes((env["DIME_ENABLE_" + name.toUpperCase()] ?? "false").toLowerCase());
     const key = (name: Provider) => env[policies[name].key] || (name === "gemini" ? env.GOOGLE_API_KEY : name === "kilo" ? " " : "");
-    const available = (name: Provider) => Boolean(enabled(name) && key(name));
+    const available = (name: Provider) => Boolean(enabled(name) && key(name) && (name !== "uvarc" || env.UVARC_RELAY_BASE_URL));
     const defaultModel = (name: Provider) => {
         const value = env[(name === "nvidia" ? "NVIDIA_NIM" : name.toUpperCase()) + "_MODEL"];
         const models = policies[name].models;
@@ -113,7 +126,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
         catalog() {
             const defaultProvider = order.find(available) ?? "mistral";
             const availability = Object.fromEntries(Object.keys(policies).filter(isProvider).filter(name => !gated.has(name) || available(name)).map(name => [name, available(name)]));
-            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet", "kilo", "seek100m"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
+            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet", "kilo", "seek100m", "uvarc"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
         },
         resolve(id?: string) {
             const { provider, model } = selection(id);
@@ -122,7 +135,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
             const limits = resolveLimits(provider, model);
             const headers: Record<string, string> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : provider === "seek100m" ? { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : {}
             return {
-                provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers,
+                provider, model, apiKey: key(provider), baseUrl: provider === "uvarc" ? env.UVARC_RELAY_BASE_URL : policies[provider].url, headers,
                 contextWindow: limits.contextWindow, maxTokens: limits.maxTokens,
                 ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}),
                 ...(thinkingAsTextModels.has(provider + ":" + model) ? { compat: { requiresThinkingAsText: true } } : {}),
