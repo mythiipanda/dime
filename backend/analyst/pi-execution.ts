@@ -65,6 +65,26 @@ export function codemodeStoreSnapshot(branch: ReadonlyArray<{ type: string }>): 
     return Object.fromEntries(store);
 }
 
+function salvageDraftSubmission(snapshot: Record<string, unknown>): AnswerSubmission | undefined {
+    let best: { text: string; anchors: [] }[] | undefined;
+    let bestLen = 0;
+    for (const value of Object.values(snapshot)) {
+        if (!Array.isArray(value) || value.length === 0 || value.length > 12)
+            continue;
+        const items = value.map(objectValue).filter((item): item is Record<string, unknown> => item !== undefined);
+        if (items.length !== value.length || !items.every(item => typeof item.text === "string" && item.text.trim().length >= 40))
+            continue;
+        const total = items.reduce((n, item) => n + (item.text as string).trim().length, 0);
+        if (total >= 200 && total > bestLen) {
+            bestLen = total;
+            best = items.map(item => ({ text: (item.text as string).trim(), anchors: [] }));
+        }
+    }
+    if (!best)
+        return undefined;
+    return { blocks: best, omitted: ["submission salvaged from the codemode store draft — the run ended before submit_answer completed"] };
+}
+
 function readStoredSnapshot(dir: string): Record<string, unknown> | undefined {
     try {
         const value: unknown = JSON.parse(readFileSync(join(dir, CODEMODE_STORE_FILE), "utf8"));
@@ -751,7 +771,7 @@ function wrapBridgeTools(
                 if (entry.lastSuccessRef) {
                     const prior = results.get(entry.lastSuccessRef);
                     if (prior) {
-                        emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef}` });
+                        emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef} — this identical call already ran and the data is unchanged; do not send it again: reuse ref ${entry.lastSuccessRef}, change the arguments, switch tools, or call submit_answer.` });
                         return sourceResult(prior);
                     }
                 }
@@ -876,6 +896,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             let finished = false;
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
             let acceptedSubmission: AnswerSubmission | undefined;
+            let lastRejectedSubmission: AnswerSubmission | undefined;
             let answerEmitted = false;
             const emitAcceptedAnswer = () => {
                 if (answerEmitted || !acceptedSubmission)
@@ -985,9 +1006,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             if (zeroEvidenceOnSubmit)
                                 gaps.no_evidence_on_data_ask = [ZERO_EVIDENCE_DATA_ASK_FLAG];
 
+                            lastRejectedSubmission = submission;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. A submission whose blocks only announce or confirm the analysis ("Submitted.", "Done", "see above") is never acceptable — copy the computed figures and tables into the blocks themselves even when gaps remain; when an artifact kind genuinely cannot be produced, deliver that content as a markdown table inside a block and name it in omitted. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
@@ -1137,6 +1159,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         break;
                     }
                     const replayReasoning = reasoning ? { reasoning } : {};
+                    if (!acceptedSubmission && session) {
+                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                        if (drafted)
+                            acceptedSubmission = drafted;
+                    }
                     if (acceptedSubmission) {
                         const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
                         emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
@@ -1159,6 +1186,17 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 }
                 catch (error) {
                     emitAcceptedAnswer();
+                    if (!answerEmitted && !acceptedSubmission && lastRejectedSubmission) {
+                        acceptedSubmission = lastRejectedSubmission;
+                        emitAcceptedAnswer();
+                    }
+                    if (!answerEmitted && !acceptedSubmission && session) {
+                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                        if (drafted) {
+                            acceptedSubmission = drafted;
+                            emitAcceptedAnswer();
+                        }
+                    }
                     if (!answerEmitted && !controller.signal.aborted)
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
                 }
