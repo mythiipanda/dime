@@ -85,6 +85,22 @@ function salvageDraftSubmission(snapshot: Record<string, unknown>): AnswerSubmis
     return { blocks: best, omitted: ["submission salvaged from the codemode store draft — the run ended before submit_answer completed"] };
 }
 
+function salvageNarrationSubmission(messages: ReadonlyArray<{ role: string; content?: unknown }>): AnswerSubmission | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const message = messages[i];
+        if (message.role !== "assistant" || !Array.isArray(message.content))
+            continue;
+        const text = (message.content as { type: string; text?: string }[])
+            .filter(block => block.type === "text" && typeof block.text === "string")
+            .map(block => block.text as string)
+            .join("")
+            .trim();
+        if (text.length >= 200)
+            return { blocks: [{ text, anchors: [] }], omitted: ["submission salvaged from the final narration — the run ended before submit_answer completed"] };
+    }
+    return undefined;
+}
+
 function readStoredSnapshot(dir: string): Record<string, unknown> | undefined {
     try {
         const value: unknown = JSON.parse(readFileSync(join(dir, CODEMODE_STORE_FILE), "utf8"));
@@ -1225,6 +1241,14 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()));
                         if (drafted) {
                             acceptedSubmission = drafted;
+                            emitAcceptedAnswer();
+                        }
+                    }
+                    if (!answerEmitted && !acceptedSubmission && session
+                        && session.messages.some(message => message.role === "toolResult")) {
+                        const narrated = salvageNarrationSubmission(session.messages);
+                        if (narrated) {
+                            acceptedSubmission = narrated;
                             emitAcceptedAnswer();
                         }
                     }
