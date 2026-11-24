@@ -85,6 +85,22 @@ function salvageDraftSubmission(snapshot: Record<string, unknown>): AnswerSubmis
     return { blocks: best, omitted: ["submission salvaged from the codemode store draft — the run ended before submit_answer completed"] };
 }
 
+function salvageNarrationSubmission(messages: ReadonlyArray<{ role: string; content?: unknown }>): AnswerSubmission | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const message = messages[i];
+        if (message.role !== "assistant" || !Array.isArray(message.content))
+            continue;
+        const text = (message.content as { type: string; text?: string }[])
+            .filter(block => block.type === "text" && typeof block.text === "string")
+            .map(block => block.text as string)
+            .join("")
+            .trim();
+        if (text.length >= 200)
+            return { blocks: [{ text, anchors: [] }], omitted: ["submission salvaged from the final narration — the run ended before submit_answer completed"] };
+    }
+    return undefined;
+}
+
 function readStoredSnapshot(dir: string): Record<string, unknown> | undefined {
     try {
         const value: unknown = JSON.parse(readFileSync(join(dir, CODEMODE_STORE_FILE), "utf8"));
@@ -947,6 +963,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridgePid: number | undefined;
                 let modelApiKey: string | undefined;
                 let budgetNudge: ReturnType<typeof setTimeout> | undefined;
+                let narrationSalvage: ReturnType<typeof setTimeout> | undefined;
                 const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
@@ -1147,6 +1164,19 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             });
                         }, nudgeAtMs);
                         budgetNudge.unref();
+                        const salvageAtMs = Math.max(5000, Math.min(runTimeoutMs * 0.88, nudgeAtMs + 10000));
+                        narrationSalvage = setTimeout(() => {
+                            if (acceptedSubmission || answerEmitted || !session)
+                                return;
+                            if (!session.messages.some(message => message.role === "toolResult"))
+                                return;
+                            const narrated = salvageNarrationSubmission(session.messages);
+                            if (!narrated)
+                                return;
+                            acceptedSubmission = narrated;
+                            emitAcceptedAnswer();
+                        }, salvageAtMs);
+                        narrationSalvage.unref();
                     }
                     kind = "model";
                     await session.prompt(start.q);
@@ -1196,8 +1226,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             acceptedSubmission = drafted;
                     }
                     if (acceptedSubmission) {
-                        const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
-                        emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
+                        if (!answerEmitted) {
+                            const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
+                            emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
+                            answerEmitted = true;
+                        }
                     } else {
                         if (!text.trim())
                             throw new Error("Model returned no answer");
@@ -1228,12 +1261,21 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             emitAcceptedAnswer();
                         }
                     }
+                    if (!answerEmitted && !acceptedSubmission && session && session.messages.some(message => message.role === "toolResult")) {
+                        const narrated = salvageNarrationSubmission(session.messages);
+                        if (narrated) {
+                            acceptedSubmission = narrated;
+                            emitAcceptedAnswer();
+                        }
+                    }
                     if (!answerEmitted && !controller.signal.aborted)
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
                 }
                 finally {
                     if (budgetNudge)
                         clearTimeout(budgetNudge);
+                    if (narrationSalvage)
+                        clearTimeout(narrationSalvage);
                     try {
                         if (session && bridgeCwd)
                             persistStoreSnapshot(bridgeCwd, codemodeStoreSnapshot(session.sessionManager.getBranch()));
