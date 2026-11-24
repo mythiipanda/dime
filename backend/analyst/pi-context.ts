@@ -23,6 +23,51 @@ export const modelConfigSchema = Type.Object({
     })),
 });
 
+const UVARC_MAX_IN_FLIGHT = 4;
+const UVARC_RETRY_ATTEMPTS = 6;
+const uvarcLimiter = (() => {
+    let inFlight = 0;
+    const queue: Array<() => void> = [];
+    return {
+        async acquire() {
+            if (inFlight >= UVARC_MAX_IN_FLIGHT)
+                await new Promise<void>(resolve => queue.push(resolve));
+            inFlight += 1;
+        },
+        release() {
+            inFlight -= 1;
+            queue.shift()?.();
+        },
+    };
+})();
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.fetch): typeof globalThis.fetch {
+    return async (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (!url.startsWith(baseUrl))
+            return realFetch(input, init);
+        await uvarcLimiter.acquire();
+        try {
+            for (let attempt = 0; ; attempt++) {
+                const res = await realFetch(input, init);
+                if (res.status === 400 && attempt < UVARC_RETRY_ATTEMPTS - 1) {
+                    const body = await res.clone().text().catch(() => "");
+                    if (body.includes("'messages'")) {
+                        await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
+                        continue;
+                    }
+                }
+                return res;
+            }
+        }
+        finally {
+            uvarcLimiter.release();
+        }
+    };
+}
+let uvarcFetchInstalled = false;
+
 export async function resolvedRuntime(input: unknown) {
     if (!Value.Check(modelConfigSchema, input))
         throw new Error("Explicit resolved provider configuration required");
@@ -35,6 +80,10 @@ export async function resolvedRuntime(input: unknown) {
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
             }]
     });
+    if (config.provider === "uvarc" && !uvarcFetchInstalled) {
+        uvarcFetchInstalled = true;
+        globalThis.fetch = uvarcGuardedFetch(config.baseUrl, globalThis.fetch);
+    }
     const model = runtime.getModel(config.provider, config.model);
     if (!model)
         throw new Error("Selected model is unavailable");
