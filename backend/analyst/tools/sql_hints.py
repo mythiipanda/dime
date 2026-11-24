@@ -225,4 +225,30 @@ def schema_hint_for_sql_empty(sql: str, res: dict[str, Any]) -> dict[str, Any] |
     constants = _constants_for_tables(referenced)
     if constants:
         hint["table_constants"] = constants
+    filtered = _filtered_columns(sql or "", columns, referenced)
+    if filtered:
+        hint["filter_resolution"] = {
+            "filtered_columns": filtered,
+            "resolve": (
+                "an equality or LIKE filter returned nothing — resolve the stored values before "
+                "guessing variants: SELECT DISTINCT <column> (or WHERE <column> LIKE '%<surname-or-prefix>%') "
+                "on the referenced table to see the actual encodings (diacritics, abbreviations, "
+                "season codes), then apply the exact stored value"
+            ),
+        }
     return hint
+
+
+_FILTER_RE = re.compile(
+    r"(?P<col>[A-Za-z_][A-Za-z0-9_.]*)\s*(?:=|!=|<>|LIKE|ILIKE|IN\s*\()", re.IGNORECASE
+)
+
+
+def _filtered_columns(sql: str, columns: dict[str, Any], referenced: list[str]) -> list[str]:
+    known = {c.lower() for name in referenced for c in _column_names(columns[name])}
+    out: list[str] = []
+    for m in _FILTER_RE.finditer(sql):
+        col = m.group("col").rsplit(".", 1)[-1]
+        if col.lower() in known and col not in out:
+            out.append(col)
+    return out[:8]
