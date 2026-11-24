@@ -960,17 +960,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         (submission) => {
                             if (submitAuditRejections >= SUBMIT_AUDIT_MAX_REJECTIONS)
                                 return null;
-                            const proseOnlyKinds = (submission.artifacts?.length ?? 0) === 0
-                                ? impliedArtifactKinds(start.q)
-                                : [];
-                            if (proseOnlyKinds.length > 0 && !artifactSteerUsed) {
-                                artifactSteerUsed = true;
-                                submitAuditRejections += 1;
-                                lastRejectedSubmission = submission;
-                                emit({ type: "tool_call", name: "artifact_steer", args: { kinds: proseOnlyKinds } });
-                                emit({ type: "tool_result", name: "artifact_steer", status: "ok" });
-                                return `Not submitted — the submission is prose-only but this ask needs ${proseOnlyKinds.join(" + ")} (one-shot steer, rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): attach that artifact kind in the artifacts field with the verified payload and resubmit. If a kind genuinely cannot be produced, deliver the same content as a markdown table inside a block and name it in omitted.`;
-                            }
                             const audit = auditAnswerNumbers(
                                 submission,
                                 [...(start.sources ?? []), ...connected.results.values()],
@@ -997,8 +986,19 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 && (start.sources?.length ?? 0) === 0
                                 && connected.results.size === 0
                                 && isDataAsk(start.q);
-                            if (!zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0)
-                                return null;
+                            if (!zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0) {
+                                const proseOnlyKinds = (submission.artifacts?.length ?? 0) === 0
+                                    ? impliedArtifactKinds(start.q)
+                                    : [];
+                                if (proseOnlyKinds.length === 0 || artifactSteerUsed)
+                                    return null;
+                                artifactSteerUsed = true;
+                                submitAuditRejections += 1;
+                                lastRejectedSubmission = submission;
+                                emit({ type: "tool_call", name: "artifact_steer", args: { kinds: proseOnlyKinds } });
+                                emit({ type: "tool_result", name: "artifact_steer", status: "ok" });
+                                return `Not submitted — the submission is prose-only but this ask needs ${proseOnlyKinds.join(" + ")} (one-shot steer, rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): attach that artifact kind in the artifacts field with the verified payload and resubmit. If a kind genuinely cannot be produced, deliver the same content as a markdown table inside a block and name it in omitted.`;
+                            }
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
                             if (missingArtifacts.length > 0)

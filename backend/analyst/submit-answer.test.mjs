@@ -891,6 +891,9 @@ test("createPiExecution rejects a zero-evidence submit_answer on a data ask", as
       } else if (execRequests === 2) {
         const code = `await tools.sql_exec({ sql: "select player, ts_pct from silver_leaders where season='2024-25' and pos='guard' order by ts_pct desc limit 10", intent: "rank top guards by ts% in 2024-25" }); await tools.submit_answer({ blocks: [{ text: ${JSON.stringify(canonical)}, anchors: [{ ref: "fake-ev-1", row: 0, columns: ["ts_pct"] }] }] }); return { done: true };`;
         msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-sub2", name: "codemode", arguments: { code } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else if (execRequests === 3) {
+        const code = `await tools.submit_answer({ blocks: [{ text: ${JSON.stringify(canonical)}, anchors: [{ ref: "fake-ev-1", row: 0, columns: ["ts_pct"] }] }], artifacts: [{ kind: "table", title: "Leaders", columns: [{ key: "ts_pct", label: "TS%", numeric: true }], rows: [{ player: "Giannis", ts_pct: 41.2 }] }] }); return { done: true };`;
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-sub3", name: "codemode", arguments: { code } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
       } else {
         msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
       }
@@ -922,6 +925,8 @@ test("createPiExecution rejects a zero-evidence submit_answer on a data ask", as
 
   const audits = events.filter((e) => e.type === "tool_result" && e.name === "submit_answer_audit" && e.status === "fail");
   assert.ok(audits.some((e) => String(e.error).includes("no_evidence_on_data_ask")), "audit rejects a zero-evidence submit");
+  const steers = events.filter((e) => e.type === "tool_result" && e.name === "artifact_steer");
+  assert.equal(steers.length, 1, "prose-only resubmission on a ranked ask steers once for a table");
   const answer = events.find((e) => e.type === "answer");
   assert.equal(answer.text, canonical, "resubmission after a data call lands");
 
