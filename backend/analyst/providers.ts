@@ -45,6 +45,12 @@ const EXTRA_LIMITS: Partial<Record<Provider, Record<string, TokenLimits>>> = {
     },
     coarena: { "deepseek-v4-1-flash-1017": { contextWindow: 131072, maxTokens: 65536 } },
     seek100m: { "deepseek-v4.1-flash-free": { contextWindow: 131072, maxTokens: 65536 } },
+    kilo: {
+        "nvidia/nemotron-3.5-lightning:free": { contextWindow: 131072, maxTokens: 65536 },
+        "nvidia/nemotron-3-ultra-550b-a55b:free": { contextWindow: 131072, maxTokens: 65536 },
+        "reflection/beam-free": { contextWindow: 131072, maxTokens: 65536 },
+    },
+    numes: { "nvidia/nemotron-3-ultra-550b-a55b:free": { contextWindow: 131072, maxTokens: 65536 } },
 };
 
 const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens: 16384 };
