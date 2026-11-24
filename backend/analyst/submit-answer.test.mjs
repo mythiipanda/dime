@@ -724,9 +724,11 @@ test("createPiExecution steers a substantial unsubmitted answer through submit_a
   submitOnSteer = false;
   execRequests = 0;
   events = await run();
-  assert.equal(execRequests, 2);
+  assert.equal(execRequests, 3);
   const steers = events.filter((e) => e.type === "tool_call" && e.name === "turn_end_steer");
   assert.equal(steers.length, 1, "steer fires exactly once");
+  const giveUps = events.filter((e) => e.type === "tool_call" && e.name === "give_up_correction_steer");
+  assert.equal(giveUps.length, 1, "give-up correction fires exactly once");
   const plain = events.find((e) => e.type === "answer");
   assert.equal(plain.submission, undefined);
   assert.equal(plain.text, longText);
