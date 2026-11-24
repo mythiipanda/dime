@@ -403,7 +403,7 @@ export function auditEntityRecall(
     ).toLowerCase();
     const missing: string[] = [];
     for (const [code, variants] of Object.entries(TEAM_ENTITIES)) {
-        const named = new RegExp(`\\b${code}\\b`, "i").test(question)
+        const named = new RegExp(`\\b${code}\\b`).test(question)
             || variants.slice(1).some(variant => new RegExp(`\\b${variant.replace(/ /g, "\\s+")}\\b`, "i").test(question));
         if (named && !variants.some(variant => new RegExp(`\\b${variant.replace(/ /g, "\\s+")}\\b`).test(haystack)))
             missing.push(code);
