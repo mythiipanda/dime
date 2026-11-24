@@ -1,6 +1,6 @@
 ---
 name: lineups-and-rotations
-description: Analyze 5-man lineup net ratings with sample-size caveats, possession-weighted aggregation, 2-man WOWY matrices, non-star survival minutes, and playoff rotation tightening.
+description: Analyze 5-man lineup net ratings with sample-size caveats, possession-weighted aggregation, 2-man WOWY matrices, non-star survival minutes, within-season rotation breadth and concentration (top-8 share, HHI, effective players), lineup continuity across seasons, and playoff rotation tightening.
 ---
 
 # Lineups, WOWY & Rotation Analytics Playbook
@@ -61,3 +61,20 @@ Regular-season depth often masks playoff vulnerabilities:
 
 - Canonicalize in Python: `tuple(sorted(int(p) for p in group_id.split('-') if p))`.
 - In SQL, filter before casting: `list_filter(string_split(group_id, '-'), x -> x <> '')` — DuckDB evaluates a list comprehension's transform for every element before applying its `IF`, so `[CAST(x AS BIGINT) FOR x IN string_split(...) IF x <> '']` still casts `''` and errors.
+
+## 6. Windowed Rotation Breadth & Concentration
+
+Asks that track how a rotation stretches or tightens *within* a season ("first N vs last N games", "early vs late") are window-comparison problems, not season aggregates:
+
+- **Window selection**: rank the team's regular-season games (`silver_hist_gamelogs`, `GAME_ID LIKE '002%'`) by `game_date` then `game_id`; the first-N and last-N windows are positional slices of that ordering, and the season must contain enough unique games to fill both windows without overlap.
+- **Minutes grain**: join `silver_boxscores` on team/season/game; keep one row per game-player. Boxscore minutes come as `MM:SS` text — split on `:` and take `minutes + seconds/60`; a blank/`DNP` cell is `0`, not NULL-excluded.
+- **Shares and concentration**: aggregate each player's minutes inside the window, take `share_i = min_i / total_minutes` over *all* positive-minute players (no per-player floor — the denominator is total actual player-minutes including overtime). Report `top8_share = Σ` of the 8 largest shares, `HHI = Σ share_i²`, and `effective_players = 1/HHI`. Compare the two windows' deltas; concentration rising means HHI up and effective players down.
+- **Unit concentration**: for 5-man concentration asks, group `silver_hist_lineups` by the canonical key of §5 with the stated minute/possession floors, then report unit count, total possessions, the possession-weighted mean `net_rating` *and* the simple mean, the most-used unit's minute share, and the weighted mean recomputed without it.
+
+## 7. Lineup Continuity Across Seasons
+
+"Continuity" asks measure carryover of qualifying units between a season and its predecessor, not roster overlap:
+
+- A unit *qualifies* in a season when its `silver_hist_lineups` row clears the stated floors (`season_type='regular-season'`, `measure_type='advanced'`, `per_mode='totals'`, `min >=` floor, positive `poss`, non-null `net_rating`, exactly five unique player IDs after §5 canonicalization, one row per canonical unit per season).
+- **Retained** = qualifies in both seasons; **newly qualifying** = qualifies now but did not qualify previously (it may still have played together below the floor).
+- Report prior/current qualifying counts, retained count, retained units' share of *current* qualifying minutes, and the possession-weighted current `net_rating` computed separately for retained vs newly qualifying units.
