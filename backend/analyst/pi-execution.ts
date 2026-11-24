@@ -65,6 +65,26 @@ export function codemodeStoreSnapshot(branch: ReadonlyArray<{ type: string }>): 
     return Object.fromEntries(store);
 }
 
+function salvageDraftSubmission(snapshot: Record<string, unknown>): AnswerSubmission | undefined {
+    let best: { text: string; anchors: [] }[] | undefined;
+    let bestLen = 0;
+    for (const value of Object.values(snapshot)) {
+        if (!Array.isArray(value) || value.length === 0 || value.length > 12)
+            continue;
+        const items = value.map(objectValue).filter((item): item is Record<string, unknown> => item !== undefined);
+        if (items.length !== value.length || !items.every(item => typeof item.text === "string" && item.text.trim().length >= 40))
+            continue;
+        const total = items.reduce((n, item) => n + (item.text as string).trim().length, 0);
+        if (total >= 200 && total > bestLen) {
+            bestLen = total;
+            best = items.map(item => ({ text: (item.text as string).trim(), anchors: [] }));
+        }
+    }
+    if (!best)
+        return undefined;
+    return { blocks: best, omitted: ["submission salvaged from the codemode store draft — the run ended before submit_answer completed"] };
+}
+
 function readStoredSnapshot(dir: string): Record<string, unknown> | undefined {
     try {
         const value: unknown = JSON.parse(readFileSync(join(dir, CODEMODE_STORE_FILE), "utf8"));
@@ -1139,6 +1159,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         break;
                     }
                     const replayReasoning = reasoning ? { reasoning } : {};
+                    if (!acceptedSubmission && session) {
+                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                        if (drafted)
+                            acceptedSubmission = drafted;
+                    }
                     if (acceptedSubmission) {
                         const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
                         emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
@@ -1164,6 +1189,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     if (!answerEmitted && !acceptedSubmission && lastRejectedSubmission) {
                         acceptedSubmission = lastRejectedSubmission;
                         emitAcceptedAnswer();
+                    }
+                    if (!answerEmitted && !acceptedSubmission && session) {
+                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                        if (drafted) {
+                            acceptedSubmission = drafted;
+                            emitAcceptedAnswer();
+                        }
                     }
                     if (!answerEmitted && !controller.signal.aborted)
                         emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
