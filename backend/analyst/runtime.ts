@@ -10,6 +10,7 @@ import {
     SessionManager,
     SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { loadSkillTool } from "./pi-context.js";
 
 type SessionOptions = Pick<Parameters<typeof createAgentSession>[0] & {}, "cwd" | "agentDir" | "model" | "modelRuntime" | "customTools">;
@@ -167,6 +168,28 @@ export async function createAnalystSession({
         session.setActiveToolsByName(["codemode"]);
         if (!session.getActiveToolNames().includes("codemode"))
             throw new Error("Pi codemode extension is not active");
+        const compat = (model as { compat?: Record<string, unknown> }).compat;
+        if (compat?.["requiresReasoningContentOnAssistantMessages"]) {
+            const agent = session.agent as unknown as {
+                transformContext?: (messages: Message[], signal?: AbortSignal) => Promise<Message[]>;
+            };
+            const previous = agent.transformContext;
+            agent.transformContext = async (messages, signal) => {
+                const transformed = previous ? await previous(messages, signal) : messages;
+                return transformed.map((message) => {
+                    if (message.role !== "assistant")
+                        return message;
+                    const assistant = message as AssistantMessage;
+                    return {
+                        ...assistant,
+                        content: assistant.content.map((block) =>
+                            block.type === "thinking" && block.thinkingSignature === "reasoning"
+                                ? { ...block, thinkingSignature: "reasoning_content" }
+                                : block),
+                    };
+                });
+            };
+        }
         return session;
     } catch (error) {
         session.dispose();
