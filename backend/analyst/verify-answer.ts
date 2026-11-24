@@ -458,8 +458,15 @@ export function auditAnswerNumbers(
         else
             unsupported.push(claim);
     }
+    const questionValues = (() => {
+        const questionClaims: NumericClaim[] = [];
+        addTextClaims(question ?? "", questionClaims, new Set<string>());
+        return questionClaims.flatMap(claim => claim.values);
+    })();
+    const echoesQuestion = (claim: NumericClaim) =>
+        claim.values.every(value => questionValues.some(asked => numbersClose(value, asked)));
     const missing_in_artifacts = (input.artifacts ?? []).length > 0
-        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactValues))
+        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactValues) && !echoesQuestion(claim))
         : [];
     const uncovered_asks = question ? auditAskCoverage(question, input) : [];
     const metric_value_gaps = question ? auditMetricCoverage(question, input) : [];
@@ -480,14 +487,9 @@ export function auditAnswerNumbers(
             return matched ? [] : wantedKinds;
         })()
         : [];
-    const questionValues = (() => {
-        const questionClaims: NumericClaim[] = [];
-        addTextClaims(question ?? "", questionClaims, new Set<string>());
-        return questionClaims.flatMap(claim => claim.values);
-    })();
     const unsupported_claims = unsupported
         .filter(claim => !META_CONTEXT_RE.test(claim.context))
-        .filter(claim => !claim.values.every(value => questionValues.some(asked => numbersClose(value, asked))))
+        .filter(claim => !echoesQuestion(claim))
         .filter(claim => /%|\$/.test(claim.raw) || claim.values.some(value => !Number.isInteger(value) || Math.abs(value) >= 100))
         .slice(0, 8)
         .map(claim => `${claim.raw} (near "${claim.context.slice(0, 80)}")`);

@@ -65,3 +65,62 @@ test("createVerifyAnswerNumbersTool returns a JSON audit without submitting", as
   assert.deepEqual(audit.unsupported.map((claim) => claim.raw), ["12.3"]);
   assert.equal(result.details.unsupported.length, 1);
 });
+
+test("auditAnswerNumbers does not flag question-echoed thresholds as missing_in_artifacts", () => {
+  const sources = [
+    makeSourceRecord("src-1", {
+      rows: [
+        { player: "Jimmy Butler III", ftm: 359, fta: 416, minutes: 1744.63, points: 1116 },
+        { player: "Bam Adebayo", ftm: 283, fta: 354, minutes: 2142.58, points: 1197 },
+      ],
+    }),
+  ];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [
+        {
+          text: "Qualifying thresholds: >=500 minutes and >=50 FTA. Ranked by FTA descending: Jimmy Butler III 416 FTA, Bam Adebayo 354 FTA.",
+        },
+      ],
+      artifacts: [
+        {
+          kind: "table",
+          title: "MIA Foul-Line Workload Shortlist",
+          columns: [{ key: "player" }, { key: "fta" }],
+          rows: [
+            { player: "Jimmy Butler III", fta: 416 },
+            { player: "Bam Adebayo", fta: 354 },
+          ],
+        },
+      ],
+    },
+    sources,
+    "Retain >=500 minutes and >=50 FTA; return the top five by FTA."
+  );
+  assert.equal(audit.missing_in_artifacts.length, 0);
+});
+
+test("auditAnswerNumbers still flags supported prose figures absent from artifacts", () => {
+  const sources = [
+    makeSourceRecord("src-1", {
+      rows: [{ player: "Jimmy Butler III", ftm: 359, fta: 416 }],
+    }),
+  ];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [{ text: "Jimmy Butler III attempted 416 free throws and made 359." }],
+      artifacts: [
+        {
+          kind: "table",
+          title: "FTA leaders",
+          columns: [{ key: "player" }, { key: "fta" }],
+          rows: [{ player: "Jimmy Butler III", fta: 416 }],
+        },
+      ],
+    },
+    sources,
+    "Who led the team in free throws?"
+  );
+  assert.equal(audit.missing_in_artifacts.length, 1);
+  assert.equal(audit.missing_in_artifacts[0].raw, "359");
+});
