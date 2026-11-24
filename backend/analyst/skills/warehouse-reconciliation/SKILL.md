@@ -76,7 +76,16 @@ Warehouse coverage lags the calendar: production and game tables (`silver_leader
 - **Salary columns carry year semantics**: in `silver_salaries`, `SALARY` is the cap hit for the row's `_season`; the `SALARY_20XX_YY`/`OPTION_20XX_YY` columns are per-contract-year values and shift every rollover. For "20XX-YY payroll / cap hit", sum `SALARY` on `_season = '20XX-YY'` rows (or the matching `SALARY_20XX_YY` column) — never a different year column. A frozen column such as `SALARY_2025_26` on 2026-27 rows silently returns last year's payroll, and the result can look verified because the schema accepts it. When the prompt's year differs from any column you plan to sum, reconcile it against `SUM(SALARY)` first.
 - **Stale premise handling**: when a tool reports that a player's team differs from the question's premise (trade guard errors name the season and the listed team), say the premise is stale, then answer for the player's current team or re-run with the historical season the user meant. Do not force the question's teams through.
 
-## 6. Call Economy: Fewer Turns, Faster Answers
+## 6. Reconciliation Deliverables
+
+When an ask reconciles, validates, or cross-checks one source against another — a player across stint rows, a box-score feed against an event feed, a naive total against a deduplicated or filtered one — the submission must carry the reconciliation itself, not just the verdict:
+
+- **Every entity on both sides.** List each source's rows for the subject (per-stint team, per-feed count, per-side total) before the combined figure — a reconciled total with no per-source breakdown reads as asserted, not reconciled.
+- **The naive and the corrected figure.** When the ask contrasts a raw aggregate with a deduplicated, filtered, or cleaned one (double-grain game rows, garbage-time possessions, overlapping stint coverage), report both numbers and name the exclusion rule that separates them. Delivering only the corrected figure hides the reconciliation; delivering only the naive one means the correction never ran.
+- **The match audit.** State matched-row counts, unmatched rows remaining on each side, and any threshold qualifier counts the ask implies (players clearing a minutes floor, games present in both feeds). An unmatched count of zero is a finding worth stating, not a detail to omit.
+- **Named entities, not just counts.** When the answer hinges on which entities each side holds (which teams a traded player appeared for, which games one feed missed), name them — a count without its members can't be checked against either source.
+
+## 7. Call Economy: Fewer Turns, Faster Answers
 
 Every codemode turn costs model latency, so spend calls deliberately:
 
