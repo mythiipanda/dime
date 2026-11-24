@@ -19,6 +19,8 @@ const policies = {
     numes: { models: ["nvidia/nemotron-3-ultra-550b-a55b:free", "deepseek/deepseek-v4.1-flash:free"], key: "NUMES_API_KEY", url: "https://api.numes.ai/api/v1" },
     coarena: { models: ["deepseek-v4-1-flash-1017"], key: "COARENA_API_KEY", url: "https://coarena.ai/api/v1" },
     packet: { models: ["nvidia-deepseek-v4-1-flash-nvfp4", "minimaxai-minimax-m3-1-flash"], key: "PACKET_API_KEY", url: "https://api.packet.ai/v1" },
+    kilo: { models: ["nvidia/nemotron-3.5-lightning:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "reflection/beam-free"], key: "KILO_API_KEY", url: "https://api.kilo.ai/api/gateway" },
+    seek100m: { models: ["deepseek-v4.1-flash-free"], key: "SEEK100M_API_KEY", url: "https://100milionseek.top/v1" },
 };
 
 type Provider = keyof typeof policies;
@@ -43,8 +45,8 @@ const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens:
 
 function isProvider(name: string): name is Provider { return Object.hasOwn(policies, name); }
 
-const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception", "numes", "coarena", "packet"];
-const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet"]);
+const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception", "numes", "coarena", "packet", "kilo", "seek100m"];
+const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet", "kilo", "seek100m"]);
 const reasoningReplay = new Set<Provider>(["reflection", "nvidia", "packet"]);
 const thinkingAsTextModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
@@ -75,7 +77,7 @@ function resolveLimits(provider: Provider, model: string): TokenLimits {
 
 export function providerPolicy(env: NodeJS.ProcessEnv) {
     const enabled = (name: Provider) => !gated.has(name) || ["true", "1", "yes", "on"].includes((env["DIME_ENABLE_" + name.toUpperCase()] ?? "false").toLowerCase());
-    const key = (name: Provider) => env[policies[name].key] || (name === "gemini" ? env.GOOGLE_API_KEY : "");
+    const key = (name: Provider) => env[policies[name].key] || (name === "gemini" ? env.GOOGLE_API_KEY : name === "kilo" ? " " : "");
     const available = (name: Provider) => Boolean(enabled(name) && key(name));
     const defaultModel = (name: Provider) => {
         const value = env[(name === "nvidia" ? "NVIDIA_NIM" : name.toUpperCase()) + "_MODEL"];
@@ -111,14 +113,14 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
         catalog() {
             const defaultProvider = order.find(available) ?? "mistral";
             const availability = Object.fromEntries(Object.keys(policies).filter(isProvider).filter(name => !gated.has(name) || available(name)).map(name => [name, available(name)]));
-            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
+            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet", "kilo", "seek100m"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
         },
         resolve(id?: string) {
             const { provider, model } = selection(id);
             if (!available(provider))
                 throw new Error("Selected provider is unavailable");
             const limits = resolveLimits(provider, model);
-            const headers: Record<string, string> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : {};
+            const headers: Record<string, string> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : provider === "seek100m" ? { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : {}
             return {
                 provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers,
                 contextWindow: limits.contextWindow, maxTokens: limits.maxTokens,
