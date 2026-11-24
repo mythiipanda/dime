@@ -1159,6 +1159,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         break;
                     }
                     const replayReasoning = reasoning ? { reasoning } : {};
+                    if (!acceptedSubmission && session) {
+                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                        if (drafted)
+                            acceptedSubmission = drafted;
+                    }
                     if (acceptedSubmission) {
                         const canonicalText = acceptedSubmission.blocks.map(b => b.text).join("\n\n");
                         emit({ type: "answer", text: canonicalText, submission: acceptedSubmission, ...replayReasoning });
