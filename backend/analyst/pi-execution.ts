@@ -691,6 +691,8 @@ function wrapBridgeTools(
 ) {
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
     const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number }>();
+    const toolTotals = new Map<string, number>();
+    const repeatedToolSteered = new Set<string>();
     const lastErrors = new Map<string, { error: string; count: number }>();
     const failStreaks = new Map<string, number>();
     const tripped = new Set<string>();
@@ -839,6 +841,18 @@ function wrapBridgeTools(
                 if (!failed && domain) {
                     if (Array.isArray(domain.rows) && domain.rows.length === 0)
                         await namedToolSqlSteer(tool, domain, result, "no_rows", args[1], args);
+                    const total = (toolTotals.get(tool.name) ?? 0) + 1;
+                    toolTotals.set(tool.name, total);
+                    if (total === 4 && !repeatedToolSteered.has(tool.name) && !SQL_STEER_SKIP_TOOLS.has(tool.name)) {
+                        repeatedToolSteered.add(tool.name);
+                        const spec = TOOL_FALLBACK_TABLE[tool.name];
+                        domain.repeated_tool_steer = spec
+                            ? `${tool.name} has now been called ${total} times in this run. Repeated calls to one tool usually mean the ask wants the whole frame, not one slice — one sql_exec over ${spec.table} returns the full cohort; fetch it once and build the deliverable, or submit what you have, instead of enumerating more calls.`
+                            : `${tool.name} has now been called ${total} times in this run. Repeated calls to one tool usually mean the ask wants the whole frame, not one slice — one sql_exec query over the relevant silver table returns it; fetch it once and build the deliverable, or submit what you have, instead of enumerating more calls.`;
+                        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                        emit({ type: "tool_call", name: "repeated_tool_steer", args: { tool: tool.name, count: total } });
+                        emit({ type: "tool_result", name: "repeated_tool_steer", status: "ok" });
+                    }
                     if (!capWarehouseSteered && capAsk && WEB_TOOLS.has(tool.name)) {
                         capWarehouseSteered = true;
                         domain.warehouse_steer = "This is a cap/trade question the warehouse answers directly. Prefer the cap tools — get_cap_scenario, get_trade_legality, get_fa_plan, get_draft_capital, get_cap_ledger, get_cap_table — or sql_exec over silver_salaries, silver_cap_room, silver_contracts, silver_future_picks: they carry committed salaries, projected cap/tax/apron lines, and the outgoing/incoming pick ledger. Web search is a fallback only when the warehouse lacks the input (e.g. a live news claim); cite the warehouse figures for the numbers.";
@@ -1009,7 +1023,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             lastRejectedSubmission = submission;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
                             emit({ type: "tool_result", name: "submit_answer_audit", status: "fail", error: JSON.stringify(gaps) });
-                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. A submission whose blocks only announce or confirm the analysis ("Submitted.", "Done", "see above") is never acceptable — copy the computed figures and tables into the blocks themselves even when gaps remain; when an artifact kind genuinely cannot be produced, deliver that content as a markdown table inside a block and name it in omitted.${missingArtifacts.length > 0 || noArtifacts.length > 0 ? " The artifact kinds and their input schemas are in the visual-artifacts skill — call await tools.load_skill({ name: \"visual-artifacts\" }), then return each deliverable as an entry in the artifacts array." : ""} After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
+                            return `Not submitted — the honesty audit still finds unacknowledged gaps (rejection ${submitAuditRejections}/${SUBMIT_AUDIT_MAX_REJECTIONS}): ${JSON.stringify(gaps)}. Produce the requested artifact kinds, move prose-stated figures into artifact payloads, cover every flagged ask, query every table named in missing_required_tables, state every required metric value in prose or a payload, and correct or drop each unsupported figure that matches no tool output, back every narrated ask facet with at least one tool call or result, or record each one in the omitted field. A submission whose blocks only announce or confirm the analysis ("Submitted.", "Done", "see above") is never acceptable — copy the computed figures and tables into the blocks themselves even when gaps remain; when an artifact kind genuinely cannot be produced, deliver that content as a markdown table inside a block and name it in omitted. After ${SUBMIT_AUDIT_MAX_REJECTIONS} rejections the next submission is accepted as-is.`;
                         }
                     );
                     const verifyTool = createVerifyAnswerNumbersTool(
