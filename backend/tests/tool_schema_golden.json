@@ -1380,9 +1380,9 @@
     },
     "get_lineup_leaders": {
       "name": "get_lineup_leaders",
-      "description": "League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.",
+      "description": "League-wide five-man lineup leaderboard.\n\nOFF_RATING, DEF_RATING, NET_RATING and PACE are the official\nper-100-possessions ratings joined from the lineup table's advanced\nmeasure; MIN, GP and PLUS_MINUS are raw totals from its base measure.\nsort picks the ranking axis: 'net' best net rating first (default),\n'worst' worst net rating first, 'minutes' most minutes first — use\n'worst' for bottom/worst-offender asks and 'minutes' for most-used\nunit rankings.\nA minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a junk slice and never tops the\nboard (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.",
       "args_schema": {
-        "description": "League-wide 5-man lineup net-rating leaderboard with minutes qualification floor.",
+        "description": "League-wide 5-man lineup leaderboard (official per-100 ratings) with minutes floor and sort axis: net, worst, or minutes.",
         "properties": {
           "min_minutes": {
             "default": 100,
@@ -1414,6 +1414,12 @@
             "description": "true for playoff games only. Default: False.",
             "title": "Playoffs",
             "type": "boolean"
+          },
+          "sort": {
+            "default": "net",
+            "description": "Ranking axis: 'net' best net rating first, 'worst' worst net first, 'minutes' most minutes first. Default: 'net'. Default: 'net'.",
+            "title": "Sort",
+            "type": "string"
           }
         },
         "title": "get_lineup_leaders",

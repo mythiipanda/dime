@@ -77,20 +77,34 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
     }
 
 
-@tool(description="League-wide five-man lineup net-rating leaderboard.\n\nNet rating is PLUS_MINUS per 48 minutes from the warehouse lineup\ntable. A minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice\nand never tops the board (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.")
+_LINEUP_SORT = {
+    "net": ("a.NET_RATING", True),
+    "worst": ("a.NET_RATING", False),
+    "minutes": ("b.MIN", True),
+}
+
+
+@tool(description="League-wide five-man lineup leaderboard.\n\nOFF_RATING, DEF_RATING, NET_RATING and PACE are the official\nper-100-possessions ratings joined from the lineup table's advanced\nmeasure; MIN, GP and PLUS_MINUS are raw totals from its base measure.\nsort picks the ranking axis: 'net' best net rating first (default),\n'worst' worst net rating first, 'minutes' most minutes first — use\n'worst' for bottom/worst-offender asks and 'minutes' for most-used\nunit rankings.\nA minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a junk slice and never tops the\nboard (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.")
 def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
-                       season: str | None = None, playoffs: bool = False) -> dict[str, Any]:
+                       season: str | None = None, playoffs: bool = False,
+                       sort: str = "net") -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
     min_minutes = max(25, min(float(min_minutes), 5000))
+    sort_col, sort_desc = _LINEUP_SORT.get(str(sort or "net").lower(),
+                                         _LINEUP_SORT["net"])
+    order = f"{sort_col} {'DESC' if sort_desc else 'ASC'} NULLS LAST"
 
-    sql = """
-        SELECT TEAM_ABBREVIATION, GROUP_NAME, GP,
-               ROUND(MIN, 1) AS MIN, PLUS_MINUS,
-               ROUND(PLUS_MINUS / NULLIF(MIN, 0) * 48, 1) AS NET48
-        FROM silver_lineups
-        WHERE _season = ? AND MIN >= ?
-        ORDER BY PLUS_MINUS / NULLIF(MIN, 0) DESC NULLS LAST
+    sql = f"""
+        SELECT b.TEAM_ABBREVIATION, b.GROUP_NAME, b.GP,
+               ROUND(b.MIN, 1) AS MIN, b.PLUS_MINUS,
+               a.OFF_RATING, a.DEF_RATING, a.NET_RATING, a.PACE
+        FROM silver_lineups b
+        JOIN silver_lineups a
+          ON a.GROUP_ID = b.GROUP_ID AND a._season = b._season
+         AND a.MEASURE = 'advanced'
+        WHERE b._season = ? AND b.MEASURE = 'base' AND b.MIN >= ?
+        ORDER BY {order}
         LIMIT ?
     """
     try:
@@ -102,17 +116,24 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
             hist = False
             if not raw or playoffs:
                 raw = con.execute(
-                    """
-                    SELECT team_abbreviation AS TEAM_ABBREVIATION,
-                           group_name AS GROUP_NAME, gp AS GP,
-                           ROUND(min, 1) AS MIN, plus_minus AS PLUS_MINUS,
-                           ROUND(plus_minus / NULLIF(min, 0) * 48, 1)
-                               AS NET48
-                    FROM silver_hist_lineups
-                    WHERE _season = ? AND min >= ?
-                      AND season_type = ?
-                      AND measure_type = 'base' AND per_mode = 'totals'
-                    ORDER BY plus_minus / NULLIF(min, 0) DESC NULLS LAST
+                    f"""
+                    SELECT b.team_abbreviation AS TEAM_ABBREVIATION,
+                           b.group_name AS GROUP_NAME, b.gp AS GP,
+                           ROUND(b.min, 1) AS MIN, b.plus_minus AS PLUS_MINUS,
+                           a.off_rating AS OFF_RATING,
+                           a.def_rating AS DEF_RATING,
+                           a.net_rating AS NET_RATING,
+                           a.pace AS PACE
+                    FROM silver_hist_lineups b
+                    JOIN silver_hist_lineups a
+                      ON a.group_id = b.group_id AND a._season = b._season
+                     AND a.season_type = b.season_type
+                     AND a.per_mode = b.per_mode
+                     AND a.measure_type = 'advanced'
+                    WHERE b._season = ? AND b.min >= ?
+                      AND b.season_type = ?
+                      AND b.measure_type = 'base' AND b.per_mode = 'totals'
+                    ORDER BY {order}
                     LIMIT ?
                     """,
                     [season, float(min_minutes), 'playoffs' if playoffs else 'regular-season', int(limit) * 2],
@@ -135,7 +156,10 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
             break
     meta = {
         "season": season,
-        "formula": "NET48 = PLUS_MINUS per 48 minutes",
+        "formula": ("NET_RATING/OFF_RATING/DEF_RATING/PACE are official "
+                    "per-100-possessions ratings; MIN, GP, PLUS_MINUS are "
+                    "raw totals"),
+        "sort": f"{sort if str(sort or '').lower() in _LINEUP_SORT else 'net'}",
         "floor": f"MIN >= {int(min_minutes)} (stated volume floor; "
                  "small-sample units are excluded, F50)"}
     if hist:
