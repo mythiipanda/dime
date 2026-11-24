@@ -36,7 +36,7 @@ const EXTRA_LIMITS: Partial<Record<Provider, Record<string, TokenLimits>>> = {
     cerebras: { "moonshotai-kimi-k3.1-pro-trial": { contextWindow: 262144, maxTokens: 32768 } },
     inception: { "mercury-2.5": { contextWindow: 131072, maxTokens: 16384 } },
     zai: { "glm-4.7-flash": { contextWindow: 200000, maxTokens: 32768 } },
-    uvarc: { "Kimi K2.5": { contextWindow: 65536, maxTokens: 32768 } },
+    uvarc: { "Kimi K2.5": { contextWindow: 64512, maxTokens: 32768 } },
     gemini: {
         "gemini-4-hydrogen": { contextWindow: 1048576, maxTokens: 65536 },
         "gemini-4-neon": { contextWindow: 1048576, maxTokens: 65536 },
