@@ -435,13 +435,16 @@ export function auditAnswerNumbers(
             const tokens = [...new Set((question.match(ARTIFACT_ASK_RE) ?? []).map(token => token.toLowerCase()))];
             if (tokens.length === 0)
                 return [];
+            const concrete = tokens.filter(token => token in ARTIFACT_KIND_TOKENS);
             const artifacts = (input.artifacts ?? []) as Record<string, unknown>[];
             if (artifacts.length === 0)
-                return tokens;
+                return concrete.length > 0 ? tokens.filter(token => token in ARTIFACT_KIND_TOKENS || !/^(artifacts?|artefacts?|specs?)$/.test(token)) : ["artifact"];
             const kinds = new Set(artifacts.map(artifact => String(artifact.kind ?? "").toLowerCase()));
-            return tokens
-                .map(token => ARTIFACT_KIND_TOKENS[token.replace(/ /g, "_")] ?? "")
-                .filter(kind => kind && !kinds.has(kind) && !(kind === "card" && (kinds.has("player_card") || kinds.has("team_card"))));
+            const wantedKinds = [...new Set(concrete.map(token => ARTIFACT_KIND_TOKENS[token.replace(/ /g, "_")]))];
+            if (wantedKinds.length === 0)
+                return [];
+            const matched = wantedKinds.some(kind => kinds.has(kind) || (kind === "card" && (kinds.has("player_card") || kinds.has("team_card"))));
+            return matched ? [] : wantedKinds;
         })()
         : [];
     const questionValues = (() => {
