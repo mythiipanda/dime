@@ -585,12 +585,12 @@ export function createProviderRetryStormGuard(
 ) {
     let exhausted = 0;
     let retryDelayMs = 0;
-    let budgetFired = false;
+    let nextSteerAt = retryBudgetMs;
     return (event: AgentSessionEvent) => {
         if (event.type === "auto_retry_start") {
             retryDelayMs += event.delayMs;
-            if (!budgetFired && retryDelayMs >= retryBudgetMs && onRetryBudget) {
-                budgetFired = true;
+            if (onRetryBudget && retryDelayMs >= nextSteerAt) {
+                nextSteerAt += retryBudgetMs;
                 onRetryBudget(retryDelayMs);
             }
             return;
@@ -1028,9 +1028,14 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }, (burnedMs: number) => {
                         emit({ type: "tool_call", name: "retry_budget_steer", args: { burned_ms: burnedMs } });
                         emit({ type: "tool_result", name: "retry_budget_steer", status: "ok" });
+                        const remainingMs = tracker.budgetMs !== undefined ? Math.max(0, Math.round(tracker.budgetMs - (Date.now() - tracker.startedAt))) : undefined;
+                        const remainingText = remainingMs !== undefined ? ` ~${Math.round(remainingMs / 1000)}s of run budget remains.` : "";
+                        const submitText = remainingMs !== undefined && remainingMs < 120_000
+                            ? " That is not enough to start new broad queries — submit the verified partial work with submit_answer now and list uncovered sub-questions in its omitted field."
+                            : " The warehouse tools still work normally — keep using them for the remaining sub-questions and do not spend calls speculating about availability. When the verified work is enough to answer the core ask, submit with it and list uncovered sub-questions in omitted.";
                         session?.agent.steer({
                             role: "user",
-                            content: `Provider calls are hitting retry backoffs (latency, not an outage): this run has already spent ~${Math.round(burnedMs / 1000)}s waiting on them. The warehouse tools still work normally — keep using them for the remaining sub-questions and do not spend calls speculating about availability. When the verified work is enough to answer the core ask, submit with it and list uncovered sub-questions in omitted. Skip this only if submit_answer already ran.`,
+                            content: `Provider calls are hitting retry backoffs (latency, not an outage): this run has already spent ~${Math.round(burnedMs / 1000)}s waiting on them.${remainingText}${submitText} Skip this only if submit_answer already ran.`,
                             timestamp: Date.now()
                         });
                     }, deps.retryTimeBudgetMs);
