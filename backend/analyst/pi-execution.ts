@@ -627,6 +627,8 @@ export function createProviderRetryStormGuard(
 
 const WEB_TOOLS = new Set(["web_search", "web_fetch"]);
 const SQL_STEER_SKIP_TOOLS = new Set(["sql_exec", "run_python", "web_search", "web_fetch", "warehouse_schema", "get_warehouse_freshness", "load_skill", "run_status"]);
+const DATA_PULL_TOOLS = new Set(["sql_exec", "run_python"]);
+const DATA_PULL_SYNTH_AT = 12;
 
 type FallbackSpec = { table: string; nameCol?: string; teamCol?: string; seasonCol?: string; seasonText?: boolean; idCol?: string; orderCol?: string };
 const TOOL_FALLBACK_TABLE: Record<string, FallbackSpec> = {};
@@ -692,6 +694,7 @@ function wrapBridgeTools(
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
     const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number }>();
     const toolTotals = new Map<string, number>();
+    let dataPulls = 0;
     const repeatedToolSteered = new Set<string>();
     const lastErrors = new Map<string, { error: string; count: number }>();
     const failStreaks = new Map<string, number>();
@@ -769,7 +772,7 @@ function wrapBridgeTools(
             const entry = callCounts.get(key) ?? { count: 0 };
             entry.count += 1;
             callCounts.set(key, entry);
-            if (entry.count >= 3) {
+            if (entry.count >= (tool.name === "run_status" ? 3 : 2)) {
                 if (entry.lastSuccessRef) {
                     const prior = results.get(entry.lastSuccessRef);
                     if (prior) {
@@ -843,6 +846,16 @@ function wrapBridgeTools(
                         await namedToolSqlSteer(tool, domain, result, "no_rows", args[1], args);
                     const total = (toolTotals.get(tool.name) ?? 0) + 1;
                     toolTotals.set(tool.name, total);
+                    if (DATA_PULL_TOOLS.has(tool.name)) {
+                        dataPulls += 1;
+                        domain.data_pulls = dataPulls;
+                        if (dataPulls === DATA_PULL_SYNTH_AT) {
+                            domain.synthesis_hint = `${dataPulls} data pulls so far — past this point extra queries rarely change the answer. Reuse the refs you already have, write the deliverable, and submit_answer; reach for another query only if the ask names a figure still missing.`;
+                            emit({ type: "tool_call", name: "data_pull_synth_steer", args: { count: dataPulls } });
+                            emit({ type: "tool_result", name: "data_pull_synth_steer", status: "ok" });
+                        }
+                        result.content = [{ type: "text", text: JSON.stringify(domain) }];
+                    }
                     if (total === 4 && !repeatedToolSteered.has(tool.name) && !SQL_STEER_SKIP_TOOLS.has(tool.name)) {
                         repeatedToolSteered.add(tool.name);
                         const spec = TOOL_FALLBACK_TABLE[tool.name];
@@ -995,11 +1008,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const unevidencedAsks = audit.unevidenced_asks
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const missingEntities = audit.missing_entities
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const zeroEvidenceOnSubmit = dataToolCalls === 0
                                 && (start.sources?.length ?? 0) === 0
                                 && connected.results.size === 0
                                 && isDataAsk(start.q);
-                            if (!zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0)
+                            if (!zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && missingEntities.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
@@ -1017,6 +1032,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.unsupported_claims = unsupportedClaims;
                             if (unevidencedAsks.length > 0)
                                 gaps.unevidenced_asks = unevidencedAsks;
+                            if (missingEntities.length > 0)
+                                gaps.missing_entities = missingEntities;
                             if (zeroEvidenceOnSubmit)
                                 gaps.no_evidence_on_data_ask = [ZERO_EVIDENCE_DATA_ASK_FLAG];
 

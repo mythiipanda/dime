@@ -452,7 +452,7 @@ test("normalizeLoopArgs canonicalizes season years to YYYY-YY", () => {
   );
 });
 
-test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-circuits 3rd identical call", async () => {
+test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-circuits repeated identical calls", async () => {
   assert.equal(
     canonicalArgsKey({ b: 2, a: { z: true, y: [1, { d: 4, c: 3 }] } }),
     canonicalArgsKey({ a: { y: [1, { c: 3, d: 4 }], z: true }, b: 2 })
@@ -589,16 +589,17 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
     })) {
       events.push(event);
     }
-    assert.equal(execCount, 2);
+    assert.equal(execCount, 1);
     const toolResults = events.filter((e) => e.type === "tool_result");
     assert.equal(toolResults.length, 3);
     assert.equal(toolResults[0].status, "ok");
     assert.equal(toolResults[1].status, "ok");
     assert.equal(toolResults[2].status, "ok");
-    assert.match(toolResults[2].result, /reused result of src-exec-2/);
+    assert.match(toolResults[1].result, /reused result of src-exec-1/);
+    assert.match(toolResults[2].result, /reused result of src-exec-1/);
 
     const loopSource = events.find(
-      (e) => e.type === "source" && e.record.ref === "loop_3_sql_exec"
+      (e) => e.type === "source" && /^loop_\d+_sql_exec$/.test(e.record.ref)
     );
     assert.equal(
       loopSource,
@@ -756,14 +757,14 @@ test("wrapBridgeTools terminates the run on the 4th blocked repeat of a failing 
     })) {
       events.push(event);
     }
-    assert.equal(execCount, 2);
+    assert.equal(execCount, 1);
     const toolResults = events.filter((e) => e.type === "tool_result" && e.name === "sql_exec");
-    assert.equal(toolResults.length, 6);
+    assert.equal(toolResults.length, 5);
     for (const result of toolResults)
       assert.equal(result.status, "fail");
-    assert.match(toolResults[5].error, /Run stopped: sql_exec called 6 times/);
+    assert.match(toolResults[4].error, /Run stopped: sql_exec called 5 times/);
     const pivotSource = events.find(
-      (e) => e.type === "source" && e.record.ref === "loop_3_sql_exec"
+      (e) => e.type === "source" && e.record.ref === "loop_2_sql_exec"
     );
     assert.ok(pivotSource, "failing repeats should emit a pivot source record");
     const pivotPayload = pivotSource.record.response.structuredContent;
@@ -771,7 +772,7 @@ test("wrapBridgeTools terminates the run on the 4th blocked repeat of a failing 
     assert.equal(pivotPayload.last_error, "warehouse unavailable");
     assert.match(pivotPayload.error, /keeps failing.*do not retry/);
     const stopSource = events.find(
-      (e) => e.type === "source" && e.record.ref === "loop_stop_6_sql_exec"
+      (e) => e.type === "source" && e.record.ref === "loop_stop_5_sql_exec"
     );
     assert.ok(stopSource, "loop-stop source record should be emitted");
     assert.equal(stopSource.record.response.structuredContent.loop_terminated, true);
@@ -779,8 +780,8 @@ test("wrapBridgeTools terminates the run on the 4th blocked repeat of a failing 
     const failure = events.find((e) => e.type === "failure");
     assert.ok(failure, "run should terminate with a failure event");
     assert.equal(failure.kind, "loop_stop");
-    assert.match(failure.message, /Run stopped: sql_exec called 6 times/);
-    assert.equal(turn, 6, "model should not get another turn after the loop stop");
+    assert.match(failure.message, /Run stopped: sql_exec called 5 times/);
+    assert.equal(turn, 5, "model should not get another turn after the loop stop");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -2070,7 +2071,7 @@ test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct player of 
     })) {
       events.push(event);
     }
-    assert.equal(execCount, 5);
+    assert.equal(execCount, 4);
     const steers = events.filter((e) => e.type === "tool_result" && e.name === "pool_fanout_steer");
     assert.equal(steers.length, 1, "steer fires once per tool");
     const zoneCall = events.find((e) => e.type === "tool_call" && e.name === "pool_fanout_steer");
@@ -2174,7 +2175,7 @@ test("wrapBridgeTools appends a pool fan-out hint on the 3rd distinct team for l
     })) {
       events.push(event);
     }
-    assert.equal(execCount, 5);
+    assert.equal(execCount, 4);
     const steers = events.filter((e) => e.type === "tool_result" && e.name === "pool_fanout_steer");
     assert.equal(steers.length, 1, "steer fires once per tool");
     const steerCall = events.find((e) => e.type === "tool_call" && e.name === "pool_fanout_steer");
