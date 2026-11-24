@@ -9,7 +9,7 @@ export const modelConfigSchema = Type.Object({
     provider: Type.String({ minLength: 1 }), model: Type.String({ minLength: 1 }),
     baseUrl: Type.String({ minLength: 1 }), apiKey: Type.String({ minLength: 1 }),
     contextWindow: Type.Integer({ minimum: 1 }), maxTokens: Type.Integer({ minimum: 1 }),
-    headers: Type.Optional(Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()]))),
+    headers: Type.Optional(Type.Record(Type.String(), Type.String())),
     reasoning: Type.Optional(Type.Boolean()),
     compat: Type.Optional(Type.Object({
         requiresReasoningContentOnAssistantMessages: Type.Optional(Type.Boolean()),
@@ -29,11 +29,9 @@ export async function resolvedRuntime(input: unknown) {
     const config = input;
     const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
     runtime.registerProvider(config.provider, {
-        api: config.provider === "gemini" ? "google-generative-ai" : "openai-completions", baseUrl: config.baseUrl, apiKey: config.apiKey,
-        headers: Object.fromEntries(Object.entries(config.headers ?? {}).filter(([, v]) => v !== null)) as Record<string, string>,
+        api: config.provider === "gemini" ? "google-generative-ai" : "openai-completions", baseUrl: config.baseUrl, apiKey: config.apiKey, headers: config.headers,
         models: [{
                 id: config.model, name: config.model, input: ["text"], reasoning: config.reasoning ?? false, contextWindow: config.contextWindow, maxTokens: config.maxTokens, compat: config.compat,
-                headers: Object.fromEntries(Object.entries(config.headers ?? {}).filter(([, v]) => v === null)) as Record<string, string>,
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
             }]
     });
