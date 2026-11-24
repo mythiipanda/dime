@@ -769,7 +769,7 @@ function wrapBridgeTools(
             const entry = callCounts.get(key) ?? { count: 0 };
             entry.count += 1;
             callCounts.set(key, entry);
-            if (entry.count >= 3) {
+            if (entry.count >= (tool.name === "run_status" ? 3 : 2)) {
                 if (entry.lastSuccessRef) {
                     const prior = results.get(entry.lastSuccessRef);
                     if (prior) {
