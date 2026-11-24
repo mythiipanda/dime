@@ -117,7 +117,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
             if (!available(provider))
                 throw new Error("Selected provider is unavailable");
             const limits = resolveLimits(provider, model);
-            const headers: Record<string, string> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : {};
+            const headers: Record<string, string | null> = provider === "openrouter" ? { "HTTP-Referer": "https://github.com/mythiipanda/dime", "X-Title": "Dime NBA Analyst" } : ["groq", "cerebras", "agnes"].includes(provider) ? { "User-Agent": "dime-agent/1.0" } : provider === "kilo" ? { authorization: null } : {};
             return {
                 provider, model, apiKey: key(provider), baseUrl: policies[provider].url, headers,
                 contextWindow: limits.contextWindow, maxTokens: limits.maxTokens,
