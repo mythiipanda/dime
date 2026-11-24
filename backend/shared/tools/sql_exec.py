@@ -102,6 +102,19 @@ def _refusal_hint(query: str, error: str) -> str:
             return ("information_schema and catalog functions are not in the "
                     "declared table set; call warehouse_schema for the exact "
                     "table and column names instead.")
+        names = _re.findall(r"[A-Za-z_][\w.]*", error.partition(":")[2]) if ":" in error else []
+        mapped = []
+        for name in names[:6]:
+            close = _difflib.get_close_matches(
+                name.rsplit(".", 1)[-1], list(TABLES), n=2, cutoff=0.5)
+            if close:
+                mapped.append(f"{name} -> {', '.join(close)}")
+        if mapped:
+            return ("Every table in the query must come from the declared "
+                    "silver set. Closest declared tables: "
+                    + "; ".join(mapped)
+                    + ". Rewrite against these names; warehouse_schema lists "
+                    "the full set with columns.")
         return ("Every table in the query must come from the declared silver "
                 "set; call warehouse_schema for the exact names rather than "
                 "guessing schema-qualified variants.")
