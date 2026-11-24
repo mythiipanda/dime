@@ -29,9 +29,11 @@ export async function resolvedRuntime(input: unknown) {
     const config = input;
     const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
     runtime.registerProvider(config.provider, {
-        api: config.provider === "gemini" ? "google-generative-ai" : "openai-completions", baseUrl: config.baseUrl, apiKey: config.apiKey, headers: config.headers as Record<string, string> | undefined,
+        api: config.provider === "gemini" ? "google-generative-ai" : "openai-completions", baseUrl: config.baseUrl, apiKey: config.apiKey,
+        headers: Object.fromEntries(Object.entries(config.headers ?? {}).filter(([, v]) => v !== null)) as Record<string, string>,
         models: [{
                 id: config.model, name: config.model, input: ["text"], reasoning: config.reasoning ?? false, contextWindow: config.contextWindow, maxTokens: config.maxTokens, compat: config.compat,
+                headers: Object.fromEntries(Object.entries(config.headers ?? {}).filter(([, v]) => v === null)) as Record<string, string>,
                 cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
             }]
     });
