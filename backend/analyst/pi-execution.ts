@@ -751,7 +751,7 @@ function wrapBridgeTools(
                 if (entry.lastSuccessRef) {
                     const prior = results.get(entry.lastSuccessRef);
                     if (prior) {
-                        emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef}` });
+                        emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef} — this identical call already ran and the data is unchanged; do not send it again: reuse ref ${entry.lastSuccessRef}, change the arguments, switch tools, or call submit_answer.` });
                         return sourceResult(prior);
                     }
                 }
