@@ -102,6 +102,8 @@ The analyst agent has direct access to the `run_python` tool equipped with prelo
 - `np`: NumPy for vectorized modeling and resampling.
 - `math` and `statistics`: Standard library mathematical algorithms.
 
+Every `run_python` call runs in a fresh namespace — variables, frames, and fitted objects do not persist between calls. A call that re-reads `silver_hist_possessions` or another large table repays that full scan each time, so splitting load → aggregate → fit across calls multiplies the I/O cost by the number of calls and can exhaust the run budget. Keep the whole pipeline inside one call: run a `con.execute` GROUP BY that reduces raw rows to the modeling grain (stints, player-games, team-splits), convert that small frame to polars/NumPy, then fit. For RAPM-style fits, aggregate possessions to stint rows (GROUP BY lineup/off-def player set) before building the sparse design — the solve is over ~thousands of stints, not millions of possessions.
+
 ### Warehouse Grain for Shot-Row Modeling
 
 - `silver_hist_shots` carries `person_id` and a display `player_name` (full names like "Michael Porter Jr."). Group by `person_id`, never `player_name` — names are not stable keys across feeds — and when naming a player in the answer, use the exact `player_name` value the warehouse returns rather than a shortened surname form.
