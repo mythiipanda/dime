@@ -17,6 +17,7 @@ const policies = {
     amd: { models: ["DeepSeek-V4-Flash", "GLM-5.3-Flash", "DeepSeek-V4.1-Flash"], key: "AMD_API_KEY", url: "https://developer.amd.com.cn/radeon/api/v1" },
     novapis: { models: ["gpt-6.2-sol"], key: "NOVAPIS_API_KEY", url: "https://novapis.com/v1" },
     numes: { models: ["nvidia/nemotron-3-ultra-550b-a55b:free", "deepseek/deepseek-v4.1-flash:free"], key: "NUMES_API_KEY", url: "https://api.numes.ai/api/v1" },
+    coarena: { models: ["deepseek-v4-1-flash-1017"], key: "COARENA_API_KEY", url: "https://coarena.ai/api/v1" },
     packet: { models: ["nvidia-deepseek-v4-1-flash-nvfp4", "minimaxai-minimax-m3-1-flash"], key: "PACKET_API_KEY", url: "https://api.packet.ai/v1" },
 };
 
@@ -42,8 +43,8 @@ const DEFAULT_APPROVED_LIMITS: TokenLimits = { contextWindow: 131072, maxTokens:
 
 function isProvider(name: string): name is Provider { return Object.hasOwn(policies, name); }
 
-const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception", "numes", "packet"];
-const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis", "numes", "packet"]);
+const order: Provider[] = ["amd", "nvidia", "agnes", "groq", "zai", "cerebras", "openrouter", "mistral", "gemini", "inception", "numes", "coarena", "packet"];
+const gated = new Set<Provider>(["groq", "agnes", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet"]);
 const reasoningReplay = new Set<Provider>(["reflection", "nvidia", "packet"]);
 const thinkingAsTextModels = new Set<string>(["cerebras:moonshotai-kimi-k3.1-pro-trial"]);
 const catalogSchema = Type.Record(Type.String(), Type.Record(Type.String(), Type.Object({ id: Type.String() }, { additionalProperties: true })));
@@ -110,7 +111,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
         catalog() {
             const defaultProvider = order.find(available) ?? "mistral";
             const availability = Object.fromEntries(Object.keys(policies).filter(isProvider).filter(name => !gated.has(name) || available(name)).map(name => [name, available(name)]));
-            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception", "novapis", "numes", "packet"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
+            return { models: ["amd", "nvidia", "agnes", "gemini", "openrouter", "cerebras", "mistral", "groq", "zai", "reflection", "inception", "novapis", "numes", "coarena", "packet"].filter(isProvider).filter(name => !gated.has(name) || available(name)).flatMap(name => (name === "openrouter" ? [...policies[name].models.filter(m => m !== "openrouter/free").sort(), "openrouter/free"] : name === "groq" ? [defaultModel(name)] : ["mistral", "reflection", "inception"].includes(name) ? [defaultModel(name)] : policies[name].models).map(model => ({ id: name + ":" + model, engine: name, default: name === defaultProvider && model === defaultModel(defaultProvider), available: availability[name] }))), available: availability };
         },
         resolve(id?: string) {
             const { provider, model } = selection(id);
