@@ -141,7 +141,7 @@ export function providerPolicy(env: NodeJS.ProcessEnv) {
                 ...(reasoningReplay.has(provider) ? { compat: { requiresReasoningContentOnAssistantMessages: true } } : {}),
                 ...(thinkingAsTextModels.has(provider + ":" + model) ? { compat: { requiresThinkingAsText: true } } : {}),
                 ...(provider === "nvidia" ? { reasoning: true, compat: { requiresReasoningContentOnAssistantMessages: true, thinkingFormat: "qwen-chat-template" } } : {}),
-                ...(provider === "uvarc" ? { reasoning: true } : {}),
+                ...(provider === "uvarc" ? { reasoning: true, compat: { requiresReasoningContentOnAssistantMessages: true, retryTransientBadRequest: true } } : {}),
             };
         }
     };

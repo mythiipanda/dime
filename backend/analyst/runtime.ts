@@ -169,6 +169,40 @@ export async function createAnalystSession({
         if (!session.getActiveToolNames().includes("codemode"))
             throw new Error("Pi codemode extension is not active");
         const compat = (model as { compat?: Record<string, unknown> }).compat;
+        if (compat?.["retryTransientBadRequest"]) {
+            const agent = session.agent as unknown as {
+                streamFunction?: (
+                    m: unknown,
+                    ctx: unknown,
+                    opts: Record<string, unknown> & { fetch?: typeof fetch },
+                ) => unknown;
+            };
+            const originalStream = agent.streamFunction;
+            if (originalStream) {
+                const retryFetch: typeof fetch = async (input, init) => {
+                    const maxAttempts = 5;
+                    for (let attempt = 0; ; attempt++) {
+                        const res = await fetch(input, init);
+                        if (res.status !== 400 || attempt + 1 >= maxAttempts)
+                            return res;
+                        const body = await res.clone().text().catch(() => "");
+                        if (!body.includes("'messages'"))
+                            return res;
+                        if (init?.signal?.aborted)
+                            return res;
+                        const delay = Math.min(2000 * 2 ** attempt, 20000) * (0.75 + Math.random() * 0.5);
+                        await new Promise<void>((resolve, reject) => {
+                            const timer = setTimeout(resolve, delay);
+                            init?.signal?.addEventListener("abort", () => {
+                                clearTimeout(timer);
+                                reject(new DOMException("Aborted", "AbortError"));
+                            }, { once: true });
+                        });
+                    }
+                };
+                agent.streamFunction = (m, ctx, opts) => originalStream(m, ctx, { ...opts, fetch: retryFetch });
+            }
+        }
         if (compat?.["requiresReasoningContentOnAssistantMessages"]) {
             const agent = session.agent as unknown as {
                 transformContext?: (messages: Message[], signal?: AbortSignal) => Promise<Message[]>;
