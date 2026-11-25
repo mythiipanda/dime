@@ -14,7 +14,7 @@ _ZONE_CASE = (
     " ELSE 'other' END"
 )
 
-_VALID_ZONES = ("rim", "short_mid", "long_mid", "corner_3", "atb_3")
+_VALID_ZONES = ("rim", "short_mid", "long_mid", "midrange", "corner_3", "atb_3")
 
 
 @tool(description=(
@@ -25,7 +25,7 @@ _VALID_ZONES = ("rim", "short_mid", "long_mid", "corner_3", "atb_3")
     "rank-the-pool ask about shot diet, corner threes, above-the-break "
     "volume, rim rate/finishing or midrange volume - one call instead of "
     "per-player get_shot_zones loops or hand-written coordinate math. "
-    "zone: one of rim|short_mid|long_mid|corner_3|atb_3. min_attempts "
+    "zone: one of rim|short_mid|long_mid|midrange|corner_3|atb_3 - midrange covers any midrange-jumper ask (two-pointers beyond 4ft outside the paint). min_attempts "
     "floors ZONE attempts (default 40). position: '' or C/G/F/PG/SG/SF/PF/C-F "
     "etc as listed in boxscores. Covers every season in silver_hist_shots "
     "including 2024-25 and 2025-26. Rim = within 4 feet; corner_3 = "
@@ -41,8 +41,12 @@ def get_shot_zone_leaders(
     if z not in _VALID_ZONES:
         return {"tool": "get_shot_zone_leaders", "ok": False, "rows": [],
                 "error": (f"unknown zone '{zone}'; valid zones: "
-                          + ", ".join(_VALID_ZONES)),
+                          + ", ".join(_VALID_ZONES)
+                          + ". Retry the same call with zone set to one of these"
+                            " - use midrange for any midrange-jumper ask."),
                 "supported": list(_VALID_ZONES)}
+    if z == "midrange":
+        z = "long_mid"
     pos = str(position or "").strip().upper()
     try:
         min_att = max(1, int(min_attempts or 40))
