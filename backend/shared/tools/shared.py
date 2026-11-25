@@ -229,6 +229,22 @@ def _main():
         "statistics": statistics,
         "out": None,
     }
+    _ns_persist = os.environ.get("DIME_PY_PERSIST_NS", "").strip().lower() in ("1", "true", "yes")
+    _ns_file = Path(".dime_py_ns.pkl")
+    _ns_restored = []
+    if _ns_persist and _ns_file.exists():
+        try:
+            import pickle as _pickle_mod
+            with open(_ns_file, "rb") as _fh:
+                for _k, _b in _pickle_mod.load(_fh).items():
+                    if _k not in ns:
+                        try:
+                            ns[_k] = _pickle_mod.loads(_b)
+                            _ns_restored.append(_k)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
     try:
         sys.stdout = buf
         exec(compile(code, "<dime>", "exec"), ns, ns)
@@ -291,6 +307,38 @@ def _main():
         return
     finally:
         sys.stdout = old_stdout
+        _ns_kept = []
+        if _ns_persist:
+            try:
+                import pickle as _pickle_mod
+                import types as _types_mod
+                _cap = int(os.environ.get("DIME_PY_NS_CAP_MB", "32") or "32") * 1024 * 1024
+                _preloaded = {"__builtins__", "con", "pl", "np", "math", "statistics", "out"}
+                _blob = {}
+                _total = 0
+                for _k in sorted(ns.keys()):
+                    if _k in _preloaded or _k.startswith("_"):
+                        continue
+                    _v = ns[_k]
+                    if isinstance(_v, (_types_mod.ModuleType, _types_mod.FunctionType, _types_mod.BuiltinFunctionType, type)):
+                        continue
+                    try:
+                        _b = _pickle_mod.dumps(_v)
+                    except Exception:
+                        continue
+                    if _total + len(_b) > _cap:
+                        continue
+                    _blob[_k] = _b
+                    _total += len(_b)
+                    _ns_kept.append(_k)
+                _tmp_ns = Path(".dime_py_ns.pkl.tmp")
+                with open(_tmp_ns, "wb") as _fh:
+                    _pickle_mod.dump(_blob, _fh)
+                _tmp_ns.replace(_ns_file)
+            except Exception:
+                pass
+        else:
+            _ns_kept = []
         if con is not None:
             try:
                 con.close()
@@ -310,6 +358,8 @@ def _main():
         "stdout": text,
         "workspace_files": workspace_files,
     }
+    if _ns_persist:
+        payload["namespace"] = {"kept": sorted(_ns_kept), "restored": sorted(_ns_restored)}
     if con is not None and ns.get("con") is not con:
         payload["warning"] = (
             "Your code rebound `con` to a different DuckDB connection; a bare "
@@ -335,6 +385,8 @@ _SAFE_ENV_KEYS = (
     "CONDA_PREFIX",
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
+    "DIME_PY_PERSIST_NS",
+    "DIME_PY_NS_CAP_MB",
 )
 
 def _workspace_dir() -> tuple[_Path, bool]:
@@ -389,6 +441,15 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
             "out": payload.get("out_val"),
             "workspace_files": workspace_files,
         }
+    namespace = payload.get("namespace")
+    if namespace:
+        kept = ", ".join(namespace.get("kept") or []) or "none"
+        restored = ", ".join(namespace.get("restored") or [])
+        note = f"namespace kept for the next call: {kept}"
+        if restored:
+            note += f"; restored into this call: {restored}"
+        if isinstance(rows_payload, dict):
+            rows_payload["namespace"] = note
     out_ok: dict[str, Any] = {
         "tool": "run_python",
         "ok": True,
@@ -401,7 +462,7 @@ def _format_subprocess_result(payload: dict[str, Any]) -> dict[str, Any]:
         out_ok["warning"] = str(payload["warning"])
     return out_ok
 
-@tool(description='Run isolated Python in the thread workspace with read-only DuckDB warehouse access.\n\nPreloaded: con (read-only DuckDB connection), pl (polars), np (numpy), math, statistics. Standard scientific imports (scipy, statsmodels, sklearn, matplotlib, duckdb, polars, json, pathlib) are allowed and workspace files persist across turns for identified threads. Print to stdout or assign `out`. Each call runs up to 240 seconds; aggregate and filter large tables in SQL first so Python iterates over compact arrays, and split resampling loops across calls when a single pass would exceed the cap.')
+@tool(description='Run isolated Python in the thread workspace with read-only DuckDB warehouse access.\n\nPreloaded: con (read-only DuckDB connection), pl (polars), np (numpy), math, statistics. Standard scientific imports (scipy, statsmodels, sklearn, matplotlib, duckdb, polars, json, pathlib) are allowed and workspace files persist across turns for identified threads. Print to stdout or assign `out`. Each call runs up to 240 seconds; aggregate and filter large tables in SQL first so Python iterates over compact arrays, and split resampling loops across calls when a single pass would exceed the cap.' + (' Variables you assign are kept in this thread\'s namespace across calls — reuse them by name instead of re-querying the warehouse.' if _os.environ.get('DIME_PY_PERSIST_NS','').strip().lower() in ('1','true','yes') else ''))
 def run_python(code: str) -> dict[str, Any]:
     from ..store import DB_PATH
 

@@ -1,3 +1,4 @@
+import os
 import difflib
 import re
 from typing import Any
@@ -354,7 +355,18 @@ def register() -> dict[str, Any]:
             "ok": True, "tool": "get_dataset_freshness", "rows": rows, "columns": cols,
         })
 
-    @tool("run_python", description="Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations. Code runs at module top level in a fresh namespace per call: return results by assigning `out = <value>` or print() (never `return`), and never reassign `con` or call duckdb.connect() — the provided `con` is the warehouse. Nothing persists between calls, and a call that scans a large table (e.g. silver_hist_possessions, silver_hist_shots) repays that scan every time it runs — put the whole load-then-fit pipeline in ONE call, and push row-grain aggregation into a con.execute GROUP BY inside it so Python only fits the small aggregate frame.")
+    _persist_ns = os.environ.get("DIME_PY_PERSIST_NS", "").strip().lower() in ("1", "true", "yes")
+    _ns_note = (
+        " Variables you assign (dataframes, arrays, fitted models) are kept in this thread's namespace across calls — reuse them by name instead of re-querying; a memory cap applies, so keep only compact aggregate frames."
+        if _persist_ns else
+        " Nothing persists between calls, and a call that scans a large table (e.g. silver_hist_possessions, silver_hist_shots) repays that scan every time it runs — put the whole load-then-fit pipeline in ONE call, and push row-grain aggregation into a con.execute GROUP BY inside it so Python only fits the small aggregate frame."
+    )
+    _ns_intro = (
+        "Code runs at module top level in this thread's persistent namespace: return results by assigning `out = <value>` or print() (never `return`), and never reassign `con` or call duckdb.connect() — the provided `con` is the warehouse."
+        if _persist_ns else
+        "Code runs at module top level in a fresh namespace per call: return results by assigning `out = <value>` or print() (never `return`), and never reassign `con` or call duckdb.connect() — the provided `con` is the warehouse."
+    )
+    @tool("run_python", description="Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations. " + _ns_intro + _ns_note)
     def run_python(code: str) -> dict:
         violations = _run_python_violations(code)
         default_cols = ["printed", "out"]
