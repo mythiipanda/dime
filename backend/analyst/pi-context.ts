@@ -42,21 +42,59 @@ const uvarcLimiter = (() => {
 })();
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+function sanitizeUvarcMessages(init: RequestInit | undefined): RequestInit | undefined {
+    if (!init || typeof init.body !== "string")
+        return init;
+    let parsed: { messages?: unknown };
+    try {
+        parsed = JSON.parse(init.body);
+    } catch {
+        return init;
+    }
+    if (!Array.isArray(parsed.messages))
+        return init;
+    let dirty = false;
+    const messages = parsed.messages.map((message: unknown) => {
+        if (!message || typeof message !== "object")
+            return message;
+        const record = { ...(message as Record<string, unknown>) };
+        if (record.content === null || record.content === undefined) {
+            record.content = "";
+            dirty = true;
+        } else if (Array.isArray(record.content) && record.content.some(item => item === null || item === undefined)) {
+            record.content = record.content.filter(item => item !== null && item !== undefined);
+            dirty = true;
+        }
+        return record;
+    });
+    if (!dirty)
+        return init;
+    return { ...init, body: JSON.stringify({ ...parsed, messages }) };
+}
+
 export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.fetch): typeof globalThis.fetch {
     return async (input, init) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (!url.startsWith(baseUrl))
             return realFetch(input, init);
+        init = sanitizeUvarcMessages(init);
         await uvarcLimiter.acquire();
         try {
             for (let attempt = 0; ; attempt++) {
                 const res = await realFetch(input, init);
-                if ((res.status === 400 || res.status === 429) && attempt < UVARC_RETRY_ATTEMPTS - 1) {
+                if (res.status === 400) {
                     const body = await res.clone().text().catch(() => "");
-                    if (res.status === 429 || body.includes("'messages'")) {
+                    if (body.includes("'messages'") && attempt < UVARC_RETRY_ATTEMPTS - 1) {
                         await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
                         continue;
                     }
+                    if (body.includes("'messages'") || /input tokens|context length|context window/i.test(body))
+                        return new Response(JSON.stringify({ error: { message: `prompt is too long: input exceeds the context window of this model (uvarc relay: ${body.slice(0, 300)})` } }),
+                            { status: res.status, statusText: res.statusText, headers: { "content-type": "application/json" } });
+                }
+                if (res.status === 429 && attempt < UVARC_RETRY_ATTEMPTS - 1) {
+                    await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
+                    continue;
                 }
                 return res;
             }

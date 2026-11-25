@@ -32,6 +32,59 @@ test("non-matching urls pass straight through", async () => {
     assert.equal(calls, 1);
 });
 
+test("null message content is rewritten to an empty string before sending", async () => {
+    const bodies = [];
+    const realFetch = async (_url, init) => { bodies.push(init.body); return ok(); };
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const payload = { model: "m", messages: [
+        { role: "user", content: null },
+        { role: "assistant", content: [null, { type: "text", text: "kept" }] },
+        { role: "user", content: "fine" },
+    ] };
+    await fetch(`${BASE}/chat/completions`, { method: "POST", body: JSON.stringify(payload) });
+    const sent = JSON.parse(bodies[0]);
+    assert.equal(sent.messages[0].content, "");
+    assert.deepEqual(sent.messages[1].content, [{ type: "text", text: "kept" }]);
+    assert.equal(sent.messages[2].content, "fine");
+});
+
+test("clean payloads pass through byte-identical", async () => {
+    const bodies = [];
+    const realFetch = async (_url, init) => { bodies.push(init.body); return ok(); };
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const body = JSON.stringify({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    await fetch(`${BASE}/chat/completions`, { method: "POST", body });
+    assert.equal(bodies[0], body);
+});
+
+test("persistent 'messages' 400s are rewritten into overflow-recognizable errors", async () => {
+    let calls = 0;
+    const realFetch = async () => { calls += 1; return res400(`{"detail":"'messages'"}`); };
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const res = await fetch(`${BASE}/chat/completions`, { method: "POST" });
+    const body = await res.text();
+    assert.equal(res.status, 400);
+    assert.match(body, /prompt is too long/i);
+});
+
+test("token-overflow 400s are rewritten into overflow-recognizable errors without retries", async () => {
+    let calls = 0;
+    const overflow = `{"error":{"message":"You passed 65521 input tokens and requested 16 output tokens. However, the model's context length is only 65536"}}`;
+    const realFetch = async () => { calls += 1; return res400(overflow); };
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const res = await fetch(`${BASE}/chat/completions`, { method: "POST" });
+    const body = await res.text();
+    assert.equal(calls, 1);
+    assert.match(body, /prompt is too long/i);
+});
+
+test("unrelated 400s pass through untouched", async () => {
+    const realFetch = async () => res400(`{"detail":"bad request"}`);
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const res = await fetch(`${BASE}/chat/completions`, { method: "POST" });
+    assert.equal(await res.text(), `{"detail":"bad request"}`);
+});
+
 test("caps in-flight requests at four", async () => {
     let inFlight = 0;
     let peak = 0;
