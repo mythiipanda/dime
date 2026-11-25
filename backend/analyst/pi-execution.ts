@@ -147,6 +147,12 @@ function salvageNarrationSubmission(messages: ReadonlyArray<{ role: string; cont
     return undefined;
 }
 
+
+function mergedStoreSnapshot(branchSnapshot: Record<string, unknown>, dir: string | undefined): Record<string, unknown> {
+    const fileSnapshot = (dir ? readStoredSnapshot(dir) : undefined) ?? {};
+    return { ...branchSnapshot, ...fileSnapshot };
+}
+
 function readStoredSnapshot(dir: string): Record<string, unknown> | undefined {
     try {
         const value: unknown = JSON.parse(readFileSync(join(dir, CODEMODE_STORE_FILE), "utf8"));
@@ -1218,8 +1224,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 return;
                             if (!session.messages.some(message => message.role === "toolResult"))
                                 return;
-                            const salvaged = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()))
-                                ?? salvageDraftSubmission(readStoredSnapshot(start.bridge.cwd) ?? {})
+                            const salvaged = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd))
                                 ?? salvageNarrationSubmission(session.messages);
                             if (!salvaged)
                                 return;
@@ -1284,8 +1289,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                     const replayReasoning = reasoning ? { reasoning } : {};
                     if (!acceptedSubmission && session) {
-                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()))
-                            ?? salvageDraftSubmission(readStoredSnapshot(start.bridge.cwd) ?? {});
+                        const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd));
                         if (drafted)
                             acceptedSubmission = drafted;
                     }
@@ -1319,8 +1323,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emitAcceptedAnswer();
                     }
                     if (!answerEmitted && !acceptedSubmission && session) {
-                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()))
-                            ?? (bridgeCwd ? salvageDraftSubmission(readStoredSnapshot(bridgeCwd) ?? {}) : undefined);
+                        const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), bridgeCwd));
                         if (drafted) {
                             acceptedSubmission = drafted;
                             emitAcceptedAnswer();
