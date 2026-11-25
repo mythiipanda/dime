@@ -1078,7 +1078,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             );
                             const omitted = submission.omitted ?? [];
                             const missingArtifacts = audit.missing_in_artifacts
-                                .map(claim => claim.context)
+                                .map(claim => {
+                                    const near = claim.context.replace(/\s+/g, " ").replace(/\*+/g, "").trim();
+                                    const short = near.length > 90 ? near.slice(0, 90).trimEnd() + "…" : near;
+                                    return `${claim.raw} — this figure is stated in the prose but appears in no artifact payload; copy it into an artifact row (stated near: "${short}")`;
+                                })
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const uncoveredAsks = audit.uncovered_asks
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
