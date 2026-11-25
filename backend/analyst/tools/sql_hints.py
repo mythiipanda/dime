@@ -64,6 +64,17 @@ _TABLE_CONSTANTS: dict[str, dict[str, Any]] = {
     "silver_clutch": {
         "GROUP_SET": "filter GROUP_SET='Players' for player rows; other group sets multiplex the table",
     },
+    "silver_draft_boards": {
+        "ORDER": (
+            'ORDER is a reserved word — always quote it as "ORDER"; it is the rank column '
+            "(there is no PROSPECT_RANK/RANK column)"
+        ),
+        "BOARD": "'big_board' or 'mock_draft' — one row per prospect per board type; join/filter on BOARD",
+        "_season": "string end-year like '2027' (not '2026-27')",
+    },
+    "silver_prospect_stats": {
+        "_season": "string end-year like '2027' (not '2026-27'); college box-score production per prospect",
+    },
 }
 
 
