@@ -92,3 +92,18 @@ def test_run_python_warns_when_con_rebound(tmp_path, monkeypatch):
     assert "warning" in res
     assert "rebound" in res["warning"]
     assert "preloaded `con`" in res["warning"]
+
+def test_run_python_newline_in_string_gets_triple_quote_hint():
+    code = 'x = 1\nprint("\nFirst 5 rows:")\nout = x\n'
+    res = run_python.invoke({"code": code})
+    assert res["ok"] is False
+    assert res["error_type"] == "SyntaxError"
+    assert "unterminated" in res["error"]
+    assert "triple" in res["recovery_hint"].lower()
+    assert "newline" in res["recovery_hint"].lower()
+
+def test_run_python_plain_syntax_error_keeps_generic_hint():
+    code = "x = 1\ny = (2 +\nout = x + y\n"
+    res = run_python.invoke({"code": code})
+    assert res["ok"] is False
+    assert "triple" not in res["recovery_hint"].lower()

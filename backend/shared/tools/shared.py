@@ -267,6 +267,14 @@ def _main():
                 recovery = ("run_python executes Python code; raw SQL is not "
                             "valid here. Pass the query as a string to "
                             "con.execute or call sql_exec instead.")
+            elif "unterminated" in msg and "literal" in msg:
+                _lines = code.splitlines()
+                _ln = getattr(exc, "lineno", None)
+                _errline = _lines[_ln - 1].rstrip() if _ln and 1 <= _ln <= len(_lines) else ""
+                if _errline.endswith(('"', "'")):
+                    recovery = ("A real newline landed inside a single-quoted Python string, which Python rejects. "
+                                "Text spanning lines is only legal inside triple-quoted strings: use triple quotes for any multi-line text, "
+                                "or split the output across separate print() calls so no string crosses a line break. Fix the marked line and rerun.")
         elif isinstance(exc, NameError) and re.search(r"\\b(store|load)\\s*\\(", code):
             recovery = ("store()/load() exist only in codemode, not in "
                         "run_python: run_python is Python executed fresh per "
