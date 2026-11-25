@@ -1315,6 +1315,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         break;
                     }
                     const replayReasoning = reasoning ? { reasoning } : {};
+                    if (!acceptedSubmission && lastRejectedSubmission) {
+                        const rejectedText = lastRejectedSubmission.blocks.map(block => block.text).join("\n\n");
+                        if (rejectedText.trim().length > text.trim().length * 1.5)
+                            acceptedSubmission = lastRejectedSubmission;
+                    }
                     if (!acceptedSubmission && session) {
                         const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd));
                         if (drafted)
