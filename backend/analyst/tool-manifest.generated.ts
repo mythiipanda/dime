@@ -301,7 +301,7 @@ export const TOOL_PROMPT_GUIDELINES: Partial<Record<string, string[]>> = {
         "Use for lineup-vs-lineup shared-minute net ratings between two teams' qualifying five-man units. Do not treat estimated shared minutes as play-clock minutes or ignore sample flags; cells are unit-pair matchup grains.",
     ],
     "get_wowy": [
-        "Use for two players' four-way with/without-you lineup splits. Do not infer individual causation from small cells; rows are lineup-state minutes and ratings per possession.",
+        "Use for two players' four-way with/without-you lineup-rating reads. Do not infer individual causation from small cells; rows are lineup-state minutes and ratings per possession on a lineup-row basis — for possession-count or net-per-100 four-way splits use silver_stints via sql_exec.",
     ],
     "get_shot_compare": [
         "Use for two players' zone-by-zone shot diet comparison. Do not fill missing cells as zeros or mix seasons; each row is a zone with both-player availability caveats.",

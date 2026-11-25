@@ -274,7 +274,7 @@ def _wowy_team_abbreviation(con, season: str, shared_tid: object) -> str:
 
 
 @tool(
-    description="With-or-without-you (WOWY) 4-way lineup combination splits for two players.\n\nAccepts player_a and player_b by name or id, or comma-separated player_ids.\nComputes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,\noffensive rating, defensive rating, and net rating from warehouse lineups."
+    description="With-or-without-you (WOWY) 4-way lineup combination splits for two players.\n\nAccepts player_a and player_b by name or id, or comma-separated player_ids.\nComputes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,\noffensive rating, defensive rating, and net rating from warehouse lineup-combination rows.\nIts possession counts and net ratings are lineup-row aggregates that will NOT match a\nstint-derived split: when the ask wants possession counts or net points per 100 in the\nfour states, compute it from silver_stints via sql_exec instead of calling this tool."
 )
 def get_wowy(
     player_a: str = "",
