@@ -132,6 +132,29 @@ function sanitizeUvarcMessages(init: RequestInit | undefined): RequestInit | und
     return { ...init, body: JSON.stringify(outbound) };
 }
 
+function injectLowReasoningEffort(init: RequestInit | undefined): RequestInit | undefined {
+    if (!init || typeof init.body !== "string")
+        return init;
+    let parsed: Record<string, unknown>;
+    try {
+        parsed = JSON.parse(init.body);
+    } catch {
+        return init;
+    }
+    if (!Array.isArray(parsed.messages) || parsed.reasoning_effort)
+        return init;
+    return { ...init, body: JSON.stringify({ ...parsed, reasoning_effort: "low" }) };
+}
+
+export function nvidiaLowEffortFetch(baseUrl: string, realFetch: typeof globalThis.fetch): typeof globalThis.fetch {
+    return async (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (!url.startsWith(baseUrl))
+            return realFetch(input, init);
+        return realFetch(input, injectLowReasoningEffort(init));
+    };
+}
+
 export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.fetch): typeof globalThis.fetch {
     return async (input, init) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -186,6 +209,7 @@ export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.
     };
 }
 let uvarcFetchInstalled = false;
+let nvidiaFetchInstalled = false;
 
 export async function resolvedRuntime(input: unknown) {
     if (!Value.Check(modelConfigSchema, input))
@@ -202,6 +226,10 @@ export async function resolvedRuntime(input: unknown) {
     if (config.provider === "uvarc" && !uvarcFetchInstalled) {
         uvarcFetchInstalled = true;
         globalThis.fetch = uvarcGuardedFetch(config.baseUrl, globalThis.fetch);
+    }
+    if (config.provider === "nvidia" && !nvidiaFetchInstalled) {
+        nvidiaFetchInstalled = true;
+        globalThis.fetch = nvidiaLowEffortFetch(config.baseUrl, globalThis.fetch);
     }
     const model = runtime.getModel(config.provider, config.model);
     if (!model)

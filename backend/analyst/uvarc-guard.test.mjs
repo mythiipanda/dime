@@ -116,3 +116,17 @@ test("caps in-flight requests at four", async () => {
     await Promise.all(Array.from({ length: 12 }, () => fetch(`${BASE}/chat/completions`, { method: "POST" })));
     assert.ok(peak <= 4, `peak ${peak}`);
 });
+
+test("nvidia low-effort fetch injects reasoning_effort and leaves other urls alone", async () => {
+    const { nvidiaLowEffortFetch } = await import("./dist/pi-context.js");
+    const bodies = [];
+    const realFetch = async (_url, init) => { if (init?.body) bodies.push(init.body); return ok(); };
+    const fetch = nvidiaLowEffortFetch(BASE, realFetch);
+    await fetch(`${BASE}/chat/completions`, { method: "POST", body: JSON.stringify({ model: "m", messages: [{ role: "user", content: "hi" }] }) });
+    assert.equal(JSON.parse(bodies[0]).reasoning_effort, "low");
+    bodies.length = 0;
+    await fetch(`${BASE}/chat/completions`, { method: "POST", body: JSON.stringify({ model: "m", messages: [{ role: "user", content: "hi" }], reasoning_effort: "high" }) });
+    assert.equal(JSON.parse(bodies[0]).reasoning_effort, "high");
+    await fetch("https://other.test/v1/chat/completions", { method: "POST", body: JSON.stringify({ model: "m", messages: [{ role: "user", content: "hi" }] }) });
+    assert.equal(JSON.parse(bodies[1]).reasoning_effort, undefined);
+});
