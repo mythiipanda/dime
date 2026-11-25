@@ -31,12 +31,14 @@ $$\hat{\beta} = (X^T W X + \Lambda)^{-1} (X^T W Y + \Lambda \mu_0)$$
 where $\Lambda$ is a diagonal regularization matrix reflecting uncertainty in prior estimates.
 
 ### Querying Stint & RAPM Tables
+`silver_rapm` carries one row per player-season: `player_id`, `name`, `rapm`, `possessions`, `_season` — there are no `player_name`, `season`, `orapm`, `drapm` or `war` columns; total RAPM is the single `rapm` field.
 ```sql
-SELECT player_id, player_name, season, orapm, drapm, rapm, possessions
+SELECT player_id, name, rapm, possessions
 FROM silver_rapm
-WHERE season = '2025-26' AND possessions >= 1000
+WHERE _season = '2025-26' AND possessions >= 1000
 ORDER BY rapm DESC;
 ```
+Join to names/teams through `silver_player_season` (`player_id`) — not through `name`, whose spelling varies across feeds.
 
 ---
 
