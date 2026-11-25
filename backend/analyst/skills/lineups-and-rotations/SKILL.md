@@ -43,6 +43,8 @@ When evaluating fit between two focal players $A$ and $B$, construct the full $2
 
 Use `get_wowy` or `get_on_off`, or query stint/possession tables in `run_python` to compute possession-weighted Net Rating, ORTG, DRTG, TS%, and Pace across all four quadrants.
 
+When a task asks for a WOWY matrix or star-off split from `silver_hist_possessions` itself, the schema is: `game_id`, `period`, `possession_number`, `offense_team_id`/`defense_team_id` (numeric TEAM_IDs), `off_player_1..5`/`def_player_1..5` (player IDs in each on-court lineup), `points`, `possession_start_type`, `count_as_possession`, `garbage`, `season`. There are no `player_name`, `possession_id`, `opportunity_id` or `team_id_offense` columns — a player is ON for a team's offense when their ID is in `off_player_1..5` on a row where `offense_team_id` is the team, and the 2-man state is the pair's joint presence across the team's off/def player slots. Filter `count_as_possession='true'` and `garbage=0`, then `100*AVG(points)` is the team's ORTG over its offensive rows.
+
 ## 3. Non-Star Survival Minutes & Staggering
 
 - Evaluate how a team performs in the **star-off** and **second-star-stagger** segments (`A ON, B OFF` and `A OFF, B ON`) excluding garbage time.
