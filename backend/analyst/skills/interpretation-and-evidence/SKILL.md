@@ -15,6 +15,7 @@ Numbers alone answer only the literal half of an analytics question. When you re
 - **Trend versus point estimate.** A single-season or recent-window value answers "what is it now", not "where is it going". When history is available (`get_career_arc`, `get_raptor_history`, `silver_hist_*` tables, trajectory tools), compare the current figure to the player's or team's own prior and to the trajectory — rising, declining, stable, or noisy.
 - **Threshold sensitivity.** Results that flip when a qualification cutoff moves slightly are fragile. If a ranking depends on a specific cutoff (≥100 FTA, ≥3000 possessions), note whether the ordering is robust or an artifact of the boundary.
 - **Correlation is not mechanism.** A W/L split (eFG% higher in wins) or a correlation between two stats does not establish that one causes the other. Name plausible reverse or third-variable explanations.
+- **Objects the ask names but the warehouse lacks.** When the ask names a specific table, column, or metric (a `silver_*` table, a branded metric like DGA, a study design), confirm it exists with `warehouse_schema` or an information_schema audit before answering. If it does not, the submission must name the missing object, disclose the gap in the blocks, then compute and report the closest labeled proxies from tables that do exist. Do not answer the ask without that disclosure, do not keep probing schema for an object already shown absent, and do not end the turn still hunting.
 
 ## Examples
 
