@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from .. import store as _store
 from .team import _hist_lineup_rows, _lineup_key
 from ..sources import nba_stats
-from ._core import MAX_ROWS, TTL_PBPSTATS, InvalidSeasonError, _coerce_player_id_cached, _warehouse_or_live, clamp_season, coerce_team_id, resolve_season
+from ._core import MAX_ROWS, TTL_PBPSTATS, InvalidSeasonError, _TEAM_ID_ABBR, _coerce_player_id_cached, _warehouse_or_live, clamp_season, coerce_team_id, resolve_season
 
 BLOWOUT_MARGIN = 20
 BLOWOUT_SHARE_FLAG = 0.5
@@ -344,7 +344,28 @@ def _lineup_onoff_sql(n_pids: int) -> str:
     )
 
 
-@tool(description='On/off-court splits for an arbitrary 2-5 player combination on one team, computed from possession-level data. Names or ids, comma-separated. For single-player splits use get_on_off; for a named two-player pair use get_wowy; for whole-lineup ratings use get_lineup_stats.\n\nReturns possessions, points for/against, and per-100 OFF/DEF/NET ratings\nfor the unit together versus all other possessions by that team, plus\nthe on-minus-off delta. Possessions flagged as garbage time are excluded.\nUnits under min_possessions (default 100) are flagged as tiny-sample, not\ndropped; blowout-heavy splits are flagged at the same share rule as\nget_lineup_stats.')
+def _lineup_fourway_sql() -> str:
+    return (
+        "SELECT a_on, b_on, SUM(poss) AS poss, SUM(tpts) AS tpts, SUM(opts) AS opts"
+        " FROM ("
+        " SELECT home_abbr AS team, poss_end - poss_start AS poss,"
+        " (score_home_out - score_home_in) AS tpts,"
+        " (score_away_out - score_away_in) AS opts,"
+        " CAST(? IN (home_player_1, home_player_2, home_player_3, home_player_4, home_player_5) AS INTEGER) AS a_on,"
+        " CAST(? IN (home_player_1, home_player_2, home_player_3, home_player_4, home_player_5) AS INTEGER) AS b_on"
+        " FROM silver_stints WHERE _season = ? AND SUBSTR(game_id, 1, 3) = '002'"
+        " UNION ALL"
+        " SELECT away_abbr, poss_end - poss_start,"
+        " (score_away_out - score_away_in),"
+        " (score_home_out - score_home_in),"
+        " CAST(? IN (away_player_1, away_player_2, away_player_3, away_player_4, away_player_5) AS INTEGER),"
+        " CAST(? IN (away_player_1, away_player_2, away_player_3, away_player_4, away_player_5) AS INTEGER)"
+        " FROM silver_stints WHERE _season = ? AND SUBSTR(game_id, 1, 3) = '002'"
+        " ) s WHERE team = ? GROUP BY a_on, b_on"
+    )
+
+
+@tool(description='On/off-court splits for an arbitrary 2-5 player combination on one team, computed from possession-level data. Names or ids, comma-separated. For single-player splits use get_on_off; for a named two-player pair use get_wowy; for whole-lineup ratings use get_lineup_stats. With exactly two players the response also carries a four_way split: both on, A only, B only, and both off, each with possessions and per-100 OFF/DEF/NET ratings - use those cells directly for is-it-the-pair-or-just-one-player asks instead of hand-deriving them.\n\nReturns possessions, points for/against, and per-100 OFF/DEF/NET ratings\nfor the unit together versus all other possessions by that team, plus\nthe on-minus-off delta. Possessions flagged as garbage time are excluded.\nUnits under min_possessions (default 100) are flagged as tiny-sample, not\ndropped; blowout-heavy splits are flagged at the same share rule as\nget_lineup_stats.')
 def get_lineup_on_off(
     team: str | int, players: str = "", season: str | None = None,
     min_possessions: int = 100,
@@ -402,6 +423,33 @@ def get_lineup_on_off(
               "blowout_share": blowout_share}
     off_row = {"state": "off", **off, **off_rat,
                "poss": off["off_poss"] + off["def_poss"]}
+    four_way = None
+    if len(pids) == 2:
+        abbr = _TEAM_ID_ABBR.get(team_id)
+        fw_sql = _lineup_fourway_sql()
+        fw_params = [pids[0], pids[1], season, pids[0], pids[1], season, abbr]
+        try:
+            fw_rows = _store._read_df(fw_sql, fw_params) if abbr else []
+        except Exception:
+            fw_rows = []
+        if fw_rows:
+            cells = {}
+            labels = {(1, 1): "both_on", (1, 0): "a_only",
+                      (0, 1): "b_only", (0, 0): "both_off"}
+            for r in fw_rows:
+                key = (int(r["a_on"] or 0), int(r["b_on"] or 0))
+                cell = labels.get(key)
+                if not cell:
+                    continue
+                poss_n = int(r["poss"] or 0)
+                tpts, opts = float(r["tpts"] or 0), float(r["opts"] or 0)
+                net = round(100.0 * (tpts - opts) / poss_n, 1) if poss_n else 0.0
+                cells[cell] = {"poss": poss_n, "net_per_100": net,
+                               "points_for": round(tpts, 1),
+                               "points_against": round(opts, 1)}
+            if cells:
+                four_way = {"player_a": names[0], "player_b": names[1],
+                            "cells": cells}
     return {"tool": "get_lineup_on_off", "ok": True,
             "team_id": team_id, "season": season,
             "players": [{"player_id": p, "name": n} for p, n in zip(pids, names)],
@@ -410,6 +458,7 @@ def get_lineup_on_off(
                         "OFF_RATING", "DEF_RATING", "NET_RATING", "blowout_share"],
             "on": on_row, "off": off_row,
             "delta": delta, "flags": flags,
+            **({"four_way": four_way} if four_way else {}),
             "meta": {"sample_floor": f"{min_possessions} possessions",
                      "scope": ("possession-level on/off for the named "
                                "combination; garbage time excluded; "
