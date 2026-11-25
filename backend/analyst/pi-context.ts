@@ -25,6 +25,10 @@ export const modelConfigSchema = Type.Object({
 
 const UVARC_MAX_IN_FLIGHT = 4;
 const UVARC_RETRY_ATTEMPTS = 6;
+function uvarcRetryWindowMs() {
+    const n = Number(process.env.UVARC_RETRY_WINDOW_MS ?? 120000);
+    return Number.isFinite(n) && n >= 1000 ? n : 120000;
+}
 const uvarcLimiter = (() => {
     let inFlight = 0;
     const queue: Array<() => void> = [];
@@ -135,22 +139,31 @@ export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.
         init = sanitizeUvarcMessages(init);
         await uvarcLimiter.acquire();
         try {
+            const retryWindowMs = uvarcRetryWindowMs();
+            const retryDeadline = Date.now() + retryWindowMs;
+            const infraExhausted = (detail: string) => new Response(JSON.stringify({ error: { message: `uvarc relay saturated lane: infra retries exhausted over ${Math.round(retryWindowMs / 1000)}s, 429 rate_limit window (uvarc relay: ${detail.slice(0, 300)})` } }),
+                { status: 429, statusText: "Too Many Requests", headers: { "content-type": "application/json" } });
             for (let attempt = 0; ; attempt++) {
                 const res = await realFetch(input, init);
                 if (res.status === 400) {
                     const body = await res.clone().text().catch(() => "");
-                    if (body.includes("'messages'") && attempt < UVARC_RETRY_ATTEMPTS - 1) {
-                        await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
-                        continue;
-                    }
-                    if (body.includes("'messages'") || /input tokens|context length|context window/i.test(body))
+                    if (/input tokens|context length|context window/i.test(body) && !body.includes("'messages'"))
                         return new Response(JSON.stringify({ error: { message: `prompt is too long: input exceeds the context window of this model (uvarc relay: ${body.slice(0, 300)})` } }),
                             { status: res.status, statusText: res.statusText, headers: { "content-type": "application/json" } });
+                    if (body.includes("'messages'")) {
+                        if (Date.now() < retryDeadline) {
+                            await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
+                            continue;
+                        }
+                        return infraExhausted(body);
+                    }
                 }
-                if (res.status === 429 && attempt < UVARC_RETRY_ATTEMPTS - 1) {
+                if ((res.status === 429 || res.status === 503) && Date.now() < retryDeadline) {
                     await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
                     continue;
                 }
+                if (res.status === 429 || res.status === 503)
+                    return infraExhausted(await res.clone().text().catch(() => ""));
                 if (!res.ok || !res.body)
                     return res;
                 try {

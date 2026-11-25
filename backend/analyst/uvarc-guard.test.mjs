@@ -57,14 +57,28 @@ test("clean payloads pass through byte-identical", async () => {
     assert.equal(bodies[0], body);
 });
 
-test("persistent 'messages' 400s are rewritten into overflow-recognizable errors", async () => {
+test("persistent 'messages' 400s exhaust into infra-labeled saturated-lane 429s", async () => {
+    process.env.UVARC_RETRY_WINDOW_MS = "1000";
     let calls = 0;
     const realFetch = async () => { calls += 1; return res400(`{"detail":"'messages'"}`); };
     const fetch = uvarcGuardedFetch(BASE, realFetch);
     const res = await fetch(`${BASE}/chat/completions`, { method: "POST" });
     const body = await res.text();
-    assert.equal(res.status, 400);
-    assert.match(body, /prompt is too long/i);
+    assert.equal(res.status, 429);
+    assert.match(body, /saturated lane/i);
+    assert.match(body, /429/);
+    delete process.env.UVARC_RETRY_WINDOW_MS;
+});
+
+test("persistent 503s exhaust into infra-labeled saturated-lane 429s", async () => {
+    process.env.UVARC_RETRY_WINDOW_MS = "1000";
+    const realFetch = async () => new Response("upstream unavailable", { status: 503 });
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const res = await fetch(`${BASE}/chat/completions`, { method: "POST" });
+    const body = await res.text();
+    assert.equal(res.status, 429);
+    assert.match(body, /saturated lane/i);
+    delete process.env.UVARC_RETRY_WINDOW_MS;
 });
 
 test("token-overflow 400s are rewritten into overflow-recognizable errors without retries", async () => {
