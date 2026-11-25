@@ -365,8 +365,12 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> tuple[str, list[str]]
         for source in scope.sources.values():
             if isinstance(source, _Scope):
                 continue
-            if (not isinstance(source, _sql_exp.Table) or source.db
-                    or source.catalog or not source.name):
+            if not isinstance(source, _sql_exp.Table) or not source.name:
+                raise ValueError("unknown or unavailable tables")
+            if source.db or source.catalog:
+                qualifier = str(source.db or source.catalog).lower()
+                if qualifier == "information_schema":
+                    continue
                 raise ValueError("unknown or unavailable tables")
             used.add(present_by_lower.get(source.name.lower(), source.name))
     if not used:
