@@ -1094,11 +1094,12 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
                             const missingEntities = audit.missing_entities
                                 .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            const metaEcho = audit.meta_echo_blocks ?? [];
                             const zeroEvidenceOnSubmit = dataToolCalls === 0
                                 && (start.sources?.length ?? 0) === 0
                                 && connected.results.size === 0
                                 && isDataAsk(start.q);
-                            if (!zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && missingEntities.length === 0)
+                            if (!zeroEvidenceOnSubmit && missingArtifacts.length === 0 && uncoveredAsks.length === 0 && noArtifacts.length === 0 && metricGaps.length === 0 && missingTables.length === 0 && unsupportedClaims.length === 0 && unevidencedAsks.length === 0 && missingEntities.length === 0 && metaEcho.length === 0)
                                 return null;
                             submitAuditRejections += 1;
                             const gaps: Record<string, unknown> = {};
@@ -1120,6 +1121,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.unevidenced_asks = unevidencedAsks;
                             if (missingEntities.length > 0)
                                 gaps.missing_entities = missingEntities;
+                            if (metaEcho.length > 0)
+                                gaps.meta_echo_blocks = metaEcho;
                             if (zeroEvidenceOnSubmit)
                                 gaps.no_evidence_on_data_ask = [ZERO_EVIDENCE_DATA_ASK_FLAG];
 

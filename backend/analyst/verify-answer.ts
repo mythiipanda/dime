@@ -13,6 +13,7 @@ export type NumericAudit = {
     supported: number;
     unsupported: NumericClaim[];
     evidence_count: number;
+    meta_echo_blocks: string[];
     missing_in_artifacts: NumericClaim[];
     uncovered_asks: string[];
     no_artifacts_on_artifact_ask: string[];
@@ -268,6 +269,30 @@ function cohortCountClaim(claim: NumericClaim): boolean {
         return false;
     const tail = claim.context.slice(idx + digits.length, idx + digits.length + 32);
     return COHORT_COUNT_ENTITY_RE.test(tail);
+}
+
+const META_ECHO_RE = /(tools\.submit_answer|submit_answer|has been submitted|submission (?:is |was )?(?:complete|successful)|successfully submitted|submission completed|answer (?:was |has been )?(?:routed|submitted) (?:via|through)|i (?:have )?submitted)/i;
+
+function detectMetaEchoBlocks(blocks: ReadonlyArray<{ text?: unknown }>): string[] {
+    const texts = blocks.map(block => String(block.text ?? "")).filter(text => text.trim().length > 0);
+    if (texts.length === 0)
+        return [];
+    const totalLen = texts.reduce((acc, text) => acc + text.length, 0);
+    let metaLen = 0;
+    for (const text of texts) {
+        const matches = text.match(new RegExp(META_ECHO_RE.source, "gi"));
+        if (!matches)
+            continue;
+        const sentences = text.split(/(?<=[.!?\n])\s+/);
+        for (const sentence of sentences)
+            if (META_ECHO_RE.test(sentence))
+                metaLen += sentence.length;
+        if (matches.length >= 2)
+            metaLen = Math.max(metaLen, text.length * 0.5);
+    }
+    if (totalLen > 0 && metaLen / totalLen >= 0.5)
+        return [`${Math.round(metaLen)}/${totalLen} chars of submission text narrate the submission act instead of carrying the answer`];
+    return [];
 }
 
 function derivedArtifactValues(columns: Map<string, number[]>, rowCounts: number[]): number[] {
@@ -640,7 +665,8 @@ export function auditAnswerNumbers(
         ? auditEvidenceCoverage(question, input, (collectEvidenceText(sources) + " " + (extraEvidenceText ?? "")).toLowerCase()).slice(0, 10)
         : [];
     const missing_entities = question ? auditEntityRecall(question, input) : [];
-    return { checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks, missing_entities };
+    const meta_echo_blocks = detectMetaEchoBlocks(input.blocks ?? []);
+    return { meta_echo_blocks, checked: claims.length, supported, unsupported, evidence_count: evidence.length, missing_in_artifacts, uncovered_asks, no_artifacts_on_artifact_ask, metric_value_gaps, unsupported_claims, unevidenced_asks, missing_entities };
 }
 
 export function createVerifyAnswerNumbersTool(getContextSources: () => SourceRecord[], question?: string) {
