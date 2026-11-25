@@ -147,3 +147,25 @@ def test_field_kind_default_and_override():
     assert argnorm.field_kind("get_shot_compare", "a",
                               {"get_shot_compare": {"a": "player"}}) == "player"
     assert argnorm.field_kind("anything", "zzz") is None
+
+def test_numbered_player_parts_consolidate_into_players():
+    from shared.tools.argnorm import normalize_call_args
+    out = normalize_call_args("get_lineup_on_off", {
+        "team": "DEN", "player_1": "Nikola Jokic", "player_2": "Jamal Murray", "season": "2024-25",
+    }, None)
+    assert out["players"] == "Nikola Jokic, Jamal Murray"
+    assert "player_1" not in out and "player_2" not in out
+
+def test_lettered_player_parts_left_for_tool_schema():
+    from shared.tools.argnorm import normalize_call_args
+    out = normalize_call_args("get_lineup_on_off", {
+        "team": "MEM", "player_a": "Desmond Bane", "player_b": "Ja Morant",
+    }, None)
+    assert "players" not in out
+    assert out["player_a"] == "Desmond Bane"
+
+def test_single_numbered_part_not_consolidated():
+    from shared.tools.argnorm import normalize_call_args
+    out = normalize_call_args("get_lineup_on_off", {"player_1": "Solo"}, None)
+    assert "players" not in out
+    assert out["player_1"] == "Solo"
