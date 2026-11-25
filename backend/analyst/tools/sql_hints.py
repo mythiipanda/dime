@@ -75,6 +75,27 @@ _TABLE_CONSTANTS: dict[str, dict[str, Any]] = {
     "silver_prospect_stats": {
         "_season": "string end-year like '2027' (not '2026-27'); college box-score production per prospect",
     },
+    "silver_hist_lineups": {
+        "season": (
+            "int end-year (2023 means 2022-23) — for '2022-23' style strings use the _season column instead; "
+            "the team column is team_abbreviation"
+        ),
+        "season_type": "'regular-season' or 'playoffs' (lowercase-hyphenated)",
+    },
+    "silver_hist_gamelogs": {
+        "season": (
+            "int end-year (2023 means 2022-23) — for '2022-23' style strings use the _season column instead; "
+            "the team column is team_abbreviation"
+        ),
+        "season_type": "'regular-season' or 'playoffs' (lowercase-hyphenated)",
+    },
+    "silver_boxscores": {
+        "columns": (
+            "camelCase: teamTricode (not team_abbreviation), firstName/familyName (not player_name), "
+            "minutes, fieldGoalsMade, threePointersMade; GAME_ID/TEAM_ID/PLAYER_ID are uppercase"
+        ),
+        "minutes": "VARCHAR in 'MM:SS' format (e.g. '36:36') — parse or CAST parts, never direct numeric math",
+    },
 }
 
 
