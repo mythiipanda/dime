@@ -170,12 +170,12 @@ test("auditAnswerNumbers covers derived aggregates from artifact rows", () => {
 test("auditAnswerNumbers still flags headline figures not derivable from artifacts", () => {
   const sources = [
     makeSourceRecord("src-1", {
-      rows: [{ pool_size: 104 }, { unit: "A", min: 337 }, { unit: "B", min: 120 }, { unit: "C", min: 98 }],
+      rows: [{ pool_size: 104 }, { unit: "A", min: 337, pts: 52.3 }, { unit: "B", min: 120 }, { unit: "C", min: 98 }],
     }),
   ];
   const audit = auditAnswerNumbers(
     {
-      blocks: [{ text: "104 lineups qualified for the pool; the top unit logged 337 minutes." }],
+      blocks: [{ text: "104 lineups qualified for the pool; the top unit averaged 52.3 points." }],
       artifacts: [
         {
           kind: "table",
@@ -193,5 +193,47 @@ test("auditAnswerNumbers still flags headline figures not derivable from artifac
     "How many lineups qualify and which played most?"
   );
   assert.equal(audit.missing_in_artifacts.length, 1);
-  assert.equal(audit.missing_in_artifacts[0].raw, "104");
+  assert.equal(audit.missing_in_artifacts[0].raw, "52.3");
+});
+
+test("auditAnswerNumbers does not flag qualifying-cohort counts as missing_in_artifacts", () => {
+  const sources = [
+    makeSourceRecord("src-1", {
+      rows: [
+        { lineup: "A", min: 200, def_rating: 93.2 },
+        { lineup: "B", min: 190, def_rating: 93.6 },
+        { lineup: "C", min: 180, def_rating: 94.9 },
+        { lineup: "D", min: 170, def_rating: 99.6 },
+        { lineup: "E", min: 160, def_rating: 100.0 },
+        { qualifying_rows: 71 },
+      ],
+    }),
+  ];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [
+        {
+          text: "**71 lineups** met the 120-minute floor. The best defensive unit posted a 93.2 defensive rating, ahead of 93.6 and 94.9.",
+        },
+      ],
+      artifacts: [
+        {
+          kind: "table",
+          title: "Top-5 defensive lineups",
+          columns: [{ key: "lineup" }, { key: "min" }, { key: "def_rating" }],
+          rows: [
+            { lineup: "A", min: 200, def_rating: 93.2 },
+            { lineup: "B", min: 190, def_rating: 93.6 },
+            { lineup: "C", min: 180, def_rating: 94.9 },
+            { lineup: "D", min: 170, def_rating: 99.6 },
+            { lineup: "E", min: 160, def_rating: 100.0 },
+          ],
+        },
+      ],
+    },
+    sources,
+    "Top five defensive lineups at the 120-minute floor; how many lineups qualified?"
+  );
+  const raws = audit.missing_in_artifacts.map(c => c.raw);
+  assert.equal(raws.includes("71"), false, JSON.stringify(raws));
 });
