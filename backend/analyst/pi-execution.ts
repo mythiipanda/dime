@@ -123,9 +123,12 @@ function salvageDraftArtifacts(snapshot: Record<string, unknown>): Record<string
         const record = objectValue(value);
         if (!record)
             continue;
-        for (const nested of Object.values(record))
+        for (const nested of Object.values(record)) {
             if (Array.isArray(nested))
                 scan(nested);
+            else
+                scan([nested]);
+        }
         if (typeof record.kind === "string")
             scan([record]);
     }
