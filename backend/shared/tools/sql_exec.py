@@ -186,6 +186,39 @@ def _schema_rows_for(table: str) -> list[dict[str, Any]] | None:
     return rows
 
 
+_INFO_SCHEMA_RE = _re.compile(r"information_schema", _re.I)
+
+
+def _info_schema_result(query: str) -> dict[str, Any] | None:
+    if not _INFO_SCHEMA_RE.search(query):
+        return None
+    mentioned = [t for t in TABLES if _re.search(rf"\b{_re.escape(t)}\b", query, _re.I)]
+    if "information_schema.tables" in query.lower() or (not mentioned and "columns" not in query.lower()):
+        rows = [{"table_name": t} for t in TABLES]
+        return {"tool": TOOL, "ok": True, "rows": rows,
+                "columns": ["table_name"], "row_count": len(rows),
+                "sql": query,
+                "meta": {"source": SOURCE, "dataset": "warehouse",
+                         "sql": query[:500], "tables": [],
+                         "result_type": "schema_listing",
+                         "coverage": "Declared silver table allowlist answered from the schema catalog (information_schema itself is not queryable); warehouse_schema carries columns, units and season notes per table."}}
+    scope = mentioned or list(TABLES)
+    rows = []
+    for table in scope:
+        for row in _schema_rows_for(table) or []:
+            rows.append({"table_name": table, **row})
+    if not rows:
+        return _failure(query, "no declared tables matched the query",
+                        "warehouse_schema lists every declared table with columns, units and season notes.")
+    cols = list(rows[0].keys())
+    return {"tool": TOOL, "ok": True, "rows": rows, "columns": cols,
+            "row_count": len(rows), "sql": query,
+            "meta": {"source": SOURCE, "dataset": "warehouse",
+                     "sql": query[:500], "tables": scope,
+                     "result_type": "schema_listing",
+                     "coverage": f"information_schema is not queryable in the warehouse; answered from the declared schema catalog for {', '.join(scope[:6])} with types, units and notes."}}
+
+
 def _introspection_result(query: str) -> dict[str, Any] | None:
     if _SHOW_TABLES_RE.match(query):
         rows = [{"table_name": t} for t in TABLES]
@@ -238,7 +271,7 @@ def _error_suggestions(query: str, error: str) -> list[str]:
         return [f"{mentioned[0]}.{name}" for name in matches]
     return matches
 
-@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. DESCRIBE <table>, SHOW COLUMNS\nand SHOW TABLES are answered from the schema catalog with column types,\nunits and season notes; information_schema and catalog functions are\nrefused. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
+@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. DESCRIBE <table>, SHOW COLUMNS\nand SHOW TABLES are answered from the schema catalog with column types,\nunits and season notes; information_schema queries are answered from the\nsame catalog. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
 async def sql_exec(sql: str) -> dict[str, Any]:
     query = (sql or "").strip()
     if not query:
@@ -253,6 +286,9 @@ async def sql_exec(sql: str) -> dict[str, Any]:
             f"sql_exec: sql is {len(query)} chars, over the {MAX_SQL_CHARS} cap",
         )
     query = _strip_leading_comments(query)
+    info_schema = _info_schema_result(query)
+    if info_schema is not None:
+        return info_schema
     introspected = _introspection_result(query)
     if introspected is not None:
         return introspected
