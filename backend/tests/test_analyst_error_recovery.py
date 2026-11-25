@@ -192,3 +192,24 @@ def test_ok_result_does_not_add_error_recovery_keys(monkeypatch):
     assert "recovery_hint" not in res
     assert "next_actions" not in res
     assert "summary" not in res
+
+
+def test_run_python_preserves_python_side_recovery_hint(monkeypatch, tmp_path):
+    import duckdb
+    from shared import store
+
+    wh = tmp_path / "wh.duckdb"
+    con = duckdb.connect(str(wh))
+    con.execute("CREATE TABLE silver_standings (TEAM TEXT, WINS INTEGER)")
+    con.close()
+    monkeypatch.setenv("DIME_WAREHOUSE", str(wh))
+    monkeypatch.setattr(store, "WAREHOUSE", wh, raising=False)
+    monkeypatch.setattr(store, "DB_PATH", wh, raising=False)
+    monkeypatch.setattr(store, "connect", lambda **_kw: duckdb.connect(str(wh)))
+    monkeypatch.setenv("DIME_THREAD_WORKSPACE", str(tmp_path))
+
+    tools = python_tools.catalogue()
+    res = asyncio.run(tools["run_python"].ainvoke({"code": 'x = 1\nprint("\nbroken")\nout = x'}))
+    assert res["ok"] is False
+    assert "unterminated" in res["error"]
+    assert "triple" in res["recovery_hint"].lower()

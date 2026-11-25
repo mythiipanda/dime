@@ -317,6 +317,8 @@ def finish_strict_rows(res: dict[str, Any], name: str, default_cols: list[str],
             "columns": error_cols if error_cols is not None else default_cols,
             "error": str(err or failure_msg),
         }
+        if res.get("recovery_hint"):
+            out["recovery_hint"] = res["recovery_hint"]
         return sanitize_for_wire(enrich_error(name, out))
     rows = build_rows(res)
     res["rows"] = rows
