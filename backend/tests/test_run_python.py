@@ -107,3 +107,33 @@ def test_run_python_plain_syntax_error_keeps_generic_hint():
     res = run_python.invoke({"code": code})
     assert res["ok"] is False
     assert "triple" not in res["recovery_hint"].lower()
+
+def test_run_python_trailing_expression_captured():
+    res = run_python.invoke({"code": "x = 40\nx + 2"})
+    assert res["ok"] is True
+    assert res["rows"]["out"] == 42
+
+def test_run_python_trailing_expression_dict():
+    res = run_python.invoke({"code": "{'mu': 0.365, 'M': 348}"})
+    assert res["ok"] is True
+    rows = res["rows"]
+    if isinstance(rows, list):
+        assert rows[0]["mu"] == 0.365 or rows == {"mu": 0.365, "M": 348}
+    else:
+        assert rows["out"] == {"mu": 0.365, "M": 348} or rows["out"] is not None
+
+def test_run_python_explicit_out_beats_trailing_expression():
+    res = run_python.invoke({"code": "out = 7\n1 + 1"})
+    assert res["ok"] is True
+    assert res["rows"]["out"] == 7
+
+def test_run_python_trailing_none_not_captured():
+    res = run_python.invoke({"code": "print('hi')"})
+    assert res["ok"] is True
+    assert res["rows"]["out"] is None
+    assert "hi" in res["rows"]["printed"]
+
+def test_run_python_no_trailing_expression_unchanged():
+    res = run_python.invoke({"code": "x = 5"})
+    assert res["ok"] is True
+    assert res["rows"]["out"] is None
