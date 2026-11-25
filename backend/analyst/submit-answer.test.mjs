@@ -1596,3 +1596,126 @@ test("validateAnswerSubmission promotes multiple markdown tables up to the cap",
   assert.equal(validated.artifacts[0].columns[0].key, "team");
   assert.equal(validated.artifacts[1].columns[0].key, "player");
 });
+
+test("createPiExecution salvages a rejected submission over a thin meta-echo ending", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-exec-salvage-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const currentRecord = makeSourceRecord("src-current", { rows: [{ pts: 33.9, player: "Luka" }] });
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const realContent = "Luka Doncic led all scorers with 33.9 points per game in a dominant season, well clear of the field.";
+  let execRequests = 0;
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      if (execRequests === 1) {
+        const code = `
+          await tools.query_tool({ q: "points" });
+          await tools.submit_answer({
+            blocks: [
+              { text: ${JSON.stringify(realContent)} + " He also scored 99.9 in the finale.", anchors: [] }
+            ]
+          });
+          return { done: true };
+        `;
+        const msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: [{ type: "toolCall", id: "call-1", name: "codemode", arguments: { code } }],
+          stopReason: "toolUse",
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+        const stream = createAssistantMessageEventStream();
+        stream.push({ type: "done", reason: "toolUse", message: msg });
+        stream.end();
+        return stream;
+      }
+      const echo = execRequests === 2 ? "Submitted." : "Submitted.";
+      const msg = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content: [{ type: "text", text: echo }],
+        stopReason: "stop",
+        timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = {
+    tools: [
+      {
+        name: "query_tool",
+        label: "Query Tool",
+        description: "Run query",
+        parameters: Type.Object({ q: Type.String() }),
+        async execute() {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ rows: [{ pts: 33.9, player: "Luka" }] }) }],
+            structuredContent: { ref: "src-current", tool: "query_tool", isError: false, result: { rows: [{ pts: 33.9, player: "Luka" }] } },
+          };
+        },
+      },
+    ],
+    results: new Map([["src-current", currentRecord]]),
+    pid: 12345,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const events = [];
+  for await (const event of pi.stream({
+    q: "Who led scoring?",
+    history: [],
+    model: "fixture:fixture",
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+
+  const answerEvent = events.find((e) => e.type === "answer");
+  assert.ok(answerEvent);
+  assert.equal(answerEvent.text, realContent + " He also scored 99.9 in the finale.");
+  assert.ok(answerEvent.submission, "salvaged submission should be attached");
+  const auditRejection = events.find((e) => e.type === "tool_result" && e.name === "submit_answer_audit" && e.status === "fail");
+  assert.ok(auditRejection, "the submission must actually have been rejected for this test to exercise the salvage path");
+  assert.ok(execRequests >= 2, "model should have continued after the rejection");
+
+  await rm(cwd, { recursive: true, force: true });
+});
