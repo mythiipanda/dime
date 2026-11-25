@@ -174,6 +174,50 @@ test("createSubmitAnswerTool executes and calls onAccept", async () => {
   assert.equal(result.details, undefined);
 });
 
+test("submit_answer attaches valid store artifact drafts when the submission carries none", async () => {
+  const source = makeSourceRecord("src-1", { rows: [{ stat: "reb", value: 10 }] });
+  let accepted = null;
+  const drafts = [
+    { kind: "table", title: "Rebounds", columns: [{ key: "player", label: "Player" }], rows: [["X"]] },
+    { kind: "scatter", title: "S", xLabel: "a", yLabel: "b", points: [{ label: "p", x: 1, y: 2 }] },
+    { kind: "chart" },
+  ];
+  const tool = createSubmitAnswerTool(
+    () => [source],
+    sub => { accepted = sub; },
+    undefined,
+    () => drafts.filter(a => a.kind !== "chart")
+  );
+  const result = await tool.execute("call-1", { blocks: [{ text: "Summary without artifacts." }] });
+  assert.equal(accepted?.artifacts?.length, 2);
+  assert.equal(accepted.artifacts[0].kind, "table");
+  assert(result.content[0].text.includes("attached from the codemode store"));
+});
+
+test("submit_answer leaves explicit artifacts untouched and attaches nothing when drafts are empty", async () => {
+  const source = makeSourceRecord("src-1", { rows: [{ stat: "reb", value: 10 }] });
+  const own = { kind: "compare", title: "C", aName: "A", bName: "B", rows: [{ label: "pts", a: 1, b: 2 }] };
+  let accepted = null;
+  const tool = createSubmitAnswerTool(
+    () => [source],
+    sub => { accepted = sub; },
+    undefined,
+    () => [{ kind: "table", title: "T", columns: [{ key: "x", label: "x" }], rows: [[1]] }]
+  );
+  await tool.execute("call-1", { blocks: [{ text: "With own artifact." }], artifacts: [own] });
+  assert.equal(accepted?.artifacts?.length, 1);
+  assert.equal(accepted.artifacts[0].kind, "compare");
+  let accepted2 = null;
+  const tool2 = createSubmitAnswerTool(
+    () => [source],
+    sub => { accepted2 = sub; },
+    undefined,
+    () => undefined
+  );
+  await tool2.execute("call-1", { blocks: [{ text: "No artifacts anywhere." }] });
+  assert(!accepted2?.artifacts || accepted2.artifacts.length === 0);
+});
+
 test("ProductStore persists and reads submission in pi-sources artifact", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "dime-r625-test-"));
   try {

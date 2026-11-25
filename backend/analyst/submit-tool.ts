@@ -146,7 +146,8 @@ export function validateAnswerSubmission(
 export function createSubmitAnswerTool(
     getContextSources: () => SourceRecord[],
     onAccept: (submission: AnswerSubmission) => void,
-    onPreAudit?: (submission: AnswerSubmission) => string | null
+    onPreAudit?: (submission: AnswerSubmission) => string | null,
+    getArtifactDrafts?: () => Record<string, unknown>[] | undefined
 ) {
     return defineTool({
         name: "submit_answer",
@@ -158,6 +159,13 @@ export function createSubmitAnswerTool(
             const sourceMap = new Map(sources.map(s => [s.ref, s]));
             const warnings: string[] = [];
             const validated = validateAnswerSubmission(args, ref => sourceMap.get(ref), [...sourceMap.keys()], warnings);
+            if ((!validated.artifacts || validated.artifacts.length === 0) && getArtifactDrafts) {
+                const drafts = getArtifactDrafts();
+                if (drafts && drafts.length > 0) {
+                    validated.artifacts = drafts;
+                    warnings.push(`${drafts.length} artifact(s) attached from the codemode store drafts built during the run — the submission itself carried none`);
+                }
+            }
             if (onPreAudit) {
                 const rejection = onPreAudit(validated);
                 if (rejection)
