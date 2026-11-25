@@ -911,6 +911,8 @@ function wrapBridgeTools(
                     }
                     await namedToolSqlSteer(tool, domain, result, "failed", args[1], args);
                 }
+                else if (failed && !domain)
+                    await namedToolSqlSteer(tool, {}, result, "failed", args[1], args);
                 else if (!failed)
                     lastErrors.delete(tool.name);
                 if (!failed && domain) {
