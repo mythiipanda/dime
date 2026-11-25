@@ -726,7 +726,13 @@
       "schema_description": "League-wide per-player shot-zone leaderboard (attempts, makes, FG%, zone share) for one zone and season.",
       "guidelines": [
         "Use for any league-wide zone leaderboard or who-leads-the-league-in-a-zone ask (corner threes, above-the-break volume, rim finishing, midrange diet). Never loop per-player zone tools or hand-write coordinate math in sql_exec for these."
-      ]
+      ],
+      "params": {
+        "zone": "Shot zone to rank: rim (<=4ft), short_mid (paint beyond 4ft), long_mid (other twos), corner_3, or atb_3.",
+        "min_attempts": "Minimum zone attempts to qualify. Default: 40.",
+        "position": "Optional boxscore position pool filter (e.g. 'C', 'G', 'F').",
+        "limit": "Maximum rows returned. Default: 25."
+      }
     },
     {
       "name": "search_shots",
