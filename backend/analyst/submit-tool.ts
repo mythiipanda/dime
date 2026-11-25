@@ -67,7 +67,7 @@ function validateAnchor(
 
 const KNOWN_ARTIFACT_KINDS: readonly string[] = ["table", "compare", "chart", "shot_chart", "scatter", "player_card", "team_card", "memo"];
 
-function artifactRejectionReason(artifact: Record<string, unknown>): string | null {
+export function artifactRejectionReason(artifact: Record<string, unknown>): string | null {
     const kind = typeof artifact.kind === "string" ? artifact.kind : "";
     if (!KNOWN_ARTIFACT_KINDS.includes(kind))
         return kind ? `unknown artifact kind "${kind}"` : "artifact has no kind";
