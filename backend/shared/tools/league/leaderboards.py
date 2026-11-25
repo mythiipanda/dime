@@ -79,8 +79,29 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
 
 _LINEUP_SORT = {
     "net": ("a.NET_RATING", True),
+    "best": ("a.NET_RATING", True),
+    "best_net": ("a.NET_RATING", True),
     "worst": ("a.NET_RATING", False),
+    "worst_net": ("a.NET_RATING", False),
     "minutes": ("b.MIN", True),
+    "most_minutes": ("b.MIN", True),
+    "defense": ("a.DEF_RATING", False),
+    "best_defense": ("a.DEF_RATING", False),
+    "def": ("a.DEF_RATING", False),
+    "def_rating": ("a.DEF_RATING", False),
+    "best_def_rating": ("a.DEF_RATING", False),
+    "worst_defense": ("a.DEF_RATING", True),
+    "worst_def_rating": ("a.DEF_RATING", True),
+    "offense": ("a.OFF_RATING", True),
+    "best_offense": ("a.OFF_RATING", True),
+    "off": ("a.OFF_RATING", True),
+    "off_rating": ("a.OFF_RATING", True),
+    "best_off_rating": ("a.OFF_RATING", True),
+    "worst_offense": ("a.OFF_RATING", False),
+    "worst_off_rating": ("a.OFF_RATING", False),
+    "pace": ("a.PACE", True),
+    "fastest": ("a.PACE", True),
+    "slowest": ("a.PACE", False),
 }
 
 
@@ -91,8 +112,9 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
     pkg = _pkg()
     season = pkg.resolve_season(season)
     min_minutes = max(25, min(float(min_minutes), 5000))
-    sort_col, sort_desc = _LINEUP_SORT.get(str(sort or "net").lower(),
-                                         _LINEUP_SORT["net"])
+    sort_key = str(sort or "net").lower()
+    sort_col, sort_desc = _LINEUP_SORT.get(sort_key,
+                                           _LINEUP_SORT["net"])
     order = f"{sort_col} {'DESC' if sort_desc else 'ASC'} NULLS LAST"
 
     sql = f"""
