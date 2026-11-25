@@ -311,6 +311,7 @@ const ASK_STOPWORDS = new Set([
     "over", "under", "between", "against", "versus", "vs", "per", "during"
 ]);
 const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
+const ASK_TIEBREAK_RE = /\bties\s+(?:go|goes|by|to|in|are\s+broken)|\btie-?breaks?\b|\btied\b[^.?!]*\branks?\s+ahead|\bascending\s+ties|\bties\s+(?:person_id|player_id|alphabetically)|\bties\s+on\s+\w+\s+go\b|\blexicographic\s+ties\b/i;
 const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?|scatters?|shot_?charts?|memos?|cards?|visualizations?|visualisations?|deliverables?|dashboards?|payloads?|artifacts?|artefacts?|specs?)\b/gi;
 const ARTIFACT_KIND_TOKENS: Record<string, string> = { table: "table", tables: "table", compare: "compare", comparison: "compare", chart: "chart", charts: "chart", graph: "chart", graphs: "chart", scatter: "scatter", scatters: "scatter", shot_chart: "shot_chart", shotchart: "shot_chart", memo: "memo", memos: "memo", card: "card", cards: "card" };
 export const WAREHOUSE_TABLE_RE = /\b(?:silver|gold|bronze)_[a-z0-9_]+\b/gi;
@@ -447,7 +448,7 @@ function askClauses(question: string): string[] {
     return question
         .split(/[?;!\n]+|(?<=\.)\s+(?=[A-Z])/)
         .map(clause => clause.trim())
-        .filter(clause => clause.length >= 12 && !ASK_SKIP_RE.test(clause));
+        .filter(clause => clause.length >= 12 && !ASK_SKIP_RE.test(clause) && !ASK_TIEBREAK_RE.test(clause));
 }
 
 function askAnchors(clause: string): Set<string> {

@@ -284,3 +284,40 @@ test("derived column totals over evidence rows are supported, wrong totals still
     assert.equal(unsupported.includes("821"), false, JSON.stringify(unsupported));
     assert.ok(unsupported.includes("15,999"), JSON.stringify(unsupported));
 });
+
+test("tiebreak instruction clauses are not uncovered asks", () => {
+    const sources = [
+        makeSourceRecord("src-1", {
+            rows: [
+                { lineup: "A", min: 940, net_rating: 3.3 },
+                { lineup: "B", min: 714, net_rating: 3.2 },
+            ],
+        }),
+    ];
+    const audit = auditAnswerNumbers(
+        {
+            blocks: [
+                {
+                    text: "The most-used five-man unit was the Knicks group at 940 minutes with a +3.3 net rating, ahead of the Timberwolves unit at 714 minutes and +3.2.",
+                },
+            ],
+            artifacts: [],
+        },
+        sources,
+        "Which five-man units did coaches lean on hardest in 2024-25? Rank the league's five-man lineups by total minutes in the regular season and give me the top 5 — the five names, team, minutes, and net rating for each. Ties go to the higher net rating."
+    );
+    assert(!audit.uncovered_asks.some(c => /ties go/i.test(c)), JSON.stringify(audit.uncovered_asks));
+});
+
+test("content clauses sharing a sentence prefix with tiebreak phrasing still audit", () => {
+    const sources = [makeSourceRecord("src-1", { rows: [{ pts: 30.5 }] })];
+    const audit = auditAnswerNumbers(
+        {
+            blocks: [{ text: "Nothing relevant here." }],
+            artifacts: [],
+        },
+        sources,
+        "Rank the league's five-man lineups by total minutes and give the top 5 with names, team, minutes, and net rating. Ties go to the higher net rating."
+    );
+    assert.equal(audit.uncovered_asks.length, 1, JSON.stringify(audit.uncovered_asks));
+});
