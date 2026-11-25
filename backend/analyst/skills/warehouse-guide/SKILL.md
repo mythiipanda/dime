@@ -77,7 +77,9 @@ Use this guide when a coverage gap, usage error, or schema question arises: find
 
 | Table | Can answer | Cannot answer |
 |---|---|---|
-| `silver_hist_player_seasons` / `silver_hist_team_seasons` | Multi-season player/team totals and rates. | Current-season rows — use `silver_player_season`/`silver_team_ratings`. |
+| `silver_player_season` | Current-season per-game counting stats, UPPERCASE: `PLAYER`, `TEAM`, `AGE`, `GP`, `PPG`, `RPG`, `APG`, `SPG`, `BPG`, `FG_PCT`, `FG3_PCT`, `FT_PCT` (stint rows per traded player — `GROUP BY PLAYER_ID` for season totals). | No `TS_PCT`/`USG_PCT`/ratings or historical seasons — for those use `silver_advanced` or `silver_hist_player_seasons`. |
+| `silver_advanced` | Current-season rate/efficiency stats, UPPERCASE: `PLAYER_NAME`, `TEAM_ABBREVIATION`, `AGE`, `GP`, `MIN`, `TS_PCT`, `EFG_PCT`, `USG_PCT`, `PIE`, `PACE`, `OFF/DEF/NET_RATING` (+ `_RANK` variants). | Counting stats (use `silver_player_season`); multi-season history (use `silver_hist_player_seasons`). |
+| `silver_hist_player_seasons` / `silver_hist_team_seasons` | Multi-season player/team totals and rates, lowercase: `player_name`, `team_abbreviation`, `age`, `gp`, `pts`, `ts_pct`, `usg_pct`, `off/def/net_rating`, `pie`, `season` + `_season`. | Current-season rows — use `silver_player_season`/`silver_team_ratings`. |
 | `silver_standings` / `silver_hist_standings` | Standings snapshots. | Tie-breaker resolution logic — state when tied records need them. |
 | `silver_schedule` / `silver_scoreboard` | Upcoming/recent game slate, results. | Historical full schedules before ingest coverage — check `_season`. |
 | `silver_preseason_projections` | Stored projection inputs. | Actuals vs projections needs a join, not a single table. |
