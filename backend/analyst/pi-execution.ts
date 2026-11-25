@@ -1313,7 +1313,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 zeroEvidenceRepromptUsed = true;
                                 emit({ type: "tool_call", name: "zero_evidence_reprompt" });
                                 emit({ type: "tool_result", name: "zero_evidence_reprompt", status: "ok" });
-                                await session.prompt("This is a data question and you have run zero data tools — do not answer from memory. Call at least one data tool (query the warehouse or an analyst tool) for the figures your answer relies on, then call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
+                                await session.prompt("This is a data question and no data tool has been called yet — nothing has failed and the warehouse is up and reachable right now, so do not answer from memory. Run this exact call first: tools.sql_exec({sql: \"SELECT table_name, estimated_size FROM duckdb_tables() WHERE table_name LIKE 'silver%' ORDER BY table_name\"}) — its result lists the real populated tables. Then query the tables your figures rely on and call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
                                 continue;
                             }
                         }

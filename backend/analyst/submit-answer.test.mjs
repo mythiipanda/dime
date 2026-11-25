@@ -765,6 +765,7 @@ test("createPiExecution reprompts once when a sourceless data ask ends in plain 
 
   let execRequests = 0;
   let mode = "reprompt";
+  const seenContexts = [];
   runtime.registerProvider("fixture", {
     api: "openai-completions",
     apiKey: "synthetic",
@@ -782,6 +783,7 @@ test("createPiExecution reprompts once when a sourceless data ask ends in plain 
     ],
     streamSimple(model, context) {
       execRequests++;
+      seenContexts.push(JSON.stringify(context));
       let msg;
       if (execRequests === 1) {
         msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: longText }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
@@ -826,6 +828,11 @@ test("createPiExecution reprompts once when a sourceless data ask ends in plain 
   let events = await run();
   const reprompts = events.filter((e) => e.type === "tool_call" && e.name === "zero_evidence_reprompt");
   assert.equal(reprompts.length, 1, "forced reprompt fires exactly once");
+  const repromptContext = seenContexts.find((c) => c.includes("This is a data question and no data tool has been called"));
+  assert.ok(repromptContext, "reprompt text reaches the model context");
+  
+  assert.ok(repromptContext.includes("duckdb_tables"), "reprompt carries the concrete copy-pasteable probe call");
+  assert.ok(repromptContext.includes("nothing has failed"), "reprompt corrects the false-failure belief");
   const answer = events.find((e) => e.type === "answer");
   assert.equal(answer.text, canonical);
 
