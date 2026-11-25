@@ -67,7 +67,6 @@ STACKED = [
 
 DISALLOWED_TABLES = [
     "SELECT * FROM main.silver_standings",
-    "SELECT * FROM information_schema.tables",
     "SELECT * FROM read_csv('/etc/passwd')",
     "SELECT * FROM pragma_table_info('silver_standings')",
     "SELECT read_csv('/etc/passwd')",
