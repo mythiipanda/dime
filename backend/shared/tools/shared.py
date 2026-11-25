@@ -247,7 +247,16 @@ def _main():
             pass
     try:
         sys.stdout = buf
-        exec(compile(code, "<dime>", "exec"), ns, ns)
+        import ast as _ast
+        _tree = _ast.parse(code)
+        if _tree.body and isinstance(_tree.body[-1], _ast.Expr):
+            _prefix = _ast.Module(body=_tree.body[:-1], type_ignores=[])
+            exec(compile(_prefix, "<dime>", "exec"), ns, ns)
+            _last_val = eval(compile(_ast.Expression(_tree.body[-1].value), "<dime>", "eval"), ns, ns)
+            if _last_val is not None and ns.get("out") is None:
+                ns["out"] = _last_val
+        else:
+            exec(compile(_tree, "<dime>", "exec"), ns, ns)
     except Exception as exc:
         sys.stdout = old_stdout
         msg = str(exc) or type(exc).__name__
