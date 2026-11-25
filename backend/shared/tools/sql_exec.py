@@ -28,14 +28,23 @@ _FUNC_MISMATCH = _re.compile(
     _re.IGNORECASE)
 
 
+_TABLE_GUIDANCE = {
+    "silver_hist_shots": (
+        "silver_hist_shots has no zone columns and no shot-zone flags; "
+        "zone-level analysis belongs in get_shot_zones/get_team_shot_zones/"
+        "search_shots, which compute zones from coordinates server-side. "
+        "Here, locations are x_legacy/y_legacy (feet) plus shot_distance; "
+        "season is an INT end-year (2024), string seasons live in _season."
+    ),
+}
+
+
 def _binder_hint(query: str, error: str) -> str:
     generic = ("Call warehouse_schema to verify exact table names, "
                "column names, and season encodings.")
     error = error or ""
     missing = _MISSING_COL.search(error)
     func = _FUNC_MISMATCH.search(error)
-    if not missing and not func:
-        return generic
     try:
         _present, columns = _get_warehouse_schema()
     except Exception:
@@ -43,6 +52,12 @@ def _binder_hint(query: str, error: str) -> str:
     referenced = [
         t for t in columns
         if _re.search(rf"\b{_re.escape(t)}\b", query, _re.IGNORECASE)]
+    if not missing and not func:
+        notes = [_TABLE_GUIDANCE[str(t).lower()] for t in referenced
+                 if str(t).lower() in _TABLE_GUIDANCE]
+        if notes:
+            return " ".join(notes + [generic])
+        return generic
     hints = []
     if missing:
         name = missing.group(1).split(".")[-1]
@@ -68,6 +83,10 @@ def _binder_hint(query: str, error: str) -> str:
         hints.append(
             "Columns on the queried tables: " + "; ".join(listed)
             + ". Rewrite the query against these names; use warehouse_schema for units and notes.")
+    for t in referenced:
+        note = _TABLE_GUIDANCE.get(str(t).lower())
+        if note:
+            hints.append(note)
     hints.append(generic)
     return " ".join(hints)
 
