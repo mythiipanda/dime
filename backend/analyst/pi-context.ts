@@ -41,6 +41,61 @@ const uvarcLimiter = (() => {
     };
 })();
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const UVARC_STALL_MS = (() => {
+    const n = Number(process.env.UVARC_STALL_MS ?? 75000);
+    return Number.isFinite(n) && n >= 5000 ? n : 75000;
+})();
+
+function readWithStallTimeout(read: () => Promise<ReadableStreamReadResult<Uint8Array>>, ms: number): Promise<ReadableStreamReadResult<Uint8Array>> {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`uvarc stream stall: no bytes for ${ms}ms`)), ms);
+        read().then(
+            result => { clearTimeout(timer); resolve(result); },
+            error => { clearTimeout(timer); reject(error); }
+        );
+    });
+}
+
+async function openWatchedStream(res: Response, stallMs: number): Promise<Response> {
+    const reader = res.body!.getReader();
+    const first = await readWithStallTimeout(() => reader.read(), stallMs);
+    const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+            if (first.done) {
+                controller.close();
+                return;
+            }
+            if (first.value && first.value.byteLength > 0)
+                controller.enqueue(first.value);
+        },
+        async pull(controller) {
+            if (first.done)
+                return;
+            try {
+                for (;;) {
+                    const result = await readWithStallTimeout(() => reader.read(), stallMs);
+                    if (result.done) {
+                        controller.close();
+                        return;
+                    }
+                    if (result.value && result.value.byteLength > 0) {
+                        controller.enqueue(result.value);
+                        return;
+                    }
+                }
+            }
+            catch (error) {
+                console.error(`[uvarc-stall-watchdog] mid-stream stall: zero bytes for ${stallMs}ms — erroring the stream so the generation retry fires`);
+                reader.cancel().catch(() => {});
+                controller.error(error instanceof Error ? error : new Error(String(error)));
+            }
+        },
+        cancel(reason) {
+            reader.cancel(reason).catch(() => {});
+        }
+    });
+    return new Response(stream, { status: res.status, statusText: res.statusText, headers: res.headers });
+}
 
 function sanitizeUvarcMessages(init: RequestInit | undefined): RequestInit | undefined {
     if (!init || typeof init.body !== "string")
@@ -96,7 +151,19 @@ export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.
                     await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
                     continue;
                 }
-                return res;
+                if (!res.ok || !res.body)
+                    return res;
+                try {
+                    return await openWatchedStream(res, UVARC_STALL_MS);
+                }
+                catch (error) {
+                    if (attempt < UVARC_RETRY_ATTEMPTS - 1) {
+                        console.error(`[uvarc-stall-watchdog] first-byte stall: zero bytes for ${UVARC_STALL_MS}ms — aborting generation and retrying (attempt ${attempt + 2}/${UVARC_RETRY_ATTEMPTS})`);
+                        await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
+                        continue;
+                    }
+                    throw error;
+                }
             }
         }
         finally {
