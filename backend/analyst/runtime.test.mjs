@@ -271,6 +271,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       "get_season_series",
       "get_team_game_log",
       "get_zone_deltas",
+      "get_shot_zone_leaders",
       "search_shots",
       "get_shot_chart",
       "get_stint_timeline",
