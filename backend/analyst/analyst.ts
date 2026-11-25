@@ -102,7 +102,7 @@ export function productPaths(env: NodeJS.ProcessEnv) {
 }
 
 export function dataEnvironment(env: NodeJS.ProcessEnv, cwd: string, workspaceDir?: string) {
-    const allowed = ["SystemRoot", "WINDIR", "PATH", "LANG", "SSL_CERT_FILE", "SSL_CERT_DIR", "PYTHONPATH", "DIME_STATE_DB"];
+    const allowed = ["SystemRoot", "WINDIR", "PATH", "LANG", "SSL_CERT_FILE", "SSL_CERT_DIR", "PYTHONPATH", "DIME_STATE_DB", "DIME_PY_PERSIST_NS", "DIME_PY_NS_CAP_MB"];
     const clean: Record<string, string> = {};
     for (const name of allowed)
         if (env[name])

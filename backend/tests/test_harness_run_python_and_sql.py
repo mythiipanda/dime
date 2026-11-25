@@ -248,3 +248,24 @@ def test_sql_exec_binder_hint_names_column_and_candidates(warehouse):
         {"sql": "SELECT sum(TEAM) FROM silver_standings"}))
     assert res_func["ok"] is False
     assert "CAST" in res_func["recovery_hint"]
+
+def test_run_python_persistent_namespace_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIME_THREAD_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("DIME_PY_PERSIST_NS", "1")
+    from shared.tools.shared import run_python
+    first = run_python.invoke({"code": "x = 41\nprint('set')"})
+    assert first.get("ok") is True
+    second = run_python.invoke({"code": "out = x + 1"})
+    assert second.get("ok") is True
+    rows = second.get("rows") or {}
+    assert rows.get("out") == 42
+    assert "x" in str(rows.get("namespace") or "")
+
+
+def test_run_python_namespace_off_by_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("DIME_THREAD_WORKSPACE", str(tmp_path))
+    monkeypatch.delenv("DIME_PY_PERSIST_NS", raising=False)
+    from shared.tools.shared import run_python
+    first = run_python.invoke({"code": "y = 5"})
+    assert first.get("ok") is True
+    assert not (tmp_path / ".dime_py_ns.pkl").exists()
