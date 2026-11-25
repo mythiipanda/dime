@@ -1066,6 +1066,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.unevidenced_asks = unevidencedAsks;
                             if (missingEntities.length > 0)
                                 gaps.missing_entities = missingEntities;
+                            if (unsupportedClaims.length > 0 || uncoveredAsks.length > 0 || missingTables.length > 0 || unevidencedAsks.length > 0)
+                                gaps.unavailable_data_path = 'if the metric, table or figure the ask names genuinely does not exist in the warehouse, disclose that in the blocks and list it in omitted — an honest gap disclosure plus the closest computed proxy beats retrying the same searches or stating figures no tool returned';
                             if (zeroEvidenceOnSubmit)
                                 gaps.no_evidence_on_data_ask = [ZERO_EVIDENCE_DATA_ASK_FLAG];
 
