@@ -119,8 +119,26 @@ def test_hist_lineup_leaders_qualified_base_totals():
     res = get_lineup_leaders.invoke({'season': SEASON, 'min_minutes': 100, 'limit': 1})
     assert res['ok']
     assert res['rows'][0]['TEAM_ABBREVIATION'] == 'GSW'
-    assert res['rows'][0]['MIN'] == 169.9
-    assert res['rows'][0]['NET48'] == 21.2
+    assert res['rows'][0]['MIN'] == 330.6
+    assert res['rows'][0]['NET_RATING'] == 21.9
+
+
+def test_hist_lineup_leaders_sort_axes():
+    from shared.tools.league import get_lineup_leaders
+    worst = get_lineup_leaders.invoke({'season': SEASON, 'min_minutes': 100,
+                                       'limit': 3, 'sort': 'worst'})
+    assert worst['ok']
+    nets = [r['NET_RATING'] for r in worst['rows']]
+    assert nets == sorted(nets) and nets[0] < 0
+    most = get_lineup_leaders.invoke({'season': SEASON, 'min_minutes': 100,
+                                      'limit': 3, 'sort': 'minutes'})
+    assert most['ok']
+    mins = [r['MIN'] for r in most['rows']]
+    assert mins == sorted(mins, reverse=True)
+    assert most['rows'][0]['GROUP_NAME'] == 'H. Barnes - D. Sabonis - D. Fox - K. Huerter - K. Murray'
+    for r in most['rows'] + worst['rows']:
+        assert all(r[k] is not None for k in
+                   ('OFF_RATING', 'DEF_RATING', 'NET_RATING', 'PACE', 'PLUS_MINUS'))
 
 
 @pytest.mark.parametrize('season_type,measure_type,per_mode', [
