@@ -1248,6 +1248,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     await session.prompt(start.q);
                     let submitSteerUsed = false;
                     let giveUpSteerUsed = false;
+                    let emptyRetryUsed = false;
                     let text = "";
                     let reasoning = "";
                     for (;;) {
@@ -1259,6 +1260,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         }
                         text = last.content.filter(c => c.type === "text").map(c => c.text).join("");
                         reasoning = last.content.flatMap(block => block.type === "thinking" ? [block.thinking] : []).join("\n").trim();
+                        if (!acceptedSubmission && !text.trim() && !last.content.some(c => c.type === "toolCall") && !emptyRetryUsed) {
+                            emptyRetryUsed = true;
+                            emit({ type: "tool_call", name: "empty_completion_retry" });
+                            emit({ type: "tool_result", name: "empty_completion_retry", status: "ok" });
+                            await session.prompt("Your last response came back empty. Continue: if the ask still needs data work, call the next tool now; if you already hold verified results, call tools.submit_answer with them.");
+                            continue;
+                        }
                         if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
                             break;
                         if (!submitSteerUsed) {
