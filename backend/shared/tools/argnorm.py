@@ -285,6 +285,8 @@ def _normalize_one(tool_name: str, field: str, kind: str, value: object) -> obje
         if isinstance(value, str):
             return ", ".join(str(o) for o in out)
         return out
+    if isinstance(value, str) and not value.strip():
+        return value
     if kind == "season":
         return _normalize_season(value, field)
     if kind == "year":
