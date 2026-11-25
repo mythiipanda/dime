@@ -178,11 +178,13 @@ def _league_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-@tool(description='Team-level future draft pick ownership audit: who holds '
+@tool(description='Future draft pick ownership and capital audit: who holds '
                   'each team\'s 2027+ picks, protections, swap rights and '
-                  'forfeits, per-year inventory and Stepien-rule coverage. '
-                  'NOT for pick-value-curve math (is slot X worth slots Y+Z, '
-                  'curve indexes per slot, top-heavy shares): query '
+                  'forfeits. Covers single-team deep-dives AND league-wide '
+                  'scans (every protected first, all swap-rights holders in a '
+                  'draft year) - call with no team filter for those. NOT for '
+                  'pick-value-curve math (is slot X worth slots Y+Z, curve '
+                  'indexes per slot, top-heavy shares): query '
                   'silver_draft_value_curve via sql_exec for those. With '
                   'With team + optional years_ahead horizon: per-year '
                   'kept/incoming/outgoing inventory and net draft-capital '
