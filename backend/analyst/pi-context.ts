@@ -101,6 +101,35 @@ async function openWatchedStream(res: Response, stallMs: number): Promise<Respon
     return new Response(stream, { status: res.status, statusText: res.statusText, headers: res.headers });
 }
 
+const UVARC_ELIDE_KEEP_RECENT = Math.max(2, Number(process.env.UVARC_ELIDE_KEEP_RECENT ?? 8) || 8);
+const UVARC_ELIDE_MIN_BYTES = Math.max(200, Number(process.env.UVARC_ELIDE_MIN_BYTES ?? 500) || 500);
+
+function elideOldToolResults(messages: unknown[]): { messages: unknown[]; dirty: boolean } {
+    const toolIdx: number[] = [];
+    messages.forEach((message, i) => {
+        if (message && typeof message === "object" && (message as Record<string, unknown>).role === "tool")
+            toolIdx.push(i);
+    });
+    if (toolIdx.length <= UVARC_ELIDE_KEEP_RECENT)
+        return { messages, dirty: false };
+    const elide = new Set(toolIdx.slice(0, toolIdx.length - UVARC_ELIDE_KEEP_RECENT));
+    let dirty = false;
+    const out = messages.map((message, i) => {
+        if (!elide.has(i) || !message || typeof message !== "object")
+            return message;
+        const record = { ...(message as Record<string, unknown>) };
+        const content = record.content;
+        const text = typeof content === "string" ? content : JSON.stringify(content ?? "");
+        if (text.length < UVARC_ELIDE_MIN_BYTES)
+            return message;
+        const name = typeof record.name === "string" ? record.name : "tool";
+        record.content = `${text.slice(0, 240)}\n[elided ${text.length - 240} chars of this ${name} result — re-query or use store/load refs if the full rows are needed again]`;
+        dirty = true;
+        return record;
+    });
+    return { messages: out, dirty };
+}
+
 function sanitizeUvarcMessages(init: RequestInit | undefined): RequestInit | undefined {
     if (!init || typeof init.body !== "string")
         return init;
@@ -113,7 +142,7 @@ function sanitizeUvarcMessages(init: RequestInit | undefined): RequestInit | und
     if (!Array.isArray(parsed.messages))
         return init;
     let dirty = false;
-    const messages = parsed.messages.map((message: unknown) => {
+    let messages: unknown[] = parsed.messages.map((message: unknown) => {
         if (!message || typeof message !== "object")
             return message;
         const record = { ...(message as Record<string, unknown>) };
@@ -126,6 +155,11 @@ function sanitizeUvarcMessages(init: RequestInit | undefined): RequestInit | und
         }
         return record;
     });
+    const elided = elideOldToolResults(messages);
+    if (elided.dirty) {
+        messages = elided.messages;
+        dirty = true;
+    }
     const outbound = { ...(parsed as Record<string, unknown>), messages, reasoning_effort: "low" };
     if (!dirty && JSON.stringify(outbound) === init.body)
         return init;
