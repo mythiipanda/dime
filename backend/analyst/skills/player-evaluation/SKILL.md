@@ -123,12 +123,18 @@ Grain facts that trip these queries:
 
 ## 6. Current vs historical — always stated
 
-Tools default to the current 2026-27 season; historical asks must pass
-`season` explicitly, and the answer must name which season each number
-belongs to. Two failure modes to avoid:
+Contract, roster and trade tools default to the current 2026-27 season;
+stat/leaderboard tools fall back to the latest season with data. While
+2026-27 is early and partial, an unspecified season-long total or
+leaderboard ask ("who leads the league in corner threes") wants the latest
+completed season — query `_season = '2025-26'` rows and label that season
+in the answer; only an explicit "this season" or "in 2026-27" means the
+in-progress partial data. Historical asks must pass `season` explicitly,
+and the answer must name which season each number belongs to. Two failure
+modes to avoid:
 
-- Mixing eras silently: never put a 2024-25 stat and a 2026-27 stat in
-  the same comparison without labeling each. When citing a player's
+- Mixing eras silently: never put stats from different seasons in the same
+  comparison without labeling each. When citing a player's
   current team, verify it in the season's data — a player traded mid-
   season has rows under more than one team.
 - Present-tense claims on historical data: "averages 24" for a player
