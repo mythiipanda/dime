@@ -28,6 +28,7 @@ const PERCENT_RE = /([-+]?(?:\d{1,3}(?:,\d{3})+|\d+)?\.\d+|[-+]?\d+)\s*%/g;
 const NUMBER_RE = /(?<![\w.])[-+]?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?|\.\d+)(?!\w|\.\d)/g;
 const NUMERIC_STRING_RE = /^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/;
 const META_CONTEXT_RE = /\b(?:budget|timed out|timeout|retr(?:y|ies|ied)|backoff|rate[ -]?limit|latency|429|exhaustion)\b/i;
+const METHODOLOGY_CONTEXT_RE = /\b(?:parsed?|pars(?:ing|es)|format|e\.g\.|i\.e\.|convers(?:ion|ed)|methodolog|defined?|denominator|formula|calculation|note:?|caveat|assum(?:es?|ing|ption)|naive|corrected)\b/i;
 const ARTIFACT_SKIP_KEYS = new Set([
     "kind", "title", "subtitle", "description", "name", "label", "labels", "columns", "legend",
     "source", "units", "unit", "format", "encoding", "x_axis", "y_axis", "x_label", "y_label",
@@ -548,7 +549,7 @@ export function auditAnswerNumbers(
     (input.artifacts ?? []).forEach(artifact => collectArtifactColumns(artifact, artifactColumns, artifactRowCounts));
     const artifactCoverage = artifactValues.concat(derivedArtifactValues(artifactColumns, artifactRowCounts));
     const missing_in_artifacts = (input.artifacts ?? []).length > 0
-        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactCoverage) && !echoesQuestion(claim))
+        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactCoverage) && !echoesQuestion(claim) && !METHODOLOGY_CONTEXT_RE.test(claim.context))
         : [];
     const uncovered_asks = question ? auditAskCoverage(question, input) : [];
     const metric_value_gaps = question ? auditMetricCoverage(question, input) : [];
