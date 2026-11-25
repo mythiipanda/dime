@@ -23,7 +23,7 @@ def _norm_draft_year(season: str) -> str:
         "(use a calendar year like 2025 or a season slug like 2024-25)")
 
 
-@tool(description='Draft board: college production plus combine measurements, blended rank.')
+@tool(description=('College production stats plus combine measurements for a draft class, sorted by an ad-hoc blend (2*PTS + 50*TS + USG), top 30 rows only. ''This is NOT the published big-board/mock-draft ranking and rows carry no board rank; for big-board order, mock placement, or any blend/join of board rank with production, query silver_draft_boards (ORDER, PLAYER_NAME, BOARD) joined to silver_prospect_stats via sql_exec instead.'))
 def get_draft_board(season: str = "2025") -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
