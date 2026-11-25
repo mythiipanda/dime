@@ -129,7 +129,7 @@ export async function createAnalystSession({
     const sessionTools = inputNames.includes("load_skill") ? tools : [...tools, loadSkillTool(uniqueSkills, onSkillLoad)];
     const names = sessionTools.map((tool) => tool.name);
     const settingsManager = SettingsManager.inMemory({
-        retry: { enabled: true, maxRetries: 6, baseDelayMs: 5000 },
+        retry: { enabled: true, maxRetries: 6, baseDelayMs: 2000, maxAgentDelayMs: 20000 },
         ...settings,
         packages: [],
         extensions: [],
