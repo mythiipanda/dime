@@ -188,6 +188,19 @@ function numbersClose(a: number, b: number): boolean {
     return diff <= Math.max(Math.abs(a), Math.abs(b)) * 0.002;
 }
 
+const SCALE_SHIFTS = [100, 1e3, 1e6];
+
+function numbersCloseScaled(a: number, b: number): boolean {
+    if (numbersClose(a, b))
+        return true;
+    if (a === 0 || b === 0)
+        return false;
+    for (const shift of SCALE_SHIFTS)
+        if (numbersClose(a * shift, b) || numbersClose(a, b * shift))
+            return true;
+    return false;
+}
+
 function collectArtifactColumns(value: unknown, columns: Map<string, number[]>, rowCounts: number[]) {
     if (value === null || value === undefined)
         return;
@@ -545,7 +558,7 @@ export function auditAnswerNumbers(
     const evidence = collectEvidenceNumbers(sources);
     const claims = [...proseClaims, ...artifactClaims];
     const supportedBy = (claim: NumericClaim, values: number[]) =>
-        claim.values.some(value => values.some(other => numbersClose(value, other)));
+        claim.values.some(value => values.some(other => numbersCloseScaled(value, other)));
     const artifactValues = artifactClaims.flatMap(claim => claim.values);
     const isSupported = (claim: NumericClaim) => supportedBy(claim, evidence);
     let supported = 0;
