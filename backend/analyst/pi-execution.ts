@@ -148,8 +148,8 @@ function salvageNarrationSubmission(messages: ReadonlyArray<{ role: string; cont
 }
 
 
-function mergedStoreSnapshot(branchSnapshot: Record<string, unknown>, dir: string): Record<string, unknown> {
-    const fileSnapshot = readStoredSnapshot(dir) ?? {};
+function mergedStoreSnapshot(branchSnapshot: Record<string, unknown>, dir: string | undefined): Record<string, unknown> {
+    const fileSnapshot = (dir ? readStoredSnapshot(dir) : undefined) ?? {};
     return { ...branchSnapshot, ...fileSnapshot };
 }
 
@@ -1323,7 +1323,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emitAcceptedAnswer();
                     }
                     if (!answerEmitted && !acceptedSubmission && session) {
-                        const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), bridgeCwd ?? start.bridge.cwd));
+                        const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), bridgeCwd));
                         if (drafted) {
                             acceptedSubmission = drafted;
                             emitAcceptedAnswer();
