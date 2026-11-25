@@ -89,8 +89,11 @@ def _clamp_limit(value: object) -> int:
     except (TypeError, ValueError):
         return 10
 
-def normalize_mode(mode: object) -> str:
-    return MODE_ALIASES.get(str(mode or "").strip().lower(), "leaders")
+def normalize_mode(mode: object) -> str | None:
+    text = str(mode or "").strip().lower()
+    if not text:
+        return "leaders"
+    return MODE_ALIASES.get(text)
 
 RAPTOR_JOIN = ("LEFT JOIN silver_raptor_player r ON LOWER(r.PLAYER_NAME) = "
                "LOWER(h.player_name) AND r.SEASON = h.season")
@@ -258,6 +261,12 @@ def get_historical_leaders(category: str = "pts",
     if limit_ok and limit != raw_limit:
         warnings.append(f"limit {raw_limit} clamped to {limit}")
     mode = normalize_mode(mode)
+    if mode is None:
+        return {"tool": "get_historical_leaders", "ok": False, "rows": {},
+                "error": (f"unknown mode '{mode}'; valid modes: "
+                          "leaders (per-season leaders) or best "
+                          "(single-season campaigns)"),
+                "supported": ["leaders", "best"]}
     try:
         tables = _tables()
     except Exception:
