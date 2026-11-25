@@ -1184,6 +1184,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             if (!session.messages.some(message => message.role === "toolResult"))
                                 return;
                             const salvaged = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()))
+                                ?? salvageDraftSubmission(readStoredSnapshot(start.bridge.cwd) ?? {})
                                 ?? salvageNarrationSubmission(session.messages);
                             if (!salvaged)
                                 return;
@@ -1248,7 +1249,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                     const replayReasoning = reasoning ? { reasoning } : {};
                     if (!acceptedSubmission && session) {
-                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()))
+                            ?? salvageDraftSubmission(readStoredSnapshot(start.bridge.cwd) ?? {});
                         if (drafted)
                             acceptedSubmission = drafted;
                     }
@@ -1282,7 +1284,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         emitAcceptedAnswer();
                     }
                     if (!answerEmitted && !acceptedSubmission && session) {
-                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()));
+                        const drafted = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()))
+                            ?? (bridgeCwd ? salvageDraftSubmission(readStoredSnapshot(bridgeCwd) ?? {}) : undefined);
                         if (drafted) {
                             acceptedSubmission = drafted;
                             emitAcceptedAnswer();
