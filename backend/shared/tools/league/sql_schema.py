@@ -35,7 +35,7 @@ _SQL_TABLES = [
     "silver_future_picks", "silver_draft_value_curve",
     "silver_bbref_gamelogs_2024_25", "silver_boxscores_ext",
     "silver_cap_history",
-    "silver_hist_salaries", "silver_leaders_dreb", "silver_leaders_fg_pct",
+    "silver_hist_salaries",
     "silver_playoff_inactive", "silver_scoreboard",
     "silver_tracking_pt_defend", "silver_tracking_pt_shot",
     "silver_tracking_pt_stats", "silver_wowy", "silver_zone_splits",
