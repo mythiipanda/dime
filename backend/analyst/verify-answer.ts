@@ -268,7 +268,12 @@ function derivedArtifactValues(columns: Map<string, number[]>, rowCounts: number
     }
     for (const [keyA, a] of named)
         for (const [keyB, b] of named) {
-            if (keyA === keyB || a.length !== b.length || b.some(weight => weight <= 0))
+            if (keyA === keyB || a.length !== b.length)
+                continue;
+            for (let i = 0; i < a.length; i++)
+                if (b[i] !== 0)
+                    out.push(a[i] / b[i]);
+            if (b.some(weight => weight <= 0))
                 continue;
             let weightedSum = 0;
             let weightTotal = 0;
