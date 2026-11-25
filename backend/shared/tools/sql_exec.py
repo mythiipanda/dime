@@ -141,19 +141,28 @@ def _schema_rows_for(table: str) -> list[dict[str, Any]] | None:
     try:
         _present, columns = _get_warehouse_schema()
     except Exception:
-        return None
+        columns = {}
     by_lower = {t.lower(): t for t in columns}
-    real = by_lower.get(table.lower())
-    if not real:
+    real = by_lower.get(table.lower(), table)
+    if real.lower() not in {t.lower() for t in TABLES}:
         return None
+    try:
+        from .league._helpers import _owned_connection
+        with _owned_connection(None, read_only=True) as con:
+            info = con.execute(f"PRAGMA table_info({real})").fetchall()
+    except Exception:
+        info = []
+    if not info:
+        return None
+    catalog = columns.get(real, {})
     rows = []
-    for name, info in columns[real].items():
-        row: dict[str, Any] = {"column_name": name,
-                               "column_type": str(info.get("type", ""))}
-        if info.get("unit"):
-            row["unit"] = info["unit"]
-        if info.get("note"):
-            row["note"] = info["note"]
+    for r in info:
+        row: dict[str, Any] = {"column_name": r[1], "column_type": str(r[2])}
+        meta = catalog.get(r[1], {})
+        if meta.get("unit"):
+            row["unit"] = meta["unit"]
+        if meta.get("note"):
+            row["note"] = meta["note"]
         rows.append(row)
     return rows
 
