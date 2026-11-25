@@ -244,6 +244,14 @@ def get_draft_capital(team: str = "", draft_year: str = "",
     out_rows = _league_summary(rows) if not team else rows
     out = {"tool": "get_draft_capital", "ok": True, "rows": out_rows,
            "checks": checks}
+    if not team:
+        out["swaps"] = [
+            {"draft_year": r["draft_year"], "round": r["round"],
+             "orig_team": r["orig_team"],
+             "swap_right_holders": r["held_by"],
+             "protection": r["protection"], "summary": r["summary"]}
+            for r in rows if r["status"] == "swap"
+        ]
     if team:
         out["audit"] = _audit(rows, horizon)
     out.update({
