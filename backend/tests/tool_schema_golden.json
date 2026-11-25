@@ -2913,6 +2913,7 @@
         "properties": {
           "zone": {
             "default": "",
+            "description": "Shot zone to rank: rim (<=4ft), short_mid (paint beyond 4ft), long_mid (other twos), corner_3, or atb_3. Default: ''.",
             "title": "Zone",
             "type": "string"
           },
@@ -2931,19 +2932,19 @@
           },
           "min_attempts": {
             "default": 40,
-            "description": "Minimum volume floor on the ranked stat. Default: 40.",
+            "description": "Minimum zone attempts to qualify. Default: 40. Default: 40.",
             "title": "Min Attempts",
             "type": "integer"
           },
           "position": {
             "default": "",
-            "description": "Position filter, e.g. 'PG', 'SG', 'SF', 'PF', 'C'; blank = all. Default: ''.",
+            "description": "Optional boxscore position pool filter (e.g. 'C', 'G', 'F'). Default: ''.",
             "title": "Position",
             "type": "string"
           },
           "limit": {
             "default": 25,
-            "description": "Maximum rows returned. Default: 25.",
+            "description": "Maximum rows returned. Default: 25. Default: 25.",
             "title": "Limit",
             "type": "integer"
           }
