@@ -418,6 +418,7 @@ def main(argv: list[str] | None = None) -> int:
         "DIME_PI_PYTHON": sys.executable,
         "DIME_TRACE_TOOL_RESULTS": "1",
         "PORT": str(args.port),
+        "DIME_V2_RUN_TIMEOUT_S": str(max(60.0, args.timeout_s - 30.0)),
     })
     if provider:
         env[f"DIME_ENABLE_{provider.upper()}"] = "true"
