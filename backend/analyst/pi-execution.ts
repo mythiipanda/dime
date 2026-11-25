@@ -1011,6 +1011,12 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             async function run() {
                 let session: Awaited<ReturnType<typeof createAnalystSession>> | undefined;
                 let bridge: Awaited<ReturnType<typeof connectPythonTools>> | undefined;
+                let bridgeClosePromise: Promise<unknown> | undefined;
+                const closeBridge = () => {
+                    if (!bridgeClosePromise && bridge)
+                        bridgeClosePromise = bridge.close().catch(() => undefined);
+                    return bridgeClosePromise;
+                };
                 let kind = "configuration";
                 let bridgeCwd: string | undefined;
                 let bridgePid: number | undefined;
@@ -1031,7 +1037,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     kind = "startup";
                     bridge = await connectTools(start.bridge);
                     bridgePid = bridge.pid;
-                    controller.signal.addEventListener("abort", () => { void bridge?.close().catch(() => undefined); }, { once: true });
+                    controller.signal.addEventListener("abort", () => { void closeBridge(); }, { once: true });
                     controller.signal.throwIfAborted();
                     const connected = bridge;
                     const tracker: RunStatusTracker = {
@@ -1357,7 +1363,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                     finally {
                         session?.dispose();
-                        await bridge?.close();
+                        await closeBridge();
                         controller.signal.removeEventListener("abort", cancel);
                         emit({ type: "closed", pid: bridgePid });
                     }
