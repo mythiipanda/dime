@@ -15,6 +15,21 @@ description: Fit, validate, and interpret NBA statistical estimates, including R
 
 - Fit the prior only on the specified reference cohort, then score the target cohort. Supply one row per eligible player with positive attempts and makes between zero and attempts, using the same shot population for both counts. `mu` comes from the same reference rows as the variance. For an attempt-weighted method of moments, run this helper:
 
+```python
+def eb_beta_binomial_mom(rows):
+    # rows: list of (attempts, makes) for the reference cohort, one row per player
+    k = len(rows)
+    S = sum(n for n, _ in rows)
+    mu = sum(x for _, x in rows) / S
+    v = sum(n * (x / n - mu) ** 2 for n, x in rows) / S
+    noise = k * mu * (1 - mu) / S
+    tau2 = v - noise
+    M = mu * (1 - mu) / tau2 - 1
+    return mu, M
+```
+
+The noise subtraction is not optional: the observed attempt-weighted variance of shooting proportions includes binomial sampling noise `mu(1-mu)/n_i` per player, which under the same attempt weighting sums to `k * mu * (1 - mu) / S`. Without subtracting it, `M` comes out roughly half its true value and every player is over-shrunk toward the mean. Reference check on 2024-25 NBA 3P% (high-volume cohort FG3A >= 100): `mu = 0.3652`, `M = 348.57`. The naive variance-only solve gives 159 — if your M is near 159 on that cohort, the noise term was dropped. Shrunk rate per player: `(makes + M * mu) / (attempts + M)`.
+
 In closed-form matrix notation:
 $$\hat{\beta} = (X^T W X + \lambda I)^{-1} X^T W Y$$
 
