@@ -82,12 +82,19 @@ export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.
         try {
             for (let attempt = 0; ; attempt++) {
                 const res = await realFetch(input, init);
-                if ((res.status === 400 || res.status === 429) && attempt < UVARC_RETRY_ATTEMPTS - 1) {
+                if (res.status === 400) {
                     const body = await res.clone().text().catch(() => "");
-                    if (res.status === 429 || body.includes("'messages'")) {
+                    if (body.includes("'messages'") && attempt < UVARC_RETRY_ATTEMPTS - 1) {
                         await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
                         continue;
                     }
+                    if (body.includes("'messages'") || /input tokens|context length|context window/i.test(body))
+                        return new Response(JSON.stringify({ error: { message: `prompt is too long: input exceeds the context window of this model (uvarc relay: ${body.slice(0, 300)})` } }),
+                            { status: res.status, statusText: res.statusText, headers: { "content-type": "application/json" } });
+                }
+                if (res.status === 429 && attempt < UVARC_RETRY_ATTEMPTS - 1) {
+                    await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
+                    continue;
                 }
                 return res;
             }
