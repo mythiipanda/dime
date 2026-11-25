@@ -86,6 +86,15 @@ def get_shot_zone_leaders(
     except Exception as exc:
         return {"tool": "get_shot_zone_leaders", "ok": False, "rows": [],
                 "error": f"zone leaderboard query failed: {exc}"}
+    if not rows_raw:
+        with _owned_connection(None, read_only=True) as con:
+            avail = [str(r[0]) for r in con.execute(
+                "SELECT DISTINCT _season FROM silver_hist_shots ORDER BY 1").fetchall()]
+        return {"tool": "get_shot_zone_leaders", "ok": False, "rows": [],
+                "error": (f"no regular-season shot rows for season '{season}'"
+                          + (f" with position filter '{pos}'" if pos else "")
+                          + "; seasons present in silver_hist_shots: "
+                          + ", ".join(avail))}
     rows = []
     for pid, name, team, att, makes, total in rows_raw:
         att = int(att or 0)
