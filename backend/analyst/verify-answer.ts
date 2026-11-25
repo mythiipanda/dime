@@ -610,6 +610,8 @@ export function auditAnswerNumbers(
     const artifactCoverage = artifactValues.concat(derivedArtifactValues(artifactColumns, artifactRowCounts));
     const missing_in_artifacts = (input.artifacts ?? []).length > 0
         ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactCoverage) && !echoesQuestion(claim) && !cohortCountClaim(claim))
+            .filter(claim => /%|\$/.test(claim.raw) || claim.values.some(value => !Number.isInteger(value) || Math.abs(value) >= 100))
+            .filter(claim => !claim.values.every(value => Number.isInteger(value) && value >= 1900 && value <= 2100))
         : [];
     const uncovered_asks = question ? auditAskCoverage(question, input) : [];
     const metric_value_gaps = question ? auditMetricCoverage(question, input) : [];
