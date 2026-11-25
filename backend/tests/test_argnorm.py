@@ -147,3 +147,20 @@ def test_field_kind_default_and_override():
     assert argnorm.field_kind("get_shot_compare", "a",
                               {"get_shot_compare": {"a": "player"}}) == "player"
     assert argnorm.field_kind("anything", "zzz") is None
+
+
+def test_empty_string_optional_year_passes_through():
+    out = argnorm.normalize_call_args("get_draft_capital",
+                                      {"team": "OKC", "draft_year": "",
+                                       "years_ahead": 8})
+    assert out["draft_year"] == ""
+    assert out["team"] == "OKC"
+
+
+def test_malformed_year_still_raises():
+    try:
+        argnorm.normalize_call_args("get_draft_capital",
+                                    {"draft_year": "twenty-seven"})
+        raise SystemExit("expected ArgMiss")
+    except argnorm.ArgMiss:
+        pass
