@@ -1063,6 +1063,19 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
                             tracker.submitted = true;
+                            const rejected = lastRejectedSubmission;
+                            if (rejected) {
+                                const acceptedText = submission.blocks.map(block => block.text).join("\n\n").trim().length;
+                                const rejectedText = rejected.blocks.map(block => block.text).join("\n\n").trim().length;
+                                const acceptedArtifacts = submission.artifacts?.length ?? 0;
+                                const rejectedArtifacts = rejected.artifacts?.length ?? 0;
+                                if (rejectedArtifacts > acceptedArtifacts && rejectedText > acceptedText) {
+                                    submission = {
+                                        ...rejected,
+                                        omitted: [...(rejected.omitted ?? []), "restored the richer audit-rejected draft: the accepted submission was strictly smaller in both prose and artifacts"]
+                                    };
+                                }
+                            }
                             acceptedSubmission = submission;
                             if (submission.artifacts && submission.artifacts.length > 0)
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
