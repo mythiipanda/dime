@@ -555,7 +555,28 @@ export function auditAnswerNumbers(
     const artifactClaims: NumericClaim[] = [];
     const artifactSeen = new Set<string>();
     (input.artifacts ?? []).forEach((artifact, index) => collectArtifactClaims(artifact, artifactClaims, artifactSeen, `artifacts[${index}]`));
-    const evidence = collectEvidenceNumbers(sources);
+    const evidenceColumns = new Map<string, number[]>();
+    const evidenceRowCounts: number[] = [];
+    for (const record of sources) {
+        try {
+            const result = sourceResult(record);
+            if (result.isError)
+                continue;
+            collectArtifactColumns(result.structuredContent.result, evidenceColumns, evidenceRowCounts);
+        }
+        catch {
+        }
+    }
+    const derivedEvidence: number[] = [...evidenceRowCounts];
+    for (const [, values] of evidenceColumns) {
+        if (values.length < 2)
+            continue;
+        const sum = values.reduce((acc, value) => acc + value, 0);
+        const low = Math.min(...values);
+        const high = Math.max(...values);
+        derivedEvidence.push(sum, sum / values.length, low, high, high - low);
+    }
+    const evidence = collectEvidenceNumbers(sources).concat(derivedEvidence);
     const claims = [...proseClaims, ...artifactClaims];
     const supportedBy = (claim: NumericClaim, values: number[]) =>
         claim.values.some(value => values.some(other => numbersCloseScaled(value, other)));

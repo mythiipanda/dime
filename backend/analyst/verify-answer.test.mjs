@@ -257,3 +257,30 @@ test("provenance ref UUID digits do not become numeric claims", () => {
     assert(!unsupported.some(c => c.startsWith("4592") || c.includes("90a9")),
         `ref-uuid digits leaked into claims: ${unsupported.join(" | ")}`);
 });
+
+test("derived column totals over evidence rows are supported, wrong totals still flagged", () => {
+    const sources = [
+        makeSourceRecord("src-1", {
+            rows: [
+                { player: "A", possessions: 4800, points: 5100 },
+                { player: "B", possessions: 5121, points: 5300 },
+                { player: "C", possessions: 4300, points: 4900 },
+            ],
+        }),
+    ];
+    const audit = auditAnswerNumbers(
+        {
+            blocks: [
+                {
+                    text: "The trio shared 14,221 total possessions, averaging 4,740.3 each, with a spread of 821 between the highest and lowest workload. They combined for 15,999 points.",
+                },
+            ],
+            artifacts: [],
+        },
+        sources,
+    );
+    const unsupported = audit.unsupported.map((claim) => claim.raw);
+    assert.equal(unsupported.includes("14,221"), false, JSON.stringify(unsupported));
+    assert.equal(unsupported.includes("821"), false, JSON.stringify(unsupported));
+    assert.ok(unsupported.includes("15,999"), JSON.stringify(unsupported));
+});
