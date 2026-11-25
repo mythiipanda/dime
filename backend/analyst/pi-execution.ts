@@ -1054,6 +1054,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.uncovered_asks = uncoveredAsks;
                             if (noArtifacts.length > 0)
                                 gaps.no_artifacts_on_artifact_ask = noArtifacts;
+                            if (missingArtifacts.length > 0 || noArtifacts.length > 0)
+                                gaps.artifact_payload_shape = 'a table artifact is {kind:"table", title:"<takeaway>", columns:[{key:"rank",label:"Rank",numeric:true},{key:"player",label:"Player"},{key:"value",label:"Net",numeric:true}], rows:[{rank:1,player:"X",value:4.8}]} — copy each figure stated in blocks into a row; a figure in block text alone does not count';
                             if (metricGaps.length > 0)
                                 gaps.metric_value_gaps = metricGaps;
                             if (missingTables.length > 0)
