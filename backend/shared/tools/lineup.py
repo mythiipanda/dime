@@ -368,13 +368,15 @@ def _lineup_fourway_sql() -> str:
 @tool(description='On/off-court splits for an arbitrary 2-5 player combination on one team, computed from possession-level data. Names or ids, comma-separated. For single-player splits use get_on_off; for a named two-player pair use get_wowy; for whole-lineup ratings use get_lineup_stats. With exactly two players the response also carries a four_way split: both on, A only, B only, and both off, each with possessions and per-100 OFF/DEF/NET ratings - use those cells directly for is-it-the-pair-or-just-one-player asks instead of hand-deriving them.\n\nReturns possessions, points for/against, and per-100 OFF/DEF/NET ratings\nfor the unit together versus all other possessions by that team, plus\nthe on-minus-off delta. Possessions flagged as garbage time are excluded.\nUnits under min_possessions (default 100) are flagged as tiny-sample, not\ndropped; blowout-heavy splits are flagged at the same share rule as\nget_lineup_stats.')
 def get_lineup_on_off(
     team: str | int, players: str = "", season: str | None = None,
-    min_possessions: int = 100,
+    min_possessions: int = 100, player_a: str = "", player_b: str = "",
 ) -> dict[str, Any]:
     season = resolve_season(season)
+    if not players.strip() and player_a.strip() and player_b.strip():
+        players = f"{player_a.strip()}, {player_b.strip()}"
     names = [p.strip() for p in players.split(",") if p.strip()]
     if not 2 <= len(names) <= 5:
         return {"tool": "get_lineup_on_off", "ok": False, "rows": [], "columns": [],
-                "error": "pass 2 to 5 comma-separated player names or ids"}
+                "error": 'pass the players as one comma-separated string in the players argument, e.g. players="Nikola Jokic, Jamal Murray" (2 to 5 names or ids)'}
     try:
         team_id = coerce_team_id(team)
     except Exception as e:

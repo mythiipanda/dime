@@ -319,11 +319,30 @@ def field_kind(tool_name: str, field: str, param_kinds: dict | None = None) -> s
     return _FIELD_KINDS.get(field)
 
 
+_PLAYER_PART_RE = re.compile(r"^player[_-]?(\d+)$", re.I)
+
+
+def _consolidate_player_parts(out: dict[str, Any]) -> None:
+    if str(out.get("players") or "").strip():
+        return
+    parts = sorted(
+        ((int(m.group(1)), key) for key in out if (m := _PLAYER_PART_RE.match(key))),
+        key=lambda pair: pair[0],
+    )
+    names = [str(out[key]).strip() for _, key in parts if str(out.get(key) or "").strip()]
+    if len(names) < 2:
+        return
+    for _, key in parts:
+        out.pop(key, None)
+    out["players"] = ", ".join(names)
+
+
 def normalize_call_args(tool_name: str, arguments: dict[str, Any],
                         param_kinds: dict | None = None) -> dict[str, Any]:
     if not isinstance(arguments, dict):
         return arguments
     out = dict(arguments)
+    _consolidate_player_parts(out)
     for field, value in arguments.items():
         kind = field_kind(tool_name, field, param_kinds)
         if not kind:
