@@ -1597,6 +1597,117 @@ test("validateAnswerSubmission promotes multiple markdown tables up to the cap",
   assert.equal(validated.artifacts[1].columns[0].key, "player");
 });
 
+test("createPiExecution formats missing_in_artifacts feedback with the figure named", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-exec-miafmt-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const currentRecord = makeSourceRecord("src-cur", { rows: [{ player: "Giannis", ts_pct: 41.2, fga: 359 }] });
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  let execRequests = 0;
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      if (execRequests === 1) {
+        const code = `
+          await tools.query_tool({ q: "x" });
+          await tools.submit_answer({
+            blocks: [{ text: "Giannis posted 41.2% true shooting across 359 attempts this season, a heavy workload.", anchors: [] }],
+            artifacts: [{ kind: "table", title: "TS leaders", columns: [{ key: "player", label: "Player" }, { key: "ts", label: "TS%", numeric: true }], rows: [{ player: "Giannis", ts: 41.2 }] }]
+          });
+          return { done: true };
+        `;
+        const msg = {
+          role: "assistant", api: model.api, provider: model.provider, model: model.id,
+          content: [{ type: "toolCall", id: "call-1", name: "codemode", arguments: { code } }],
+          stopReason: "toolUse", timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+        const stream = createAssistantMessageEventStream();
+        stream.push({ type: "done", reason: "toolUse", message: msg });
+        stream.end();
+        return stream;
+      }
+      const msg = {
+        role: "assistant", api: model.api, provider: model.provider, model: model.id,
+        content: [{ type: "text", text: "Done." }],
+        stopReason: "stop", timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = {
+    tools: [
+      {
+        name: "query_tool",
+        label: "Query Tool",
+        description: "Run query",
+        parameters: Type.Object({ q: Type.String() }),
+        async execute() {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ rows: [{ player: "Giannis", ts_pct: 41.2, fga: 359 }] }) }],
+            structuredContent: { ref: "src-cur", tool: "query_tool", isError: false, result: { rows: [{ player: "Giannis", ts_pct: 41.2, fga: 359 }] } },
+          };
+        },
+      },
+    ],
+    results: new Map([["src-cur", currentRecord]]),
+    pid: 12345,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const events = [];
+  for await (const event of pi.stream({
+    q: "How did Giannis shoot?",
+    history: [],
+    model: "fixture:fixture",
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+
+  const auditFail = events.find((e) => e.type === "tool_result" && e.name === "submit_answer_audit" && e.status === "fail");
+  assert.ok(auditFail, "expected an audit rejection");
+  assert.ok(String(auditFail.error).includes("missing_in_artifacts"), "missing_in_artifacts fired");
+  assert.ok(String(auditFail.error).includes("359"), "the missing figure itself is named in the feedback");
+  assert.ok(String(auditFail.error).includes("artifact payload"), "feedback explains the figure must move into an artifact row");
+  assert.ok(!String(auditFail.error).includes("**"), "markdown debris is stripped from the feedback");
+
+  await rm(cwd, { recursive: true, force: true });
+});
+
 test("createPiExecution salvages a rejected submission over a thin meta-echo ending", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-exec-salvage-"));
   const agentDir = join(cwd, "agent");
