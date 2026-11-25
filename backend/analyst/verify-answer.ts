@@ -242,6 +242,21 @@ function collectArtifactColumns(value: unknown, columns: Map<string, number[]>, 
     }
 }
 
+const COHORT_COUNT_ENTITY_RE = /^[\s*_]*(?:lineups?|players?|teams?|prospects?|games?|seasons?|picks?|rows?|duos?|trios?|units?|combinations?|fives?|squads?|rosters?|cohorts?|entr(?:y|ies)|matches?|qualifiers?)\b/i;
+
+function cohortCountClaim(claim: NumericClaim): boolean {
+    if (!claim.values.every(value => Number.isInteger(value) && value >= 2 && value <= 100000))
+        return false;
+    const digits = claim.raw.replace(/,/g, "").replace(/^[^0-9.]+/, "").replace(/[^0-9.]+$/, "");
+    if (digits === "")
+        return false;
+    const idx = claim.context.indexOf(digits);
+    if (idx < 0)
+        return false;
+    const tail = claim.context.slice(idx + digits.length, idx + digits.length + 32);
+    return COHORT_COUNT_ENTITY_RE.test(tail);
+}
+
 function derivedArtifactValues(columns: Map<string, number[]>, rowCounts: number[]): number[] {
     const out: number[] = [...rowCounts];
     const named = [...columns.entries()].filter(([, values]) => values.length > 0);
@@ -548,7 +563,7 @@ export function auditAnswerNumbers(
     (input.artifacts ?? []).forEach(artifact => collectArtifactColumns(artifact, artifactColumns, artifactRowCounts));
     const artifactCoverage = artifactValues.concat(derivedArtifactValues(artifactColumns, artifactRowCounts));
     const missing_in_artifacts = (input.artifacts ?? []).length > 0
-        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactCoverage) && !echoesQuestion(claim))
+        ? proseClaims.filter(claim => isSupported(claim) && !supportedBy(claim, artifactCoverage) && !echoesQuestion(claim) && !cohortCountClaim(claim))
         : [];
     const uncovered_asks = question ? auditAskCoverage(question, input) : [];
     const metric_value_gaps = question ? auditMetricCoverage(question, input) : [];
