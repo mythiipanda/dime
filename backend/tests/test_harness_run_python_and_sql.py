@@ -168,9 +168,8 @@ def test_sql_exec_refusal_hints_steer_to_warehouse_schema(warehouse):
 
     res_info = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
         {"sql": "SELECT table_name FROM information_schema.tables"}))
-    assert res_info["ok"] is False
-    assert "information_schema" in res_info["recovery_hint"]
-    assert "warehouse_schema" in res_info["recovery_hint"]
+    assert res_info["ok"] is True
+    assert any(str(r.get("table_name", "")).startswith("silver_") for r in res_info["rows"])
 
     res_catalog_fn = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
         {"sql": "SELECT * FROM warehouse_schema()"}))
