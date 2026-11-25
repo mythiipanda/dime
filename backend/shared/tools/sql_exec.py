@@ -121,6 +121,81 @@ def _refusal_hint(query: str, error: str) -> str:
     return _GENERIC_HINT
 
 
+_LEADING_LINE_COMMENT = _re.compile(r"\s*--[^\n]*(?:\n|$)")
+_LEADING_BLOCK_COMMENT = _re.compile(r"\s*/\*.*?\*/", _re.S)
+_DESCRIBE_RE = _re.compile(r"(?i)^\s*describe\s+(?:table\s+)?([A-Za-z_][\w]*)\s*;?\s*$")
+_SHOW_COLUMNS_RE = _re.compile(r"(?i)^\s*show\s+columns\s+(?:from|in)\s+([A-Za-z_][\w]*)\s*;?\s*$")
+_SHOW_TABLES_RE = _re.compile(r"(?i)^\s*show\s+tables\s*;?\s*$")
+
+
+def _strip_leading_comments(sql: str) -> str:
+    out = sql
+    while True:
+        m = _LEADING_LINE_COMMENT.match(out) or _LEADING_BLOCK_COMMENT.match(out)
+        if not m:
+            return out.strip()
+        out = out[m.end():]
+
+
+def _schema_rows_for(table: str) -> list[dict[str, Any]] | None:
+    try:
+        _present, columns = _get_warehouse_schema()
+    except Exception:
+        columns = {}
+    by_lower = {t.lower(): t for t in columns}
+    real = by_lower.get(table.lower(), table)
+    if real.lower() not in {t.lower() for t in TABLES}:
+        return None
+    try:
+        from .league._helpers import _owned_connection
+        with _owned_connection(None, read_only=True) as con:
+            info = con.execute(f"PRAGMA table_info({real})").fetchall()
+    except Exception:
+        info = []
+    if not info:
+        return None
+    catalog = columns.get(real, {})
+    rows = []
+    for r in info:
+        row: dict[str, Any] = {"column_name": r[1], "column_type": str(r[2])}
+        meta = catalog.get(r[1], {})
+        if meta.get("unit"):
+            row["unit"] = meta["unit"]
+        if meta.get("note"):
+            row["note"] = meta["note"]
+        rows.append(row)
+    return rows
+
+
+def _introspection_result(query: str) -> dict[str, Any] | None:
+    if _SHOW_TABLES_RE.match(query):
+        rows = [{"table_name": t} for t in TABLES]
+        return {"tool": TOOL, "ok": True, "rows": rows,
+                "columns": ["table_name"], "row_count": len(rows),
+                "sql": query,
+                "meta": {"source": SOURCE, "dataset": "warehouse",
+                         "sql": query[:500], "tables": [],
+                         "result_type": "schema_listing",
+                         "coverage": "Declared silver table allowlist; warehouse_schema carries columns, units and season notes per table."}}
+    m = _DESCRIBE_RE.match(query) or _SHOW_COLUMNS_RE.match(query)
+    if not m:
+        return None
+    table = m.group(1)
+    rows = _schema_rows_for(table)
+    if rows is None:
+        close = _difflib.get_close_matches(table.lower(), [t.lower() for t in TABLES], n=3, cutoff=0.5)
+        hint = ("Closest declared tables: " + ", ".join(close) + ". "
+                if close else "") + "warehouse_schema lists every declared table with columns, units and season notes."
+        return _failure(query, f"unknown or unavailable table for introspection: {table}", hint)
+    cols = list(rows[0].keys()) if rows else ["column_name", "column_type"]
+    return {"tool": TOOL, "ok": True, "rows": rows, "columns": cols,
+            "row_count": len(rows), "sql": query,
+            "meta": {"source": SOURCE, "dataset": "warehouse",
+                     "sql": query[:500], "tables": [table],
+                     "result_type": "schema_listing",
+                     "coverage": f"Declared columns on {table} with types, units and notes from the warehouse schema catalog."}}
+
+
 _TABLE_ERROR_RE = _re.compile(r"(?:no such table|table with name)\s*[:=]?\s*[`\"]?([A-Za-z0-9_]+)", _re.I)
 _COLUMN_ERROR_RE = _re.compile(r"(?:does not have a column|no such column|column)\s*(?:named\s+|called\s+)?[`\"]?([A-Za-z0-9_]+)", _re.I)
 def _error_suggestions(query: str, error: str) -> list[str]:
@@ -144,8 +219,7 @@ def _error_suggestions(query: str, error: str) -> list[str]:
         return [f"{mentioned[0]}.{name}" for name in matches]
     return matches
 
-@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. DESCRIBE, SHOW TABLES,\ninformation_schema and catalog functions are refused as well; call\nwarehouse_schema for table and column listings. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
-
+@tool("sql_exec", description='Run one agent-written read-only analytical query over the warehouse.\n\nThe query must be a single SELECT or WITH statement over the declared\nsilver tables. Writes, stacked statements, and tables outside the\ndeclared set are refused before execution. DESCRIBE <table>, SHOW COLUMNS\nand SHOW TABLES are answered from the schema catalog with column types,\nunits and season notes; information_schema and catalog functions are\nrefused. Results are capped at\nRERUN_ROW_CAP rows with a RERUN_TIMEOUT_S statement timeout; a valid\nquery returning 0 rows returns ok=True, rows=[], row_count=0, and\nmeta.empty_observation=True (unless DIME_STRICT_NONEMPTY_SQL=1).\nName the primary numeric column for what it measures, so a percentage\nanswers as TS_PCT and a count as `n`; the column you alias is the\ncolumn a citation binds to.\n\nEvery ok result also carries meta.basis and meta.profile. If you need\na contributor count for an expression such as AVG, or distinct-value\ncounts, add COUNT(metric) or COUNT(DISTINCT x) columns to your query.')
 async def sql_exec(sql: str) -> dict[str, Any]:
     query = (sql or "").strip()
     if not query:
@@ -159,6 +233,10 @@ async def sql_exec(sql: str) -> dict[str, Any]:
             query,
             f"sql_exec: sql is {len(query)} chars, over the {MAX_SQL_CHARS} cap",
         )
+    query = _strip_leading_comments(query)
+    introspected = _introspection_result(query)
+    if introspected is not None:
+        return introspected
     out = await rerun_sql(query)
     if not out.get("ok"):
         err = str(out.get("error", ""))

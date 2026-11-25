@@ -159,13 +159,12 @@ def test_sql_exec_zero_rows_and_long_sql_and_recovery_hint(warehouse, monkeypatc
 
 def test_sql_exec_refusal_hints_steer_to_warehouse_schema(warehouse):
     res_describe = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "DESCRIBE silver_standings"}))
-    assert res_describe["ok"] is False
-    assert "SELECT or WITH" in res_describe["recovery_hint"]
-    assert "warehouse_schema" in res_describe["recovery_hint"]
+    assert res_describe["ok"] is True
+    assert any(r.get("column_name") == "TEAM" for r in res_describe["rows"])
 
     res_show = asyncio.run(sql_exec_mod.sql_exec.ainvoke({"sql": "SHOW TABLES"}))
-    assert res_show["ok"] is False
-    assert "warehouse_schema" in res_show["recovery_hint"]
+    assert res_show["ok"] is True
+    assert any(str(r.get("table_name", "")).startswith("silver_") for r in res_show["rows"])
 
     res_info = asyncio.run(sql_exec_mod.sql_exec.ainvoke(
         {"sql": "SELECT table_name FROM information_schema.tables"}))
