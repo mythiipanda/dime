@@ -68,7 +68,20 @@ export function codemodeStoreSnapshot(branch: ReadonlyArray<{ type: string }>): 
 function salvageDraftSubmission(snapshot: Record<string, unknown>): AnswerSubmission | undefined {
     let best: { text: string; anchors: [] }[] | undefined;
     let bestLen = 0;
+    const candidates: unknown[] = [];
     for (const value of Object.values(snapshot)) {
+        if (Array.isArray(value)) {
+            candidates.push(value);
+            continue;
+        }
+        const record = objectValue(value);
+        if (!record)
+            continue;
+        for (const [nestedKey, nested] of Object.entries(record))
+            if (Array.isArray(nested) && /block|answer|draft|submission|final/i.test(nestedKey))
+                candidates.push(nested);
+    }
+    for (const value of candidates) {
         if (!Array.isArray(value) || value.length === 0 || value.length > 12)
             continue;
         const items = value.map(objectValue).filter((item): item is Record<string, unknown> => item !== undefined);
@@ -1170,10 +1183,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 return;
                             if (!session.messages.some(message => message.role === "toolResult"))
                                 return;
-                            const narrated = salvageNarrationSubmission(session.messages);
-                            if (!narrated)
+                            const salvaged = salvageDraftSubmission(codemodeStoreSnapshot(session.sessionManager.getBranch()))
+                                ?? salvageNarrationSubmission(session.messages);
+                            if (!salvaged)
                                 return;
-                            acceptedSubmission = narrated;
+                            acceptedSubmission = salvaged;
                             emitAcceptedAnswer();
                         }, salvageAtMs);
                         narrationSalvage.unref();
