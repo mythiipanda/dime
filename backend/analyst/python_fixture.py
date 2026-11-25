@@ -47,7 +47,8 @@ async def main():
     ]
     args = [{"sql": sql} for sql in queries]
     direct = [await tools["sql_exec"].ainvoke(arg) for arg in args]
-    schema = await tools["warehouse_schema"].ainvoke({})
+    schema = await tools["warehouse_schema"].ainvoke(
+        {"tables": ["silver_hist_player_seasons", "silver_leaders_pts", "silver_lineups"]})
     (root / "python-baseline.json").write_text(
         json.dumps({"args": args, "direct": direct, "schema": schema}), encoding="utf-8")
 

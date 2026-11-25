@@ -324,7 +324,7 @@ test("real Python sql_exec and schema cross MCP into Pi with source semantics an
       if (!invalid.isError || invalid.result.ok !== false) throw new Error("Missing domain failure");
       const recovered = await tools.sql_exec(args[1]);
       if (recovered.isError || !recovered.result.rows.length) throw new Error("Same-script recovery failed");
-      const schema = await tools.warehouse_schema({});
+      const schema = await tools.warehouse_schema({tables: ["silver_hist_player_seasons", "silver_leaders_pts", "silver_lineups"]});
       if (typeof schema !== "object" || !schema.result.tables) throw new Error("Expected native schema.result.tables");
       return {schema: {ref: schema.ref, tables: Object.fromEntries(Object.entries(schema.result.tables)
         .filter(([name]) => name === "silver_hist_player_seasons"))}, invalid, recovered: {ref: recovered.ref, units: recovered.result.declared_column_semantics}, calls: calls.map(record => {
