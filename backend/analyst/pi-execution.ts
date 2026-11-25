@@ -6,7 +6,7 @@ import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
-import { createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
+import { artifactRejectionReason, createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
 import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
@@ -95,7 +95,40 @@ function salvageDraftSubmission(snapshot: Record<string, unknown>): AnswerSubmis
     }
     if (!best)
         return undefined;
-    return { blocks: best, omitted: ["submission salvaged from the codemode store draft — the run ended before submit_answer completed"] };
+    const artifacts = salvageDraftArtifacts(snapshot);
+    return { blocks: best, omitted: ["submission salvaged from the codemode store draft — the run ended before submit_answer completed"], ...(artifacts ? { artifacts } : {}) };
+}
+
+function salvageDraftArtifacts(snapshot: Record<string, unknown>): Record<string, unknown>[] | undefined {
+    const out: Record<string, unknown>[] = [];
+    const scan = (arr: unknown) => {
+        if (!Array.isArray(arr) || arr.length === 0 || arr.length > 8)
+            return;
+        const items = arr.map(objectValue).filter((item): item is Record<string, unknown> => item !== undefined);
+        if (items.length !== arr.length || !items.every(item => typeof item.kind === "string"))
+            return;
+        for (const item of items) {
+            if (artifactRejectionReason(item) !== null)
+                continue;
+            if (!out.some(existing => JSON.stringify(existing) === JSON.stringify(item)))
+                out.push(item);
+        }
+    };
+    for (const value of Object.values(snapshot)) {
+        if (Array.isArray(value)) {
+            scan(value);
+            continue;
+        }
+        const record = objectValue(value);
+        if (!record)
+            continue;
+        for (const nested of Object.values(record))
+            if (Array.isArray(nested))
+                scan(nested);
+        if (typeof record.kind === "string")
+            scan([record]);
+    }
+    return out.length > 0 ? out.slice(0, 4) : undefined;
 }
 
 function salvageNarrationSubmission(messages: ReadonlyArray<{ role: string; content?: unknown }>): AnswerSubmission | undefined {
