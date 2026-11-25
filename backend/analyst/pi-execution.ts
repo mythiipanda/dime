@@ -1338,7 +1338,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             acceptedSubmission = lastRejectedSubmission;
                     }
                     if (!acceptedSubmission && session) {
-                        const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd));
+                        const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd))
+                            ?? (session.messages.some(message => message.role === "toolResult") ? salvageNarrationSubmission(session.messages) : undefined);
                         if (drafted)
                             acceptedSubmission = drafted;
                     }
