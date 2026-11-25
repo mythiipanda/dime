@@ -243,6 +243,26 @@ def register() -> dict[str, Any]:
                                   lambda r: [dict(x) for x in r.get("rows", [])],
                                   fixed_cols=True)
 
+    try:
+        from shared.tools.shots.leaders import get_shot_zone_leaders as _orig_get_shot_zone_leaders
+    except ImportError:
+        from backend.shared.tools.shots.leaders import get_shot_zone_leaders as _orig_get_shot_zone_leaders
+
+    @tool("get_shot_zone_leaders", description=_orig_get_shot_zone_leaders.description)
+    def get_shot_zone_leaders(
+        zone: str = "", season: str | None = None, min_attempts: int = 40,
+        position: str = "", limit: int = 25,
+    ) -> dict:
+        cols = ["player", "team", "att", "makes", "fg_pct", "total_fga", "zone_share"]
+        res = call_sync(_orig_get_shot_zone_leaders, "get_shot_zone_leaders", {
+            "zone": zone, "season": season, "min_attempts": min_attempts,
+            "position": position, "limit": limit,
+        })
+        return finish_strict_rows(res, "get_shot_zone_leaders", cols,
+                                  "Zone leaderboard query failed",
+                                  lambda r: [dict(x) for x in r.get("rows", [])],
+                                  fixed_cols=True)
+
     return {
         "get_shot_zones": get_shot_zones,
         "get_shot_compare": get_shot_compare,
@@ -251,4 +271,5 @@ def register() -> dict[str, Any]:
         "get_shot_chart": get_shot_chart,
         "get_team_shot_zones": get_team_shot_zones,
         "get_phase_shot_splits": get_phase_shot_splits,
+        "get_shot_zone_leaders": get_shot_zone_leaders,
     }

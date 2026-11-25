@@ -117,6 +117,7 @@ export const TOOL_NAMES = [
     "get_prospect",
     "get_roster_fit",
     "get_expectations",
+    "get_shot_zone_leaders",
 ] as const;
 
 export const NAMESPACE_DESCRIPTIONS = {
@@ -243,6 +244,7 @@ export const TOOL_NAMESPACES = {
     "get_free_agents": "league",
     "get_fa_plan": "league",
     "get_prospect": "league",
+    "get_shot_zone_leaders": "spatial",
 } as const;
 
 export const TOOL_PROMPT_GUIDELINES: Partial<Record<string, string[]>> = {
@@ -338,5 +340,8 @@ export const TOOL_PROMPT_GUIDELINES: Partial<Record<string, string[]>> = {
     ],
     "get_lineups": [
         "Use for one team's five-man units by minutes with explicit season_type, measure_type, and per_mode defaults. Do not mix totals/pergame or base/advanced variants; rows are lineup-variant units and advanced ratings require matching advanced rows.",
+    ],
+    "get_shot_zone_leaders": [
+        "Use for any league-wide zone leaderboard or who-leads-the-league-in-a-zone ask (corner threes, above-the-break volume, rim finishing, midrange diet). Never loop per-player zone tools or hand-write coordinate math in sql_exec for these.",
     ],
 };

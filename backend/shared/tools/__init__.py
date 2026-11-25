@@ -101,6 +101,7 @@ from .competitive import get_competitive_ratings
 from .espn import get_espn_event_summary, get_espn_odds, get_espn_scores
 from .lineup_matrix import get_lineup_matchup_matrix
 from .shots import search_shots
+from .shots.leaders import get_shot_zone_leaders
 from .zone import get_team_shot_zones
 from .zonedelta import get_zone_deltas
 from .team import (
@@ -249,6 +250,7 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_lineup_matchup_matrix,
     search_shots,
     get_zone_deltas,
+    get_shot_zone_leaders,
     get_rapm_prior,
     get_wpa_leaders,
     get_espn_scores,

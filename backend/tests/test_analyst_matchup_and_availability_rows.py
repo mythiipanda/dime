@@ -1271,7 +1271,7 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
     declared = [t["name"] for t in manifest["tools"]]
 
-    assert len(declared) == 118
+    assert len(declared) == 119
     assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for spec in SECTIONED:

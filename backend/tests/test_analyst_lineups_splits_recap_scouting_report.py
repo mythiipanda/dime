@@ -421,7 +421,7 @@ def test_registry_matches_the_typescript_tool_names(monkeypatch):
     manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
     declared = [t["name"] for t in manifest["tools"]]
 
-    assert len(declared) == 118
+    assert len(declared) == 119
     assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for name in ("get_lineups", "get_splits", "get_recap", "get_scouting_report"):
@@ -525,7 +525,7 @@ def test_bridge_clone_keeps_all_names_and_schemas(monkeypatch):
     manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text(encoding="utf-8"))
     declared = [t["name"] for t in manifest["tools"]]
 
-    assert len(declared) == 118
+    assert len(declared) == 119
     assert len(declared) == len(tools)
     assert list(tools.keys()) == declared
     for name, upstream_schema in UPSTREAM_SCHEMAS.items():
