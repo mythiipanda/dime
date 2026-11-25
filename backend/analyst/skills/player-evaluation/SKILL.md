@@ -91,7 +91,37 @@ transferable":
   performance — use them for "does he produce in leverage" rather than
   asserting it from totals.
 
-## 5. Current vs historical — always stated
+## 5. Qualified-pool analytics (scouting-desk asks)
+
+Asks like "against the qualified pool", "closest statistical matches",
+"percentile profile", or "rank the under-23 core" define an eligible pool
+then rank or measure each player inside it. Compute every one of these in
+`sql_exec` against `silver_hist_player_seasons` — never pull the pool into
+context with `get_leaders`/`get_dataset` dumps; a whole-pool payload (~570
+rows) burns the turn budget and the context window.
+
+Grain facts that trip these queries:
+
+- `season` is the int start year (2025 = '2024-25'); `_season` carries the
+  'YYYY-YY' string. `min` and the counting stats (`pts`, `reb`, `ast`,
+  `stl`, `blk`, `tov`) are per-game already — do not divide by `gp`.
+  There is no `season_type` on the player table; that column lives on
+  `silver_hist_team_seasons` (value 'regular-season').
+- "Qualified" means `gp >= 41 AND min >= 24.0` unless the ask overrides
+  the cutoffs; that pool is ~180 players for 2025.
+- Percentile = share of the pool below the player's value. One query:
+  cross join the target row(s) to the pool and `COUNT(*) FILTER (pool.x <
+  t.x) * 100.0 / COUNT(*)`, or `percent_rank() OVER (ORDER BY x)` for a
+  full board.
+- "Closest statistical matches" = z-score each named stat across the pool
+  (`(x - avg(x) OVER ()) / stddev(x) OVER ()`), then Euclidean distance —
+  one `sql_exec`, ordered by distance, excluding the player himself.
+- Team ranks need no computation: `silver_hist_team_seasons` carries one
+  row per team × `measure_type` × `per_mode` — filter
+  `measure_type='advanced'` (or the metric's table) and read the `*_rank`
+  column (`reb_pct_rank`, `net_rating_rank`, ...).
+
+## 6. Current vs historical — always stated
 
 Tools default to the current 2026-27 season; historical asks must pass
 `season` explicitly, and the answer must name which season each number
