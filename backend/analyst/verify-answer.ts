@@ -188,6 +188,47 @@ function numbersClose(a: number, b: number): boolean {
     return diff <= Math.max(Math.abs(a), Math.abs(b)) * 0.002;
 }
 
+const LOWER_BOUND_RE = /(?:over|more than|at least|above|exceeding|exceeds|north of|upwards of|minimum of)\s*$/i;
+const UPPER_BOUND_RE = /(?:under|below|at most|fewer than|less than|no more than|up to|south of|maximum of)\s*$/i;
+const APPROX_RE = /(?:about|approximately|around|roughly|nearly|almost|circa|approx\.?|~|≈)\s*$/i;
+
+function claimQualifier(claim: NumericClaim): "lower" | "upper" | "approx" | null {
+    const index = claim.context.indexOf(claim.raw);
+    if (index < 0)
+        return null;
+    const pre = claim.context.slice(Math.max(0, index - 40), index);
+    if (LOWER_BOUND_RE.test(pre))
+        return "lower";
+    if (UPPER_BOUND_RE.test(pre))
+        return "upper";
+    if (APPROX_RE.test(pre))
+        return "approx";
+    return null;
+}
+
+function rateUnitClaim(claim: NumericClaim): boolean {
+    if (!claim.values.some(value => value === 100))
+        return false;
+    const index = claim.context.indexOf(claim.raw);
+    if (index < 0)
+        return false;
+    const pre = claim.context.slice(Math.max(0, index - 12), index);
+    return /per[-\s]$/i.test(pre) || /per $/i.test(pre);
+}
+
+function qualifierSupported(claim: NumericClaim, evidence: number[]): boolean {
+    const qualifier = claimQualifier(claim);
+    if (!qualifier)
+        return false;
+    return claim.values.some(value => evidence.some(other => {
+        if (qualifier === "lower")
+            return other >= value && other <= Math.max(value * 100, value + 1000);
+        if (qualifier === "upper")
+            return other <= value && other >= Math.min(value / 100, value - 1000);
+        return Math.abs(other - value) <= Math.max(0.051, Math.abs(value) * 0.03);
+    }));
+}
+
 function collectArtifactColumns(value: unknown, columns: Map<string, number[]>, rowCounts: number[]) {
     if (value === null || value === undefined)
         return;
@@ -277,7 +318,7 @@ const ASK_STOPWORDS = new Set([
     "best", "worst", "first", "last", "all", "any", "every", "from", "into",
     "over", "under", "between", "against", "versus", "vs", "per", "during"
 ]);
-const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance)\b/i;
+const ASK_SKIP_RE = /\b(?:cite|source|verify_answer|submit_answer|footnote|provenance|decimals?|rounding|rounded)\b/i;
 const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?|scatters?|shot_?charts?|memos?|cards?|visualizations?|visualisations?|deliverables?|dashboards?|payloads?|artifacts?|artefacts?|specs?)\b/gi;
 const ARTIFACT_KIND_TOKENS: Record<string, string> = { table: "table", tables: "table", compare: "compare", comparison: "compare", chart: "chart", charts: "chart", graph: "chart", graphs: "chart", scatter: "scatter", scatters: "scatter", shot_chart: "shot_chart", shotchart: "shot_chart", memo: "memo", memos: "memo", card: "card", cards: "card" };
 export const WAREHOUSE_TABLE_RE = /\b(?:silver|gold|bronze)_[a-z0-9_]+\b/gi;
@@ -572,6 +613,8 @@ export function auditAnswerNumbers(
     const unsupported_claims = unsupported
         .filter(claim => !META_CONTEXT_RE.test(claim.context))
         .filter(claim => !echoesQuestion(claim))
+        .filter(claim => !qualifierSupported(claim, evidence))
+        .filter(claim => !rateUnitClaim(claim))
         .filter(claim => /%|\$/.test(claim.raw) || claim.values.some(value => !Number.isInteger(value) || Math.abs(value) >= 100))
         .slice(0, 8)
         .map(claim => `${claim.raw} (near "${claim.context.slice(0, 80)}")`);

@@ -195,3 +195,47 @@ test("auditAnswerNumbers still flags headline figures not derivable from artifac
   assert.equal(audit.missing_in_artifacts.length, 1);
   assert.equal(audit.missing_in_artifacts[0].raw, "104");
 });
+
+test("bounded and approximate claims count as supported when evidence satisfies the bound", () => {
+  const sources = [
+    makeSourceRecord("src-1", {
+      rows: [{ player: "Nikola Jokic", on_poss: 9195, off_poss: 5026, net: 10.7 }],
+    }),
+  ];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [
+        {
+          text: "The sample is robust with over 5,000 possessions in the off state and more than 9,000 on. Net rating was about 10.7 per 100, under 12 overall. Fabricated claim: over 10,000 off possessions.",
+        },
+      ],
+      artifacts: [],
+    },
+    sources
+  );
+  const raws = audit.unsupported_claims.map(flag => flag.split(" (near")[0]);
+  assert.equal(raws.includes("5,000"), false, raws.join("|"));
+  assert.equal(raws.includes("9,000"), false, raws.join("|"));
+  assert.equal(raws.includes("10.7"), false, raws.join("|"));
+  assert.equal(raws.includes("12"), false, raws.join("|"));
+  assert.equal(raws.includes("100"), false, "per-100 rate unit must not flag: " + raws.join("|"));
+  assert.ok(raws.includes("10,000"), "false bounded claim must still flag: " + raws.join("|"));
+});
+
+test("formatting-instruction clauses are not unevidenced asks", () => {
+  const sources = [
+    makeSourceRecord("src-1", {
+      rows: [{ player: "Nikola Jokic", on_net: 6.1, off_net: -4.6 }],
+    }),
+  ];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [{ text: "On net rating 6.1 per 100, off -4.6 per 100." }],
+      artifacts: [],
+    },
+    sources,
+    "How does Denver perform with Jokic on vs off? Report per-100 numbers to one decimal."
+  );
+  const flags = audit.unevidenced_asks.join(" | ");
+  assert.equal(flags.includes("decimal"), false, flags);
+});
