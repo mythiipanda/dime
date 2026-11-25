@@ -272,8 +272,6 @@ def _normalize_game_id(value: object, field: str) -> object:
 def _normalize_one(tool_name: str, field: str, kind: str, value: object) -> object:
     if value is None:
         return value
-    if isinstance(value, str) and not value.strip():
-        return value
     if kind in ("season_list", "player_list", "team_list", "table_list"):
         if kind == "season_list" and (
                 isinstance(value, int)
