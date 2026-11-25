@@ -19,6 +19,7 @@ const TURN_END_STEER_MIN_CHARS = 240;
 const SUBMIT_FORCE_REMAINING_MS = 60_000;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
+const ABANDON_SENTINEL = Symbol("abandon-sentinel");
 const TRACE_RESULT_PREVIEW_CHARS = 4096;
 
 type TracedResult = Pick<Extract<AnalystEvent, { type: "tool_result" }>, "result" | "result_sha256" | "result_bytes" | "result_truncated">;
@@ -986,7 +987,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
     return {
         async *stream(input: unknown, signal?: AbortSignal): AsyncGenerator<AnalystEvent> {
             const controller = new AbortController();
-            const events: AnalystEvent[] = [];
+            const events: (AnalystEvent | typeof ABANDON_SENTINEL)[] = [];
             let wake: (() => void) | undefined;
             let finished = false;
             const emit = (event: AnalystEvent) => { events.push(event); wake?.(); };
@@ -1004,12 +1005,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             signal?.addEventListener("abort", onAbort, { once: true });
             let abandoned = false;
             const abandon = new Promise<void>(resolve => controller.signal.addEventListener("abort", () => setTimeout(resolve, abortGraceMs).unref(), { once: true }));
-            void abandon.then(() => { abandoned = true; wake?.(); });
+            void abandon.then(() => { abandoned = true; events.push(ABANDON_SENTINEL); wake?.(); });
             if (signal?.aborted)
                 controller.abort();
             async function run() {
                 let session: Awaited<ReturnType<typeof createAnalystSession>> | undefined;
                 let bridge: Awaited<ReturnType<typeof connectPythonTools>> | undefined;
+                let bridgeClosePromise: Promise<unknown> | undefined;
+                const closeBridge = () => {
+                    if (!bridgeClosePromise && bridge)
+                        bridgeClosePromise = bridge.close().catch(() => undefined);
+                    return bridgeClosePromise;
+                };
                 let kind = "configuration";
                 let bridgeCwd: string | undefined;
                 let bridgePid: number | undefined;
@@ -1030,6 +1037,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     kind = "startup";
                     bridge = await connectTools(start.bridge);
                     bridgePid = bridge.pid;
+                    controller.signal.addEventListener("abort", () => { void closeBridge(); }, { once: true });
                     controller.signal.throwIfAborted();
                     const connected = bridge;
                     const tracker: RunStatusTracker = {
@@ -1355,7 +1363,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                     finally {
                         session?.dispose();
-                        await bridge?.close();
+                        await closeBridge();
                         controller.signal.removeEventListener("abort", cancel);
                         emit({ type: "closed", pid: bridgePid });
                     }
@@ -1365,8 +1373,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
             try {
                 while ((!finished && !abandoned) || events.length) {
                     const next = events.shift();
+                    if (next === ABANDON_SENTINEL)
+                        break;
                     if (next)
-                        yield next;
+                        yield next as AnalystEvent;
                     else
                         await new Promise<void>(resolve => { wake = resolve; });
                 }
