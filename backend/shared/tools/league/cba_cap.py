@@ -425,7 +425,7 @@ def _salary_date(con: object = None) -> str | None:
     return None
 
 
-@tool(description='Payroll plus apron room for one abbreviation, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total.')
+@tool(description='Payroll plus apron room for one abbreviation, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total. For cap seasons beyond the silver_cap_room coverage (2027-28 and later), committed salary is derivable by summing silver_salaries per TEAM via sql_exec — it carries SALARY_2026_27 through SALARY_2029_30 plus OPTION_<season> columns per player; never declare future-season salary data unavailable before summing that table.')
 def get_cap_ledger(team: str = "") -> dict[str, Any]:
     if not team:
         return {"tool": "get_cap_ledger", "ok": False, "error": "team needed"}
@@ -461,7 +461,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      **{k: v for k, v in CAP.items()}}}
 
 
-@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits or over-the-line scans against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total.')
+@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits or over-the-line scans against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total. For cap seasons beyond the silver_cap_room coverage (2027-28 and later), committed salary is derivable by summing silver_salaries per TEAM via sql_exec — it carries SALARY_2026_27 through SALARY_2029_30 plus OPTION_<season> columns per player; never declare future-season salary data unavailable before summing that table.')
 def get_cap_table(season: str | None = None) -> dict[str, Any]:
     from nba_api.stats.static import teams as _teams
     con = _pkg().store.connect(read_only=True)
