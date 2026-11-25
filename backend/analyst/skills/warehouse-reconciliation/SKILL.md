@@ -67,7 +67,7 @@ In Python: `unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().
 - When the named table lacks the requested season, phase, or team, say so, then keep the requested scope: list coverage (`SELECT DISTINCT _season, ...`) in other tables that hold the same measure and verify each requested scope has rows there before switching. Never substitute an adjacent season or shift the comparison window to fit the first table's coverage. If no table covers a requested scope, report that gap for that part.
 - Once filters are verified, a 0-row observation is affirmative evidence that no entity or event satisfied those criteria in the covered warehouse scope (e.g., resolving a false-premise question). Report the exact verified scope and the 0-row finding transparently.
 
-## 5. Current Season vs Completed Seasons (Stale Premises)
+## 6. Current Season vs Completed Seasons (Stale Premises)
 
 Warehouse coverage lags the calendar: production and game tables (`silver_leaders_*`, `silver_team_games`, `silver_player_season`, box scores, play-by-play) hold completed seasons only, while contract and roster tables (`silver_salaries`, `silver_cap_players`) describe the current league and are labelled with the current season in `_season`. `silver_player_season` carries only the latest season; for earlier seasons join `silver_hist_player_seasons`, which stores per-game averages and per-season rows. Consequences:
 
@@ -77,7 +77,44 @@ Warehouse coverage lags the calendar: production and game tables (`silver_leader
 - **Salary columns carry year semantics**: in `silver_salaries`, `SALARY` is the cap hit for the row's `_season`; the `SALARY_20XX_YY`/`OPTION_20XX_YY` columns are per-contract-year values and shift every rollover. For "20XX-YY payroll / cap hit", sum `SALARY` on `_season = '20XX-YY'` rows (or the matching `SALARY_20XX_YY` column) — never a different year column. A frozen column such as `SALARY_2025_26` on 2026-27 rows silently returns last year's payroll, and the result can look verified because the schema accepts it. When the prompt's year differs from any column you plan to sum, reconcile it against `SUM(SALARY)` first.
 - **Stale premise handling**: when a tool reports that a player's team differs from the question's premise (trade guard errors name the season and the listed team), say the premise is stale, then answer for the player's current team or re-run with the historical season the user meant. Do not force the question's teams through.
 
-## 6. Call Economy: Fewer Turns, Faster Answers
+## 7. Game-Level Feed Reconciliation: Copy-Paste Template
+
+Auditing one feed against another at game grain (box scores vs team gamelogs, box scores vs shot rows) is ONE aggregate query, not an explore-then-assemble loop. Three traps cause the empty-join churn:
+
+- **Game-id prefix is the season START year, `season` int is the END year**: 2023-24 regular-season ids start `'00223'` (`'002'` + 2-digit start year + `3`); the matching `silver_hist_gamelogs` filter is `season = 2024`. Filtering both on the same digit returns 0 rows.
+- **Column names differ across feeds**: `silver_boxscores` uses `teamTricode`/`PLAYER_ID`/`GAME_ID`/`minutes` (camelCase); `silver_hist_*` tables use `team_abbreviation`/`person_id`/`game_id`/`min` (snake_case). `silver_boxscores` has no `TEAM_ABBREVIATION` column.
+- **`minutes` in `silver_boxscores` is `MM:SS` text, not decimal**: blank/DNP counts as 0. Parse with `CAST(SPLIT_PART(minutes,':',1) AS DOUBLE) + CAST(SPLIT_PART(minutes,':',2) AS DOUBLE)/60`.
+
+The reconciliation pattern (verified gold-exact for DET 2023-24: 82 team games, 82 matched, 0 unmatched):
+
+```sql
+WITH box AS (
+  SELECT GAME_ID,
+         SUM(CASE WHEN minutes IS NULL OR minutes = '' THEN 0
+                  ELSE CAST(SPLIT_PART(minutes, ':', 1) AS DOUBLE)
+                     + CAST(SPLIT_PART(minutes, ':', 2) AS DOUBLE) / 60 END) AS player_min
+  FROM silver_boxscores
+  WHERE teamTricode = 'DET' AND GAME_ID LIKE '00223%'
+  GROUP BY GAME_ID
+),
+team AS (
+  SELECT game_id, min AS team_min
+  FROM silver_hist_gamelogs
+  WHERE team_abbreviation = 'DET' AND season = 2024 AND season_type = 'regular-season'
+)
+SELECT (SELECT COUNT(*) FROM team) AS team_games,
+       COUNT(t.game_id) AS matched_games,
+       (SELECT COUNT(*) FROM team) - COUNT(t.game_id) AS unmatched_games,
+       SUM(t.team_min) AS expected_min,
+       SUM(b.player_min) AS observed_min,
+       MAX(ABS(t.team_min - b.player_min)) AS max_abs_diff,
+       SUM(CASE WHEN t.team_min > 240 THEN 1 ELSE 0 END) AS ot_games
+FROM team t JOIN box b ON t.game_id = b.GAME_ID
+```
+
+A team `min` column already sums the five players (240 in a regulation game), so compare it directly against summed player minutes — never multiply or divide it by anything. Adapt the same shape for shot-feed audits: group the event feed by game/player keys, full-outer join on the keys, and report matched/unmatched key counts plus the largest absolute per-key discrepancy in one query. Do not iterate per-game or per-player probes to assemble these totals — the single GROUP BY query above IS the audit.
+
+## 8. Call Economy: Fewer Turns, Faster Answers
 
 Every codemode turn costs model latency, so spend calls deliberately:
 
