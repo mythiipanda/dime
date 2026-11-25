@@ -32,6 +32,31 @@ test("non-matching urls pass straight through", async () => {
     assert.equal(calls, 1);
 });
 
+test("null message content is rewritten to an empty string before sending", async () => {
+    const bodies = [];
+    const realFetch = async (_url, init) => { bodies.push(init.body); return ok(); };
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const payload = { model: "m", messages: [
+        { role: "user", content: null },
+        { role: "assistant", content: [null, { type: "text", text: "kept" }] },
+        { role: "user", content: "fine" },
+    ] };
+    await fetch(`${BASE}/chat/completions`, { method: "POST", body: JSON.stringify(payload) });
+    const sent = JSON.parse(bodies[0]);
+    assert.equal(sent.messages[0].content, "");
+    assert.deepEqual(sent.messages[1].content, [{ type: "text", text: "kept" }]);
+    assert.equal(sent.messages[2].content, "fine");
+});
+
+test("clean payloads pass through byte-identical", async () => {
+    const bodies = [];
+    const realFetch = async (_url, init) => { bodies.push(init.body); return ok(); };
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const body = JSON.stringify({ model: "m", messages: [{ role: "user", content: "hi" }] });
+    await fetch(`${BASE}/chat/completions`, { method: "POST", body });
+    assert.equal(bodies[0], body);
+});
+
 test("caps in-flight requests at four", async () => {
     let inFlight = 0;
     let peak = 0;

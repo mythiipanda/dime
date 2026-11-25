@@ -42,11 +42,42 @@ const uvarcLimiter = (() => {
 })();
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+function sanitizeUvarcMessages(init: RequestInit | undefined): RequestInit | undefined {
+    if (!init || typeof init.body !== "string")
+        return init;
+    let parsed: { messages?: unknown };
+    try {
+        parsed = JSON.parse(init.body);
+    } catch {
+        return init;
+    }
+    if (!Array.isArray(parsed.messages))
+        return init;
+    let dirty = false;
+    const messages = parsed.messages.map((message: unknown) => {
+        if (!message || typeof message !== "object")
+            return message;
+        const record = { ...(message as Record<string, unknown>) };
+        if (record.content === null || record.content === undefined) {
+            record.content = "";
+            dirty = true;
+        } else if (Array.isArray(record.content) && record.content.some(item => item === null || item === undefined)) {
+            record.content = record.content.filter(item => item !== null && item !== undefined);
+            dirty = true;
+        }
+        return record;
+    });
+    if (!dirty)
+        return init;
+    return { ...init, body: JSON.stringify({ ...parsed, messages }) };
+}
+
 export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.fetch): typeof globalThis.fetch {
     return async (input, init) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         if (!url.startsWith(baseUrl))
             return realFetch(input, init);
+        init = sanitizeUvarcMessages(init);
         await uvarcLimiter.acquire();
         try {
             for (let attempt = 0; ; attempt++) {
