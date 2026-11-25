@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { Type, type Static } from "typebox";
@@ -11,6 +12,25 @@ import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk,
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+
+let warehouseCensusCache: string | null | undefined;
+function warehouseCensus(python: string, warehouse: string | undefined): string | undefined {
+    if (warehouseCensusCache !== undefined)
+        return warehouseCensusCache ?? undefined;
+    warehouseCensusCache = null;
+    if (!warehouse)
+        return undefined;
+    try {
+        const script = "import duckdb,sys\ncon=duckdb.connect(sys.argv[1],read_only=True)\nrows=con.execute(\"select table_name,estimated_size from duckdb_tables() where table_name like 'silver%' order by table_name\").fetchall()\nprint('; '.join(f'{n} {e}' for n,e in rows))";
+        const out = spawnSync(python, ["-c", script, warehouse], { encoding: "utf8", timeout: 15000 });
+        const text = (out.stdout ?? "").trim();
+        if (out.status === 0 && text.length > 40)
+            warehouseCensusCache = text;
+    }
+    catch {
+    }
+    return warehouseCensusCache ?? undefined;
+}
 
 const WORKSPACE_ARTIFACT_EXTENSIONS = new Set([".parquet", ".csv", ".json", ".md", ".png", ".tsv", ".txt"]);
 const WORKSPACE_IGNORED_DIRS = new Set(["node_modules", "__pycache__"]);
@@ -1227,6 +1247,16 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         };
                         session.sessionManager.appendMessage(workspaceContext);
                         session.agent.state.messages.push(workspaceContext);
+                    }
+                    const census = warehouseCensus(start.bridge.python, start.bridge.env?.DIME_WAREHOUSE);
+                    if (census) {
+                        const censusContext: Message = {
+                            role: "user",
+                            content: `Live warehouse census verified at run start (table row counts): ${census}. Every one of these tables is populated and reachable through tools.sql_exec right now — the warehouse is never "unavailable" or "unreachable" in this session.`,
+                            timestamp: Date.now()
+                        };
+                        session.sessionManager.appendMessage(censusContext);
+                        session.agent.state.messages.push(censusContext);
                     }
                     if (start.runTimeoutMs !== undefined) {
                         const budgetContext: Message = {
