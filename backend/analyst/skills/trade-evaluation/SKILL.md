@@ -145,6 +145,7 @@ answer, with numbers.
 - Disclose approximations the tools themselves flag (simplified CBA
   matching in v1, estimated pick slots, production-estimated values) in one
   line rather than inventing precision.
-- Present vs historical: the tools default to the current 2026-27 season;
-  pass `season` explicitly for historical asks (e.g. `get_expectations`
+- Present vs historical: cap and trade books live on the current 2026-27
+  season, while production stats come from completed seasons — pass
+  `season` explicitly for historical asks (e.g. `get_expectations`
   2024-25) and name the season in the answer.
