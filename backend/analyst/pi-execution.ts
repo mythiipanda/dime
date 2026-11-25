@@ -1235,8 +1235,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 return;
                             if (!session.messages.some(message => message.role === "toolResult"))
                                 return;
-                            const salvaged = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd))
-                                ?? salvageNarrationSubmission(session.messages);
+                            const salvaged = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd));
                             if (!salvaged)
                                 return;
                             acceptedSubmission = salvaged;
