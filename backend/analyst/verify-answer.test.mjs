@@ -237,3 +237,23 @@ test("auditAnswerNumbers does not flag qualifying-cohort counts as missing_in_ar
   const raws = audit.missing_in_artifacts.map(c => c.raw);
   assert.equal(raws.includes("71"), false, JSON.stringify(raws));
 });
+
+test("provenance ref UUID digits do not become numeric claims", () => {
+    const sources = [
+        makeSourceRecord("src-1", { rows: [{ player: "A", possessions: 4592, off_rtg: 110.2 }] }),
+    ];
+    const audit = auditAnswerNumbers(
+        {
+            blocks: [
+                {
+                    text: "Lineup A posted a 110.2 offensive rating over 4,592 possessions. *Source: silver_stints (ref: f95f94db-4a14-4592-90a9-219a75ce9d3)*",
+                },
+            ],
+            artifacts: [],
+        },
+        sources,
+    );
+    const unsupported = audit.unsupported_claims ?? [];
+    assert(!unsupported.some(c => c.startsWith("4592") || c.includes("90a9")),
+        `ref-uuid digits leaked into claims: ${unsupported.join(" | ")}`);
+});
