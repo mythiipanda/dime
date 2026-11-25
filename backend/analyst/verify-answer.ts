@@ -70,7 +70,7 @@ function expandMoney(num: number, suffix: string | undefined): number[] {
 }
 
 function addTextClaims(text: string, claims: NumericClaim[], seen: Set<string>) {
-    const cleaned = text.replace(SEASON_RE, " ");
+    const cleaned = text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, " ").replace(SEASON_RE, " ");
     for (const match of cleaned.matchAll(MONEY_RE)) {
         const num = Number(match[1].replace(/,/g, ""));
         if (!Number.isFinite(num))
