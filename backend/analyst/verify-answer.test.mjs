@@ -321,3 +321,25 @@ test("content clauses sharing a sentence prefix with tiebreak phrasing still aud
     );
     assert.equal(audit.uncovered_asks.length, 1, JSON.stringify(audit.uncovered_asks));
 });
+
+test("standalone formatting directives are not uncovered asks, embedded ones keep coverage", () => {
+    const sources = [makeSourceRecord("src-1", { rows: [{ player: "A", pts: 30.5, gp: 70 }] })];
+    const audit = auditAnswerNumbers(
+        {
+            blocks: [{ text: "A scored 30.5 per game across 70 appearances, leading the pool." }],
+            artifacts: [],
+        },
+        sources,
+        "Who leads the league in scoring? Give me the top 5 with points per game and games played. One-line take."
+    );
+    assert(!audit.uncovered_asks.some(c => /one-line take/i.test(c)), JSON.stringify(audit.uncovered_asks));
+    const embedded = auditAnswerNumbers(
+        {
+            blocks: [{ text: "A scored 30.1 per game across 70 appearances." }],
+            artifacts: [],
+        },
+        sources,
+        "Top 5 with scoring average, made free throws per game and the share, plus how big the pool is and a one-line take on who headlines the list."
+    );
+    assert.equal(embedded.uncovered_asks.length, 1, JSON.stringify(embedded.uncovered_asks));
+});
