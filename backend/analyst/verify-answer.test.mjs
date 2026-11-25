@@ -124,3 +124,74 @@ test("auditAnswerNumbers still flags supported prose figures absent from artifac
   assert.equal(audit.missing_in_artifacts.length, 1);
   assert.equal(audit.missing_in_artifacts[0].raw, "359");
 });
+
+test("auditAnswerNumbers covers derived aggregates from artifact rows", () => {
+  const sources = [
+    makeSourceRecord("src-1", {
+      rows: [
+        { unit: "A", min: 337, poss: 310, net_rating: 19.4 },
+        { unit: "B", min: 120, poss: 105, net_rating: -13.4 },
+        { unit: "C", min: 98, poss: 90, net_rating: 8.2 },
+        { unit: "D", min: 40, poss: 36, net_rating: 2.1 },
+        { unit: "E", min: 20, poss: 18, net_rating: -1.0 },
+        { unit: "F", min: 15, poss: 14, net_rating: 4.0 },
+      ],
+    }),
+  ];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [
+        {
+          text: "6 qualifying units combined for 630 minutes. The possession-weighted average net rating across them is 3.16. The top unit's 337 minutes set the pace.",
+        },
+      ],
+      artifacts: [
+        {
+          kind: "table",
+          title: "MIL top units",
+          columns: [{ key: "unit" }, { key: "min" }, { key: "poss" }, { key: "net_rating" }],
+          rows: [
+            { unit: "A", min: 337, poss: 310, net_rating: 19.4 },
+            { unit: "B", min: 120, poss: 105, net_rating: -13.4 },
+            { unit: "C", min: 98, poss: 90, net_rating: 8.2 },
+            { unit: "D", min: 40, poss: 36, net_rating: 2.1 },
+            { unit: "E", min: 20, poss: 18, net_rating: -1.0 },
+            { unit: "F", min: 15, poss: 14, net_rating: 4.0 },
+          ],
+        },
+      ],
+    },
+    sources,
+    "How many units qualify, what are their combined minutes, and the possession-weighted net?"
+  );
+  assert.equal(audit.missing_in_artifacts.length, 0, JSON.stringify(audit.missing_in_artifacts.map(c => c.raw)));
+});
+
+test("auditAnswerNumbers still flags headline figures not derivable from artifacts", () => {
+  const sources = [
+    makeSourceRecord("src-1", {
+      rows: [{ pool_size: 104 }, { unit: "A", min: 337 }, { unit: "B", min: 120 }, { unit: "C", min: 98 }],
+    }),
+  ];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [{ text: "104 lineups qualified for the pool; the top unit logged 337 minutes." }],
+      artifacts: [
+        {
+          kind: "table",
+          title: "Top units",
+          columns: [{ key: "unit" }, { key: "min" }],
+          rows: [
+            { unit: "A", min: 337 },
+            { unit: "B", min: 120 },
+            { unit: "C", min: 98 },
+          ],
+        },
+      ],
+    },
+    sources,
+    "How many lineups qualify and which played most?"
+  );
+  assert.equal(audit.missing_in_artifacts.length, 1);
+  assert.equal(audit.missing_in_artifacts[0].raw, "104");
+});
