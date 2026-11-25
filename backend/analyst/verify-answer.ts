@@ -272,6 +272,9 @@ function cohortCountClaim(claim: NumericClaim): boolean {
 
 function derivedArtifactValues(columns: Map<string, number[]>, rowCounts: number[]): number[] {
     const out: number[] = [...rowCounts];
+    for (const count of rowCounts)
+        for (let ordinal = 1; ordinal <= count; ordinal++)
+            out.push(ordinal);
     const named = [...columns.entries()].filter(([, values]) => values.length > 0);
     for (const [, values] of named) {
         const sum = values.reduce((acc, value) => acc + value, 0);

@@ -343,3 +343,11 @@ test("standalone formatting directives are not uncovered asks, embedded ones kee
     );
     assert.equal(embedded.uncovered_asks.length, 1, JSON.stringify(embedded.uncovered_asks));
 });
+test("missing_in_artifacts does not flag rank ordinals derivable from artifact row positions", () => {
+  const src = makeSourceRecord("s1", { rows: [{ player: "A", pts: 30 }, { player: "B", pts: 25 }, { player: "C", pts: 20 }, { player: "D", pts: 18 }, { player: "E", pts: 15 }] });
+  const artifact = { kind: "table", title: "T", columns: [{ key: "player", label: "Player" }, { key: "pts", label: "Pts" }], rows: [["A", 30], ["B", 25], ["C", 20], ["D", 18], ["E", 15]] };
+  const submission = { blocks: [{ text: "C ranks 3rd with 20 points." }], artifacts: [artifact] };
+  const audit = auditAnswerNumbers(submission, [src]);
+  const flagged = (audit.missing_in_artifacts ?? []).filter(c => String(c.raw).includes("3"));
+  assert.equal(flagged.length, 0);
+});
