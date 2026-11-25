@@ -74,6 +74,7 @@ export const TOOL_NAMES = [
     "get_season_series",
     "get_team_game_log",
     "get_zone_deltas",
+    "get_shot_zone_leaders",
     "search_shots",
     "get_shot_chart",
     "get_stint_timeline",
@@ -117,7 +118,6 @@ export const TOOL_NAMES = [
     "get_prospect",
     "get_roster_fit",
     "get_expectations",
-    "get_shot_zone_leaders",
 ] as const;
 
 export const NAMESPACE_DESCRIPTIONS = {
@@ -204,6 +204,7 @@ export const TOOL_NAMESPACES = {
     "get_season_series": "matchup",
     "get_team_game_log": "team",
     "get_zone_deltas": "spatial",
+    "get_shot_zone_leaders": "spatial",
     "search_shots": "spatial",
     "get_shot_chart": "spatial",
     "get_stint_timeline": "matchup",
@@ -244,7 +245,6 @@ export const TOOL_NAMESPACES = {
     "get_free_agents": "league",
     "get_fa_plan": "league",
     "get_prospect": "league",
-    "get_shot_zone_leaders": "spatial",
 } as const;
 
 export const TOOL_PROMPT_GUIDELINES: Partial<Record<string, string[]>> = {
@@ -311,6 +311,9 @@ export const TOOL_PROMPT_GUIDELINES: Partial<Record<string, string[]>> = {
     "get_zone_deltas": [
         "Use for one player's zone efficiency versus pooled league FG% in percentage points. Do not use for shot volume or team context; season is end-year and small zones are excluded by min_attempts.",
     ],
+    "get_shot_zone_leaders": [
+        "Use for any league-wide zone leaderboard or who-leads-the-league-in-a-zone ask (corner threes, above-the-break volume, rim finishing, midrange diet). Never loop per-player zone tools or hand-write coordinate math in sql_exec for these.",
+    ],
     "search_shots": [
         "Use to find or aggregate warehouse shot attempts by player, team, zone, period, or clock filters. Do not use for score-aware clutch or free-throw-inclusive efficiency; results are shot-level rows or group_by leaderboards with declared time-based filters.",
     ],
@@ -340,8 +343,5 @@ export const TOOL_PROMPT_GUIDELINES: Partial<Record<string, string[]>> = {
     ],
     "get_lineups": [
         "Use for one team's five-man units by minutes with explicit season_type, measure_type, and per_mode defaults. Do not mix totals/pergame or base/advanced variants; rows are lineup-variant units and advanced ratings require matching advanced rows.",
-    ],
-    "get_shot_zone_leaders": [
-        "Use for any league-wide zone leaderboard or who-leads-the-league-in-a-zone ask (corner threes, above-the-break volume, rim finishing, midrange diet). Never loop per-player zone tools or hand-write coordinate math in sql_exec for these.",
     ],
 };
