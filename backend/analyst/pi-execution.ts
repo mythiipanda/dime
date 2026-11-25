@@ -1248,16 +1248,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         session.sessionManager.appendMessage(workspaceContext);
                         session.agent.state.messages.push(workspaceContext);
                     }
-                    const census = warehouseCensus(start.bridge.python, start.bridge.env?.DIME_WAREHOUSE);
-                    if (census) {
-                        const censusContext: Message = {
-                            role: "user",
-                            content: `Live warehouse census verified at run start (table row counts): ${census}. Every one of these tables is populated and reachable through tools.sql_exec right now — the warehouse is never "unavailable" or "unreachable" in this session.`,
-                            timestamp: Date.now()
-                        };
-                        session.sessionManager.appendMessage(censusContext);
-                        session.agent.state.messages.push(censusContext);
-                    }
                     if (start.runTimeoutMs !== undefined) {
                         const budgetContext: Message = {
                             role: "user",
@@ -1343,7 +1333,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 zeroEvidenceRepromptUsed = true;
                                 emit({ type: "tool_call", name: "zero_evidence_reprompt" });
                                 emit({ type: "tool_result", name: "zero_evidence_reprompt", status: "ok" });
-                                await session.prompt("This is a data question and you have run zero data tools — do not answer from memory. Call at least one data tool (query the warehouse or an analyst tool) for the figures your answer relies on, then call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
+                                const census = warehouseCensus(start.bridge.python, start.bridge.env?.DIME_WAREHOUSE);
+                                const censusHint = census
+                                    ? ` Live warehouse census verified just now (table row counts): ${census}. Query any of these with tools.sql_exec.`
+                                    : "";
+                                await session.prompt("This is a data question and you have run zero data tools — do not answer from memory. Call at least one data tool (query the warehouse or an analyst tool) for the figures your answer relies on, then call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted." + censusHint);
                                 continue;
                             }
                         }
