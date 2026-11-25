@@ -250,6 +250,7 @@ WAREHOUSE_TOOLS: list[BaseTool] = [
     get_lineup_matchup_matrix,
     search_shots,
     get_zone_deltas,
+    get_shot_zone_leaders,
     get_rapm_prior,
     get_wpa_leaders,
     get_espn_scores,
