@@ -1027,6 +1027,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let budgetNudge: ReturnType<typeof setTimeout> | undefined;
                 let narrationSalvage: ReturnType<typeof setTimeout> | undefined;
                 let emittedFromNarration = false;
+                let narrationSubmissionRef: unknown;
                 const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
@@ -1241,8 +1242,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             if (!salvaged)
                                 return;
                             acceptedSubmission = salvaged;
-                            if (!drafted)
+                            if (!drafted) {
                                 emittedFromNarration = true;
+                                narrationSubmissionRef = salvaged;
+                            }
                             emitAcceptedAnswer();
                         }, salvageAtMs);
                         narrationSalvage.unref();
@@ -1356,10 +1359,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         if (narrated) {
                             acceptedSubmission = narrated;
                             emittedFromNarration = true;
+                            narrationSubmissionRef = narrated;
                             emitAcceptedAnswer();
                         }
                     }
-                    if (emittedFromNarration && session) {
+                    if (emittedFromNarration && acceptedSubmission === narrationSubmissionRef && session) {
                         const upgrade = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), bridgeCwd));
                         if (upgrade && upgrade.blocks.map(block => block.text).join("\n\n") !== acceptedSubmission?.blocks.map(block => block.text).join("\n\n")) {
                             acceptedSubmission = upgrade;
