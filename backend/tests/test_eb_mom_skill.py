@@ -55,3 +55,12 @@ def test_naive_variance_without_noise_subtraction_underestimates_M():
     v = sum(n * (x / n - mu) ** 2 for n, x in rows) / S
     M_naive = mu * (1 - mu) / v - 1
     assert M_naive < M_correct
+
+def test_no_duplicate_sections_in_any_skill():
+    import glob as _glob
+    for path in _glob.glob(str(SKILL.parent.parent / "*" / "SKILL.md")):
+        text = Path(path).read_text()
+        import re as _re
+        heads = [h.strip().lower() for h in _re.findall(r"^#{2,4}\s+(.*)$", text, _re.M)]
+        dupes = {h for h in heads if heads.count(h) > 1}
+        assert not dupes, f"{path}: duplicate sections {dupes}"

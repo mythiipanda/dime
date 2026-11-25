@@ -95,8 +95,8 @@ When a question asks for an empirical-Bayes estimate rather than a hand-picked p
 
 1. Restrict the reference pool to high-volume shooters (e.g. `FG3A >= 100`, optionally joined to `silver_player_season` with `GP >= 20`) so MLE noise doesn't dominate the variance estimate.
 2. Pooled mean: $\mu = \frac{\sum \text{FG3M}}{\sum \text{FG3A}}$ over that pool.
-3. Attempt-weighted sample variance $s^2 = \frac{\sum n_i (p_i - \mu)^2}{\sum n_i}$ with $\bar n$ the mean attempts; then
-$$M = \frac{\mu(1-\mu) - s^2}{s^2 - \mu(1-\mu)/\bar n}$$
+3. Attempt-weighted sample variance $s^2 = \frac{\sum n_i (p_i - \mu)^2}{\sum n_i}$; subtract the binomial sampling noise $\frac{\mu(1-\mu)}{\bar n}$ (with $\bar n$ the mean attempts) to get the true between-player variance $\tau^2 = s^2 - \mu(1-\mu)/\bar n$; then
+$$M = \frac{\mu(1-\mu)}{\tau^2} - 1$$
 A negative numerator means the pool has less spread than binomial noise — fall back to the fixed prior above.
 4. Shrink each player on the full qualifying cohort ($\text{FG3A} \ge 40$): $\hat\theta = \frac{\text{FG3M} + M\mu}{\text{FG3A} + M}$. Report the shift, not just the shrunk value — the biggest movers are the low-volume players, and stating who moved most carries more meaning than a re-sorted leaderboard.
 

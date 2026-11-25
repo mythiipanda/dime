@@ -298,30 +298,6 @@ rows exactly like block anchors and are validated the same way; cite the rows a
 section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
 as a document card that downloads as Markdown or PDF; keep it to one memo per answer.
 
-### `memo`
-```typescript
-{
-  kind: "memo",
-  title: "2026-27 Cap & Roster Strategy — Orlando Magic",
-  subtitle: "Owner briefing",
-  sections: [
-    {
-      heading: "Cap position",
-      body: "Orlando sits $3.2M under the first apron with a locked multi-year core...",
-      anchors: [{ ref: "actual-ref-from-query", row: 0, columns: ["team", "payroll"] }]
-    },
-    { heading: "Trade options", body: "The flexible path is aggregating mid-tier salary..." }
-  ],
-  footnote: "Sources: silver_salaries, silver_rapm."
-}
-```
-
-Use `memo` when the deliverable is a document — an executive memo, owner
-briefing, scenario playbook or strategy report — not a single visual. Each
-`sections[].body` is markdown-style prose. `anchors` on a section cite source
-rows exactly like block anchors and are validated the same way; cite the rows a
-section's claims rest on. `subtitle` and `footnote` are optional. A memo renders
-as a document card with a download affordance; keep it to one memo per answer.
 ---
 
 ## 3. Evidence Grounding & Source Anchors
