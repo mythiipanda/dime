@@ -3,7 +3,7 @@ from pathlib import Path
 
 LIVE_CALL_TIMEOUT_S = 12.0
 
-_MANIFEST = json.loads((Path(__file__).resolve().parent / "manifest.json").read_text())
+_MANIFEST = json.loads((Path(__file__).resolve().parent / "manifest.json").read_text(encoding="utf-8"))
 _TOOLS = _MANIFEST["tools"]
 
 TOOL_ORDER = tuple(t["name"] for t in _TOOLS)
