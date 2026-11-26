@@ -12,9 +12,9 @@ Use this playbook for free-agent fits, cap-room computations, contract value com
 | Table | Answers | Use it when |
 |---|---|---|
 | `silver_cap_room` | Per-team projected room, committed salary, FA holds, roster charges, and the projected cap/tax/apron1/apron2 lines for a `CAP_SEASON`. | "How much room does X have" — always report `PROJECTED_ROOM` alongside `PROJECTED_APRON1`/`PROJECTED_APRON2`; room above an apron is not usable the same way. |
-| `silver_cap_players` | Per-player salary by team: contract type, options (`player_option`, `team_option`), guaranteed money. | Team payroll books and option-year treatment. |
+| `silver_cap_players` | Per-player salary by team: contract type, options (`player_option`, `team_option`), guaranteed flag. | Team payroll books and option-year treatment. |
 | `silver_contracts` | Player contract rows with option flags, qualifying offers, two-way flags. | Individual contract terms; join to cap room for team-level effects. |
-| `silver_free_agents` | The FA pool for a `FA_YEAR`: type (unrestricted/restricted/ETO), prior salary, cap-hold estimate. | "Who is available this summer" and what each hold does to room. |
+| `silver_free_agents` | The FA pool for a `FA_YEAR`: type (`ufa`, `rfa`, `player_option`, `team_option`, `early_termination`, `two_way`), prior salary, cap-hold estimate. | "Who is available this summer" and what each hold does to room. |
 | `silver_transactions` | Executed signings/trades/extensions with dates. | What actually happened, and the date context (July moratorium, trade deadline). |
 
 | Tool | Answers | Reach for it when |
@@ -52,7 +52,7 @@ Pin the `CAP_SEASON` filter to the asked cap season; the subquery form is only f
 
 ## 1. Cap Room Is an Estimate, Not a Number
 
-- A team's usable room is `PROJECTED_ROOM` from `silver_cap_room` minus what the scenario consumes: cap holds (`FA_HOLDS_EST`), incomplete-roster charges, and any signing you add. Report the components, not just the headline room.
+- A team's usable room is `PROJECTED_ROOM` from `silver_cap_room` minus the cap holds the scenario keeps and any signing you add; `PROJECTED_ROOM` is already net of incomplete-roster charges. Report the components, not just the headline room.
 - Cap holds block room until renounced: a team "keeping" a free agent can't count the hold toward new signings. State whether the scenario assumes holds kept or renounced.
 - Over-the-cap paths differ qualitatively: exceptions (MLE, room exception, bi-annual where applicable) and Bird rights signings are different mechanisms than cap room — say which mechanism the offer uses, and note the apron consequence (hard-cap triggers where they apply).
 
@@ -64,22 +64,22 @@ Pin the `CAP_SEASON` filter to the asked cap season; the subquery form is only f
 
 ## 3. Free-Agent Fit Workflow
 
-1. Establish the pool: `silver_free_agents` for the `FA_YEAR` — filter by `FA_TYPE` (unrestricted vs restricted vs option-year) before ranking.
+1. Establish the pool: `silver_free_agents` for the `FA_YEAR` — filter by exact `FA_TYPE` code before ranking.
 2. Establish the budget: `silver_cap_room` for the cap season — room vs exceptions-only.
 3. Match need to profile: pull the player's production (`get_player_ratings`/`get_impact_rank`/`get_raptor_history`/`get_rapm`) and role indicators (usage, on-ball share) — a "fit" claim needs both the money math and the basketball case.
 4. State the contract shape implied: max-tier (25/30/35% of cap by service), mid-level band, or minimum — and sanity-check `PRIOR_SALARY` + `CAP_HOLD_EST` as the market anchor.
 
 ## 4. Contract & Extension Comparisons
 
-- Compare contracts on guaranteed dollars and flat salary, not raw totals: `silver_cap_players.guaranteed` and option flags (`player_option` kills the tail of a deal's value to the team; `team_option` does the opposite).
+- Compare contracts on guaranteed dollars and flat salary, not raw totals: `silver_salaries.GUARANTEED` and `silver_cap_players` option flags (`player_option` kills the tail of a deal's value to the team; `team_option` does the opposite).
 - AAV lies across cap eras: a $30M AAV signed under the 2024 cap and under the projected 2026 cap are different percentages of cap — compare as `% of cap` when the seasons differ.
 - Extensions carry rule constraints (veteran extension raise limits, supermax eligibility via awards/All-NBA) — flag eligibility dependencies instead of assuming the number.
 
 ## 5. Max-Contract Tier Math
 
-The three max-salary tiers are percentages of the salary cap for the contract's first season, set by the player's years of service: 0-6 years -> 25% of cap, 7-9 years -> 30%, 10+ years -> 35%. To compute a max figure: take the cap line for the target season (the latest season in the cap history table via get_salary_history), multiply by the tier percentage, and report the dollar amount with the cap season pinned. A "max-contract math" ask wants all three tier amounts computed from the same cap number, each labeled with its service band — never compute only the tier the question's example player falls in.
+The three max-salary tiers are percentages of the salary cap for the contract's first season, set by the player's years of service: 0-6 years -> 25% of cap, 7-9 years -> 30%, 10+ years -> 35%. To compute a max figure: take the cap line for the target season from the cap history table via get_salary_history, multiply by the tier percentage, and report the dollar amount with the cap season pinned. A "max-contract math" ask wants all three tier amounts computed from the same cap number, each labeled with its service band — never compute only the tier the question's example player falls in.
 
 ## 6. What the Warehouse Can't Answer
 
 - Exact dead-cap/stretch arithmetic for hypothetical waives, and real-time cap-sheet minutiae (trade exceptions, exact hold formulas) are not fully modeled — say so rather than fabricating a figure.
-- Two-way/two-way conversion and Exhibit-10 mechanics have no dedicated table; `silver_contracts.TWO_WAY` flags current two-ways only.
+- Two-way/two-way conversion and Exhibit-10 mechanics have no dedicated table; `silver_contracts.TWO_WAY` is a row-season flag.
