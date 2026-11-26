@@ -18,7 +18,7 @@ def test_current_seeders_not_pinned_to_completed_season() -> None:
 def test_refresh_seeders_cover_stale_tables() -> None:
     names = {entry[0] for entry in refresh.SEEDERS}
     for required in ("rapm", "vendor_cap", "hustle_team", "zone_splits",
-                     "rosters"):
+                     "rosters", "hustle_player", "clutch"):
         assert required in names, required
 
 

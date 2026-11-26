@@ -48,6 +48,8 @@ SEEDERS = [
     ("hustle_team", "seed_hustle_team.py", [], False),
     ("zone_splits", "seed_bbref_league_pages.py", [], False),
     ("rosters", "seed_rosters.py", ["--season"], False),
+    ("hustle_player", "seed_hustle_player.py", ["--season"], False),
+    ("clutch", "seed_clutch.py", ["--season"], False),
 ]
 
 
