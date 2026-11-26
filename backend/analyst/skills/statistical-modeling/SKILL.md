@@ -97,7 +97,7 @@ When a question asks for an empirical-Bayes estimate rather than a hand-picked p
 2. Pooled mean: $\mu = \frac{\sum \text{FG3M}}{\sum \text{FG3A}}$ over that pool.
 3. Attempt-weighted sample variance $s^2 = \frac{\sum n_i (p_i - \mu)^2}{\sum n_i}$; subtract the binomial sampling noise $\frac{\mu(1-\mu)}{\bar n}$ (with $\bar n$ the mean attempts) to get the true between-player variance $\tau^2 = s^2 - \mu(1-\mu)/\bar n$; then
 $$M = \frac{\mu(1-\mu)}{\tau^2} - 1$$
-A negative numerator means the pool has less spread than binomial noise — fall back to the fixed prior above.
+A negative `tau^2` means the pool has less spread than binomial noise — fall back to the fixed prior above.
 4. Shrink each player on the full qualifying cohort ($\text{FG3A} \ge 40$): $\hat\theta = \frac{\text{FG3M} + M\mu}{\text{FG3A} + M}$. Report the shift, not just the shrunk value — the biggest movers are the low-volume players, and stating who moved most carries more meaning than a re-sorted leaderboard.
 
 ---
@@ -106,7 +106,7 @@ A negative numerator means the pool has less spread than binomial noise — fall
 
 When presenting modeling results:
 - **ORAPM vs DRAPM**: Use `scatter` with `xMid: 0`, `yMid: 0`, `xLabel: "Offensive RAPM"`, `yLabel: "Defensive RAPM"`. Points in the upper-right quadrant represent two-way positive impact.
-- **Player Rankings**: Use `table` with numeric alignment and source anchors linking to the specific queried rows.
+- **Player Rankings**: Use `table` with numeric alignment, and use answer-block source anchors linking to the specific queried rows.
 - **Trend Progression**: Use `chart` with `unit` (e.g. `"Net Rtg"`, `"PPG"`) and `xLabels` to plot rolling metrics or multi-season arcs.
 
 ---
@@ -119,12 +119,12 @@ The analyst agent has direct access to the `run_python` tool equipped with prelo
 - `np`: NumPy for vectorized modeling and resampling.
 - `math` and `statistics`: Standard library mathematical algorithms.
 
-Every `run_python` call runs in a fresh namespace — variables, frames, and fitted objects do not persist between calls. A call that re-reads `silver_hist_possessions` or another large table repays that full scan each time, so splitting load → aggregate → fit across calls multiplies the I/O cost by the number of calls and can exhaust the run budget. Keep the whole pipeline inside one call: run a `con.execute` GROUP BY that reduces raw rows to the modeling grain (stints, player-games, team-splits), convert that small frame to polars/NumPy, then fit. For RAPM-style fits, aggregate possessions to stint rows (GROUP BY lineup/off-def player set) before building the sparse design — the solve is over ~thousands of stints, not millions of possessions.
+By default every `run_python` call runs in a fresh namespace — variables, frames, and fitted objects do not persist between calls unless the host enables `DIME_PY_PERSIST_NS`. Without persistence, a call that re-reads `silver_hist_possessions` or another large table repays that full scan each time, so splitting load → aggregate → fit across calls multiplies the I/O cost by the number of calls and can exhaust the run budget. Keep the whole pipeline inside one call: run a `con.execute` GROUP BY that reduces raw rows to the modeling grain (stints, player-games, team-splits), convert that small frame to polars/NumPy, then fit. For RAPM-style fits, aggregate possessions to stint rows (GROUP BY lineup/off-def player set) before building the sparse design — the solve is over ~thousands of stints, not millions of possessions.
 
 ### Warehouse Grain for Shot-Row Modeling
 
 - `silver_hist_shots` carries `person_id` and a display `player_name` (full names like "Michael Porter Jr."). Group by `person_id`, never `player_name` — names are not stable keys across feeds — and when naming a player in the answer, use the exact `player_name` value the warehouse returns rather than a shortened surname form.
-- `silver_player_season` holds only the latest season. For earlier seasons join `silver_hist_player_seasons` on `player_id`; its counting stats are per-game, so cohort thresholds like `FG3A >= 40` come from `COUNT(*)` over shot rows, not the season row.
+- `silver_player_season` covers current/recent seasons rather than full history, with team-stint rows possible in a season. For earlier seasons join `silver_hist_player_seasons` on `player_id`; its counting stats are per-game, so cohort thresholds like `FG3A >= 40` come from `COUNT(*)` over shot rows, not the season row.
 
 ### Example: Fitting Bayesian Shrinkage Over Warehouse Rows
 ```python
@@ -189,7 +189,7 @@ The output can then be directly cited in `submit_answer` and visualized in a `ta
 
 Shots within a game are correlated, so resample the **game cluster**, not the shot row, when the statistic involves shot outcomes from `silver_hist_shots`.
 
-1. Aggregate each cluster first (per `game_id`: corner-3 makes/attempts, arc-3 makes/attempts, or whatever the statistic needs — corner 3s are `ABS(x_legacy) >= 220 AND y_legacy <= 92.5`).
+1. Aggregate each cluster first (per `game_id`: corner-3 makes/attempts, arc-3 makes/attempts, or whatever the statistic needs — corner 3s are `shot_value = 3 AND ABS(x_legacy) >= 220 AND y_legacy <= 92.5`).
 2. Pick a seed and a generator and say which you used: the legacy `np.random.seed(seed)` stream and `np.random.default_rng(seed)` produce different draws, so the two are not interchangeable when someone re-runs your numbers.
 3. For each of `B` resamples (1000 is conventional), sum the resampled cluster aggregates and compute the statistic on the pooled totals (e.g. `1.5 * corner_3pm/corner_3pa - 1.5 * arc_3pm/arc_3pa`).
 4. Report `std(ddof=1)` as the standard error and `np.percentile(stats, [2.5, 97.5])` as the 95% CI.
@@ -223,7 +223,7 @@ Interpret residuals as outperformance/underperformance relative to the fitted li
 
 ## 8. Aging Curves and Cohort Profiles
 
-For "how does production change with age / experience" asks, `silver_hist_player_seasons` is per-player-season rate stats (`pts`, `min`, `usg_pct` as a fraction, `ts_pct`) keyed by integer end-year `season`:
+For "how does production change with age / experience" asks, `silver_hist_player_seasons` is per-player-season rate stats (`pts`, `min`, `usg_pct`, `ts_pct`) keyed by integer end-year `season`:
 
 ```sql
 SELECT CAST(age AS INT) AS a, COUNT(*) AS n, ROUND(AVG(pts), 2) AS avg_pts
@@ -235,5 +235,5 @@ ORDER BY a
 
 1. Use rate-stat floors (`min >= 20` per game, `gp >= 41`) so the curve is not distorted by injury fill-ins, and require a minimum pool size per age bucket (`HAVING COUNT(*) >= 30`) so thin ages at the tails don't dominate.
 2. Pool several seasons (10 is standard) — a single season's curve is noise plus roster churn.
-3. `usg_pct` is a fraction (0.25 means 25%), unlike the percent-scale `USG` in current-season tables.
+3. `usg_pct` is a fraction (0.25 means 25%) in the sportsdataverse-backed rows used by this `season >= 2015` recipe.
 4. Report the peak age, the level at the peak, and the slope on both sides — then connect the shape to the decision (contract length, development timeline). Do not read individual player trajectories off a league-average curve.
