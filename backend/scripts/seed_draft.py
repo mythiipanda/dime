@@ -15,9 +15,13 @@ def label(end_year: int) -> str:
     return f"{end_year - 1}-{str(end_year)[2:]}"
 
 def main() -> None:
-    print("Fetching draft data 1997..2024...")
+    from datetime import date
+    from shared.tools._core import completed_season_for_date
+    cs = completed_season_for_date(date.today()) or "2025-26"
+    end_year = 2000 + int(cs.split("-")[1]) + 1
+    print(f"Fetching draft data 1997..{end_year - 1}...")
     dfs: list[pl.DataFrame] = []
-    for y in range(1997, 2025):
+    for y in range(1997, end_year):
         url = f"{BASE}/draft_{y}.parquet"
         try:
             df = pl.read_parquet(url)
