@@ -145,6 +145,58 @@ def season_games(season: str, sleep_s: float, state: dict) -> list[str]:
     save_progress(state)
     return [g for st in SEASON_TYPES for g in found.get(st, [])]
 
+def season_games_dated(season: str, sleep_s: float) -> list[tuple[str, str]]:
+    from nba_api.stats.endpoints import LeagueGameFinder
+    out: list[tuple[str, str]] = []
+    for st in SEASON_TYPES:
+        def _run(s=season, t=st):
+            ep = LeagueGameFinder(season_nullable=s,
+                                  season_type_nullable=t, timeout=30)
+            df = ep.get_data_frames()[0]
+            try:
+                return pl.from_pandas(df)
+            except Exception:
+                return pl.DataFrame()
+        res, err = fetch_with_backoff(f"game-finder {season} {st}", _run,
+                                      sleep_s)
+        if res is None:
+            raise RuntimeError(err)
+        if "GAME_ID" in res.frame.columns:
+            dates = (res.frame.get_column("GAME_DATE").cast(pl.String).to_list()
+                     if "GAME_DATE" in res.frame.columns
+                     else [""] * res.frame.height)
+            ids = res.frame.get_column("GAME_ID").cast(pl.String).to_list()
+            seen: dict[str, str] = {}
+            for gid, gdate in zip(ids, dates):
+                if gid not in seen or (gdate or "") > seen[gid]:
+                    seen[gid] = gdate or ""
+            out.extend(seen.items())
+        time.sleep(sleep_s)
+    return out
+
+def incremental_game_list(season: str, sleep_s: float, max_games: int,
+                          correction_days: int = 3) -> tuple[list[str], dict]:
+    dated = season_games_dated(season, sleep_s)
+    done = watermarked_entities(GAME_TABLE, season)
+    valid_dates = sorted({d for _, d in dated if d})
+    cutoff = ""
+    if valid_dates:
+        from datetime import date as _date, timedelta
+        try:
+            latest = _date.fromisoformat(max(valid_dates)[:10])
+            cutoff = (latest - timedelta(days=correction_days)).isoformat()
+        except ValueError:
+            cutoff = ""
+    corrections = sorted(g for g, d in dated if g in done and d and d[:10] >= cutoff)
+    missing = sorted(g for g, _ in dated if g not in done)
+    budget = max(0, max_games - len(corrections))
+    picked = missing[:budget] + corrections
+    info = {"season": season, "season_game_count": len(dated),
+            "present": len(done), "missing": len(missing),
+            "corrections": len(corrections), "picked": len(picked),
+            "cutoff": cutoff}
+    return picked, info
+
 def _canon(frame: pl.DataFrame) -> pl.DataFrame:
     exprs = []
     for c, dt in frame.schema.items():
@@ -432,6 +484,18 @@ def main(argv=None) -> int:
                          "'2023-24,2024-25'")
     ap.add_argument("--limit", type=int, default=0,
                     help="max games per season (testing)")
+    ap.add_argument("--incremental", action="store_true",
+                    help="only fetch games missing from the warehouse plus "
+                         "a correction window of recent days, oldest missing "
+                         "first, capped by --max-games")
+    ap.add_argument("--max-games", type=int, default=60,
+                    help="per-night game cap for --incremental")
+    ap.add_argument("--correction-days", type=int, default=3,
+                    help="re-fetch already-present games from the last N "
+                         "days in --incremental mode")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="report what --incremental would fetch without "
+                         "fetching")
     ap.add_argument("--check", action="store_true",
                     help="watermark report only, no fetching")
     args = ap.parse_args(argv)
@@ -448,8 +512,35 @@ def main(argv=None) -> int:
     ctr = Counters()
     t0 = time.time()
 
-    for season in seasons:
-        _backfill_season(season, args, views, state, ctr, t0)
+    if args.incremental:
+        for season in seasons:
+            try:
+                picked, info = incremental_game_list(
+                    season, args.sleep, args.max_games, args.correction_days)
+            except RuntimeError as exc:
+                print(f"[{season}] incremental enumeration failed: {exc}",
+                      flush=True)
+                continue
+            print(f"[{season}] incremental: {info['season_game_count']} season games, "
+                  f"{info['present']} present, {info['missing']} missing, "
+                  f"{info['corrections']} in correction window, picking "
+                  f"{info['picked']}", flush=True)
+            if args.dry_run:
+                for g in picked[:10]:
+                    print(f"  would fetch {g}", flush=True)
+                if len(picked) > 10:
+                    print(f"  ... and {len(picked) - 10} more", flush=True)
+                continue
+            if not picked:
+                continue
+            with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
+                futs = [pool.submit(backfill_game, g, season, views,
+                                    args.sleep, ctr) for g in picked]
+                for f in futs:
+                    f.result()
+    else:
+        for season in seasons:
+            _backfill_season(season, args, views, state, ctr, t0)
 
     pbp_seasons = [s.strip() for s in args.pbp_seasons.split(",")
                    if s.strip()]
