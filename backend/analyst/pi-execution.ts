@@ -1268,6 +1268,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     let submitSteerUsed = false;
                     let giveUpSteerUsed = false;
                     let emptyRetryUsed = false;
+                    let notFoundSteerUsed = false;
                     let text = "";
                     let reasoning = "";
                     for (;;) {
@@ -1285,6 +1286,18 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             emit({ type: "tool_result", name: "empty_completion_retry", status: "ok" });
                             await session.prompt("Your last response came back empty. Continue: if the ask still needs data work, call the next tool now; if you already hold verified results, call submit_answer directly with them.");
                             continue;
+                        }
+                        if (!notFoundSteerUsed) {
+                            const toolResultText = session.messages.filter(m => m.role === "toolResult").flatMap(m => m.content || []).map(c => c.type === "text" ? c.text : "").join("\n");
+                            const notFoundMatch = toolResultText.match(/Tool\s+"?([A-Za-z0-9_.]+)"?\s+not found/);
+                            if (notFoundMatch) {
+                                notFoundSteerUsed = true;
+                                const available = [...new Set([...(bridge?.tools ?? []).map(t => t.name), "submit_answer", "verify_answer_numbers", "load_skill", "run_status"])].sort().join(", ");
+                                emit({ type: "tool_call", name: "tool_not_found_correction" });
+                                emit({ type: "tool_result", name: "tool_not_found_correction", status: "ok" });
+                                await session.prompt(`Correction: the tools ARE available and working in this session — the error you saw means only the invocation form was wrong, not that any tool is missing. The failing call used a malformed name (${notFoundMatch[1]}). Call every tool by its bare registered name with no tools. prefix and no other prefix or suffix — the prefixed form does not exist and always errors. Available right now: ${available}. Retry what you were doing with the exact bare name now.`);
+                                continue;
+                            }
                         }
                         if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
                             break;
