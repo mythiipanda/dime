@@ -50,7 +50,11 @@ Use this playbook for free-agent fits, cap-room computations, contract value com
 - AAV lies across cap eras: a $30M AAV signed under the 2024 cap and under the projected 2026 cap are different percentages of cap — compare as `% of cap` when the seasons differ.
 - Extensions carry rule constraints (veteran extension raise limits, supermax eligibility via awards/All-NBA) — flag eligibility dependencies instead of assuming the number.
 
-## 5. What the Warehouse Can't Answer
+## 5. Max-Contract Tier Math
+
+The three max-salary tiers are percentages of the salary cap for the contract's first season, set by the player's years of service: 0-6 years -> 25% of cap, 7-9 years -> 30%, 10+ years -> 35%. To compute a max figure: take the cap line for the target season (the latest season in the cap history table via get_salary_history), multiply by the tier percentage, and report the dollar amount with the cap season pinned. A "max-contract math" ask wants all three tier amounts computed from the same cap number, each labeled with its service band — never compute only the tier the question's example player falls in.
+
+## 6. What the Warehouse Can't Answer
 
 - Exact dead-cap/stretch arithmetic for hypothetical waives, and real-time cap-sheet minutiae (trade exceptions, exact hold formulas) are not fully modeled — say so rather than fabricating a figure.
 - Two-way/two-way conversion and Exhibit-10 mechanics have no dedicated table; `silver_contracts.TWO_WAY` flags current two-ways only.
