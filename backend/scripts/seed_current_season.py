@@ -152,6 +152,46 @@ def build_team_games(season: str, dry_run: bool) -> int:
     return n
 
 
+def _true_shooting_pct() -> pl.Expr:
+    pts = pl.col("pts").cast(pl.Float64).sum()
+    fga = pl.col("fga").cast(pl.Float64).sum()
+    fta = pl.col("fta").cast(pl.Float64).sum()
+    denominator = 2 * (fga + 0.44 * fta)
+    value = pts / denominator
+    valid = (denominator > 0) & value.is_finite()
+    return (pl.when(valid).then(value).otherwise(None)
+            .round(3).cast(pl.Float64).alias("TS_PCT"))
+
+
+def _ensure_player_season_ts_pct_numeric() -> None:
+    con = store.connect(read_only=False)
+    try:
+        with store.write_guard():
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            if "silver_player_season" not in tables:
+                return
+            rows = con.execute(
+                "PRAGMA table_info(silver_player_season)").fetchall()
+            types = {str(r[1]).upper(): str(r[2]).upper() for r in rows}
+            dtype = types.get("TS_PCT")
+            if dtype in (None, "DOUBLE"):
+                return
+            if dtype != "VARCHAR":
+                raise TypeError(
+                    "silver_player_season.TS_PCT must be VARCHAR or DOUBLE "
+                    f"before repair, got {dtype}")
+            con.execute(
+                'ALTER TABLE silver_player_season ALTER COLUMN "TS_PCT" '
+                'TYPE DOUBLE USING CASE '
+                'WHEN "TS_PCT" IS NULL THEN NULL '
+                'WHEN lower(trim("TS_PCT")) IN '
+                "('nan', '-nan', '+nan', 'inf', '+inf', '-inf', "
+                "'infinity', '+infinity', '-infinity') THEN NULL "
+                'ELSE CAST("TS_PCT" AS DOUBLE) END')
+    finally:
+        con.close()
+
+
 def load_player_season(season: str, dry_run: bool) -> int:
     y = end_year(season)
     pss = pl.read_parquet(f"{SDV}/nba_stats_player_season_stats/"
@@ -178,9 +218,7 @@ def load_player_season(season: str, dry_run: bool) -> int:
             .alias("FG3_PCT"),
         (pl.col("ftm").sum() / pl.col("fta").sum()).round(3)
             .alias("FT_PCT"),
-        (pl.col("pts").sum()
-            / (2 * (pl.col("fga").sum() + 0.44 * pl.col("fta").sum())))
-            .round(3).alias("TS_PCT"),
+        _true_shooting_pct(),
     ])
     out = pl.DataFrame({
         "PLAYER_ID": agg["player_id"],
@@ -194,6 +232,8 @@ def load_player_season(season: str, dry_run: bool) -> int:
         "FG_PCT": agg["FG_PCT"], "FG3_PCT": agg["FG3_PCT"],
         "FT_PCT": agg["FT_PCT"], "TS_PCT": agg["TS_PCT"],
     }).sort("PPG", descending=True)
+    if not dry_run:
+        _ensure_player_season_ts_pct_numeric()
     return save("silver_player_season", out, SRC_PSS, season,
                 "league", dry_run)
 
