@@ -1,9 +1,3 @@
-"""Player-level silver_four_factors writer from the pbpstats API.
-
-Weekly cadence: skips pairs whose fetch_log watermark is under 7 days old
-unless --force. One-time backfill: run with --apply once boxscores coverage
-for the season exists. Dry-run by default.
-"""
 import argparse
 import sys
 import time
