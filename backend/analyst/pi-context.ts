@@ -123,6 +123,8 @@ function elideOldToolResults(messages: unknown[]): { messages: unknown[]; dirty:
         if (text.length < UVARC_ELIDE_MIN_BYTES)
             return message;
         const name = typeof record.name === "string" ? record.name : "tool";
+        if (name === "load_skill")
+            return message;
         record.content = `${text.slice(0, 240)}\n[elided ${text.length - 240} chars of this ${name} result — re-query or use store/load refs if the full rows are needed again]`;
         dirty = true;
         return record;
