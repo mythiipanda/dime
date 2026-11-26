@@ -1,6 +1,6 @@
 ---
 name: visual-artifacts
-description: Select grounded generative answer components from Dime's bounded catalog (player_card, team_card, scatter, shot_chart, compare, table, chart, memo).
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, team_card, scatter, shot_chart, compare, table, chart, memo) — and emit inline JSON chart specs when an ask names a structured payload or a "kind" like line/bar.
 
 # Dime Visual Artifacts & Multimodal Output Guide
 
