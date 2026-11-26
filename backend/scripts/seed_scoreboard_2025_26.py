@@ -9,11 +9,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store
 
-SEASON = "2025-26"
-START = dt.date(2025, 10, 21)
-END = dt.date(2026, 6, 21)
-REGULAR_END = dt.date(2026, 4, 12)
-PLAYOFF_START = dt.date(2026, 4, 18)
+from shared.tools._core import current_season
+
+SEASON = current_season() or "2026-27"
+_START_YEAR = int(SEASON[:4])
+START = dt.date(_START_YEAR, 10, 1)
+END = dt.date(_START_YEAR + 1, 7, 1)
+REGULAR_END = dt.date(_START_YEAR + 1, 4, 15)
+PLAYOFF_START = dt.date(_START_YEAR + 1, 4, 18)
 
 ABBR = {"GS": "GSW", "SA": "SAS", "NY": "NYK", "NO": "NOP",
         "WSH": "WAS", "UTAH": "UTA"}
