@@ -85,47 +85,29 @@ def test_main_reuses_same_worktree_host(monkeypatch, capsys):
     assert "reusing it" in capsys.readouterr().out
 
 
-def test_main_remaps_foreign_host(monkeypatch, capsys):
-    owners = {8062: 555, 8063: 4242}
-    seen_ports = []
+def test_main_refuses_foreign_held_port(monkeypatch, capsys):
+    owners = {8062: 555}
+    eval_ran = []
 
     monkeypatch.setattr(dab_run, "listener_pid", lambda port: "555")
     monkeypatch.setattr(dab_run, "port_owner_pid", lambda port: owners.get(port))
     monkeypatch.setattr(dab_run, "host_matches_worktree", lambda pid: False)
     monkeypatch.setattr(dab_run, "proc_cwd", lambda pid: Path("/foreign"))
-    monkeypatch.setattr(dab_run, "free_port", lambda start: 8063)
     monkeypatch.setattr(dab_run, "verify_runtime_warehouse", lambda: ([], 10))
     monkeypatch.setattr(dab_run, "warehouse_metadata", lambda: {})
     monkeypatch.setattr(dab_run, "generate_manifest", lambda env, path: True)
     monkeypatch.setattr(dab_run, "load_env", lambda path: {})
 
-    class FakeHost:
-        pid = 4242
-
-        def poll(self):
-            return None
-
-    monkeypatch.setattr(dab_run, "boot_host", lambda env, log: FakeHost())
-
-    def fake_health(port, host, log):
-        seen_ports.append(port)
-        return {"amd": True}
-
-    monkeypatch.setattr(dab_run, "wait_health", fake_health)
-    monkeypatch.setattr(dab_run, "pid_is_descendant", lambda pid, anc: False)
-
     def fake_eval(cmd, env):
-        assert "http://127.0.0.1:8063" in cmd
+        eval_ran.append(cmd)
         return 0
 
     monkeypatch.setattr(dab_run, "run_eval", fake_eval)
-    monkeypatch.setattr(dab_run, "report_results", lambda args: True)
-    monkeypatch.setattr(dab_run, "terminate_host", lambda host, keep: None)
 
     rc = dab_run.main(["--model", "amd:X", "--port", "8062", "--out-name", "t"])
     assert rc == 1
-    assert seen_ports == []
-    assert "refusing to drift" in capsys.readouterr().err
+    assert not eval_ran
+    assert "refusing to drift ports" in capsys.readouterr().err
 
 
 def test_main_refuses_foreign_owner_after_health(monkeypatch, capsys):
