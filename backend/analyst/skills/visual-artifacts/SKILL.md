@@ -42,6 +42,24 @@ When the task explicitly asks for a structured JSON chart payload (for example a
 
 Values come from the queried rows only — one entry per xLabel per series, no gaps.
 
+Ranked-list bar example (top-N asks with `"kind": "bar"`):
+
+```json
+{
+  "kind": "bar",
+  "title": "SGA leads 2024-25 scoring at 32.7 PPG",
+  "xLabels": ["Gilgeous-Alexander", "Antetokounmpo", "Jokic"],
+  "series": [
+    { "name": "points per game", "values": [32.7, 30.4, 29.6] }
+  ],
+  "xLabel": "Player",
+  "yLabel": "PPG",
+  "marks": [{ "value": 27.6, "label": "top-10 mean" }]
+}
+```
+
+The inline spec and catalog artifacts coexist — you may emit BOTH: the inline spec satisfies the explicit spec contract, catalog artifacts (`chart`, `table`) drive the rendered UI. The submission audit reads inline `"kind"` keys in answer blocks, so a correct inline spec is never flagged as missing artifacts. When the ask names `"kind": "line"` or `"kind": "bar"` verbatim, copy that exact kind string — `chart` does not satisfy it.
+
 ---
 
 ## 2. Artifact Schema Specifications

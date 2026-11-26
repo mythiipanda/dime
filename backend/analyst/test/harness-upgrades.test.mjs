@@ -1867,6 +1867,41 @@ test("verify_answer_numbers flags artifact asks answered with zero artifacts", a
   assert.equal(noArtifactAsk.no_artifacts_on_artifact_ask.length, 0);
 });
 
+test("verify_answer_numbers accepts inline JSON chart specs as artifact coverage", async () => {
+  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
+  const sources = [makePayloadSourceRecord("src-1", { rows: [{ season: "2024-25", net_rating: 3.8 }] })];
+  const question = 'Produce a structured multi-line trend-chart payload (JSON spec or tool artifact with "kind": "line") plotting ratings per season.';
+  const inlineLine = auditAnswerNumbers(
+    {
+      blocks: [{
+        text: 'Denver peaked in 2023-24.\n```json\n{"kind": "line", "title": "Nuggets ratings", "xLabels": ["2023-24", "2024-25"], "series": [{"name": "net rating", "values": [3.8, 3.8]}]}\n```',
+      }],
+    },
+    sources,
+    question,
+  );
+  assert.equal(inlineLine.no_artifacts_on_artifact_ask.length, 0);
+
+  const barQuestion = 'Produce a structured bar-chart payload (JSON spec or tool artifact with "kind": "bar") of the top 10 scorers.';
+  const inlineBar = auditAnswerNumbers(
+    {
+      blocks: [{
+        text: 'SGA leads at 32.7.\n```json\n{"kind": "bar", "title": "Top scorers", "xLabels": ["SGA"], "series": [{"name": "ppg", "values": [32.7]}]}\n```',
+      }],
+    },
+    sources,
+    barQuestion,
+  );
+  assert.equal(inlineBar.no_artifacts_on_artifact_ask.length, 0);
+
+  const noSpec = auditAnswerNumbers(
+    { blocks: [{ text: "Denver peaked in 2023-24." }] },
+    sources,
+    question,
+  );
+  assert.ok(noSpec.no_artifacts_on_artifact_ask.length > 0);
+});
+
 test("verify_answer_numbers flags required stat terms absent from prose and payloads", async () => {
   const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
   const sources = [makePayloadSourceRecord("src-1", { rows: [{ ortg: 118.4, pw_net: 9.4 }] })];

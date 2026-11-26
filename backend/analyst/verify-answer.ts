@@ -620,13 +620,19 @@ export function auditAnswerNumbers(
                 return [];
             const concrete = tokens.filter(token => token in ARTIFACT_KIND_TOKENS);
             const artifacts = (input.artifacts ?? []) as Record<string, unknown>[];
-            if (artifacts.length === 0)
+            const inlineKinds = new Set<string>();
+            const blocksText = (input.blocks ?? []).map(block => block.text ?? "").join("\n");
+            for (const match of blocksText.matchAll(/"kind"\s*:\s*"([a-z_]+)"/gi))
+                inlineKinds.add(match[1].toLowerCase());
+            if (artifacts.length === 0 && inlineKinds.size === 0)
                 return concrete.length > 0 ? tokens.filter(token => token in ARTIFACT_KIND_TOKENS || !/^(artifacts?|artefacts?|specs?)$/.test(token)) : ["artifact"];
             const kinds = new Set(artifacts.map(artifact => String(artifact.kind ?? "").toLowerCase()));
+            inlineKinds.forEach(kind => kinds.add(kind));
             const wantedKinds = [...new Set(concrete.map(token => ARTIFACT_KIND_TOKENS[token.replace(/ /g, "_")]))];
             if (wantedKinds.length === 0)
                 return [];
-            const matched = wantedKinds.some(kind => kinds.has(kind) || (kind === "card" && (kinds.has("player_card") || kinds.has("team_card"))));
+            const chartSpecKinds = new Set(["line", "bar", "area", "pie"]);
+            const matched = wantedKinds.some(kind => kinds.has(kind) || (kind === "chart" && [...kinds].some(candidate => chartSpecKinds.has(candidate))) || (kind === "card" && (kinds.has("player_card") || kinds.has("team_card"))));
             return matched ? [] : wantedKinds;
         })()
         : [];
