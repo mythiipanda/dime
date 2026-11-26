@@ -11,7 +11,8 @@ assert "npm ci --ignore-scripts" in packaging
 assert "npm run build" in packaging
 assert "npm prune --omit=dev --ignore-scripts" in packaging
 assert "analyst/package-lock.json" in packaging
-assert "COPY analyst/*.py analyst/*.ts analyst/tsconfig.json ./" in packaging
+assert "COPY analyst/*.py analyst/*.ts analyst/tsconfig.json analyst/gen-manifest.mjs ./" in packaging
+assert "COPY analyst/skills ./skills" in packaging
 assert "warehouse" not in packaging
 assert "COPY --from=analyst-deps /usr/local/bin/node /usr/local/bin/node" in runtime
 assert "COPY --from=analyst-deps /analyst /srv/analyst" in runtime
