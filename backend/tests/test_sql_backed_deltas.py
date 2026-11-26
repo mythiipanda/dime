@@ -49,3 +49,10 @@ def test_skill_bans_prose_side_arithmetic():
     src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
     assert "Never compute any arithmetic in prose" in src
     assert "prose-typed arithmetic is invisible to the audit" in src
+
+
+
+def test_skill_teaches_deadline_awareness():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "stop verifying and fixing" in src
+    assert "partial deliverable inside budget" in src
