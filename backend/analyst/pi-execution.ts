@@ -1294,13 +1294,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         }
                         if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
                             break;
-                        if (!submitSteerUsed) {
-                            submitSteerUsed = true;
-                            emit({ type: "tool_call", name: "turn_end_steer" });
-                            emit({ type: "tool_result", name: "turn_end_steer", status: "ok" });
-                            await session.prompt("You ended the run with an answer but never called submit_answer. Route it through tools.submit_answer now: put that answer's text into blocks, add the artifacts and source anchors it should carry, list anything left out in omitted, and submit. Do not rewrite the answer.");
-                            continue;
-                        }
                         const zeroEvidenceDataAsk = dataToolCalls === 0
                             && (start.sources?.length ?? 0) === 0
                             && connected.results.size === 0
@@ -1316,6 +1309,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 await session.prompt("This is a data question and no data tool has been called yet — nothing has failed and the warehouse is up and reachable right now, so do not answer from memory. Run this exact call first: tools.sql_exec({sql: \"SELECT table_name, estimated_size FROM duckdb_tables() WHERE table_name LIKE 'silver%' ORDER BY table_name\"}) — its result lists the real populated tables. Then query the tables your figures rely on and call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
                                 continue;
                             }
+                        }
+                        if (!submitSteerUsed) {
+                            submitSteerUsed = true;
+                            emit({ type: "tool_call", name: "turn_end_steer" });
+                            emit({ type: "tool_result", name: "turn_end_steer", status: "ok" });
+                            await session.prompt("You ended the run with an answer but never called submit_answer. Route it through tools.submit_answer now: put that answer's text into blocks, add the artifacts and source anchors it should carry, list anything left out in omitted, and submit. Do not rewrite the answer.");
+                            continue;
                         }
                         if (!giveUpSteerUsed && !zeroEvidenceDataAsk) {
                             const remainingMs = start.runTimeoutMs !== undefined

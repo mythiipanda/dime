@@ -833,6 +833,10 @@ test("createPiExecution reprompts once when a sourceless data ask ends in plain 
   
   assert.ok(repromptContext.includes("duckdb_tables"), "reprompt carries the concrete copy-pasteable probe call");
   assert.ok(repromptContext.includes("nothing has failed"), "reprompt corrects the false-failure belief");
+  const zeIdx = events.findIndex((e) => e.type === "tool_call" && e.name === "zero_evidence_reprompt");
+  const steerIdx = events.findIndex((e) => e.type === "tool_call" && e.name === "turn_end_steer");
+  if (steerIdx !== -1)
+    assert.ok(zeIdx < steerIdx, "zero-evidence reprompt fires before turn_end_steer on data asks with no evidence");
   const answer = events.find((e) => e.type === "answer");
   assert.equal(answer.text, canonical);
 
