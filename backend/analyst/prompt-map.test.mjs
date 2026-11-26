@@ -18,3 +18,8 @@ test("canonical tool map has no rebase conflict debris", () => {
   assert.ok(!runtimeSource.includes("<<<<<<<"));
   assert.ok(!runtimeSource.includes(">>>>>>>"));
 });
+
+test("canonical tool map steers per-game leaderboards to the rate categories, not totals", () => {
+  assert.match(runtimeSource, /PPG\/RPG\/APG\/SPG\/BPG\/TS_PCT/);
+  assert.match(runtimeSource, /season-totals boards/);
+});
