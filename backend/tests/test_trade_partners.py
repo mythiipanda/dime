@@ -5,7 +5,7 @@ from shared.tools import get_trade_partners
 
 def _seed_warehouse(path):
     with duckdb.connect(str(path)) as con:
-        con.execute('CREATE TABLE silver_salaries(PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY INTEGER, _season VARCHAR)')
+        con.execute('CREATE TABLE silver_salaries(PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2026_27 INTEGER, _season VARCHAR)')
         rows = [
             ("Jaylen Brown", "BOS", 50_000_000),
         ] + [(f"Bos Filler {i}", "BOS", 26_000_000) for i in range(5)] + [

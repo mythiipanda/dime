@@ -515,8 +515,22 @@ def _trade_season_scoped(table: str, name_col: str, val_col: str,
     return f"SELECT {name_col}, {val_col} FROM {table}", []
 
 
+def _inferred_salary_column_season(con, sal_season: str) -> str | None:
+    if "silver_salaries" not in _warehouse_tables(con):
+        return sal_season
+    try:
+        scols = {r[1] for r in con.execute(
+            "PRAGMA table_info(silver_salaries)").fetchall()}
+    except Exception:
+        return sal_season
+    exact = "SALARY_" + sal_season.replace("-", "_")
+    if exact in scols:
+        return sal_season
+    return None if "SALARY" in scols else sal_season
+
+
 def _trade_sheet_salaries(con, warehouse: _TradeWarehouse,
-                          sal_season: str, leaders: dict | None = None) -> dict[str, int]:
+                          sal_season: str | None, leaders: dict | None = None) -> dict[str, int]:
     salaries: dict[str, int] = {}
     records = salary_records(con, sal_season, include_fallback=True)
     matched = set()
@@ -879,9 +893,10 @@ def get_trade_value(
     if not team_a or not team_b:
         return _trade_value_error("two teams needed")
     with _owned_connection(None) as con:
+        salary_column_season = _inferred_salary_column_season(con, sal_season)
         try:
             team_a, names_a, unk_a, team_b, names_b, unk_b = _trade_value_sides(
-                con, team_a, players_a, team_b, players_b, sal_season)
+                con, team_a, players_a, team_b, players_b, salary_column_season)
         except SalaryColumnError as exc:
             return {"tool": "get_trade_value", "ok": False,
                     "reason": exc.reason, "error": str(exc)}
@@ -906,7 +921,7 @@ def get_trade_value(
         use_w = _trade_leader_weights(warehouse)
         leaders = _trade_leader_rows(con, prod_season)
         adv = _trade_adv_rows(con, warehouse, prod_season)
-        salaries = _trade_sheet_salaries(con, warehouse, sal_season, leaders)
+        salaries = _trade_sheet_salaries(con, warehouse, salary_column_season, leaders)
         if not salaries:
             warehouse.note("no 2026-27 salary rows: residuals unavailable")
         ratings = _trade_rating_rows(con, warehouse, prod_season)

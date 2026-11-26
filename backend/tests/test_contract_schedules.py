@@ -28,9 +28,9 @@ HTML = '''<table id="contracts"><thead><tr>
 
 
 @pytest.mark.parametrize('column', ['SALARY_1999_00', 'SALARY_2025_26', 'SALARY_2031_32'])
-def test_single_season_salary_column_fallback(column):
+def test_single_season_salary_column_resolution(column):
     assert resolve_salary_column({'PLAYER_NAME', column}, None) == column
-    assert resolve_salary_column({'PLAYER_NAME', column}, '2026-27') == column
+    assert resolve_salary_column({'PLAYER_NAME', column}, '2026-27') == ''
 
 
 def test_salary_column_precedence_and_ambiguity():
@@ -38,7 +38,9 @@ def test_salary_column_precedence_and_ambiguity():
     assert resolve_salary_column(columns, None) == ''
     assert resolve_salary_column(columns, '2026-27') == ''
     assert resolve_salary_column(columns, '2024-25') == 'SALARY_2024_25'
-    assert resolve_salary_column(columns | {'SALARY'}, '2024-25') == 'SALARY'
+    assert resolve_salary_column(columns | {'SALARY'}, '2024-25') == 'SALARY_2024_25'
+    assert resolve_salary_column({'PLAYER_NAME', 'SALARY'}, '2024-25') == ''
+    assert resolve_salary_column({'PLAYER_NAME', 'SALARY'}, None) == 'SALARY'
     assert resolve_salary_column({'PLAYER_NAME', 'SALARY_notes'}, None) == ''
 
 
@@ -166,6 +168,19 @@ def test_stale_trade_fallback_uses_snapshot_not_furthest_salary(warehouse):
         assert _resolve_stale_trade_player('Snapshot Example', 'BOS', con) == ('Snapshot Example', 125)
         con.execute('UPDATE silver_salaries SET SALARY_2031_32 = NULL')
         assert _resolve_stale_trade_player('Snapshot Example', 'BOS', con) == ('Snapshot Example', 125)
+    finally:
+        con.close()
+
+
+def test_requested_contract_year_beats_stale_bare_salary(warehouse):
+    con = duckdb.connect(str(warehouse))
+    try:
+        con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY BIGINT, SALARY_2027_28 BIGINT, _season VARCHAR)')
+        con.execute("INSERT INTO silver_salaries VALUES ('Exact Year Example', 'BOS', 999, 175, '2026-27')")
+        exact = salary_records(con, salary_season='2027-28')
+        assert exact[0]['salary'] == 175
+        unavailable = salary_records(con, salary_season='2028-29')
+        assert unavailable == []
     finally:
         con.close()
 
@@ -354,7 +369,7 @@ def test_vendor_salary_fills_null_primary_without_losing_schedule(warehouse):
     _new_warehouse(warehouse)
     con = duckdb.connect(str(warehouse))
     try:
-        con.execute('UPDATE silver_salaries SET SALARY = NULL WHERE PLAYER_ID = 1')
+        con.execute('UPDATE silver_salaries SET SALARY = NULL, SALARY_2026_27 = NULL WHERE PLAYER_ID = 1')
         con.execute('CREATE TABLE silver_cap_players (player VARCHAR, team VARCHAR, salary BIGINT)')
         con.execute("INSERT INTO silver_cap_players VALUES ('Different Salary Name', 'BOS', 125)")
         records = salary_records(con, '2026-27', include_fallback=True)

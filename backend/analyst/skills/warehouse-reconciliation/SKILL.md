@@ -49,13 +49,19 @@ GROUP BY player_id
 Player-name spellings differ across `silver_*` tables: stat/tracking tables carry accented forms (`Hugo González`, `Moussa Diabaté`, `Nikola Jokić`) while `silver_salaries` and box-score tables often store ASCII (`Hugo Gonzalez`). An exact `name = PLAYER_NAME` join silently drops those rows — and in a filtered top-N ranking the dropped players can be exactly the ones that matter, so a result can look verified while a slice of the population is missing.
 
 - Join on `player_id`/`PLAYER_ID` when both sides carry one; IDs skip name normalization entirely.
-- Otherwise normalize both sides before comparing: strip diacritics, lowercase, drop punctuation, collapse whitespace, and remove generational suffixes:
+- Otherwise normalize both sides before comparing: strip diacritics, lowercase, drop punctuation, remove trailing generational suffixes, and collapse whitespace away. DuckDB does not apply this as a tool-enforced rewrite; write the key explicitly in the query. Canonical key for one column:
 
 ```sql
-STRIP_ACCENTS(REPLACE(LOWER(name_col), '.', ''))
+regexp_replace(
+  regexp_replace(
+    regexp_replace(lower(strip_accents(trim(name_col))), '[^a-z0-9\s]', '', 'g'),
+    '(?:\s+(?:jr|sr|ii|iii|iv|v))+$', '', 'i'),
+  '\s+', '', 'g')
 ```
 
-In Python: `unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()` plus punctuation/suffix cleanup.
+Use that expression to build `name_key` in a CTE for each side, then join on `name_key`. The same key treats synthetic variants such as `Aurelio Testín`/`AURELIO TESTIN`, `P.J. Example`/`pj example`, and `Casey Da Roma`/`casey da roma` as equal.
+
+In Python, `shared.contracts.normalize_name` implements the same canonical key; use it rather than adding another local normalization variant.
 
 - After any name join, audit the match count (matched vs total rows on each side) and skim the unmatched names before trusting ranked output. If the join drops qualifying rows, fix the normalization; if some remain unmatched after normalization, disclose the shortfall rather than presenting a partial ranking as complete.
 - Exploring normalization and then shipping the exact join anyway is a known failure: once you have seen unmatched names, the partial result is not the answer — apply the normalized join or state explicitly that coverage excludes those entities.
@@ -74,7 +80,7 @@ Warehouse coverage lags the calendar: production and game tables (`silver_leader
 - **"Current" questions**: pass the current NBA season to contract, trade and roster tools. They pair current salary/roster data with the latest production season and report both in `meta` (`production_season` vs `salary_season`). Stat-only tools that have no rows for the current season fall back to the latest season with data and set `meta.season_fallback` / `meta.requested_season` — always quote the season each figure actually covers.
 - **Unspecified season-long totals and leaderboards resolve to the latest completed season while the current one is early**: an ask like "who leads the league in corner threes" with no season named wants complete-season volume, not the partial in-progress rows — query the latest completed `_season` (2025-26) and label it in the answer. Only an explicit "this season" or "in 2026-27" means the in-progress partial data, and then the small-sample caveat applies.
 - **Team attribution is season-dependent**: a player who changed teams has one team in past-season production rows and another in the current salary sheet (for example a star traded in the offseason). Resolve "who is on team X" against the season the question is about before answering.
-- **Salary columns carry year semantics**: in `silver_salaries`, `SALARY` is the cap hit for the row's `_season`; the `SALARY_20XX_YY`/`OPTION_20XX_YY` columns are per-contract-year values and shift every rollover. For "20XX-YY payroll / cap hit", sum `SALARY` on `_season = '20XX-YY'` rows (or the matching `SALARY_20XX_YY` column) — never a different year column. A frozen column such as `SALARY_2025_26` on 2026-27 rows silently returns last year's payroll, and the result can look verified because the schema accepts it. When the prompt's year differs from any column you plan to sum, reconcile it against `SUM(SALARY)` first.
+- **Salary columns carry year semantics**: in `silver_salaries`, `SALARY` is the cap hit for the row's `_season`; the `SALARY_20XX_YY`/`OPTION_20XX_YY` columns are per-contract-year values and shift every rollover. For "20XX-YY payroll / cap hit", sum `SALARY` on `_season = '20XX-YY'` rows. Use a `SALARY_20XX_YY` column only when the user explicitly asks for that exact contract year, never as a substitute for row-season payroll. A frozen column such as `SALARY_2025_26` on 2026-27 rows silently returns last year's contract-year values for the rows still present, and the result can look verified because the schema accepts it. If rows or the exact requested-year column are absent, report that year unavailable or surface the typed failure rather than substituting another year.
 - **Stale premise handling**: when a tool reports that a player's team differs from the question's premise (trade guard errors name the season and the listed team), say the premise is stale, then answer for the player's current team or re-run with the historical season the user meant. Do not force the question's teams through.
 
 ## 6. Call Economy: Fewer Turns, Faster Answers
