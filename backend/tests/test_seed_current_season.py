@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import duckdb
 import polars as pl
 import pytest
 
@@ -116,6 +117,25 @@ PSS = pl.DataFrame({
 })
 
 
+def _add_legacy_ts_rows(db: Path,
+                        rows: list[tuple[int, str, str | None]]) -> None:
+    con = duckdb.connect(str(db))
+    try:
+        con.execute(
+            'ALTER TABLE silver_player_season ADD COLUMN "TS_PCT" VARCHAR')
+        con.execute(
+            'ALTER TABLE silver_player_season ADD COLUMN "_prov_TS_PCT" VARCHAR')
+        con.executemany(
+            'INSERT INTO silver_player_season ("PLAYER_ID", "PLAYER", '
+            '"TEAM", "TS_PCT", "_prov_TS_PCT", _source, _season, '
+            '_fetched_at, _entity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [(pid, name, "BOS", value, f"prov:{pid}", "fixture",
+              "2025-26", "2026-01-01", "league")
+             for pid, name, value in rows])
+    finally:
+        con.close()
+
+
 @pytest.fixture
 def scratch(tmp_path, monkeypatch):
     db = _make_db(tmp_path)
@@ -209,6 +229,92 @@ def test_load_player_season_populates_ts_pct(scratch):
     con.close()
     assert row is not None and row[0] is not None
     assert abs(row[0] - 0.535) < 0.002
+
+
+def test_load_player_season_repairs_legacy_varchar_ts_pct(scratch):
+    _add_legacy_ts_rows(scratch, [
+        (900, "Legacy Number", "0.616"),
+        (901, "Legacy Null", None),
+        (902, "Legacy Nan", "-nan"),
+    ])
+
+    n = seed.load_player_season("2026-27", dry_run=False)
+
+    assert n == 1
+    con = store.connect()
+    rows = con.execute(
+        "SELECT \"PLAYER_ID\", \"TS_PCT\", typeof(\"TS_PCT\"), _source, "
+        "_season, \"_prov_TS_PCT\" FROM silver_player_season "
+        "ORDER BY \"PLAYER_ID\"").fetchall()
+    con.close()
+    by_id = {r[0]: r for r in rows}
+    assert [r[2] for r in rows] == ["DOUBLE"] * 4
+    assert by_id[1][1] == pytest.approx(0.535)
+    assert by_id[900][1] == pytest.approx(0.616)
+    assert by_id[901][1] is None
+    assert by_id[902][1] is None
+    assert by_id[1][3:5] == (seed.SRC_PSS, "2026-27")
+    assert by_id[900][3:] == ("fixture", "2025-26", "prov:900")
+    assert by_id[902][5] == "prov:902"
+
+
+def test_load_player_season_rejects_nonnumeric_legacy_ts_pct(scratch):
+    _add_legacy_ts_rows(scratch, [(900, "Legacy Bad", "not-a-number")])
+
+    with pytest.raises(duckdb.ConversionException, match="Could not convert"):
+        seed.load_player_season("2026-27", dry_run=False)
+
+    con = store.connect()
+    rows = con.execute(
+        "SELECT \"TS_PCT\", typeof(\"TS_PCT\"), COUNT(*) FILTER "
+        "(_season = '2026-27') FROM silver_player_season "
+        "GROUP BY \"TS_PCT\"").fetchall()
+    con.close()
+    assert rows == [("not-a-number", "VARCHAR", 0)]
+
+
+def test_load_player_season_dry_run_preserves_legacy_ts_pct_schema(scratch):
+    _add_legacy_ts_rows(scratch, [(900, "Legacy Number", "0.616")])
+
+    n = seed.load_player_season("2026-27", dry_run=True)
+
+    assert n == 0
+    con = store.connect()
+    row = con.execute(
+        "SELECT \"TS_PCT\", typeof(\"TS_PCT\") FROM silver_player_season"
+    ).fetchone()
+    con.close()
+    assert row == ("0.616", "VARCHAR")
+
+
+def test_load_player_season_zero_attempt_ts_pct_is_null(scratch, monkeypatch):
+    zero = PGL.with_columns([
+        pl.lit(0.0).alias("pts"),
+        pl.lit(0.0).alias("fga"),
+        pl.lit(0.0).alias("fta"),
+    ])
+    frames = {
+        "team_game_logs": TGL,
+        "player_game_logs": zero,
+        "player_season_stats": PSS,
+    }
+
+    def fake_read(url):
+        for key, frame in frames.items():
+            if key in url:
+                return frame
+        raise AssertionError(url)
+
+    monkeypatch.setattr(seed.pl, "read_parquet", fake_read)
+    n = seed.load_player_season("2026-27", dry_run=False)
+
+    assert n == 1
+    con = store.connect()
+    row = con.execute(
+        "SELECT \"TS_PCT\", typeof(\"TS_PCT\") FROM silver_player_season"
+    ).fetchone()
+    con.close()
+    assert row == (None, "DOUBLE")
 
 
 def test_main_dry_run(scratch, capsys):
