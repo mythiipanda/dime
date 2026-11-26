@@ -167,11 +167,11 @@ def _example_sql(prompt_fragment: str) -> str:
     return sql.split("\n", 1)[0].strip()
 
 
-def test_payroll_example_uses_real_salary_column():
+def test_payroll_example_uses_row_season_salary_column():
     sql = _example_sql("highest total payroll?")
-    assert "SALARY_2025_26" in sql
-    assert "_season" in sql
-    assert "SUM(SALARY)" not in sql
+    assert "SUM(SALARY)" in sql
+    assert "_season = '2026-27'" in sql
+    assert "SALARY_2025_26" not in sql
 
 
 def test_payroll_wins_example_keeps_every_team():
@@ -180,7 +180,7 @@ def test_payroll_wins_example_keeps_every_team():
     try:
         con.execute(
             "CREATE TABLE silver_salaries "
-            "(PLAYER_NAME TEXT, TEAM TEXT, SALARY_2025_26 BIGINT, _season TEXT)")
+            "(PLAYER_NAME TEXT, TEAM TEXT, SALARY BIGINT, _season TEXT)")
         con.execute(
             "CREATE TABLE silver_team_games "
             "(MATCHUP TEXT, WL TEXT, _season TEXT)")

@@ -227,6 +227,20 @@ _PROVENANCE_PREFIXES = ("_PROV_",)
 def _column_semantics(table: str, name: str) -> tuple[str, str]:
     table_key = str(table or "").lower()
     upper = str(name or "").upper()
+    if table_key == "silver_salaries":
+        if upper == "SALARY":
+            return (
+                "usd_dollars",
+                "cap hit for the row's _season; payroll sums this after "
+                "filtering rows to the requested _season",
+            )
+        if _re_mod.fullmatch(r"SALARY_\d{4}_\d{2}", upper):
+            label = f"{upper[7:11]}-{upper[12:14]}"
+            return (
+                "usd_dollars",
+                f"contract-year salary for exactly {label}; use only for "
+                "that requested year, never as a substitute for another year",
+            )
     if table_key == "silver_leaders_pts":
         cumulative_units = {
             "PTS": ("total_points", "points"),
@@ -417,6 +431,37 @@ def _attach_player_names(rows: list[dict]) -> None:
             pass
 
 
+def _normalized_name_sql(column: str) -> str:
+    ident = str(column or "").strip()
+    if not _re_mod.fullmatch(
+            r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?", ident):
+        raise ValueError("column must be a simple SQL identifier")
+    return (
+        "regexp_replace(regexp_replace(regexp_replace("
+        f"lower(strip_accents(trim({ident}))), "
+        "'[^a-z0-9\\s]', '', 'g'), "
+        "'(?:\\s+(?:jr|sr|ii|iii|iv|v))+$', '', 'i'), "
+        "'\\s+', '', 'g')"
+    )
+
+
+_SALARY_GUIDANCE = (
+    "Salary rules. In silver_salaries, SALARY is the cap hit for the row's "
+    "_season. Payroll for a season filters rows to that _season and sums "
+    "SALARY. Use SALARY_YYYY_YY only when the user explicitly asks for that "
+    "exact contract year and the column exists. If rows or the exact column "
+    "for the requested year are absent, say salary for that year is "
+    "unavailable instead of substituting another year.\n"
+)
+
+_NAME_JOIN_GUIDANCE = (
+    "Player-name joins: use PLAYER_ID when both sides carry it. Otherwise "
+    "write the canonical normalized comparison explicitly on both sides; "
+    f"for PLAYER_NAME it is {_normalized_name_sql('PLAYER_NAME')}. SQL tools "
+    "do not apply this rewrite automatically, so audit matched and unmatched "
+    "row counts.\n"
+)
+
 _TEXT_TO_SQL_EXAMPLES = (
     "\nExamples.\nQ: Thunder record this season?\n"
     "SQL: SELECT WINS, LOSSES FROM silver_standings "
@@ -426,16 +471,15 @@ _TEXT_TO_SQL_EXAMPLES = (
     "FROM silver_hist_gamelogs WHERE team_abbreviation = 'OKC' "
     "AND _season IN ('2025-26', '2024-25', '2023-24') GROUP BY _season\n"
     "Q: Which 5 teams have the highest total payroll?\n"
-    "Note: silver_salaries stores per-year salary columns named "
-    "SALARY_YYYY_YY (e.g. SALARY_2025_26); always filter _season and "
-    "pick the column for the asked year - there is no bare SALARY column.\n"
-    "SQL: SELECT TEAM, SUM(SALARY_2025_26) AS payroll FROM silver_salaries "
+    "Note: silver_salaries.SALARY is the cap hit for the row's _season; "
+    "filter rows to the asked season and sum SALARY for payroll.\n"
+    "SQL: SELECT TEAM, SUM(SALARY) AS payroll FROM silver_salaries "
     "WHERE _season = '2026-27' GROUP BY TEAM ORDER BY payroll DESC LIMIT 5\n"
     "Q: Which team pays the most per win this season?\n"
     "Note: join payroll to wins on the team abbreviation; wins come from "
     "silver_team_games via split_part(MATCHUP, ' ', 1). LEFT JOIN so no "
     "team silently drops out of the comparison.\n"
-    "SQL: SELECT s.TEAM, SUM(s.SALARY_2025_26) AS payroll, "
+    "SQL: SELECT s.TEAM, SUM(s.SALARY) AS payroll, "
     "COUNT(w.WL) AS games, SUM(CASE WHEN w.WL = 'W' THEN 1 ELSE 0 END) AS wins "
     "FROM silver_salaries s LEFT JOIN ("
     "SELECT split_part(MATCHUP, ' ', 1) AS TEAM, WL FROM silver_team_games "
@@ -528,6 +572,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                       "season totals. silver_player_gamelogs is an incomplete per-game "
                       "sample: never SUM it to compute season totals, and never join "
                       "per-game tables to leaders tables (fan-out inflates sums).\n"
+                      f"{_SALARY_GUIDANCE}{_NAME_JOIN_GUIDANCE}"
                       f"Schema:\n{schema}{_TEXT_TO_SQL_EXAMPLES}\nQuestion: {question}{feedback}")])
             sql = _re_mod.sub(r"^```sql|```$", "", str(getattr(resp, "content", "") or ""),
                               flags=_re_mod.MULTILINE).strip()
