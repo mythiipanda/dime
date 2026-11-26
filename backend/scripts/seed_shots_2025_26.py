@@ -5,8 +5,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shared import store
 from shared.sources import nba_stats
+from shared.tools._core import current_season
 
-SEASON = "2025-26"
+SEASON = current_season() or "2026-27"
 SLEEP = 0.8
 
 def main() -> None:

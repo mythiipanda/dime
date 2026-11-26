@@ -244,12 +244,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=f"Scrape basketball-reference league pages into {TABLE}. "
                     "Seasons already in the table are skipped.")
-    ap.add_argument("--seasons", default="2025-26")
+    ap.add_argument("--seasons", default=None)
     ap.add_argument("--scratch-db", default="")
     ap.add_argument("--dry-run", action="store_true")
     ns = ap.parse_args(argv)
     try:
-        seasons = [s.strip() for s in str(ns.seasons).split(",") if s.strip()]
+        if ns.seasons:
+            raw = str(ns.seasons)
+        else:
+            from shared.tools._core import current_season
+            raw = current_season() or "2026-27"
+        seasons = [s.strip() for s in raw.split(",") if s.strip()]
         for season in seasons:
             _start_year(season)
     except ValueError as exc:

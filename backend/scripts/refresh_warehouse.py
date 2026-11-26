@@ -43,6 +43,13 @@ SEEDERS = [
     ("free_agents", "seed_free_agents.py", [], True),
     ("prospects", "seed_prospects.py", [], True),
     ("four_factors_team", "build_team_four_factors.py", [], False),
+    ("rapm", "rapm.py", ["--season"], False),
+    ("vendor_cap", "vendor_cap.py", [], False),
+    ("hustle_team", "seed_hustle_team.py", [], False),
+    ("zone_splits", "seed_bbref_league_pages.py", [], False),
+    ("rosters", "seed_rosters.py", ["--season"], False),
+    ("hustle_player", "seed_hustle_player.py", ["--season"], False),
+    ("clutch", "seed_clutch.py", ["--season"], False),
 ]
 
 
