@@ -1536,7 +1536,7 @@ test("createAnalystSession discovers bundled skills regardless of cwd and expose
     assert(session.systemPrompt.includes("cba-trade-analysis"));
     assert(session.systemPrompt.includes("warehouse-reconciliation"));
     assert(session.systemPrompt.includes("lineups-and-rotations"));
-    assert(session.systemPrompt.includes('tools.load_skill({ name: "statistical-modeling" })'));
+    assert(session.systemPrompt.includes("call load_skill with name 'statistical-modeling' as a plain direct tool call"));
     assert(session.systemPrompt.includes("historical-grain-and-time"));
     const toolTexts = session.messages.filter(m => m.role === "toolResult").flatMap(m => m.content).map(c => c.text ?? "").join("\n");
     assert(toolTexts.includes('"cbaOk":true'));
