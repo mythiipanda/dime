@@ -180,3 +180,45 @@ Shots within a game are correlated, so resample the **game cluster**, not the sh
 4. Report `std(ddof=1)` as the standard error and `np.percentile(stats, [2.5, 97.5])` as the 95% CI.
 
 State the cluster unit, the seed, the generator, and `B` alongside the estimate so the number is reproducible.
+
+---
+
+## 7. Correlation, Simple Regression, and Honest Null Results
+
+For "does X relate to Y" and "how tightly does X explain Y" asks:
+
+1. Compute the coefficient in SQL with `CORR(x, y)` over a qualified cohort — apply minute/game/possession floors in the WHERE clause, never after. Report the coefficient to three decimals with the pool size.
+2. A near-zero coefficient is a valid answer, not a failed analysis. When the data contradicts the classic claim (e.g. high-usage scorers are not less efficient — the usage/efficiency correlation across qualified player-seasons is near zero), report the measured coefficient and interpret the null. Never force the expected sign.
+3. Distinguish correlation from the causal claim explicitly: a null correlation does not prove volume is free, and a strong one does not prove direction.
+
+For simple linear fits (`y ~ x` over a small cohort such as 30 team-seasons):
+
+```python
+import statistics
+xs = [float(r[0]) for r in rows]
+ys = [float(r[1]) for r in rows]
+mx, my = statistics.mean(xs), statistics.mean(ys)
+slope = sum((x-mx)*(y-my) for x, y in zip(xs, ys)) / sum((x-mx)**2 for x in xs)
+intercept = my - slope*mx
+residuals = sorted(((name, y - (slope*x + intercept)) for name, x, y in rows), key=lambda t: t[1])
+out = {"slope": slope, "intercept": intercept, "largest_positive": residuals[-1], "largest_negative": residuals[0]}
+```
+
+Interpret residuals as outperformance/underperformance relative to the fitted line — they reflect luck, clutch performance, noise, and roster context, not proof of coaching or chemistry. Say what would change the interpretation.
+
+## 8. Aging Curves and Cohort Profiles
+
+For "how does production change with age / experience" asks, `silver_hist_player_seasons` is per-player-season rate stats (`pts`, `min`, `usg_pct` as a fraction, `ts_pct`) keyed by integer end-year `season`:
+
+```sql
+SELECT CAST(age AS INT) AS a, COUNT(*) AS n, ROUND(AVG(pts), 2) AS avg_pts
+FROM silver_hist_player_seasons
+WHERE season >= 2015 AND min >= 20 AND gp >= 41
+GROUP BY a HAVING COUNT(*) >= 30
+ORDER BY a
+```
+
+1. Use rate-stat floors (`min >= 20` per game, `gp >= 41`) so the curve is not distorted by injury fill-ins, and require a minimum pool size per age bucket (`HAVING COUNT(*) >= 30`) so thin ages at the tails don't dominate.
+2. Pool several seasons (10 is standard) — a single season's curve is noise plus roster churn.
+3. `usg_pct` is a fraction (0.25 means 25%), unlike the percent-scale `USG` in current-season tables.
+4. Report the peak age, the level at the peak, and the slope on both sides — then connect the shape to the decision (contract length, development timeline). Do not read individual player trajectories off a league-average curve.
