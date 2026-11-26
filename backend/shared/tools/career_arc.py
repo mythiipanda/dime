@@ -73,6 +73,17 @@ def _columns(table: str) -> set[str]:
     except Exception:
         return set()
 
+def _player_name_key_sql(column: str) -> str:
+    ws = r"\s\p{Z}"
+    cleaned = (f"regexp_replace(strip_accents(lower({column})), "
+               f"'[^a-z0-9{ws}]', '', 'g')")
+    trimmed = (f"regexp_replace({cleaned}, "
+               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
+    suffixless = (f"regexp_replace({trimmed}, "
+                  f"'(?:^|[{ws}]+)(?:iii|ii|iv|jr|sr|v)"
+                  f"(?:[{ws}]+(?:iii|ii|iv|jr|sr|v))*$', '', 'g')")
+    return f"regexp_replace({suffixless}, '[{ws}]+', '', 'g')"
+
 def raptor_map(name: str = "", pid: int = 0) -> dict[int, float]:
     if "silver_raptor_player" not in _tables():
         return {}
@@ -83,7 +94,7 @@ def raptor_map(name: str = "", pid: int = 0) -> dict[int, float]:
         clauses.append("CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)")
         params.append(str(pid))
     if name and "PLAYER_NAME" in present:
-        clauses.append("LOWER(PLAYER_NAME) = LOWER(?)")
+        clauses.append(f"{_player_name_key_sql('PLAYER_NAME')} = {_player_name_key_sql('?')}")
         params.append(name)
     if not clauses:
         return {}
@@ -119,7 +130,7 @@ def _hist_rows(pid: int, name: str = "") -> list[dict[str, Any]]:
             "SELECT player_id, player_name, team_abbreviation, season, "
             "gp, min, pts, reb, ast, stl, blk, tov, fg_pct, fg3_pct, "
             "ft_pct, ts_pct FROM silver_hist_player_seasons "
-            "WHERE LOWER(player_name) = LOWER(?) ORDER BY season",
+            f"WHERE {_player_name_key_sql('player_name')} = {_player_name_key_sql('?')} ORDER BY season",
             [name],
         )
     return []
@@ -277,14 +288,16 @@ def get_career_arc(player: str = "", player_id: int = 0) -> dict[str, Any]:
         try:
             if "silver_hist_player_seasons" in _tables():
                 res = con.execute(
-                    "SELECT player_id FROM silver_hist_player_seasons WHERE LOWER(player_name) = LOWER(?) LIMIT 1",
+                    "SELECT player_id FROM silver_hist_player_seasons WHERE "
+                    f"{_player_name_key_sql('player_name')} = {_player_name_key_sql('?')} LIMIT 1",
                     [name]
                 ).fetchall()
                 if res and res[0][0]:
                     ident = int(res[0][0])
             if not ident and "silver_leaders_pts" in _tables():
                 res = con.execute(
-                    "SELECT PLAYER_ID FROM silver_leaders_pts WHERE LOWER(PLAYER) = LOWER(?) LIMIT 1",
+                    "SELECT PLAYER_ID FROM silver_leaders_pts WHERE "
+                    f"{_player_name_key_sql('PLAYER')} = {_player_name_key_sql('?')} LIMIT 1",
                     [name]
                 ).fetchall()
                 if res and res[0][0]:
