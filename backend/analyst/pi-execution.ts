@@ -1245,7 +1245,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             const remaining = Math.max(0, Math.round((runTimeoutMs - (Date.now() - startedAt)) / 1000));
                             agent.steer({
                                 role: "user",
-                                content: `Host run budget nearly exhausted (~${remaining}s remaining before abort). Call tools.submit_answer now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats no answer. Skip this only if submit_answer already ran.`,
+                                content: `Host run budget nearly exhausted (~${remaining}s remaining before abort). Call submit_answer directly now with the verified partial work and list the uncovered sub-questions in its omitted field — a verified partial answer beats no answer. Skip this only if submit_answer already ran.`,
                                 timestamp: Date.now()
                             });
                         }, nudgeAtMs);
@@ -1289,7 +1289,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             emptyRetryUsed = true;
                             emit({ type: "tool_call", name: "empty_completion_retry" });
                             emit({ type: "tool_result", name: "empty_completion_retry", status: "ok" });
-                            await session.prompt("Your last response came back empty. Continue: if the ask still needs data work, call the next tool now; if you already hold verified results, call tools.submit_answer with them.");
+                            await session.prompt("Your last response came back empty. Continue: if the ask still needs data work, call the next tool now; if you already hold verified results, call submit_answer directly with them.");
                             continue;
                         }
                         if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
@@ -1306,7 +1306,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 zeroEvidenceRepromptUsed = true;
                                 emit({ type: "tool_call", name: "zero_evidence_reprompt" });
                                 emit({ type: "tool_result", name: "zero_evidence_reprompt", status: "ok" });
-                                await session.prompt("This is a data question and no data tool has been called yet — nothing has failed and the warehouse is up and reachable right now, so do not answer from memory. Run this exact call first: tools.sql_exec({sql: \"SELECT table_name, estimated_size FROM duckdb_tables() WHERE table_name LIKE 'silver%' ORDER BY table_name\"}) — its result lists the real populated tables. Then query the tables your figures rely on and call tools.submit_answer with the verified text, its artifacts and source anchors, and anything left out in omitted.");
+                                await session.prompt("This is a data question and no data tool has been called yet — nothing has failed and the warehouse is up and reachable right now, so do not answer from memory. Run this exact direct tool call first: sql_exec with args {sql: \"SELECT table_name, estimated_size FROM duckdb_tables() WHERE table_name LIKE 'silver%' ORDER BY table_name\"}) — its result lists the real populated tables. Then query the tables your figures rely on and call submit_answer directly (no tools. prefix) with the verified text, its artifacts and source anchors, and anything left out in omitted.");
                                 continue;
                             }
                         }
@@ -1314,7 +1314,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             submitSteerUsed = true;
                             emit({ type: "tool_call", name: "turn_end_steer" });
                             emit({ type: "tool_result", name: "turn_end_steer", status: "ok" });
-                            await session.prompt("You ended the run with an answer but never called submit_answer. Route it through tools.submit_answer now: put that answer's text into blocks, add the artifacts and source anchors it should carry, list anything left out in omitted, and submit. Do not rewrite the answer.");
+                            await session.prompt("You ended the run with an answer but never called submit_answer. Route it through a direct submit_answer tool call now (plain tool name, no tools. prefix): put that answer's text into blocks, add the artifacts and source anchors it should carry, list anything left out in omitted, and submit. Do not rewrite the answer.");
                             continue;
                         }
                         if (!giveUpSteerUsed && !zeroEvidenceDataAsk) {
@@ -1325,7 +1325,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 giveUpSteerUsed = true;
                                 emit({ type: "tool_call", name: "give_up_correction_steer" });
                                 emit({ type: "tool_result", name: "give_up_correction_steer", status: "ok" });
-                                await session.prompt("tools.submit_answer is available and working — it is a codemode function you invoke as a tool call, not something you narrate in the answer text. Any earlier rejection was a content audit, not a tool failure. Call tools.submit_answer now: move your drafted answer into its blocks field, attach the artifacts and source anchors it names, list anything left out in omitted, and submit.");
+                                await session.prompt("submit_answer is available and working — it is a plain direct tool you call by its bare name submit_answer, with no tools. prefix (the prefixed name does not exist and errors), and not something you narrate in the answer text. Any earlier rejection was a content audit, not a tool failure. Call submit_answer now: move your drafted answer into its blocks field, attach the artifacts and source anchors it names, list anything left out in omitted, and submit.");
                                 continue;
                             }
                         }
