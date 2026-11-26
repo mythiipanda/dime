@@ -10,6 +10,24 @@ Use whichever tools answer the question being asked; skip the rest. Every
 number comes from the warehouse — never a live endpoint at question time —
 and every tool reports its own sources, so cite them.
 
+## Salary-matching quick reference
+
+For a non-apron over-cap team, maximum incoming salary is:
+
+```text
+outgoing ≤ 7.5M → 200%+250k
+7.5–29M → outgoing+7.5M
+>29M → 125%+250k
+```
+
+NEVER use 125%+$100k — that rule does not exist in the CBA; the $100k figure is a hallucination trap
+
+`get_trade_check` is the primary legality check for a concrete two-team player swap; use `get_trade_legality` when picks, cash, exceptions, sign-and-trade, or multiple teams are involved. Manual band math is verification/fallback, not the primary path. `cba-trade-analysis` owns the detailed CBA mechanics, inverse floors, and apron edge cases; load it when legality turns on those details.
+
+Band boundaries in full dollars: outgoing at most $7,500,000 uses 200% of outgoing + $250,000; above $7,500,000 through $29,000,000 uses outgoing + $7,500,000; above $29,000,000 uses 125% of outgoing + $250,000. First-apron teams can take back at most 100% of outgoing salary, and second-apron teams additionally cannot aggregate salaries.
+
+Anchor: 26,382,060 → 33,882,060 because outgoing $26,382,060 is in the middle band and the ceiling is $26,382,060 + $7,500,000.
+
 ## 1. Tools and when they matter
 
 | Tool | Answers | Reach for it when |
@@ -27,19 +45,6 @@ and every tool reports its own sources, so cite them.
 | `get_expectations` | How is a team doing vs its preseason projections (wins, net rating)? | Framing motivation: an underperforming "contender" buys differently than an overperforming rebuilder. |
 | `get_free_agents` | Upcoming free-agent class by team or league-wide, cap holds, projected cap room and exceptions (estimates). | Offseason/team-building questions and "can they afford to keep/sign X" — cap room constrains what a team can actually do after a trade. |
 | `get_prospect` | A draft prospect's board placement, college production, pick-slot comps, combine measurables. | Valuing picks inside a package or answering "who could they get at #N" — a pick's worth is the prospect it becomes. |
-
-### Salary-matching quick reference
-
-`get_trade_check` is the primary legality check for a concrete two-team player swap; use `get_trade_legality` when picks, cash, exceptions, sign-and-trade, or multiple teams are involved. Manual band math is verification/fallback, not the primary path. `cba-trade-analysis` owns the detailed CBA mechanics, inverse floors, and apron edge cases; load it when legality turns on those details.
-
-For a non-apron over-cap team, maximum incoming salary is:
-
-- outgoing <= $7,500,000: 200% of outgoing + $250,000
-- $7,500,000 < outgoing <= $29,000,000: outgoing + $7,500,000
-- outgoing > $29,000,000: 125% of outgoing + $250,000
-- first apron: at most 100% of outgoing; second apron additionally cannot aggregate salaries
-
-Anchor: outgoing $26,382,060 is in the mid band, so the ceiling is $26,382,060 + $7,500,000 = $33,882,060. The high-band rule is `125% + $250k`; never use `125% + $100k`.
 
 ## 2. Assembling the picture
 
