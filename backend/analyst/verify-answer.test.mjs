@@ -351,3 +351,55 @@ test("missing_in_artifacts does not flag rank ordinals derivable from artifact r
   const flagged = (audit.missing_in_artifacts ?? []).filter(c => String(c.raw).includes("3"));
   assert.equal(flagged.length, 0);
 });
+
+test("unsupported_claims carries machine-actionable deficit and fix fields", () => {
+  const sources = [makeSourceRecord("src-1", { rows: [{ pts: 30.5 }] })];
+  const audit = auditAnswerNumbers(
+    { blocks: [{ text: "efficiency dropped 45.3% in the second half" }] },
+    sources
+  );
+  assert.equal(audit.unsupported_claims.length, 1);
+  const flag = audit.unsupported_claims[0];
+  assert.ok(flag.includes("deficit:not-in-tool-results"), flag);
+  assert.ok(flag.includes("fix:drop-claim"), flag);
+  assert.ok(flag.includes("45.3%"), flag);
+});
+
+test("wrong-value candidate fires only under the three-condition guard", () => {
+  const sources = [makeSourceRecord("src-1", { rows: [{ rating: 100.0 }] })];
+  const audit = auditAnswerNumbers(
+    { blocks: [{ text: "the lineup posted a 115.0 offensive rating" }] },
+    sources
+  );
+  assert.equal(audit.unsupported_claims.length, 1);
+  const flag = audit.unsupported_claims[0];
+  assert.ok(flag.includes("deficit:wrong-value-candidate"), flag);
+  assert.ok(flag.includes("fix:recompute-in-sql"), flag);
+  assert.ok(flag.includes("100"), flag);
+  assert.ok(flag.includes("unverified candidate"), flag);
+});
+
+test("wrong-value degrades to drop-claim when two candidates share the band", () => {
+  const sources = [makeSourceRecord("src-1", { rows: [{ rating: 100.0, other_rating: 103.0 }] })];
+  const audit = auditAnswerNumbers(
+    { blocks: [{ text: "the lineup posted a 115.0 offensive rating" }] },
+    sources
+  );
+  const flag = audit.unsupported_claims[0] ?? "";
+  assert.ok(flag.includes("deficit:not-in-tool-results"), flag);
+  assert.ok(!flag.includes("wrong-value-candidate"), flag);
+});
+
+test("repeated magnitudes dedupe into one flag", () => {
+  const sources = [makeSourceRecord("src-1", { rows: [{ pts: 30.5 }] })];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [
+        { text: "efficiency fell 45.3% in the first half. Later, efficiency fell 45.3% in the second half too." },
+      ],
+    },
+    sources
+  );
+  const matching = audit.unsupported_claims.filter(flag => flag.includes("45.3%"));
+  assert.equal(matching.length, 1);
+});

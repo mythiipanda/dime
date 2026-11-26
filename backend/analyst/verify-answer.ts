@@ -636,12 +636,43 @@ export function auditAnswerNumbers(
             return matched ? [] : wantedKinds;
         })()
         : [];
+    const wrongValueCandidate = (claim: NumericClaim): number | null => {
+        const candidates = new Set<number>();
+        for (const value of claim.values) {
+            for (const [, columnValues] of evidenceColumns) {
+                for (const evidenceValue of columnValues) {
+                    if (!Number.isFinite(evidenceValue) || evidenceValue === 0)
+                        continue;
+                    if (numbersCloseScaled(value, evidenceValue))
+                        continue;
+                    const rel = Math.abs(evidenceValue - value) / Math.max(Math.abs(evidenceValue), 1e-9);
+                    if (rel >= 0.05 && rel <= 0.20)
+                        candidates.add(evidenceValue);
+                }
+            }
+        }
+        return candidates.size === 1 ? [...candidates][0] : null;
+    };
+    const unsupportedSeen = new Set<string>();
     const unsupported_claims = unsupported
         .filter(claim => !META_CONTEXT_RE.test(claim.context))
         .filter(claim => !echoesQuestion(claim))
         .filter(claim => /%|\$/.test(claim.raw) || claim.values.some(value => !Number.isInteger(value) || Math.abs(value) >= 100))
+        .filter(claim => {
+            const key = claim.values.map(value => value.toFixed(6)).join(",");
+            if (unsupportedSeen.has(key))
+                return false;
+            unsupportedSeen.add(key);
+            return true;
+        })
         .slice(0, 8)
-        .map(claim => `${claim.raw} (near "${claim.context.slice(0, 80)}")`);
+        .map(claim => {
+            const near = claim.context.slice(0, 80);
+            const candidate = wrongValueCandidate(claim);
+            if (candidate !== null)
+                return `${claim.raw} | deficit:wrong-value-candidate | fix:recompute-in-sql — evidence rows contain ${candidate} in this metric family (unverified candidate, not confirmed); verify with sql_exec and correct or drop this figure (near "${near}")`;
+            return `${claim.raw} | deficit:not-in-tool-results | fix:drop-claim — no tool output contains this figure; recompute it in sql_exec or delete it from the text (near "${near}")`;
+        });
     const unevidenced_asks = question
         ? auditEvidenceCoverage(question, input, (collectEvidenceText(sources) + " " + (extraEvidenceText ?? "")).toLowerCase()).slice(0, 10)
         : [];
