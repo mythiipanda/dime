@@ -16,6 +16,13 @@ WEEK_SECONDS = 7 * 24 * 3600
 def parse_wowy_frame(frame, player_id: int, season: str, fetched_at: str, entity: str):
     if frame is None or frame.height == 0:
         return None
+    cols = set(frame.columns)
+    if {"single_row_table_data", "multi_row_table_data", "win_loss_record"} <= cols:
+        row = frame.row(0, named=True)
+        multi = row.get("multi_row_table_data")
+        if not multi:
+            return None
+        return (row.get("single_row_table_data"), multi, None, "pbpstats", season, fetched_at, entity)
     rows = frame.iter_rows(named=True)
     multi = []
     single = None
