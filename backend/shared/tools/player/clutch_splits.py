@@ -203,6 +203,18 @@ def get_splits(player_id: str | int, season: str | None = None) -> dict[str, Any
     }
 
 
+def _player_name_key_sql(column: str) -> str:
+    ws = r"\s\p{Z}"
+    cleaned = (f"regexp_replace(strip_accents(lower({column})), "
+               f"'[^a-z0-9{ws}]', '', 'g')")
+    trimmed = (f"regexp_replace({cleaned}, "
+               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
+    suffixless = (f"regexp_replace({trimmed}, "
+                  f"'(?:^|[{ws}]+)(?:iii|ii|iv|jr|sr|v)"
+                  f"(?:[{ws}]+(?:iii|ii|iv|jr|sr|v))*$', '', 'g')")
+    return f"regexp_replace({suffixless}, '[{ws}]+', '', 'g')"
+
+
 @tool(description="Season-by-season RAPTOR and WAR for one player name. Warehouse only.")
 def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
     pkg = _pkg()
@@ -213,7 +225,8 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
     con = pkg.store.connect(read_only=True)
     try:
         q = (
-            "SELECT * FROM silver_raptor_player WHERE LOWER(PLAYER_NAME) = LOWER(?)"
+            "SELECT * FROM silver_raptor_player WHERE "
+            f"{_player_name_key_sql('PLAYER_NAME')} = {_player_name_key_sql('?')}"
             + (" AND _season = ?" if season else "")
             + " ORDER BY _season ASC LIMIT 25"
         )
@@ -225,7 +238,8 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
             teams = {
                 r[1]: r[0]
                 for r in con.execute(
-                    "SELECT TEAM, _season FROM silver_raptor_team WHERE LOWER(PLAYER_NAME) = LOWER(?) AND SEASON_TYPE = 'RS'",
+                    "SELECT TEAM, _season FROM silver_raptor_team WHERE "
+                    f"{_player_name_key_sql('PLAYER_NAME')} = {_player_name_key_sql('?')} AND SEASON_TYPE = 'RS'",
                     [name],
                 ).fetchall()
             }
@@ -346,7 +360,8 @@ def _raptor_row(player_id: int, name: str, season: str) -> dict[str, Any] | None
     rows = pkg._read_df(
         "SELECT PLAYER_NAME, POSS, MP, RAPTOR_BOX_TOTAL, RAPTOR_ONOFF_TOTAL, RAPTOR_TOTAL "
         "FROM silver_raptor_player WHERE _season = ? "
-        "AND (CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR) OR LOWER(PLAYER_NAME) = LOWER(?)) LIMIT 1",
+        "AND (CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR) OR "
+        f"{_player_name_key_sql('PLAYER_NAME')} = {_player_name_key_sql('?')}) LIMIT 1",
         [season, str(player_id), name],
     )
     return rows[0] if rows else None
@@ -357,7 +372,8 @@ def _stale_raptor(player_id: int, name: str, season: str) -> dict[str, Any] | No
     season = pkg.resolve_season(season)
     rows = pkg._read_df(
         "SELECT _season, RAPTOR_TOTAL FROM silver_raptor_player WHERE _season < ? AND RAPTOR_TOTAL IS NOT NULL "
-        "AND (CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR) OR LOWER(PLAYER_NAME) = LOWER(?)) "
+        "AND (CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR) OR "
+        f"{_player_name_key_sql('PLAYER_NAME')} = {_player_name_key_sql('?')}) "
         "ORDER BY _season DESC LIMIT 1",
         [season, str(player_id), name],
     )
