@@ -38,6 +38,7 @@ SEEDERS = [
     ("games_missed", "seed_games_missed.py", [], False),
     ("combine_history", "seed_combine_history.py", [], False),
     ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
+    ("wowy_derived", "seed_wowy_derived.py", [], False),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
     ("boxscores_incremental", "backfill.py", ["--seasons", "2026-27", "--incremental", "--no-lineups"], True),
     ("four_factors", "seed_four_factors.py", ["--season"], True),
