@@ -63,3 +63,10 @@ def test_skill_teaches_summary_stat_home_and_no_prose_markdown():
     src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
     assert "labeled summary row" in src
     assert "Never present data as a prose markdown table" in src
+
+
+
+def test_skill_teaches_stipulation_echo():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "Echo every methodological stipulation" in src
+    assert "uncovered ask" in src
