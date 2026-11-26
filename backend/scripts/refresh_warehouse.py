@@ -37,6 +37,7 @@ SEEDERS = [
     ("combine_history", "seed_combine_history.py", [], False),
     ("stints", "seed_stints.py", ["--budget-seconds", "2700"], True),
     ("scoreboard", "seed_scoreboard_2025_26.py", [], False),
+    ("boxscores_incremental", "backfill.py", ["--seasons", "2026-27", "--incremental", "--no-lineups"], True),
     ("shots", "seed_shots_2025_26.py", [], False),
     ("repair_shot_names", "repair_shot_names.py", [], False),
     ("draft_capital", "seed_draft_capital.py", [], False),
