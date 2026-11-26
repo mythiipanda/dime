@@ -10,5 +10,5 @@ TEST = BACKEND / "tests" / "test_skill_content_pins.py"
 spec = importlib.util.spec_from_file_location("skill_content_pins_test", TEST)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-module.PINS.write_bytes(module._serialize(module._snapshot()))
+module.PINS.write_bytes(module._serialize(module._normalized_snapshot()))
 print(f"wrote {module.PINS}")

@@ -1,3 +1,2 @@
 backend/tests/tool_schema_golden.json text eol=lf
 backend/tests/skill_content_pins.json text eol=lf
-backend/analyst/skills/*/SKILL.md text eol=lf
