@@ -2,7 +2,7 @@ FROM node:22.19.0-bookworm-slim AS analyst-deps
 WORKDIR /analyst
 COPY analyst/package.json analyst/package-lock.json ./
 RUN npm ci --ignore-scripts
-COPY analyst/*.py analyst/*.ts analyst/tsconfig.json ./
+COPY analyst/*.py analyst/*.ts analyst/tsconfig.json analyst/gen-manifest.mjs ./
 COPY analyst/tools ./tools
 COPY analyst/http-assets ./http-assets
 RUN npm run build && npm prune --omit=dev --ignore-scripts && node --input-type=module -e "await import('./dist/runtime.js')"
