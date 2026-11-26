@@ -2,6 +2,7 @@ from langchain_core.tools import tool
 from typing import Any
 
 from .. import store
+from ..contracts import player_name_key_sql as _player_name_key_sql
 
 END_MIN = 2015
 END_MAX = 2026
@@ -72,17 +73,6 @@ def _columns(table: str) -> set[str]:
                 pass
     except Exception:
         return set()
-
-def _player_name_key_sql(column: str) -> str:
-    ws = r"\s\p{Z}"
-    cleaned = (f"regexp_replace(strip_accents(lower({column})), "
-               f"'[^a-z0-9{ws}]', '', 'g')")
-    trimmed = (f"regexp_replace({cleaned}, "
-               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
-    suffixless = (f"regexp_replace({trimmed}, "
-                  f"'(?:^|[{ws}]+)(?:iii|ii|iv|jr|sr|v)"
-                  f"(?:[{ws}]+(?:iii|ii|iv|jr|sr|v))*$', '', 'g')")
-    return f"regexp_replace({suffixless}, '[{ws}]+', '', 'g')"
 
 def raptor_map(name: str = "", pid: int = 0) -> dict[int, float]:
     if "silver_raptor_player" not in _tables():

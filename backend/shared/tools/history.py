@@ -5,6 +5,7 @@ from typing import Any, Union
 from langchain_core.tools import tool
 
 from .. import store
+from ..contracts import player_name_key_sql as _player_name_key_sql
 
 MIN_YEAR, MAX_YEAR = 2015, 2026
 MIN_GP = 20
@@ -94,17 +95,6 @@ def normalize_mode(mode: object) -> str | None:
     if not text:
         return "leaders"
     return MODE_ALIASES.get(text)
-
-def _player_name_key_sql(column: str) -> str:
-    ws = r"\s\p{Z}"
-    cleaned = (f"regexp_replace(strip_accents(lower({column})), "
-               f"'[^a-z0-9{ws}]', '', 'g')")
-    trimmed = (f"regexp_replace({cleaned}, "
-               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
-    suffixless = (f"regexp_replace({trimmed}, "
-                  f"'(?:^|[{ws}]+)(?:iii|ii|iv|jr|sr|v)"
-                  f"(?:[{ws}]+(?:iii|ii|iv|jr|sr|v))*$', '', 'g')")
-    return f"regexp_replace({suffixless}, '[{ws}]+', '', 'g')"
 
 RAPTOR_JOIN = ("LEFT JOIN silver_raptor_player r ON "
                f"{_player_name_key_sql('r.PLAYER_NAME')} = "

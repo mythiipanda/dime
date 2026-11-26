@@ -4,6 +4,8 @@ from typing import Any
 import polars as pl
 from langchain_core.tools import tool
 
+from ...contracts import player_name_key_sql as _player_name_key_sql
+
 
 def _pkg():
     return sys.modules[__package__]
@@ -201,18 +203,6 @@ def get_splits(player_id: str | int, season: str | None = None) -> dict[str, Any
         "rows": rows,
         "meta": {"source": meta_source, "fetched_at": meta_fetched, "rows": len(rows), "cached": False},
     }
-
-
-def _player_name_key_sql(column: str) -> str:
-    ws = r"\s\p{Z}"
-    cleaned = (f"regexp_replace(strip_accents(lower({column})), "
-               f"'[^a-z0-9{ws}]', '', 'g')")
-    trimmed = (f"regexp_replace({cleaned}, "
-               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
-    suffixless = (f"regexp_replace({trimmed}, "
-                  f"'(?:^|[{ws}]+)(?:iii|ii|iv|jr|sr|v)"
-                  f"(?:[{ws}]+(?:iii|ii|iv|jr|sr|v))*$', '', 'g')")
-    return f"regexp_replace({suffixless}, '[{ws}]+', '', 'g')"
 
 
 @tool(description="Season-by-season RAPTOR and WAR for one player name. Warehouse only.")

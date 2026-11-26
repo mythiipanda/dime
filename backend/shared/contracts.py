@@ -13,6 +13,18 @@ def normalize_name(value: object) -> str:
     return ''.join(words)
 
 
+def player_name_key_sql(column: str) -> str:
+    ws = r"\s\p{Z}"
+    cleaned = (f"regexp_replace(strip_accents(lower({column})), "
+               f"'[^a-z0-9{ws}]', '', 'g')")
+    trimmed = (f"regexp_replace({cleaned}, "
+               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
+    suffixless = (f"regexp_replace({trimmed}, "
+                  f"'(?:^|[{ws}]+)(?:iii|ii|iv|jr|sr|v)"
+                  f"(?:[{ws}]+(?:iii|ii|iv|jr|sr|v))*$', '', 'g')")
+    return f"regexp_replace({suffixless}, '[{ws}]+', '', 'g')"
+
+
 def resolve_salary_column(columns: set[str], season: str | None) -> str:
     if season:
         column = 'SALARY_' + season.replace('-', '_')
