@@ -17,9 +17,12 @@ DEF = [f"def_player_{i}" for i in range(1, 6)]
 
 def main() -> None:
     args = argparse.ArgumentParser()
-    args.add_argument("--season", default="2025-26")
+    args.add_argument("--season", default=None)
     args.add_argument("--min-poss", type=int, default=500)
     ns = args.parse_args()
+    if not ns.season:
+        from shared.tools._core import current_season
+        ns.season = current_season() or "2025-26"
 
     con = store.connect()
     try:
