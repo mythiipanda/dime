@@ -21,3 +21,16 @@ def test_skill_teaches_artifact_prose_parity():
     src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
     assert "Every figure stated in the prose blocks also lives in an artifact row" in src
     assert "missing_in_artifacts" in src
+
+
+
+def test_skill_teaches_verbatim_no_rounding():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "Never compress or round a figure in prose" in src
+    assert "$4.447M" in src
+
+
+def test_skill_teaches_batch_recheck_before_resubmission():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "re-check ALL prose figures" in src
+    assert "not only the figure the last rejection flagged" in src
