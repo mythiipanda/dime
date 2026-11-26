@@ -184,10 +184,12 @@ def _query_current(spec: dict[str, Any], limit: int) -> list[dict[str, Any]]:
         total = CURRENT_TOTALS[col]
         rows = store._read_df(
             f"""SELECT PLAYER AS player_name, TEAM AS team_abbreviation,
-            2026 AS season, GP AS gp,
+            (SELECT CAST(SUBSTR(MAX(_season), 1, 4) AS INT) + 1
+             FROM silver_leaders_pts) AS season, GP AS gp,
             CAST({total} AS DOUBLE) / NULLIF(CAST(GP AS DOUBLE), 0) AS value
             FROM silver_leaders_pts
-            WHERE _season = '2025-26' AND GP >= {MIN_GP}
+            WHERE _season = (SELECT MAX(_season) FROM silver_leaders_pts)
+            AND GP >= {MIN_GP}
             AND {total} IS NOT NULL
             ORDER BY value DESC LIMIT {limit}""",
             [],
@@ -198,10 +200,12 @@ def _query_current(spec: dict[str, Any], limit: int) -> list[dict[str, Any]]:
         denom = {"fg_pct": "FGA", "fg3_pct": "FG3A", "ft_pct": "FTA"}[col]
         rows = store._read_df(
             f"""SELECT PLAYER AS player_name, TEAM AS team_abbreviation,
-            2026 AS season, GP AS gp,
+            (SELECT CAST(SUBSTR(MAX(_season), 1, 4) AS INT) + 1
+             FROM silver_leaders_pts) AS season, GP AS gp,
             CAST({rate} AS DOUBLE) AS value
             FROM silver_leaders_pts
-            WHERE _season = '2025-26' AND GP >= {MIN_GP}
+            WHERE _season = (SELECT MAX(_season) FROM silver_leaders_pts)
+            AND GP >= {MIN_GP}
             AND {rate} IS NOT NULL AND {denom} >= 2
             ORDER BY value DESC LIMIT {limit}""",
             [],
@@ -315,7 +319,7 @@ def get_historical_leaders(category: str = "pts",
         "estimated": True,
         "values": "per-game season averages; RAPTOR from five-year-old model, not current form",
         "raptor_available": raptor,
-        "coverage": "2014-15 through 2024-25 from warehouse history; 2025-26 from current leaders",
+        "coverage": "warehouse history plus the latest season present in current leaders",
     }
     if warnings:
         meta["warning"] = "; ".join(warnings)
