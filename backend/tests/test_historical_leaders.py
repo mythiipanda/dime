@@ -2,6 +2,9 @@
 import sys
 from pathlib import Path
 
+import duckdb
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def _warehouse_has_history() -> bool:
@@ -199,3 +202,89 @@ def test_rows_carry_season_label_and_display():
     assert row["season_label"] == f"{row['season'] - 1}-{str(row['season'])[-2:]}"
     assert row["display"] == f"{row['value']:.3f}"
     assert res["meta"]["display_range"] == "2023-24 to 2024-25"
+
+@pytest.fixture()
+def cross_feed_history_warehouse(tmp_path, monkeypatch):
+    from shared import store
+
+    db = tmp_path / "history.duckdb"
+    con = duckdb.connect(str(db))
+    try:
+        con.execute("""
+            CREATE TABLE silver_hist_player_seasons (
+                player_name VARCHAR, team_abbreviation VARCHAR, season BIGINT,
+                gp BIGINT, min DOUBLE, pts DOUBLE
+            )
+        """)
+        con.execute("""
+            CREATE TABLE silver_raptor_player (
+                PLAYER_NAME VARCHAR, SEASON BIGINT, RAPTOR_TOTAL DOUBLE
+            )
+        """)
+        con.executemany(
+            "INSERT INTO silver_hist_player_seasons VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                ("Milos Vesely", "DEN", 2024, 70, 30.0, 24.0),
+                ("Dangelo Morris", "BOS", 2024, 72, 31.0, 23.0),
+                ("Marcus Bell", "NYK", 2024, 74, 32.0, 22.0),
+                ("Emir Kovic", "CHI", 2024, 76, 33.0, 21.0),
+            ],
+        )
+        con.executemany(
+            "INSERT INTO silver_raptor_player VALUES (?, ?, ?)",
+            [
+                ("Miloš Veselý", 2024, 8.4),
+                ("D'Angelo Morris", 2024, 7.3),
+                ("Marcus Bell Jr.", 2024, 6.2),
+                ("Emir Ković", 2023, 9.9),
+            ],
+        )
+    finally:
+        con.close()
+    monkeypatch.setattr(store, "DB_PATH", db)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    store.warehouse_pool_clear()
+    try:
+        yield db
+    finally:
+        store.warehouse_pool_clear()
+
+def test_cross_feed_raptor_join_normalizes_names_and_keeps_season(
+        cross_feed_history_warehouse):
+    from shared.tools.history import get_historical_leaders
+
+    res = get_historical_leaders.invoke({
+        "category": "pts", "start_season": 2024,
+        "end_season": 2024, "limit": 10, "mode": "best",
+    })
+    assert res["ok"] is True
+    leaders = res["rows"]["leaders"]
+    by_player = {row["player"]: row for row in leaders}
+    assert by_player["Milos Vesely"]["raptor"] == 8.4
+    assert by_player["Dangelo Morris"]["raptor"] == 7.3
+    assert by_player["Marcus Bell"]["raptor"] == 6.2
+    assert "raptor" not in by_player["Emir Kovic"]
+
+def test_player_name_key_sql_matches_contract_normalization():
+    from shared.contracts import normalize_name
+    from shared.tools.history import _player_name_key_sql
+
+    names = [
+        "Miloš Veselý",
+        "D'Angelo Morris",
+        "Marcus Bell Jr.",
+        "Marcus Bell Jr III",
+        "  Milos   Vesely  ",
+        "Anne-Marie D'Souza Sr.",
+        "Jokic\u0301",
+        "Marcus\u00a0Bell Jr.",
+    ]
+    con = duckdb.connect(":memory:")
+    try:
+        for name in names:
+            key = con.execute(
+                f"SELECT {_player_name_key_sql('?')}", [name]
+            ).fetchone()[0]
+            assert key == normalize_name(name)
+    finally:
+        con.close()
