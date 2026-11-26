@@ -303,6 +303,7 @@ const skillOutputSchema = Type.Object({
 export function loadSkillTool(skills: readonly Skill[], onLoad?: (name: string) => void) {
     const byName = new Map(skills.map(skill => [skill.name.toLowerCase(), skill]));
     const available = skills.map(skill => skill.name).sort();
+    const loadCounts = new Map<string, number>();
     return defineTool({
         name: "load_skill", label: "Load skill",
         description: "Load the full markdown playbook for an NBA analytical skill by name (returns {ok, name, content, available_skills}).",
@@ -316,6 +317,18 @@ export function loadSkillTool(skills: readonly Skill[], onLoad?: (name: string) 
                     content: [{ type: "text", text }],
                     details: undefined,
                     structuredContent: { ok: false, name, content: text, available_skills: available },
+                };
+            }
+            const key = skill.name.toLowerCase();
+            const priorLoads = loadCounts.get(key) ?? 0;
+            loadCounts.set(key, priorLoads + 1);
+            if (priorLoads === 1) {
+                onLoad?.(skill.name);
+                const notice = `Skill '${skill.name}' is already loaded — its full content is still in context above (skill results are never elided). Proceed with it; re-loading changes nothing.`;
+                return {
+                    content: [{ type: "text", text: notice }],
+                    details: undefined,
+                    structuredContent: { ok: true, name: skill.name, content: notice, available_skills: available },
                 };
             }
             const text = readFileSync(skill.filePath, "utf8");
