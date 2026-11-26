@@ -45,7 +45,7 @@ GROUP BY _season ORDER BY _season
 ## 4. Canonical Lineup Units
 
 - A five-man unit is canonical only after parsing `group_id` into unique player IDs, requiring exactly five, sorting the IDs, and deduplicating to one row per canonical key per team/season/variant.
-- DuckDB has no `OVERLAPS` predicate and no `array_overlaps`/`list_overlap` function. Canonicalize player sets with `array_to_string(list_sort(list_distinct(string_split(group_id, ' - '))), ',')`; test membership overlap with `list_has_any`/`list_has_all` or `len(list_intersect(...))`.
+- DuckDB has no `OVERLAPS` predicate and no `array_overlaps`/`list_overlap` function. Canonicalize player sets with `array_to_string(list_sort(list_distinct(list_filter(list_transform(string_split(group_id, '-'), x -> trim(x)), x -> x <> ''))), ',')`; test membership overlap with `list_has_any`/`list_has_all` or `len(list_intersect(...))`.
 - Rank units by the requested measure with deterministic tie-breaks (usually ascending player IDs or lexicographic unit key), and report minutes/possessions next to every rating.
 - For continuity or survival questions, intersect canonical unit keys across seasons or windows instead of comparing display names or unsorted `group_id` strings.
 
