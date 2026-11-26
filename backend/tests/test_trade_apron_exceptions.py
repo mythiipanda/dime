@@ -1,4 +1,7 @@
+import json
+
 import duckdb
+import pytest
 
 
 def _seed(monkeypatch, tmp_path, salaries):
@@ -481,6 +484,57 @@ def test_multiple_tpes_can_cover_disjoint_incoming_players(
     assert out["legal"] is True, out["issues"]
 
 
+def test_required_tpe_bins_are_not_deduped_with_matching(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 208_100_000, [("Alpha One", 5_000_000)])
+          + _roster("MIA", 150_000_000,
+                    [("Beta Two", 3_000_000),
+                     ("Gamma Three", 3_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS",'
+                '"players":"Beta Two, Gamma Three"}]',
+        "tpe": '[{"team":"BOS","amount":5000000,"kind":"ordinary",'
+               '"origin_season":"2026-27"},'
+               '{"team":"BOS","amount":4000000,"kind":"ordinary",'
+               '"origin_season":"2026-27"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["allowed_incoming"] == 5_000_000
+    assert row["matching_ok"] is True
+
+
+def test_matching_plus_one_tpe_covers_disjoint_review_shape(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 208_100_000, [("Alpha One", 14_000_000)])
+          + _roster("MIA", 150_000_000,
+                    [("Beta Two", 8_000_000),
+                     ("Gamma Three", 6_000_000),
+                     ("Delta Four", 1_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS",'
+                '"players":"Beta Two, Gamma Three, Delta Four"}]',
+        "tpe": '[{"team":"BOS","amount":6000000,"kind":"ordinary",'
+               '"origin_season":"2026-27"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["allowed_incoming"] == 14_000_000
+    assert row["matching_ok"] is True
+
+
 def test_prior_year_sign_and_trade_tpe_keeps_first_apron_timing(
         monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
@@ -534,6 +588,51 @@ def test_tpe_rejects_unknown_kind():
     })
     assert out["ok"] is False
     assert "ordinary or sign_and_trade" in out["error"]
+
+
+def _tpe_validation_out(row):
+    from shared.tools import get_trade_legality
+
+    return get_trade_legality.invoke({
+        "legs": '[{"from":"MIA","to":"BOS","players":"Alpha One"}]',
+        "tpe": json.dumps([row]),
+        "season": "2026-27",
+    })
+
+
+@pytest.mark.parametrize("origin_season", ["2026-99", "2026 garbage"])
+def test_tpe_rejects_invalid_origin_season(origin_season):
+    out = _tpe_validation_out({
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_season": origin_season,
+    })
+    assert out["ok"] is False
+    assert "origin_season must be YYYY-YY with consecutive years" in out["error"]
+
+
+@pytest.mark.parametrize("row", [
+    {"team": "BOS", "amount": 8_000_000.9, "kind": "ordinary",
+     "origin_season": "2026-27"},
+    {"team": "BOS", "amount": True, "kind": "ordinary",
+     "origin_season": "2026-27"},
+    {"team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+     "origin_year": True},
+])
+def test_tpe_rejects_non_integer_numeric_values(row):
+    out = _tpe_validation_out(row)
+    assert out["ok"] is False
+    assert "integer" in out["error"]
+
+
+@pytest.mark.parametrize("key", [
+    "amount", "kind", "origin_year", "origin_season",
+])
+def test_tpe_rejects_explicit_null_typed_keys(key):
+    row = {"team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+           "origin_season": "2026-27", key: None}
+    out = _tpe_validation_out(row)
+    assert out["ok"] is False
+    assert "explicit null" in out["error"]
 
 
 def test_cap_scenario_crossing_first_apron_uses_post_move_strict_matching(

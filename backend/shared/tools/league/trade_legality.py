@@ -92,19 +92,28 @@ def _parse_cash(rows: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _strict_integer(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def _tpe_origin_year(raw: dict[str, Any]) -> tuple[int | None, str | None]:
     year = None
-    if raw.get("origin_year") not in (None, ""):
-        try:
-            year = int(raw.get("origin_year"))
-        except (TypeError, ValueError):
+    if "origin_year" in raw:
+        year = _strict_integer(raw.get("origin_year"))
+        if year is None:
             return None, "origin_year must be an integer season-start year"
     season_year = None
-    if raw.get("origin_season") not in (None, ""):
-        match = _re.match(r"(\d{4})", str(raw.get("origin_season")))
+    if "origin_season" in raw:
+        value = raw.get("origin_season")
+        match = (_re.fullmatch(r"(\d{4})-(\d{2})", value)
+                 if isinstance(value, str) else None)
         if not match:
-            return None, "origin_season must start with a four-digit year"
+            return None, "origin_season must be YYYY-YY with consecutive years"
         season_year = int(match.group(1))
+        if int(match.group(2)) != (season_year + 1) % 100:
+            return None, "origin_season must be YYYY-YY with consecutive years"
     if year is not None and season_year is not None and year != season_year:
         return None, "origin_year and origin_season disagree"
     return year if year is not None else season_year, None
@@ -117,16 +126,22 @@ def _parse_tpe(rows: Any) -> tuple[list[dict[str, Any]], str | None]:
     for index, raw in enumerate(rows or [], 1):
         if not isinstance(raw, dict):
             return [], f"tpe row {index} is not an object"
+        null_keys = [key for key in ("amount", "kind", "origin_year",
+                                     "origin_season")
+                     if key in raw and raw[key] is None]
+        if null_keys:
+            return [], (f"tpe row {index} has explicit null for "
+                        f"{', '.join(null_keys)}")
         team = _leg_team(raw.get("team"))
         if not team:
             return [], f"tpe row {index} needs a team"
-        try:
-            amount = int(raw.get("amount"))
-        except (TypeError, ValueError):
+        amount = _strict_integer(raw.get("amount"))
+        if amount is None:
             return [], f"tpe row {index} needs an integer amount"
         if amount <= 0:
             return [], f"tpe row {index} amount must be positive"
-        key = str(raw.get("kind") or "ordinary").strip().lower()
+        raw_kind = raw.get("kind", "ordinary")
+        key = (raw_kind.strip().lower() if isinstance(raw_kind, str) else "")
         key = key.replace("-", "_").replace(" ", "_")
         kind = _TPE_KINDS.get(key)
         if kind is None:
@@ -181,9 +196,10 @@ def _placement_fits(salaries: list[int], capacities: list[int],
         salary = ordered[index]
         if salary <= 0:
             return place(index + 1, remaining, used)
-        seen: set[tuple[int, bool]] = set()
+        seen: set[tuple[int, bool, bool]] = set()
         for position, capacity in enumerate(remaining):
-            marker = (capacity, bool(used & (1 << position)))
+            marker = (capacity, bool(used & (1 << position)),
+                      bool(required_bins & (1 << position)))
             if capacity < salary or marker in seen:
                 continue
             seen.add(marker)
@@ -713,7 +729,9 @@ def _build_checks(team_rows: dict[str, Any],
     '(3-year minimum, BYC handled), "cash" = [{"from","to","amount"}], '
     '"tpe" = [{"team","amount","kind":"ordinary|sign_and_trade",'
     '"origin_season":"YYYY-YY"}]; rows are declared uses, not inventory. '
-    'Amount-only legacy rows assume an ordinary current-season origin. '
+    'Present keys must be non-null; omit unused optional keys. Amount and '
+    'origin_year must be JSON integers. Amount-only legacy rows assume an '
+    'ordinary current-season origin. '
     'TPE capacity is amount plus the '
     'CBA $250k cushion, reduced to $0 over the first apron; entries '
     'older than the prior season are treated as expired. Checks 2023 '
