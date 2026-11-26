@@ -671,7 +671,7 @@
     },
     "get_shot_zones": {
       "name": "get_shot_zones",
-      "description": "Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones below min_attempts (default 50, clamped 10..200) are excluded. Warehouse-backed with live fallback.",
+      "description": "Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones below min_attempts (default 50, clamped 10..200) are excluded. Zones here are geometric court regions, not basketball-reference distance buckets: when the ask names silver_zone_splits or distance buckets (0-3ft, 3-10ft, 10-16ft, 16ft-3pt, 3pt), query silver_zone_splits via sql_exec instead. Warehouse-backed with live fallback.",
       "args_schema": {
         "description": "Zone splits for one player id: rim, midrange, three with shares.",
         "properties": {
@@ -716,7 +716,7 @@
     },
     "get_phase_shot_splits": {
       "name": "get_phase_shot_splits",
-      "description": "Regular season vs playoffs shooting splits for one player or team in one season: zone diet and eFG plus shot-family splits (catch-and-shoot vs pull-up vs rim) with playoff-minus-regular deltas in percentage points. Warehouse-first from silver_hist_shots; measured tracking splits appear when seeded. Give exactly one of player or team.",
+      "description": "Regular season vs playoffs shooting splits for one player or team in one season: zone diet and eFG plus shot-family splits (catch-and-shoot vs pull-up vs rim) with playoff-minus-regular deltas in percentage points. Warehouse-first from silver_hist_shots; measured tracking splits appear when seeded. Give exactly one of player or team. Zones here are geometric court regions, not basketball-reference distance buckets: when the ask names silver_zone_splits or distance buckets (0-3ft, 3-10ft, 10-16ft, 16ft-3pt, 3pt), query silver_zone_splits via sql_exec instead.",
       "args_schema": {
         "description": "Regular season vs playoffs shooting splits for one player or team: zone eFG/share plus catch-and-shoot vs pull-up family splits with deltas and cited warehouse sources.",
         "properties": {
@@ -2869,7 +2869,7 @@
     },
     "get_zone_deltas": {
       "name": "get_zone_deltas",
-      "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025).",
+      "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs the\npooled league-average FG% for the same season, with delta in\npercentage points. Zones below min_attempts (default 50, clamped\n10..200) are excluded. Season is the end year (2010..2025). Zones here are geometric court regions, not basketball-reference distance buckets: when the ask names silver_zone_splits or distance buckets (0-3ft, 3-10ft, 10-16ft, 16ft-3pt, 3pt), query silver_zone_splits via sql_exec instead.",
       "args_schema": {
         "description": "Player-vs-league shooting-zone efficiency: per-zone FG% vs pooled league-average FG% with percentage-point deltas across court zones.",
         "properties": {
