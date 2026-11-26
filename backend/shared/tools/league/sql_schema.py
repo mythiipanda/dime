@@ -61,7 +61,7 @@ def _describe_warehouse_schema(cols: dict[str, dict]) -> str:
             line += (". Variant rows: MUST filter season_type ('regular-season', 'playoffs'),"
                      " measure_type ('base', 'advanced', 'defense', 'misc', 'opponent', 'scoring', 'usage'),"
                      " per_mode ('totals', 'pergame'). Default: regular-season/base/totals."
-                     " Never aggregate across variants. Ratings and pace are populated only in advanced;"
+                     " Never aggregate across variants: each unit appears up to 28 times (2x7x2), so unfiltered sums multiply minutes and possessions. Ratings and pace are populated only in advanced;"
                      " join on group_id, team_id, _season, season_type, per_mode with measure_type='advanced'.")
         omitted = truncated.get(table)
         if omitted:
