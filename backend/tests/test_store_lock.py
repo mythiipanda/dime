@@ -48,6 +48,45 @@ def test_read_write_connect_retries_through_writer_lock(tmp_path,
     finally:
         con.close()
 
+def _hold_read_conn(path: str, hold_s: float):
+    con = duckdb.connect(path, read_only=True)
+    time.sleep(hold_s)
+    con.close()
+
+
+def test_write_connect_retries_through_racing_read_lock(tmp_path,
+                                                        monkeypatch):
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "lockr.duckdb")
+    duckdb.connect(str(tmp_path / "lockr.duckdb")).close()
+    t = threading.Thread(target=_hold_read_conn,
+                         args=(str(tmp_path / "lockr.duckdb"), 0.8))
+    t.start()
+    time.sleep(0.2)
+    try:
+        con = store.connect(read_only=False)
+    finally:
+        t.join()
+    try:
+        assert con.execute("SELECT 1").fetchone()[0] == 1
+    finally:
+        con.close()
+
+
+def test_write_connect_still_fails_when_read_truly_held(tmp_path,
+                                                        monkeypatch):
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "lockh.duckdb")
+    duckdb.connect(str(tmp_path / "lockh.duckdb")).close()
+    held = duckdb.connect(str(tmp_path / "lockh.duckdb"), read_only=True)
+    try:
+        try:
+            store.connect(read_only=False)
+            raise AssertionError("write must fail while a read is held")
+        except store.WriteConflictError:
+            pass
+    finally:
+        held.close()
+
+
 def test_no_contention_connects_immediately(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "DB_PATH", tmp_path / "free.duckdb")
     con = store.connect()
