@@ -8,9 +8,9 @@ description: Analyze 5-man lineup net ratings with sample-size caveats, possessi
 Use this playbook for 5-man lineup evaluation, two-player With-Or-Without-You (WOWY) synergy splits, bench survival analysis, and playoff rotation tightening.
 
 
-## 0. Lineup table shape — read before writing any lineup query
+## 0. Warehouse reference: lineup table shape
 
-Lineup unit identity columns are `GROUP_ID` / `GROUP_NAME` (uppercase in `silver_lineups`, lowercase in `silver_hist_lineups`) — `lineup_id`, `lineup_name`, and `lineup_players` do not exist in any table. In `silver_lineups` the table multiplexes on `MEASURE`: `MEASURE='advanced'` rows carry OFF/DEF/NET_RATING, POSS, PIE; `MEASURE='base'` rows carry counting stats with NULL ratings — a rating screen without the measure filter returns mostly NULLs. Season-scoped or multi-season lineup asks belong in `silver_hist_lineups`; player season-aggregate tables (`silver_hist_player_seasons` etc.) carry no lineup-unit data at all, so a lineup question routed there is unanswerable no matter how the query is shaped.
+Lineup unit identity columns are `GROUP_ID` / `GROUP_NAME` (uppercase in `silver_lineups`, lowercase in `silver_hist_lineups`) — `lineup_id`, `lineup_name`, and `lineup_players` do not exist in any table. In `silver_lineups` the table multiplexes on `MEASURE`: `MEASURE='advanced'` rows carry OFF/DEF/NET_RATING, POSS, PIE; `MEASURE='base'` rows carry counting stats with NULL ratings — a rating screen without the measure filter returns mostly NULLs. `silver_hist_lineups` is the multi-season coverage table; player season-aggregate tables (`silver_hist_player_seasons` etc.) carry no lineup-unit data.
 
 ## Single-pass lineup screens
 

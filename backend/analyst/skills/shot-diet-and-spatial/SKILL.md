@@ -3,17 +3,15 @@ name: shot-diet-and-spatial
 description: Analyze player and team spatial shot charts, shooting zone distributions, expected value per shot, and rim pressure dynamics.
 ---
 
-## 0. Route the data need to the right table first
+## 0. Warehouse reference: where shot-location data lives
 
-Zone, distance, and shot-location questions resolve ONLY in shot-grain tables — season-aggregate tables carry totals, never locations. Routing a zone question to a season table can only end in fabricated columns (`rim_fga`, `0-3ft_fga`, `zone_share` do not exist anywhere):
-
-| Data need | Correct table | Never |
+| Table | Grain | What it carries |
 |---|---|---|
-| Shot volume/efficiency by zone, distance bands, rim rate, corner vs above-the-break | `silver_hist_shots` (shot grain — `shot_value`, `shot_distance`, `x_legacy`/`y_legacy`, multi-season) or `silver_zone_splits` (pre-aggregated zone ranges per player-season) or `silver_shots` (current season) | `silver_hist_player_seasons`, `silver_player_season`, `silver_advanced`, `silver_leaders_*` — these carry season totals only (fg3m/fg3a are season totals, not zone breakdowns) |
-| Shot defense — what a team concedes by location | the same shot-grain tables filtered by the DEFENDING team, never team season aggregates | `silver_team_ratings` / `silver_hist_team_seasons` for anything location-shaped |
+| `silver_hist_shots` | one row per shot attempt, multi-season | `shot_value`, `shot_distance`, `x_legacy`/`y_legacy`, shooting `team_id`/`team_tricode` — the defending team is the opponent in the same `game_id` |
+| `silver_shots` | one row per shot attempt, current season | `SHOT_ZONE_BASIC`/`SHOT_ZONE_AREA`/`SHOT_ZONE_RANGE`, `SHOT_DISTANCE`, `LOC_X`/`LOC_Y`, `HTM`/`VTM` (home/away — the defender is the non-shooting team) |
+| `silver_zone_splits` | pre-aggregated zone ranges per player-season | `ZONE` × `FGA`/`FGM`/`FG_PCT` rows |
 
-If the first query on a zone question hits a season-aggregate table, the table is wrong no matter what the columns look like — rewrite against the shot-grain table instead of probing information_schema for columns that cannot exist.
-
+Season-aggregate tables (`silver_hist_player_seasons`, `silver_player_season`, `silver_advanced`, `silver_leaders_*`, `silver_team_ratings`) carry totals only — `fg3m`/`fg3a` are season totals, not zone breakdowns. Columns like `rim_fga`, `0-3ft_fga`, or `zone_share` do not exist in any table.
 
 # Shot Diet & Spatial Analytics Playbook
 
