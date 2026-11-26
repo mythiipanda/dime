@@ -297,10 +297,16 @@ def _column_semantics(table: str, name: str) -> tuple[str, str]:
     return ("", "")
 
 
+def _warehouse_cache_key() -> str:
+    store = _pkg().store
+    return str(getattr(store, "DB_PATH", "") or "")
+
+
 def _get_warehouse_schema() -> tuple[list[str], dict[str, dict[str, dict]]]:
     now = _time.monotonic()
     at = float(_schema_cache.get("at") or 0.0)
-    if now - at < _SCHEMA_TTL_S and _schema_cache.get("present"):
+    if (now - at < _SCHEMA_TTL_S and _schema_cache.get("present")
+            and _schema_cache.get("db") == _warehouse_cache_key()):
         _schema_cache_stats["hits"] += 1
         return (list(_schema_cache["present"]),
                 {k: dict(v) for k, v in
@@ -321,6 +327,7 @@ def _get_warehouse_schema() -> tuple[list[str], dict[str, dict[str, dict]]]:
     finally:
         con.close()
     _schema_cache["at"] = now
+    _schema_cache["db"] = _warehouse_cache_key()
     _schema_cache["present"] = present
     _schema_cache["cols"] = cols
     return (list(present),
