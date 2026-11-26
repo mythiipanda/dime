@@ -85,7 +85,7 @@ A requested metric or dataset may not exist in the warehouse at all (for example
 | `silver_impact` | BPM, OBPM, DBPM, VORP, WS/WS48 per player-season (uppercase PLAYER_NAME/TEAM columns), 2021-22 through 2024-25. | Current-season impact — not yet ingested for 2025-26. |
 | `silver_raptor_player` / `silver_raptor_team` | Historical RAPTOR/PREDATOR ratings and WAR per player — the season column is `SEASON` as a start-year integer (1977 through 2022), not `_season`. | Current seasons — ingest ends at start-year 2022. |
 | `silver_four_factors_team` | Team four-factors per season: EFG_PCT, TOV_PCT, ORB_PCT, FT_RATE plus opponent counterparts, keyed by TEAM + `_season`, 2025-26 and 2026-27. | Historical four-factors before 2025-26. |
-| `silver_four_factors` | Thin experimental table (2 rows) of on/off four-factor results — not a general source. | Anything beyond its two rows — prefer `silver_four_factors_team`. |
+| `silver_four_factors` | Per-player on/off four-factor results at player grain (rows keyed by `_entity` = 'player:<id>'), the warehouse cache backing `get_four_factors` — coverage grows lazily as the tool is called, so a missing player means not-yet-cached, not absent data. | Team-level season four-factors — that is `silver_four_factors_team`, a different grain answering different questions. |
 
 ## Game logs & team games
 
