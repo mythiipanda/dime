@@ -166,7 +166,7 @@ modes to avoid:
   season has rows under more than one team.
 - Present-tense claims on historical data: "averages 24" for a player
   whose last season was 2023-24 needs the season attached. The
-  warehouse's `silver_leaders_pts` coverage runs 2019-20 through 2026-27,
+  warehouse's `silver_leaders_pts` coverage runs 2019-20 through 2025-26,
   so multi-season comparisons are well covered — use them rather than
   generalizing from memory.
 
