@@ -64,3 +64,24 @@ def test_writes_default_on_dry_run_opts_out() -> None:
     src = inspect.getsource(ff.main)
     assert 'if not args.dry_run' in src
     assert '"--apply"' not in src
+
+
+def test_parse_handles_prestructured_nested_shape() -> None:
+    frame = pl.DataFrame({
+        "offense_results": [[
+            {"On": 0.517, "Off": 0.529, "stat": "eFG%"},
+            {"On": 0.265, "Off": 0.318, "stat": "OReb%"},
+        ]],
+        "defense_results": [[
+            {"On": 0.525, "Off": 0.529, "stat": "eFG%"},
+        ]],
+        "minutes_on": [658],
+        "minutes_off": [264],
+    })
+    out = ff.parse_four_factor_frame(frame, "2026-27", "ts", "player:9")
+    assert out is not None
+    offense, defense, min_on, min_off, source, season, fetched, entity = out
+    assert len(offense) == 2 and len(defense) == 1
+    assert offense[0]["stat"] == "eFG%" and abs(offense[0]["On"] - 0.517) < 1e-9
+    assert min_on == 658 and min_off == 264
+    assert entity == "player:9"

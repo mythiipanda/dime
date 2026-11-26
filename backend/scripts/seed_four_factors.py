@@ -22,6 +22,18 @@ def parse_four_factor_frame(frame, season: str, fetched_at: str, entity: str):
     minutes_off = 0
     side_key = None
     cols = set(frame.columns)
+    if {"offense_results", "defense_results"} <= cols:
+        row = next(frame.iter_rows(named=True), None)
+        if row is None:
+            return None
+        offense = list(row.get("offense_results") or [])
+        defense = list(row.get("defense_results") or [])
+        minutes_on = int(row.get("minutes_on") or 0)
+        minutes_off = int(row.get("minutes_off") or 0)
+        if not offense and not defense:
+            return None
+        return (offense, defense, minutes_on, minutes_off, "pbpstats", season,
+                fetched_at, entity)
     for key in ("side", "Side", "type", "Type"):
         if key in cols:
             side_key = key
