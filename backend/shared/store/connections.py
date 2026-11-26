@@ -207,11 +207,16 @@ def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
     if read_only is None:
         read_only = db_path.resolve() == pkg.CANONICAL_DB_PATH
     if not read_only:
-        _pool_evict_all()
-        try:
-            return pkg._connect_once(False)
-        except _LOCK_ERRORS as exc:
-            raise pkg.WriteConflictError(db_path) from exc
+        last_write: Exception | None = None
+        for attempt in range(_CONNECT_RETRIES):
+            _pool_evict_all()
+            try:
+                return pkg._connect_once(False)
+            except _LOCK_ERRORS as exc:
+                last_write = exc
+                if attempt + 1 < _CONNECT_RETRIES:
+                    time.sleep(_CONNECT_BACKOFF_S * (attempt + 1))
+        raise pkg.WriteConflictError(db_path) from last_write
     if not db_path.exists():
         raise pkg._warehouse_absent_error(db_path)
     pooled = _pool_acquire()
