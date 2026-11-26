@@ -219,7 +219,35 @@ export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.
         }
     };
 }
+function nimRetryWindowMs() {
+    const n = Number(process.env.NIM_RETRY_WINDOW_MS ?? 120000);
+    return Number.isFinite(n) && n >= 1000 ? n : 120000;
+}
+
+export function nimGuardedFetch(baseUrl: string, realFetch: typeof globalThis.fetch): typeof globalThis.fetch {
+    return async (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (!url.startsWith(baseUrl))
+            return realFetch(input, init);
+        const retryWindowMs = nimRetryWindowMs();
+        const retryDeadline = Date.now() + retryWindowMs;
+        for (let attempt = 0; ; attempt++) {
+            const res = await realFetch(input, init);
+            if ((res.status === 429 || res.status === 503) && Date.now() < retryDeadline) {
+                await sleep(Math.min(1500 * 2 ** attempt, 20000) + Math.random() * 750);
+                continue;
+            }
+            if (res.status === 429 || res.status === 503) {
+                const detail = await res.clone().text().catch(() => "");
+                return new Response(JSON.stringify({ error: { message: `nvidia nim saturated lane: infra retries exhausted over ${Math.round(retryWindowMs / 1000)}s, 429 rate_limit window (nvidia nim: ${detail.slice(0, 300)})` } }),
+                    { status: 429, statusText: "Too Many Requests", headers: { "content-type": "application/json" } });
+            }
+            return res;
+        }
+    };
+}
 let uvarcFetchInstalled = false;
+let nimFetchInstalled = false;
 
 export async function resolvedRuntime(input: unknown) {
     if (!Value.Check(modelConfigSchema, input))
@@ -236,6 +264,10 @@ export async function resolvedRuntime(input: unknown) {
     if (config.provider === "uvarc" && !uvarcFetchInstalled) {
         uvarcFetchInstalled = true;
         globalThis.fetch = uvarcGuardedFetch(config.baseUrl, globalThis.fetch);
+    }
+    if (config.provider === "nvidia" && !nimFetchInstalled) {
+        nimFetchInstalled = true;
+        globalThis.fetch = nimGuardedFetch(config.baseUrl, globalThis.fetch);
     }
     const model = runtime.getModel(config.provider, config.model);
     if (!model)
