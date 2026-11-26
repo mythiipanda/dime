@@ -236,6 +236,56 @@ def run_seeders(warehouse: Path, season: str, only: set[str] | None,
     return failures
 
 
+FRESHNESS_ALLOWLIST = {
+    "silver_bbref_awards",
+    "silver_raptor_player",
+    "silver_raptor_team",
+    "silver_combine",
+    "silver_draft_boards",
+    "silver_prospect_stats",
+    "silver_news",
+    "silver_cap_history",
+    "silver_hist_salaries",
+    "silver_bbref_gamelogs_2024_25",
+    "silver_playoff_inactive",
+}
+
+
+def check_freshness(warehouse: Path, season: str) -> tuple[bool, list[str]]:
+    import duckdb
+    from datetime import date
+    from shared.tools._core import completed_season_for_date
+    completed = completed_season_for_date(date.today()) or ""
+    con = duckdb.connect(str(warehouse), read_only=True)
+    try:
+        declared = sorted(set(re.findall(
+            r'"(silver_[a-z0-9_]+)"',
+            (Path(__file__).resolve().parent.parent
+             / "shared" / "tools" / "league" / "sql_schema.py").read_text())))
+        present = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        problems = []
+        for table in declared:
+            if table in FRESHNESS_ALLOWLIST or table not in present:
+                continue
+            cols = {r[0] for r in con.execute(
+                f'DESCRIBE "{table}"').fetchall()}
+            if "_season" not in cols:
+                continue
+            seasons = {r[0] for r in con.execute(
+                f"SELECT DISTINCT _season FROM \"{table}\" "
+                f"WHERE _season IN ('{season}', '{completed}')").fetchall()}
+            if not seasons:
+                n = con.execute(
+                    f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+                if n:
+                    problems.append(
+                        f"{table}: {n} rows but none for current "
+                        f"({season}) or completed ({completed}) season")
+        return (not problems, problems)
+    finally:
+        con.close()
+
+
 def rollback_copy(warehouse: Path, backup: Path) -> None:
     shutil.copy2(backup, warehouse)
     print(f"rollback: restored {backup} over {warehouse}")
@@ -311,6 +361,17 @@ def main(argv: list[str] | None = None) -> int:
             return 4
     else:
         print("dry-run: row-count check skipped (seeders ran dry)")
+
+    if not args.dry_run:
+        fresh_ok, fresh_problems = check_freshness(warehouse, args.season)
+        if not fresh_ok:
+            rollback_copy(warehouse, backup)
+            for p in fresh_problems:
+                print(f"  freshness FAILED: {p}")
+            print("FAILED: declared tables missing both current and "
+                  "completed seasons; restored pre-seed copy, nothing "
+                  "published")
+            return 5
 
     from build_data_dictionary import write_dictionary
     dictionary_path = write_dictionary(warehouse)
