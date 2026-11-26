@@ -34,3 +34,11 @@ def test_skill_teaches_batch_recheck_before_resubmission():
     src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
     assert "re-check ALL prose figures" in src
     assert "not only the figure the last rejection flagged" in src
+
+
+
+def test_skill_teaches_derived_into_artifact_rows():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "computed INTO the artifact rows themselves" in src
+    assert "self-backing" in src
+    assert "unsupported_claims" in src
