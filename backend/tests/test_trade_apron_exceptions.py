@@ -836,6 +836,57 @@ def test_cap_scenario_dropping_below_first_apron_uses_post_move_band(
     assert out["matching"]["legal"] is True
 
 
+def test_cap_scenario_second_apron_receiver_multiple_incoming_is_not_aggregation(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario
+
+    _seed(monkeypatch, tmp_path,
+          _roster("PHX", 230_000_000,
+                  [("Alpha One", 30_000_000),
+                   ("Anchor Four", 1_000_000),
+                   ("Anchor Five", 1_000_000)])
+          + _roster("MIA", 150_000_000,
+                    [("Beta Two", 15_000_000),
+                     ("Gamma Three", 15_000_000)]))
+    out = get_cap_scenario.invoke({
+        "team": "PHX", "out_players": "Alpha One",
+        "in_players": "Beta Two, Gamma Three", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == 230_000_000
+    assert out["summary"]["over_apron2"] is True
+    assert out["matching"]["allowed_incoming"] == 30_000_000
+    assert out["matching"]["match_rule"] == "100% (above the first apron)"
+    assert out["matching"]["legal"] is True
+    assert not any("aggregate" in issue or "aggregation" in issue
+                   for issue in out["issues"])
+
+
+def test_cap_scenario_multiple_outgoing_players_remain_conservative(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario
+
+    _seed(monkeypatch, tmp_path,
+          _roster("PHX", 230_000_000,
+                  [("Alpha One", 15_000_000),
+                   ("Delta Four", 15_000_000),
+                   ("Anchor Five", 1_000_000),
+                   ("Anchor Six", 1_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 25_000_000)]))
+    out = get_cap_scenario.invoke({
+        "team": "PHX", "out_players": "Alpha One, Delta Four",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == 225_000_000
+    assert out["summary"]["over_apron2"] is True
+    assert out["matching"]["legal"] is False
+    assert out["matching"]["match_rule"] == (
+        "no aggregation (above the second apron)")
+    assert any("cannot aggregate salaries above the second apron" in issue
+               for issue in out["issues"])
+
+
 def test_cap_scenario_dropping_below_second_apron_clears_aggregation_ban(
         monkeypatch, tmp_path):
     from shared.tools import get_cap_scenario

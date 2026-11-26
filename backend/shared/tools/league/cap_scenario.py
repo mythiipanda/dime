@@ -230,7 +230,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
     matching: dict[str, Any] | None = None
     hard_cap = ""
     if out_names and in_names:
-        aggregates = len(out_names) > 1 or len(in_names) > 1
+        aggregates = len(out_names) > 1
         expanded_matching = _used_expanded_matching(
             in_total, out_total, room_before)
         if expanded_matching:
