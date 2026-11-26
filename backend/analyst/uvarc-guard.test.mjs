@@ -48,13 +48,16 @@ test("null message content is rewritten to an empty string before sending", asyn
     assert.equal(sent.messages[2].content, "fine");
 });
 
-test("clean payloads pass through byte-identical", async () => {
+test("clean payloads pass through with only reasoning_effort injected", async () => {
     const bodies = [];
     const realFetch = async (_url, init) => { bodies.push(init.body); return ok(); };
     const fetch = uvarcGuardedFetch(BASE, realFetch);
     const body = JSON.stringify({ model: "m", messages: [{ role: "user", content: "hi" }] });
     await fetch(`${BASE}/chat/completions`, { method: "POST", body });
-    assert.equal(bodies[0], body);
+    const sent = JSON.parse(bodies[0]);
+    assert.equal(sent.reasoning_effort, "low");
+    assert.deepEqual(sent.messages, [{ role: "user", content: "hi" }]);
+    assert.equal(sent.model, "m");
 });
 
 test("persistent 'messages' 400s exhaust into infra-labeled saturated-lane 429s", async () => {
