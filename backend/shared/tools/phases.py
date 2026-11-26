@@ -157,7 +157,10 @@ def _tracking_section(scope: str, pid: int | None, tid: int | None,
     "season: zone diet and eFG plus shot-family splits (catch-and-shoot vs "
     "pull-up vs rim) with playoff-minus-regular deltas in percentage points. "
     "Warehouse-first from silver_hist_shots; measured tracking splits appear "
-    "when seeded. Give exactly one of player or team. Entity-scoped — for a "
+    "when seeded. Zones here are geometric court regions, not basketball-reference "
+    "distance buckets: when the ask names silver_zone_splits or distance buckets "
+    "(0-3ft, 3-10ft, 10-16ft, 16ft-3pt, 3pt), query silver_zone_splits via sql_exec "
+    "instead. Give exactly one of player or team. Entity-scoped — for a "
     "league-wide split leaderboard or qualifying pool, run one sql_exec GROUP BY "
     "over silver_hist_shots (zone geometry is documented on get_zone_deltas) "
     "joined to silver_boxscores for position pools; never loop this tool per player."))

@@ -354,7 +354,7 @@ def _shot_level_meta(
 
 
 @tool(
-    description="Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones below min_attempts (default 50, clamped 10..200) are excluded."
+    description="Zone splits for one player id: rim, midrange, three with shares.\n\nWarehouse-first: historical silver_hist_shots geometric zones, then\nseeded silver_shots, then seeded silver_zone_splits\n(basketball-reference distance buckets, league-wide), then live\nshot_chart (fail-fast; endpoint-blocked from datacenter IPs).\nZones here are rim/midrange/three geometric regions, not the five basketball-reference distance buckets: when the ask names silver_zone_splits or buckets like 0-3ft/3-10ft/10-16ft/16ft-3pt, query silver_zone_splits via sql_exec instead.\nZones below min_attempts (default 50, clamped 10..200) are excluded."
 )
 def get_shot_zones(player_id: str | int, season: str | None = None, min_attempts: int = 50) -> dict[str, Any]:
     pkg = _pkg()
