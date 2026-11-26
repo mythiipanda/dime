@@ -124,7 +124,7 @@ By default every `run_python` call runs in a fresh namespace — variables, fram
 ### Warehouse Grain for Shot-Row Modeling
 
 - `silver_hist_shots` carries `person_id` and a display `player_name` (full names like "Michael Porter Jr."). Group by `person_id`, never `player_name` — names are not stable keys across feeds — and when naming a player in the answer, use the exact `player_name` value the warehouse returns rather than a shortened surname form.
-- `silver_player_season` covers current/recent seasons rather than full history, with team-stint rows possible in a season. For earlier seasons join `silver_hist_player_seasons` on `player_id`; its counting stats are per-game, so cohort thresholds like `FG3A >= 40` come from `COUNT(*)` over shot rows, not the season row.
+- `silver_player_season` covers current/recent seasons rather than full history, with one row per `PLAYER_ID` + `_season`. For earlier seasons join `silver_hist_player_seasons` on `player_id`; its counting stats are per-game, so cohort thresholds like `FG3A >= 40` come from `COUNT(*)` over shot rows, not the season row.
 
 ### Example: Fitting Bayesian Shrinkage Over Warehouse Rows
 ```python
