@@ -15,6 +15,21 @@ description: Fit, validate, and interpret NBA statistical estimates, including R
 
 - Fit the prior only on the specified reference cohort, then score the target cohort. Supply one row per eligible player with positive attempts and makes between zero and attempts, using the same shot population for both counts. `mu` comes from the same reference rows as the variance. For an attempt-weighted method of moments, run this helper:
 
+```python
+def eb_beta_binomial_mom(rows):
+    # rows: list of (attempts, makes) for the reference cohort, one row per player
+    k = len(rows)
+    S = sum(n for n, _ in rows)
+    mu = sum(x for _, x in rows) / S
+    v = sum(n * (x / n - mu) ** 2 for n, x in rows) / S
+    noise = k * mu * (1 - mu) / S
+    tau2 = v - noise
+    M = mu * (1 - mu) / tau2 - 1
+    return mu, M
+```
+
+The noise subtraction is not optional: the observed attempt-weighted variance of shooting proportions includes binomial sampling noise `mu(1-mu)/n_i` per player, which under the same attempt weighting sums to `k * mu * (1 - mu) / S`. Without subtracting it, `M` comes out roughly half its true value and every player is over-shrunk toward the mean. Reference check on 2024-25 NBA 3P% (high-volume cohort FG3A >= 100): `mu = 0.3652`, `M = 348.57`. The naive variance-only solve gives 159 — if your M is near 159 on that cohort, the noise term was dropped. Shrunk rate per player: `(makes + M * mu) / (attempts + M)`.
+
 In closed-form matrix notation:
 $$\hat{\beta} = (X^T W X + \lambda I)^{-1} X^T W Y$$
 
@@ -80,8 +95,8 @@ When a question asks for an empirical-Bayes estimate rather than a hand-picked p
 
 1. Restrict the reference pool to high-volume shooters (e.g. `FG3A >= 100`, optionally joined to `silver_player_season` with `GP >= 20`) so MLE noise doesn't dominate the variance estimate.
 2. Pooled mean: $\mu = \frac{\sum \text{FG3M}}{\sum \text{FG3A}}$ over that pool.
-3. Attempt-weighted sample variance $s^2 = \frac{\sum n_i (p_i - \mu)^2}{\sum n_i}$ with $\bar n$ the mean attempts; then
-$$M = \frac{\mu(1-\mu) - s^2}{s^2 - \mu(1-\mu)/\bar n}$$
+3. Attempt-weighted sample variance $s^2 = \frac{\sum n_i (p_i - \mu)^2}{\sum n_i}$; subtract the binomial sampling noise $\frac{\mu(1-\mu)}{\bar n}$ (with $\bar n$ the mean attempts) to get the true between-player variance $\tau^2 = s^2 - \mu(1-\mu)/\bar n$; then
+$$M = \frac{\mu(1-\mu)}{\tau^2} - 1$$
 A negative numerator means the pool has less spread than binomial noise — fall back to the fixed prior above.
 4. Shrink each player on the full qualifying cohort ($\text{FG3A} \ge 40$): $\hat\theta = \frac{\text{FG3M} + M\mu}{\text{FG3A} + M}$. Report the shift, not just the shrunk value — the biggest movers are the low-volume players, and stating who moved most carries more meaning than a re-sorted leaderboard.
 
