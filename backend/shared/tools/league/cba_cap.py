@@ -425,7 +425,7 @@ def _salary_date(con: object = None) -> str | None:
     return None
 
 
-@tool(description='Payroll plus apron room for one abbreviation, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total. Team-level only, no player salaries: an individual player salary lives in silver_salaries (PLAYER_NAME, TEAM, SALARY_2025_26), and trade legality or matching-band math for a named swap goes to get_trade_check, which already returns both sides salaries, the ceiling and the verdict.')
+@tool(description='Payroll plus apron room for one abbreviation, on the salary-ledger basis. 2026-27 thresholds. Never answer a league-wide payroll-tier, committed-salary, over-tax or over-apron audit from this tool: those audits are ONE sql_exec over silver_cap_room (COMMITTED_SALARY plus the projected cap/tax/apron lines per team), and the payroll basis here differs, so per-team fanout totals produce wrong tier counts — not a data gap. Team-level only, no player salaries: an individual player salary lives in silver_salaries (PLAYER_NAME, TEAM, SALARY_2025_26), and trade legality or matching-band math for a named swap goes to get_trade_check, which already returns both sides salaries, the ceiling and the verdict.')
 def get_cap_ledger(team: str = "") -> dict[str, Any]:
     if not team:
         return {"tool": "get_cap_ledger", "ok": False, "error": "team needed"}
