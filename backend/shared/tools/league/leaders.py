@@ -42,6 +42,7 @@ def _completed_season_totals(stat_category, season, order="DESC"):
                     "COUNT(DISTINCT GAME_ID) AS GP, "
                     f"SUM({column}) AS TOTAL "
                     "FROM silver_boxscores WHERE _season = ? "
+                    "AND substring(GAME_ID, 1, 3) = '002' "
                     "AND (comment IS NULL OR comment = '') "
                     "GROUP BY PLAYER_ID, firstName, familyName "
                     f"ORDER BY TOTAL {order}",
@@ -58,6 +59,7 @@ def _completed_season_totals(stat_category, season, order="DESC"):
                     "JOIN silver_player_season s "
                     "  ON s.PLAYER_ID = g.Player_ID AND s._season = g._season "
                     "WHERE g._season = ? "
+                    "AND substring(g.Game_ID, 1, 3) = '002' "
                     "GROUP BY g.Player_ID, s.PLAYER "
                     f"ORDER BY TOTAL {order}",
                     [season],
