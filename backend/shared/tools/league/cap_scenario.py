@@ -14,6 +14,7 @@ from .cba_cap import (
     _payroll,
     _payroll_source,
     _salary_date,
+    _used_expanded_matching,
 )
 from .._core import coerce_team_id, team_error_message
 from .trade_value import _trade_guard_vintage_error, _trade_unknown_message
@@ -94,9 +95,10 @@ def _scenario_restrictions(state: dict[str, Any], season: str) -> list[dict[str,
                             "hard-caps the team at the second apron"})
     if not state["over_apron1"]:
         out.append({"threshold": "first apron", "status": "trigger",
-                    "rule": "acquiring a sign-and-traded player or using the "
-                            "non-taxpayer mid-level or bi-annual exception "
-                            "hard-caps the team at the first apron"})
+                    "rule": "acquiring a sign-and-traded player, using expanded "
+                            "salary matching, or using the non-taxpayer mid-level "
+                            "or bi-annual exception hard-caps the team at the "
+                            "first apron"})
     if state["cap_room"] > 0:
         out.append({"threshold": "cap", "status": "active",
                     "rule": "operating with cap room; exceptions unavailable "
@@ -226,8 +228,18 @@ def get_cap_scenario(team: str = "", signings: str = "",
     state_after = _apron_state(pay_after)
     issues: list[str] = []
     matching: dict[str, Any] | None = None
+    hard_cap = ""
     if out_names and in_names:
         aggregates = len(out_names) > 1 or len(in_names) > 1
+        expanded_matching = _used_expanded_matching(
+            in_total, out_total, room_before)
+        if expanded_matching:
+            hard_cap = "first apron"
+        if expanded_matching and pay_after > CAP["apron1"]:
+            issues.append(
+                f"{team.upper()} is hard-capped at the first apron by "
+                "expanded salary matching "
+                f"(post-trade payroll ${pay_after:,} > ${CAP['apron1']:,})")
         if state_after["over_apron2"] and aggregates:
             issues.append("cannot aggregate salaries above the second apron")
             matching = {"incoming": in_total, "outgoing": out_total,
@@ -265,6 +277,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
             "over_tax": state_after["over_tax"],
             "over_apron1": state_after["over_apron1"],
             "over_apron2": state_after["over_apron2"],
+            "hard_cap": hard_cap,
             "roster_before": roster_before, "roster_after": roster_after,
         },
         "restrictions": _scenario_restrictions({**state_after, "cap_room": CAP["cap"] - pay_after}, season),

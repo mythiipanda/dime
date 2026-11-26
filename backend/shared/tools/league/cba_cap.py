@@ -319,6 +319,15 @@ def _allowed_incoming(outgoing: int, over_apron1: bool,
     return matched, rule
 
 
+def _used_expanded_matching(incoming: int, outgoing: int,
+                            cap_room: int = 0) -> bool:
+    if outgoing <= 0 or incoming <= outgoing:
+        return False
+    if cap_room > 0 and incoming <= outgoing + cap_room + 250_000:
+        return False
+    return True
+
+
 def _outgoing_needed(incoming: int, over_apron1: bool,
                      cap_room: int = 0) -> int:
     if over_apron1:
