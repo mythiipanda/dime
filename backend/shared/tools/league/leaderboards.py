@@ -105,7 +105,7 @@ _LINEUP_SORT = {
 }
 
 
-@tool(description="League-wide five-man lineup leaderboard.\n\nOFF_RATING, DEF_RATING, NET_RATING and PACE are the official\nper-100-possessions ratings joined from the lineup table's advanced\nmeasure; MIN, GP and PLUS_MINUS are raw totals from its base measure.\nsort picks the ranking axis: 'net' best net rating first (default),\n'worst' worst net rating first, 'minutes' most minutes first — use\n'worst' for bottom/worst-offender asks and 'minutes' for most-used\nunit rankings.\nA minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a junk slice and never tops the\nboard (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.")
+@tool(description="League-wide five-man lineup leaderboard.\n\nOFF_RATING, DEF_RATING, NET_RATING and PACE are the official\nper-100-possessions ratings joined from the lineup table's advanced\nmeasure; MIN, GP and PLUS_MINUS are raw totals from its base measure.\nsort picks the ranking axis: 'net' best net rating first (default),\n'worst' worst net rating first, 'minutes' most minutes first — use\n'worst' for bottom/worst-offender asks and 'minutes' for most-used\nunit rankings.\nA minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a junk slice and never tops the\nboard (F50).\nPLAYOFF asks: pass playoffs=true AND season set to the season the\nplayoffs concluded — the 2025 playoffs are season '2024-25', the\n2024 playoffs are '2023-24'. Playoff units log far fewer minutes,\nso lower min_minutes to the asked floor (playoff boards typically\nuse 25-60). Without playoffs=true you get regular-season lineups\neven when the ask says playoffs.\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.")
 def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
                        season: str | None = None, playoffs: bool = False,
                        sort: str = "net") -> dict[str, Any]:
@@ -187,11 +187,17 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
     if hist:
         meta["coverage"] = "historical_lineups"
     if not rows:
+        hint = ""
+        if playoffs:
+            hint = (f" For playoff asks season must be the season the "
+                    f"playoffs concluded: the 2025 playoffs are season "
+                    f"'2024-25' — retry with season='2024-25' if you "
+                    f"passed a different season.")
         return {"tool": "get_lineup_leaders", "ok": False,
                 "error": (f"No lineup data on file for {season} at "
                           f"that minutes floor; lineups cover 2009-10 "
                           f"through the current season. Try a lower "
-                          f"minutes floor for short seasons.")}
+                          f"minutes floor for short seasons." + hint)}
     return {"tool": "get_lineup_leaders", "ok": True, "rows": rows,
             "meta": meta}
 
