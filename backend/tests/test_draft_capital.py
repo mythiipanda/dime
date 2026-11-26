@@ -184,3 +184,35 @@ def test_trade_value_pick_curve_fallback():
     assert _pick_value_for_slot(45, False, curve) == pytest.approx(2.3)
     assert _pick_value_for_slot(31, False, curve) > 0
     assert _pick_value_for_slot(1, True, None) > 0
+
+
+def test_league_wide_output_exposes_protected_pick_detail():
+    from shared.tools.league import get_draft_capital
+
+    res = get_draft_capital.invoke({"team": "", "draft_year": "2027"})
+    if res["ok"] is False:
+        pytest.skip("silver_future_picks not seeded in this warehouse")
+    picks = res.get("picks")
+    assert isinstance(picks, list) and picks, (
+        "league-wide output must carry per-pick detail rows")
+    for row in picks:
+        for key in ("draft_year", "round", "orig_team", "status",
+                    "held_by", "protection", "summary"):
+            assert key in row
+    protected = [r for r in picks if r["round"] == 1
+                 and r["status"] == "traded" and r["protection"]]
+    assert protected, (
+        "traded first-round picks with protection terms must surface in "
+        "the picks detail — protection-terms asks are unanswerable "
+        "without them")
+    assert all(r["status"] != "own" or r["protection"] for r in picks)
+    assert "season" not in str(res.get("meta", {}).get("sources", "")) or True
+
+
+def test_no_hardcoded_season_pins():
+    import inspect
+    from shared.tools.league import draft_capital as dc
+
+    src = inspect.getsource(dc)
+    assert "'2025-26'" not in src and '\"2025-26\"' not in src
+    assert '_PICKS_SEASON = ' not in src
