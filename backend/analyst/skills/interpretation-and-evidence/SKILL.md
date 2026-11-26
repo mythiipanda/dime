@@ -7,6 +7,79 @@ description: Turn correct warehouse numbers into correct conclusions. Volunteer 
 
 Numbers alone answer only the literal half of an analytics question. When you report a stat, comparison, ranking, or model output, append the interpretation the data actually supports: what it means, what could be driving it, and what it cannot show. Do not wait for the user to ask "why" or "is that significant".
 
+## Compose evidence in one pass
+
+A cross-player, cross-team, or split comparison is one evidence table, not a queue of lookups. Prefer single-pass aggregation: one `sql_exec` composed with `GROUP BY`, conditional aggregation, window functions, or a small CTE chain that returns every compared row together. Each round trip costs model time and wall-clock; dozens of looped `sql_exec` calls can consume the run before interpretation begins.
+
+**Before/after example 1 — repeated per-team round trips (BAD):**
+
+```sql
+SELECT team_id, result, COUNT(*) AS games, AVG(points) AS avg_points
+FROM game_logs
+WHERE team_id = :team_a
+GROUP BY team_id, result;
+```
+
+```sql
+SELECT team_id, result, COUNT(*) AS games, AVG(points) AS avg_points
+FROM game_logs
+WHERE team_id = :team_b
+GROUP BY team_id, result;
+```
+
+**After — one conditional-aggregation query (GOOD):**
+
+```sql
+SELECT team_id,
+       SUM(CASE WHEN result = 'W' THEN 1 ELSE 0 END) AS wins,
+       SUM(CASE WHEN result = 'L' THEN 1 ELSE 0 END) AS losses,
+       AVG(CASE WHEN result = 'W' THEN points END) AS win_points,
+       AVG(CASE WHEN result = 'L' THEN points END) AS loss_points
+FROM game_logs
+WHERE team_id IN (:team_a, :team_b)
+GROUP BY team_id;
+```
+
+**Before/after example 2 — repeated per-player round trips (BAD):**
+
+```sql
+SELECT player_id, season, points
+FROM player_seasons
+WHERE player_id = :player_a
+ORDER BY season;
+```
+
+```sql
+SELECT player_id, season, points
+FROM player_seasons
+WHERE player_id = :player_b
+ORDER BY season;
+```
+
+**After — one window-function query (GOOD):**
+
+```sql
+WITH scoped_rows AS (
+    SELECT player_id, season, points
+    FROM player_seasons
+    WHERE player_id IN (:player_a, :player_b)
+),
+windowed AS (
+    SELECT player_id,
+           season,
+           points,
+           ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY season) AS season_index,
+           RANK() OVER (PARTITION BY season ORDER BY points DESC) AS season_points_rank,
+           AVG(points) OVER (PARTITION BY player_id) AS player_mean_points
+    FROM scoped_rows
+)
+SELECT player_id, season, points, season_index, season_points_rank, player_mean_points
+FROM windowed
+ORDER BY player_id, season;
+```
+
+Round trips are the exception, not the assembly method. They remain justified only after a composed single-pass query cannot express the evidence need: schema or coverage discovery, a dependent lookup whose next filter is determined by a prior result, or a genuinely different evidence family or tool. Even then, aggregate all comparable entities first and use the extra round trip for the dependency or missing evidence, not as a loop over teams or players.
+
 ## What to volunteer
 
 - **Selection and survivorship effects.** Any population defined by a threshold (minutes, possessions, attempts, GP) is biased toward players who earned that volume. "Players with ≥3000 possessions who shoot well" are not a random sample of NBA talent — they are players good enough to keep playing. State which way the bias runs. Same for season filters: a midseason snapshot overstates teams that started hot.
