@@ -14,3 +14,10 @@ def test_skill_presubmission_covers_derived_figures():
     src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
     assert "Every derived figure" in src
     assert "recompute it inside sql_exec before submitting" in src
+
+
+
+def test_skill_teaches_artifact_prose_parity():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "Every figure stated in the prose blocks also lives in an artifact row" in src
+    assert "missing_in_artifacts" in src

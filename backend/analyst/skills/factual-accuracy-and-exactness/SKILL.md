@@ -64,6 +64,7 @@ Before `submit_answer`, check every requested deliverable:
 - Every ratio names its denominator and uses the requested one.
 - Every ranking/delta names the recomputed endpoints.
 - Every derived figure (delta, gap to a threshold, share, total) appears verbatim in a tool result; if it does not, recompute it inside sql_exec before submitting.
+- Every figure stated in the prose blocks also lives in an artifact row. The submission audit rejects any prose figure missing from the artifact payloads with missing_in_artifacts — prose-only numbers are undeliverable no matter how correct. When a key comparison figure exists only in your sentences, add it to the table/compare/memo artifact rows before submitting; the artifact is the backing exhibit, not decoration, so a figure the reader must trust must appear in both places.
 - Methods/caveats disclose filters, sample size, and any custom classification.
 - Every scope qualifier echoed in prose or artifacts corresponds to a filter the executed query actually applied. Re-read the last query before claiming `regular season`, `002%`, or a denominator it never restricted — a claimed-but-unimplemented filter is fabricated methodology, not a rounding issue.
 
