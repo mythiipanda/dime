@@ -702,8 +702,20 @@ function buildCallCeilingStopRecord(toolName: string, callId: string, count: num
     return { record, payload };
 }
 
+function normalizeSqlIdentity(sql: string): string {
+    return sql
+        .replace(/--[^\n]*/g, " ")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/[\s;]+$/, "")
+        .toLowerCase();
+}
+
 function loopArgsKey(toolName: string, rawArgs: unknown): string {
-    const plain = rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? rawArgs : {};
+    const plain = rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? { ...(rawArgs as Record<string, unknown>) } : {};
+    if (toolName === "sql_exec" && typeof plain.sql === "string")
+        plain.sql = normalizeSqlIdentity(plain.sql);
     return `${toolName}:${canonicalArgsKey(normalizeLoopArgs(plain))}`;
 }
 
@@ -825,7 +837,9 @@ function wrapBridgeTools(
     compositionGate?: CompositionGate
 ) {
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
-    const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number }>();
+    const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number; intercepted?: number }>();
+    let sqlInterceptions = 0;
+    let stormFired = false;
     const toolTotals = new Map<string, number>();
     let dataPulls = 0;
     const repeatedToolSteered = new Set<string>();
@@ -916,8 +930,58 @@ function wrapBridgeTools(
                 if (entry.lastSuccessRef) {
                     const prior = results.get(entry.lastSuccessRef);
                     if (prior) {
-                        emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef} — this identical call already ran and the data is unchanged; do not send it again: reuse ref ${entry.lastSuccessRef}, change the arguments, switch tools, or call submit_answer.` });
-                        return sourceResult(prior);
+                        entry.intercepted = (entry.intercepted ?? 0) + 1;
+                        let stormNotice = "";
+                        if (tool.name === "sql_exec") {
+                            sqlInterceptions += 1;
+                            if (!stormFired && sqlInterceptions >= 6) {
+                                stormFired = true;
+                                stormNotice = " You have re-issued already-answered queries repeatedly this run — the data you need is already in the refs in context; analysis goes in run_python, delivery goes in submit_answer. Further duplicate queries will be rejected.";
+                                emit({ type: "tool_call", name: "dupe_storm_steer", args: { interceptions: sqlInterceptions } });
+                                emit({ type: "tool_result", name: "dupe_storm_steer", status: "ok" });
+                            }
+                        }
+                        if (entry.intercepted === 1) {
+                            emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef} — this identical call already ran and the data is unchanged; do not send it again: reuse ref ${entry.lastSuccessRef}, change the arguments, switch tools, or call submit_answer.${stormNotice}` });
+                            return sourceResult(prior);
+                        }
+                        entry.blocked = (entry.blocked ?? 0) + 1;
+                        if (entry.blocked > LOOP_STOP_AFTER_INJECTIONS) {
+                            const { record, payload } = buildLoopStopRecord(tool.name, callId, entry.count);
+                            results.set(record.ref, record);
+                            emit({ type: "source", record });
+                            emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                            stopRun(payload.error);
+                            return sourceResult(record);
+                        }
+                        const error = `STOP re-issuing this query. The data is already in your context as ${entry.lastSuccessRef}. Your next action must be one of: run_python analysis over the fetched rows, a DIFFERENT sql_exec query, or submit_answer.${stormNotice}`;
+                        const parsedArgs = objectValue(args[1]);
+                        const payload = {
+                            ok: false,
+                            loop_detected: true,
+                            repeat_interception: true,
+                            reused_ref: entry.lastSuccessRef,
+                            error,
+                            summary: error,
+                            args: parsedArgs ? JSON.parse(canonicalArgsKey(parsedArgs)) : {},
+                            recovery_hint: `The rows you need are already in context as ${entry.lastSuccessRef}. Analyze them with run_python or deliver with submit_answer.`,
+                            next_actions: ["run_python over the fetched rows", "a different sql_exec query", "submit_answer"]
+                        };
+                        const record: SourceRecord = {
+                            ref: `dupe_${entry.count}_${tool.name.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+                            callId,
+                            tool: tool.name as SourceRecord["tool"],
+                            ...(parsedArgs ? { args: parsedArgs } : {}),
+                            response: {
+                                isError: true,
+                                structuredContent: payload,
+                                content: [{ type: "text", text: JSON.stringify(payload) }]
+                            }
+                        };
+                        results.set(record.ref, record);
+                        emit({ type: "source", record });
+                        emit({ type: "tool_result", name: tool.name, status: "fail", error, ...(traceResults ? tracedResult(payload) : {}) });
+                        return sourceResult(record);
                     }
                 }
                 entry.blocked = (entry.blocked ?? 0) + 1;
