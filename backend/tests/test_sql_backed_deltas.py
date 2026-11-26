@@ -42,3 +42,10 @@ def test_skill_teaches_derived_into_artifact_rows():
     assert "computed INTO the artifact rows themselves" in src
     assert "self-backing" in src
     assert "unsupported_claims" in src
+
+
+
+def test_skill_bans_prose_side_arithmetic():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "Never compute any arithmetic in prose" in src
+    assert "prose-typed arithmetic is invisible to the audit" in src
