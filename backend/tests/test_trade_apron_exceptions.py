@@ -93,6 +93,52 @@ def test_aggregation_below_second_apron_is_legal_hard_cap_trigger(
     assert rows["MIA"]["matching_ok"] is True
 
 
+def test_second_apron_receiver_multiple_incoming_is_not_aggregation(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("PHX", 230_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000,
+                    [("Beta Two", 15_000_000),
+                     ("Gamma Three", 15_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"PHX","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"PHX","players":"Beta Two, Gamma Three"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    rows = _team_rows(out)
+    phx = rows["PHX"]
+    assert phx["payroll_after"] == 230_000_000
+    assert phx["over_apron2"] is True
+    assert phx["matching_ok"] is True
+    assert phx["aggregates"] is False
+    assert phx["hard_cap"] == ""
+    assert not any("aggregate incoming" in issue for issue in out["issues"])
+
+
+def test_multiple_outgoing_players_remain_aggregation(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("PHX", 230_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000,
+                    [("Beta Two", 15_000_000),
+                     ("Gamma Three", 15_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"PHX","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"PHX","players":"Beta Two, Gamma Three"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    rows = _team_rows(out)
+    assert rows["MIA"]["aggregates"] is True
+    assert rows["MIA"]["hard_cap"] == "second apron"
+
+
 def test_sign_and_trade_byc_reduces_outgoing_and_stays_legal(
         monkeypatch, tmp_path):
     from shared.tools import get_trade_legality

@@ -301,7 +301,7 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
         if tpe_used:
             allow += tpe_used
             rule += " + TPE"
-        aggregates = len(s["out_names"]) > 1 or len(s["in_names"]) > 1
+        aggregates = len(s["out_names"]) > 1
         cash_out = sum(c["amount"] for c in cash_moves if c["from"] == team)
         cash_in = sum(c["amount"] for c in cash_moves if c["to"] == team)
         picks_out = [p for m in moves if m["from"] == team for p in m["picks"]]
@@ -318,9 +318,6 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
         if state_after["over_apron2"]:
             if len(s["out_names"]) > 1:
                 issues.append(f"{team} cannot aggregate outgoing salaries "
-                              "above the second apron")
-            if len(s["in_names"]) > 1:
-                issues.append(f"{team} cannot aggregate incoming salaries "
                               "above the second apron")
             if cash_out:
                 issues.append(f"{team} cannot send cash above the second apron")
