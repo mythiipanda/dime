@@ -268,8 +268,10 @@ def get_trade_check(
         pay_b, _ = _payroll(team_b, con, season)
         salary_date = _salary_date(con)
         source = _payroll_source(con)
-    state_a = _apron_state(pay_a)
-    state_b = _apron_state(pay_b)
+    pay_after_a = pay_a - out_a + out_b
+    pay_after_b = pay_b - out_b + out_a
+    state_a = _apron_state(pay_after_a)
+    state_b = _apron_state(pay_after_b)
     room_a = max(0, CAP["cap"] - pay_a)
     room_b = max(0, CAP["cap"] - pay_b)
     allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]), room_a)

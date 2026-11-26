@@ -44,6 +44,72 @@ def test_first_apron_matching_is_dollar_for_dollar_and_ignores_cap_room():
     assert _outgoing_needed(20_000_000, True, 10_000_000) == 20_000_000
 
 
+def test_trade_check_crossing_first_apron_uses_post_trade_strict_matching(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_check
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
+    out = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One",
+        "team_b": "MIA", "players_b": "Beta Two",
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    rows = out["rows"]
+    bos = rows["team_a"]
+    assert bos["over_apron1"] is True
+    assert bos["room_apron1"] == -985_000
+    assert bos["allowed_in"] == 25_000_000
+    assert bos["match_rule"] == "100% (above the first apron)"
+    assert rows["legal"] is False
+    assert any("BOS takes back too much" in issue for issue in rows["issues"])
+
+
+def test_trade_check_dropping_below_first_apron_uses_post_trade_band(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_check
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 212_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 25_000_000)]))
+    out = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One",
+        "team_b": "MIA", "players_b": "Beta Two",
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    bos = out["rows"]["team_a"]
+    assert bos["over_apron1"] is False
+    assert bos["room_apron1"] == 2_015_000
+    assert bos["allowed_in"] == 39_096_000
+    assert bos["match_rule"] == (
+        "outgoing salary plus $9.096M (below the first apron)")
+
+
+def test_trade_check_dropping_below_second_apron_clears_aggregation_ban(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_check
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 224_000_000,
+                  [("Alpha One", 15_000_000), ("Beta Two", 15_000_000)])
+          + _roster("MIA", 150_000_000, [("Gamma Three", 25_000_000)]))
+    out = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One, Beta Two",
+        "team_b": "MIA", "players_b": "Gamma Three",
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    rows = out["rows"]
+    bos = rows["team_a"]
+    assert bos["over_apron2"] is False
+    assert bos["room_apron2"] == 2_686_000
+    assert rows["legal"] is True, rows["issues"]
+    assert not any("cannot aggregate" in issue for issue in rows["issues"])
+
+
 def test_crossing_first_apron_uses_post_trade_strict_matching(monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
 
@@ -214,6 +280,65 @@ def test_second_apron_cash_is_rejected(monkeypatch, tmp_path):
                for issue in out["issues"])
     assert any("hard-capped at the second apron" in issue
                for issue in out["issues"])
+
+
+def test_cap_scenario_crossing_first_apron_uses_post_move_strict_matching(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
+    out = get_cap_scenario.invoke({
+        "team": "BOS", "out_players": "Alpha One",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == 210_000_000
+    assert out["summary"]["over_apron1"] is True
+    assert out["matching"]["allowed_incoming"] == 25_000_000
+    assert out["matching"]["match_rule"] == "100% (above the first apron)"
+    assert out["matching"]["legal"] is False
+    assert any("takes back too much" in issue for issue in out["issues"])
+
+
+def test_cap_scenario_dropping_below_first_apron_uses_post_move_band(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 212_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 25_000_000)]))
+    out = get_cap_scenario.invoke({
+        "team": "BOS", "out_players": "Alpha One",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == 207_000_000
+    assert out["summary"]["over_apron1"] is False
+    assert out["matching"]["allowed_incoming"] == 39_096_000
+    assert out["matching"]["match_rule"] == (
+        "outgoing salary plus $9.096M (below the first apron)")
+    assert out["matching"]["legal"] is True
+
+
+def test_cap_scenario_dropping_below_second_apron_clears_aggregation_ban(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 224_000_000,
+                  [("Alpha One", 15_000_000), ("Beta Two", 15_000_000)])
+          + _roster("MIA", 150_000_000, [("Gamma Three", 25_000_000)]))
+    out = get_cap_scenario.invoke({
+        "team": "BOS", "out_players": "Alpha One, Beta Two",
+        "in_players": "Gamma Three", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == 219_000_000
+    assert out["summary"]["over_apron2"] is False
+    assert out["matching"]["legal"] is True
+    assert not any("cannot aggregate" in issue for issue in out["issues"])
 
 
 def test_cap_scenario_second_apron_freezes_seventh_following_draft(
