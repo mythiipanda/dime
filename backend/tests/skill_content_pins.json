@@ -1,0 +1,68 @@
+{
+  "files": {
+    "backend/analyst/skills/cba-trade-analysis/SKILL.md": {
+      "bytes": 7720,
+      "sha256": "a66d428775b63a6a3761d721ba5e53d53af23626e1db3e5c69c0f810a378139c"
+    },
+    "backend/analyst/skills/draft-and-prospects/SKILL.md": {
+      "bytes": 6337,
+      "sha256": "6e219d8709ed3cd878ad767e793fcdb64765e660cfc4d5e94a7850b9be5baa44"
+    },
+    "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md": {
+      "bytes": 9927,
+      "sha256": "a9292acd2184c3b624661b5aff8b0d419549321853887cad68f43ab9b466acfe"
+    },
+    "backend/analyst/skills/free-agency-and-cap/SKILL.md": {
+      "bytes": 7849,
+      "sha256": "70e47037d9ae33e125bab4a563f84061cac33bdaaa1aa3950c3bc0eb5d585dab"
+    },
+    "backend/analyst/skills/game-prep-and-rotations/SKILL.md": {
+      "bytes": 9897,
+      "sha256": "86c3f0299fdf498cc4f56823e02642228e1dbbf5703870c738f671c3c1d8ef68"
+    },
+    "backend/analyst/skills/historical-grain-and-time/SKILL.md": {
+      "bytes": 6468,
+      "sha256": "53656278960507f3b12b94f31db338ea9e73fd52e4e225837f6cfbba1f923087"
+    },
+    "backend/analyst/skills/interpretation-and-evidence/SKILL.md": {
+      "bytes": 3884,
+      "sha256": "989dbc601191553414ff80cf5e0bae132ee3efa3140829001cb3a38c7f44f110"
+    },
+    "backend/analyst/skills/lineups-and-rotations/SKILL.md": {
+      "bytes": 10348,
+      "sha256": "c1a832666b932f6bacca957bbb7270fd918b835887ca321633e683a61bf7045d"
+    },
+    "backend/analyst/skills/player-evaluation/SKILL.md": {
+      "bytes": 12954,
+      "sha256": "0f1b9ac99f4dc9db7bd299a2e4e999daa46a57fc3775dbe77bc9a0575ffde5d5"
+    },
+    "backend/analyst/skills/shot-diet-and-spatial/SKILL.md": {
+      "bytes": 4395,
+      "sha256": "5d6fb368339e9cae145a36917389efdb74d10d74442e43802431ec0cd453a057"
+    },
+    "backend/analyst/skills/statistical-modeling/SKILL.md": {
+      "bytes": 19527,
+      "sha256": "e5640be27e8ee9400a4cf52da650395c905b5dc52b46fcc0957b1499d3e0be8b"
+    },
+    "backend/analyst/skills/tracking-and-synergy/SKILL.md": {
+      "bytes": 2548,
+      "sha256": "609e4ef2024c317493961c5555ecbd54c2a462d9c1d201aa30462c77d16f416a"
+    },
+    "backend/analyst/skills/trade-evaluation/SKILL.md": {
+      "bytes": 11408,
+      "sha256": "aecde05166d3381dc0c8d9d2a301391a0c70e577bc8329e695e953e25063d85d"
+    },
+    "backend/analyst/skills/visual-artifacts/SKILL.md": {
+      "bytes": 17998,
+      "sha256": "52396084aa199f329c767d9733df14eb9ef2a7117c5a01c6a3ecba12927559ae"
+    },
+    "backend/analyst/skills/warehouse-guide/SKILL.md": {
+      "bytes": 14519,
+      "sha256": "b5b43bacf6977dc8f226df5a9b714e8ea51a0d1fb2cfeb6a6ed155859392937a"
+    },
+    "backend/analyst/skills/warehouse-reconciliation/SKILL.md": {
+      "bytes": 11255,
+      "sha256": "865847301e1e4ed153085b2a9542e159ed7277cfa10bd9875577fd9c0a638453"
+    }
+  }
+}
