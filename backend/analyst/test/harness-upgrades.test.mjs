@@ -1867,6 +1867,32 @@ test("verify_answer_numbers flags artifact asks answered with zero artifacts", a
   assert.equal(noArtifactAsk.no_artifacts_on_artifact_ask.length, 0);
 });
 
+test("verify_answer_numbers skips stipulated echoes but flags coincidental hallucinations", async () => {
+  const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
+  const sources = [makePayloadSourceRecord("src-1", { rows: [{ player: "Example Player", salary: 5000000 }] })];
+  const question = "Using the stipulated apron of $207800000 and matching band outgoing <= $7250000 permitting the 200% rule, evaluate the trade.";
+  const restated = auditAnswerNumbers(
+    {
+      blocks: [{ text: "The stipulated apron is $207,800,000 and the matching band for outgoing <= $7,250,000 permits the 200% rule as the question stipulated." }],
+      artifacts: [{ kind: "table", title: "T", columns: [{ key: "salary", label: "S", numeric: true }], rows: [{ salary: 5000000 }] }],
+    },
+    sources,
+    question,
+  );
+  const restatedFlags = JSON.stringify(restated.unsupported_claims) + JSON.stringify(restated.missing_in_artifacts);
+  assert.ok(!restatedFlags.includes("207,800,000") && !restatedFlags.includes("7,250,000"), "stipulated restatement should pass unaudited");
+
+  const hallucinated = auditAnswerNumbers(
+    {
+      blocks: [{ text: "His extension salary reaches $207,800,000 over the lifetime of the deal." }],
+      artifacts: [{ kind: "table", title: "T", columns: [{ key: "salary", label: "S", numeric: true }], rows: [{ salary: 5000000 }] }],
+    },
+    sources,
+    question,
+  );
+  assert.ok(JSON.stringify(hallucinated.unsupported_claims).includes("207,800,000"), "coincidental hallucination without rule context must still flag");
+});
+
 test("verify_answer_numbers accepts inline JSON chart specs as artifact coverage", async () => {
   const { auditAnswerNumbers } = await import("../dist/verify-answer.js");
   const sources = [makePayloadSourceRecord("src-1", { rows: [{ season: "2024-25", net_rating: 3.8 }] })];

@@ -597,13 +597,17 @@ export function auditAnswerNumbers(
         else
             unsupported.push(claim);
     }
-    const questionValues = (() => {
-        const questionClaims: NumericClaim[] = [];
-        addTextClaims(question ?? "", questionClaims, new Set<string>());
-        return questionClaims.flatMap(claim => claim.values);
-    })();
-    const echoesQuestion = (claim: NumericClaim) =>
-        claim.values.every(value => questionValues.some(asked => numbersClose(value, asked)));
+    const questionClaimsWithContext: NumericClaim[] = [];
+    addTextClaims(question ?? "", questionClaimsWithContext, new Set<string>());
+    const looseTokens = (text: string) => new Set((text.toLowerCase().match(/[a-z]{4,}/g) ?? []));
+    const echoesQuestion = (claim: NumericClaim) => {
+        if (!question)
+            return false;
+        const claimTokens = looseTokens(claim.context);
+        return questionClaimsWithContext.some(asked =>
+            asked.values.some(askedValue => claim.values.some(value => numbersClose(value, askedValue)))
+            && [...looseTokens(asked.context)].some(token => claimTokens.has(token)));
+    };
     const artifactColumns = new Map<string, number[]>();
     const artifactRowCounts: number[] = [];
     (input.artifacts ?? []).forEach(artifact => collectArtifactColumns(artifact, artifactColumns, artifactRowCounts));
