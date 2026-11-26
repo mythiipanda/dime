@@ -7,7 +7,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { artifactRejectionReason, createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
+import { auditAnswerNumbers, auditLimitationClaims, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, limitationChallengeAdvisory, loadWarehouseInventory, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -1214,6 +1214,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.missing_entities = missingEntities;
                             if (zeroEvidenceOnSubmit)
                                 gaps.no_evidence_on_data_ask = [ZERO_EVIDENCE_DATA_ASK_FLAG];
+                            const limitationAdvisories = auditLimitationClaims(submission, loadWarehouseInventory())
+                                .map(challenge => limitationChallengeAdvisory(challenge))
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            if (limitationAdvisories.length > 0)
+                                gaps.limitation_challenges = limitationAdvisories;
 
                             lastRejectedSubmission = submission;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
