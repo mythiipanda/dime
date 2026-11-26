@@ -116,3 +116,23 @@ test("caps in-flight requests at four", async () => {
     await Promise.all(Array.from({ length: 12 }, () => fetch(`${BASE}/chat/completions`, { method: "POST" })));
     assert.ok(peak <= 4, `peak ${peak}`);
 });
+
+test("load_skill results survive elision while data results truncate", async () => {
+    const bodies = [];
+    const realFetch = async (_url, init) => { bodies.push(init.body); return ok(); };
+    const fetch = uvarcGuardedFetch(BASE, realFetch);
+    const big = (n) => "x".repeat(n);
+    const messages = [{ role: "user", content: "go" }];
+    for (let i = 0; i < 12; i += 1) {
+        messages.push({ role: "assistant", content: `step ${i}` });
+        messages.push({ role: "tool", name: i === 1 ? "load_skill" : "sql_exec", content: big(2000) });
+    }
+    await fetch(`${BASE}/chat/completions`, { method: "POST", body: JSON.stringify({ model: "m", messages }) });
+    const sent = JSON.parse(bodies[0]);
+    const tools = sent.messages.filter((m) => m.role === "tool");
+    const skill = tools.find((m) => m.name === "load_skill");
+    const sqls = tools.filter((m) => m.name === "sql_exec");
+    assert.equal(skill.content.length, 2000);
+    const elided = sqls.filter((m) => m.content.includes("[elided"));
+    assert.ok(elided.length > 0, "data results still elide");
+});
