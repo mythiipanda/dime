@@ -7,6 +7,21 @@ description: Preserve historical warehouse grain, season/phase filters, clock-mi
 
 Use this playbook before aggregating across `silver_hist_*`, `silver_boxscores`, `silver_hist_shots`, or `silver_hist_lineups`, especially when a task names an exact season, phase, player cohort, or reconciliation check.
 
+
+## 1b. Multi-season assembly is one pass, never a season loop
+
+Any ask spanning many seasons (shot revolution, league trend, era comparison) resolves in ONE grouped query with `_season` in the GROUP BY — never iterate seasons. `silver_hist_shots` alone covers 2009-10 forward at shot grain, and DuckDB aggregates its ~200k rows-per-season in seconds:
+
+```sql
+SELECT _season, COUNT(*) AS shots,
+  ROUND(100.0 * SUM(CASE WHEN shot_value = 3 THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_3pa
+FROM silver_hist_shots
+WHERE game_id LIKE '002%'
+GROUP BY _season ORDER BY _season
+```
+
+(verified executable — all 17 seasons return in one pass, e.g. 2009-10 at 22.2% 3PA share). The budget failure mode is per-season requerying: each round trip multiplies model latency, and assembly-heavy asks die in the wall before the write-up. One query, then spend the remaining budget on the deliverable.
+
 ## 1. Resolve Grain Before Aggregating
 
 - Inspect `warehouse_schema` for the exact table and confirm whether rows are player-game, player-season, team-game, shot-event, or lineup-unit grain.

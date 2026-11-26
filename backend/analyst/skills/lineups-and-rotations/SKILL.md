@@ -7,6 +7,20 @@ description: Analyze 5-man lineup net ratings with sample-size caveats, possessi
 
 Use this playbook for 5-man lineup evaluation, two-player With-Or-Without-You (WOWY) synergy splits, bench survival analysis, and playoff rotation tightening.
 
+
+## Single-pass lineup screens
+
+A "every five-man unit with at least N minutes, ranked" ask resolves in ONE aggregate query against `silver_hist_lineups` — never enumerate teams or players in a loop. The table is already lineup-unit grain with `min` and `net_rating` per `_season`/`team_abbreviation`:
+
+```sql
+SELECT group_name, ROUND(min, 1) AS mins, ROUND(net_rating, 1) AS net
+FROM silver_hist_lineups
+WHERE _season = '2024-25' AND min >= 100
+ORDER BY net_rating DESC
+```
+
+(verified executable — returns league-best units directly; add `team_abbreviation = 'DEN'` for one team, and note units can appear in duplicate rows so `SELECT DISTINCT` or `GROUP BY group_name` when counting). If the result looks thin, lower the minutes cutoff in the SAME query — do not start per-team follow-up loops; each round trip costs budget the write-up phase needs.
+
 ## 0. Tools and when they matter
 
 | Tool | Answers | Reach for it when |
