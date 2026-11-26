@@ -1,4 +1,5 @@
 import sys
+import threading
 import time as _time
 from datetime import datetime, timezone
 
@@ -59,7 +60,28 @@ def _insert_frame(con, table: str, frame: pl.DataFrame, cols: list[str]) -> None
         con.unregister("_incoming")
 
 
+_WRITE_MUTEX = threading.RLock()
+
+
 def _commit_frame_write(
+    table: str,
+    frame: pl.DataFrame,
+    season: str,
+    source: str,
+    entity: str,
+    fetched_at: str,
+    delete_where: str | None,
+    delete_params: list,
+    _fault: str | None,
+) -> int:
+    with _WRITE_MUTEX:
+        return _commit_frame_write_inner(
+            table, frame, season, source, entity, fetched_at,
+            delete_where, delete_params, _fault,
+        )
+
+
+def _commit_frame_write_inner(
     table: str,
     frame: pl.DataFrame,
     season: str,

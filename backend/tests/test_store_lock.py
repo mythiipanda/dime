@@ -104,3 +104,32 @@ def test_no_contention_connects_immediately(tmp_path, monkeypatch):
         assert con.execute("SELECT 1").fetchone()[0] == 1
     finally:
         con.close()
+
+
+def test_concurrent_write_units_serialize_without_conflicts(tmp_path,
+                                                            monkeypatch):
+    import polars as pl
+    monkeypatch.setattr(store, "DB_PATH", tmp_path / "lockw.duckdb")
+    duckdb.connect(str(tmp_path / "lockw.duckdb")).close()
+    errors = []
+
+    def writer(i):
+        try:
+            frame = pl.DataFrame({"game_id": [str(i)], "val": [i]})
+            store.write_unit("t_units", frame, "2025-26", "test",
+                             f"e{i}", "1=0", [])
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, f"concurrent writes raised: {errors}"
+    con = duckdb.connect(str(tmp_path / "lockw.duckdb"), read_only=True)
+    try:
+        n = con.execute("SELECT COUNT(*) FROM t_units").fetchone()[0]
+        assert n == 4
+    finally:
+        con.close()
