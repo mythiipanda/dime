@@ -29,18 +29,18 @@ Optical tracking captures fine-grained physical movement:
 
 ### Speed & Distance
 - **Average Speed**: Miles per hour on offense vs defense.
-- **Distance Traveled**: Total miles run per 48 minutes of game time.
+- **Distance Traveled**: Total miles run across tracked games, split between offense and defense.
 
 ### Touch Profile
 - **Touch Time**: Average seconds of possession per touch.
   - Quick-decision connector: $< 2.0\text{s}$ per touch.
   - Primary initiator: $> 5.5\text{s}$ per touch.
-- **Dribbles per Touch**: Distribution of 0-dribble, 1-dribble, and 2+ dribble scoring attempts.
+- **Dribbles per Touch**: Average dribbles per touch.
 
 ### Defensive Contest Tracking
 - **Closest Defender Distance**:
   - Very Tight: $0 - 2\text{ ft}$.
   - Tight: $2 - 4\text{ ft}$.
   - Open: $4 - 6\text{ ft}$.
-  - Wide Open: $> 6\text{ ft}$.
-- **Defensive Field Goal % (DFG%) Differential**: Delta between shooter's expected FG% and actual FG% when guarded by the focal defender.
+  - Wide Open: $6+\text{ ft}$.
+- **Defensive Field Goal % (DFG%) Differential**: Defended FG% minus the shooter's normal FG% when the focal defender is the closest defender.
