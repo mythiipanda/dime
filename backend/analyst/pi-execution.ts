@@ -1296,7 +1296,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         narrationSalvage.unref();
                     }
                     kind = "model";
+                    const turnStartMessageCount = session.messages.length;
                     await session.prompt(start.q);
+                    let nondeliverySteersUsed = 0;
                     let submitSteerUsed = false;
                     let giveUpSteerUsed = false;
                     let emptyRetryUsed = false;
@@ -1329,6 +1331,23 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 emit({ type: "tool_result", name: "tool_not_found_correction", status: "ok" });
                                 await session.prompt(`Correction: the tools ARE available and working in this session — the error you saw means only the invocation form was wrong, not that any tool is missing. The failing call used a malformed name (${notFoundMatch[1]}). Call every tool by its bare registered name with no tools. prefix and no other prefix or suffix — the prefixed form does not exist and always errors. Available right now: ${available}. Retry what you were doing with the exact bare name now.`);
                                 continue;
+                            }
+                        }
+                        if (!acceptedSubmission && nondeliverySteersUsed < 2) {
+                            const turnText = session.messages.slice(turnStartMessageCount).filter(m => m.role === "assistant").flatMap(m => m.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+                            const turnHasToolResults = session.messages.slice(turnStartMessageCount).some(m => m.role === "toolResult");
+                            const endsInQuestion = /\?\s*$/.test(text.trim());
+                            if (turnHasToolResults && turnText.trim().length >= TURN_END_STEER_MIN_CHARS && !endsInQuestion) {
+                                const remainingMs = start.runTimeoutMs !== undefined
+                                    ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
+                                    : undefined;
+                                if (remainingMs === undefined || remainingMs > 45_000) {
+                                    nondeliverySteersUsed++;
+                                    emit({ type: "tool_call", name: "nondelivery_interception" });
+                                    emit({ type: "tool_result", name: "nondelivery_interception", status: "ok" });
+                                    await session.prompt("Your analysis exists only as narration — the reader receives nothing until it is submitted. Call submit_answer now with the text you already wrote moved verbatim into blocks; do not rewrite or extend it.");
+                                    continue;
+                                }
                             }
                         }
                         if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
