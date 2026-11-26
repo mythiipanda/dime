@@ -542,6 +542,66 @@ function buildBreakerRecord(
     return { record, payload };
 }
 
+export type CompositionGate = {
+    readonly directiveFired: boolean;
+    readonly lifted: boolean;
+    readonly evidenceSeen: boolean;
+    noteEvidence(): void;
+    fireDirective(): boolean;
+    recordDataCall(): "allow" | "block";
+    recordSubmitAttempt(): void;
+};
+
+export const COMPOSITION_GATE_CALLS_AFTER_DIRECTIVE = 3;
+
+export function createCompositionGate(): CompositionGate {
+    let directiveFired = false;
+    let lifted = false;
+    let evidenceSeen = false;
+    let dataCallsAfterDirective = 0;
+    return {
+        get directiveFired() { return directiveFired; },
+        get lifted() { return lifted; },
+        get evidenceSeen() { return evidenceSeen; },
+        noteEvidence() { evidenceSeen = true; },
+        fireDirective() {
+            if (directiveFired || lifted || !evidenceSeen)
+                return false;
+            directiveFired = true;
+            return true;
+        },
+        recordDataCall() {
+            if (!directiveFired || lifted)
+                return "allow";
+            dataCallsAfterDirective += 1;
+            return dataCallsAfterDirective > COMPOSITION_GATE_CALLS_AFTER_DIRECTIVE ? "block" : "allow";
+        },
+        recordSubmitAttempt() { lifted = true; },
+    };
+}
+
+function buildCompositionGateRecord(toolName: string, callId: string) {
+    const error = "composition gate: call submit_answer with your current verified partial draft before any further data calls — submission is not final: it banks the partial answer, and you may keep querying and resubmit after it.";
+    const payload = {
+        ok: false,
+        composition_gate: true,
+        error,
+        summary: "Data tools are paused until you submit the verified partial work already in hand. submit_answer does not end the run — resubmission after revision is unlimited.",
+        next_actions: ["Call submit_answer with the verified partial draft now", "Resume data calls freely once any submission attempt is made"]
+    };
+    const record: SourceRecord = {
+        ref: `composition_gate_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
 const LOOP_STOP_AFTER_INJECTIONS = 3;
 const SUBMIT_AUDIT_MAX_REJECTIONS = 3;
 
@@ -761,7 +821,8 @@ function wrapBridgeTools(
     emit: (event: AnalystEvent) => void,
     tracker: RunStatusTracker,
     stopRun: (reason: string) => void,
-    question?: string
+    question?: string,
+    compositionGate?: CompositionGate
 ) {
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
     const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number }>();
@@ -817,6 +878,13 @@ function wrapBridgeTools(
             tracker.toolCalls += 1;
             emit({ type: "tool_call", name: tool.name, args: args[1] });
             const callId = typeof args[0] === "string" && args[0] ? args[0] : `call_${tracker.toolCalls}`;
+            if (compositionGate && compositionGate.recordDataCall() === "block") {
+                const { record, payload } = buildCompositionGateRecord(tool.name, callId);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                return sourceResult(record);
+            }
             const ceiling = callCeilingLimits();
             if (tracker.toolCalls >= ceiling.stop) {
                 const { record, payload } = buildCallCeilingStopRecord(tool.name, callId, tracker.toolCalls);
@@ -881,8 +949,11 @@ function wrapBridgeTools(
                     domain.budget_remaining_ms = Math.max(0, Math.round(tracker.budgetMs - (Date.now() - tracker.startedAt)));
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
-                if (!failed)
+                if (!failed) {
                     entry.lastSuccessRef = record.ref;
+                    if (compositionGate && !(Array.isArray(domain?.rows) && (domain.rows as unknown[]).length === 0))
+                        compositionGate.noteEvidence();
+                }
                 else if (typeof error === "string")
                     entry.lastError = error;
                 if (failed) {
@@ -1027,6 +1098,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridgePid: number | undefined;
                 let modelApiKey: string | undefined;
                 let budgetNudge: ReturnType<typeof setTimeout> | undefined;
+                let compositionDirective: ReturnType<typeof setTimeout> | undefined;
                 let narrationSalvage: ReturnType<typeof setTimeout> | undefined;
                 let emittedFromNarration = false;
                 let narrationSubmissionRef: unknown;
@@ -1054,6 +1126,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         sourceCount: () => (start.sources?.length ?? 0) + connected.results.size,
                         submitted: false,
                     };
+                    const compositionGate = createCompositionGate();
                     let submitAuditRejections = 0;
                     let zeroEvidenceRepromptUsed = false;
                     const consultedTables = new Set<string>();
@@ -1062,6 +1135,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
+                            compositionGate.recordSubmitAttempt();
                             tracker.submitted = true;
                             const rejected = lastRejectedSubmission;
                             if (rejected) {
@@ -1081,6 +1155,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
                         },
                         (submission) => {
+                            compositionGate.recordSubmitAttempt();
                             if (submitAuditRejections >= SUBMIT_AUDIT_MAX_REJECTIONS)
                                 return null;
                             const audit = auditAnswerNumbers(
@@ -1165,7 +1240,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             }, tracker, (reason: string) => {
                                 emit({ type: "failure", kind: "loop_stop", message: reason });
                                 controller.abort();
-                            }, start.q),
+                            }, start.q, compositionGate),
                             countToolCall(priorSourceTool(start.sources ?? []), tracker),
                             verifyTool,
                             countToolCall(submitTool, tracker),
@@ -1265,6 +1340,21 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         const runTimeoutMs = start.runTimeoutMs;
                         const nudgeAtMs = budgetNudgeDelayMs ?? Math.max(5000, Math.min(runTimeoutMs * 0.85, runTimeoutMs - 30000));
                         const agent = session.agent;
+                        const directiveAtMs = Math.max(5000, runTimeoutMs * 0.5);
+                        compositionDirective = setTimeout(() => {
+                            if (acceptedSubmission)
+                                return;
+                            if (!compositionGate.fireDirective())
+                                return;
+                            emit({ type: "tool_call", name: "composition_directive" });
+                            emit({ type: "tool_result", name: "composition_directive", status: "ok" });
+                            agent.steer({
+                                role: "user",
+                                content: "Half the run budget is gone and you hold verified data. Call submit_answer NOW with a partial draft of what you have verified — submission is not final: it banks the partial answer, and you may keep querying and resubmit after it. A banked partial answer plus revision beats a perfect answer that never submits. Data tools pause if several more calls pass with no submission. Skip this only if submit_answer already ran.",
+                                timestamp: Date.now()
+                            });
+                        }, directiveAtMs);
+                        compositionDirective.unref();
                         budgetNudge = setTimeout(() => {
                             if (acceptedSubmission)
                                 return;
@@ -1460,6 +1550,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 finally {
                     if (budgetNudge)
                         clearTimeout(budgetNudge);
+                    if (compositionDirective)
+                        clearTimeout(compositionDirective);
                     if (narrationSalvage)
                         clearTimeout(narrationSalvage);
                     try {

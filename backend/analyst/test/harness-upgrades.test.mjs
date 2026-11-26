@@ -2939,3 +2939,55 @@ test("generated tool manifest stays in sync with tools/manifest.json", async () 
   );
   assert.deepEqual(TOOL_PROMPT_GUIDELINES, manifestGuidelines);
 });
+
+test("composition gate: procrastinator shape — directive fires, 3 data calls pass, 4th blocked, submit lifts permanently", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  gate.noteEvidence();
+  assert.equal(gate.fireDirective(), true);
+  assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.recordDataCall(), "block");
+  assert.equal(gate.recordDataCall(), "block");
+  gate.recordSubmitAttempt();
+  assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.lifted, true);
+});
+
+test("composition gate: control shape — early submit attempt means the gate never blocks late data work", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  gate.noteEvidence();
+  gate.recordSubmitAttempt();
+  assert.equal(gate.fireDirective(), false);
+  for (let i = 0; i < 12; i++)
+    assert.equal(gate.recordDataCall(), "allow");
+});
+
+test("composition gate: median path — submission before the directive window keeps data tools open throughout", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  gate.noteEvidence();
+  assert.equal(gate.recordDataCall(), "allow");
+  gate.recordSubmitAttempt();
+  assert.equal(gate.fireDirective(), false);
+  assert.equal(gate.recordDataCall(), "allow");
+});
+
+test("composition gate: zero-evidence dormancy — no row-bearing result means the directive never fires", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  assert.equal(gate.fireDirective(), false);
+  for (let i = 0; i < 10; i++)
+    assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.directiveFired, false);
+});
+
+test("composition gate: directive is one-shot even if ignored", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  gate.noteEvidence();
+  assert.equal(gate.fireDirective(), true);
+  assert.equal(gate.fireDirective(), false);
+});
