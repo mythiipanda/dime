@@ -308,29 +308,34 @@ _TRADE_PARTNER_DISCLAIMER = (
 
 
 def _partner_package_rows(team: str, roster: list[dict], incoming: int,
-                          allow_a: int, state: dict, room: int,
+                          pay_a: int, room_a: int, pay_b: int, room_b: int,
                           limit: int) -> list[dict]:
     paid = [p for p in roster
             if isinstance(p.get("salary"), (int, float)) and p["salary"] > 0]
     paid.sort(key=lambda p: int(p["salary"]))
-    over_apron1 = bool(state["over_apron1"])
-    over_apron2 = bool(state["over_apron2"])
-    max_size = 1 if over_apron2 else _TRADE_PARTNER_PACKAGE_MAX
-    fits: list[tuple[int, list[dict], int, str]] = []
-    for size in range(1, max_size + 1):
+    fits: list[tuple[int, list[dict], int, str, dict]] = []
+    for size in range(1, _TRADE_PARTNER_PACKAGE_MAX + 1):
         for combo in _it.combinations(paid, size):
             total = sum(int(p["salary"]) for p in combo)
-            allow_b, rule_b = _allowed_incoming(total, over_apron1, room)
+            state_a = _apron_state(pay_a - incoming + total)
+            state_b = _apron_state(pay_b - total + incoming)
+            if size > 1 and state_b["over_apron2"]:
+                continue
+            allow_a, _ = _allowed_incoming(
+                incoming, bool(state_a["over_apron1"]), room_a)
+            allow_b, rule_b = _allowed_incoming(
+                total, bool(state_b["over_apron1"]), room_b)
             if total > allow_a or allow_b < incoming:
                 continue
-            fits.append((total, list(combo), size, rule_b))
+            fits.append((total, list(combo), size, rule_b, state_b))
     fits.sort(key=lambda item: (item[2], item[0]))
     return [{"team": team.upper(),
              "players": ", ".join(str(p["player"]) for p in combo),
              "package_salary": total, "incoming": incoming,
-             "match_rule": rule_b, "over_apron1": over_apron1,
-             "over_apron2": over_apron2, "legal": True}
-            for total, combo, _, rule_b in fits[:limit]]
+             "match_rule": rule_b,
+             "over_apron1": bool(state_b["over_apron1"]),
+             "over_apron2": bool(state_b["over_apron2"]), "legal": True}
+            for total, combo, _, rule_b, state_b in fits[:limit]]
 
 
 @tool(description='Find CBA-legal salary-matching trade packages for one player '
@@ -372,10 +377,15 @@ def get_trade_partners(player: str = "", season: str | None = None,
         team_a = str(record["TEAM"] or "").upper()
         incoming = int(record["salary"])
         pay_a, _ = _payroll(team_a, con, season)
-        state_a = _apron_state(pay_a)
         room_a = max(0, CAP["cap"] - pay_a)
-        allow_a, rule_a = _allowed_incoming(
-            incoming, bool(state_a["over_apron1"]), room_a)
+        expanded_a, rule_expanded_a = _allowed_incoming(incoming, False, room_a)
+        strict_a, rule_strict_a = _allowed_incoming(incoming, True, room_a)
+        below_apron_max = CAP["apron1"] - pay_a + incoming
+        if min(expanded_a, below_apron_max) >= strict_a:
+            allow_a = min(expanded_a, below_apron_max)
+            rule_a = rule_expanded_a
+        else:
+            allow_a, rule_a = strict_a, rule_strict_a
         rows: list[dict] = []
         no_fit: list[str] = []
         partners = sorted({str(r["TEAM"]).upper() for r in records
@@ -384,10 +394,9 @@ def get_trade_partners(player: str = "", season: str | None = None,
             if restrict and team not in restrict:
                 continue
             pay_b, roster = _payroll(team, con, season)
-            state_b = _apron_state(pay_b)
             room_b = max(0, CAP["cap"] - pay_b)
             packages = _partner_package_rows(
-                team, roster, incoming, allow_a, state_b, room_b, limit)
+                team, roster, incoming, pay_a, room_a, pay_b, room_b, limit)
             if packages:
                 rows.extend(packages)
             else:

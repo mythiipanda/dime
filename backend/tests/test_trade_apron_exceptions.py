@@ -357,3 +357,42 @@ def test_cap_scenario_second_apron_freezes_seventh_following_draft(
     assert any(row["threshold"] == "second apron"
                and "2034 first-round pick is frozen" in row["rule"]
                for row in out["restrictions"])
+
+
+def test_trade_partners_crossing_first_apron_drops_over_apron_packages(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_partners
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
+    out = get_trade_partners.invoke({
+        "player": "Alpha One", "teams": "MIA", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    rows = out["rows"]
+    assert not any(r["players"] == "Beta Two" for r in rows)
+    assert all(r["package_salary"] <= 29_015_000 for r in rows)
+    assert out["meta"]["max_return_salary"] == 29_015_000
+    assert out["meta"]["match_rule_in"] == (
+        "outgoing salary plus $9.096M (below the first apron)")
+
+
+def test_trade_partners_dropping_below_second_apron_allows_aggregation(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_partners
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 25_000_000)])
+          + _roster("MIA", 224_000_000,
+                    [("Beta Two", 15_000_000), ("Gamma Three", 15_000_000)]))
+    out = get_trade_partners.invoke({
+        "player": "Alpha One", "teams": "MIA", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    rows = [r for r in out["rows"] if r["team"] == "MIA"]
+    pair = [r for r in rows if r["players"] == "Beta Two, Gamma Three"]
+    assert pair, rows
+    assert pair[0]["package_salary"] == 30_000_000
+    assert pair[0]["over_apron2"] is False
+    assert pair[0]["legal"] is True
