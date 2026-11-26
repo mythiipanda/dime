@@ -150,8 +150,10 @@ Grain facts that trip these queries:
 
 ## 6. Current vs historical — always stated
 
-Cap and trade tools default to the current 2026-27 salary season;
-stat/leaderboard tools fall back to the latest season with data. While
+When `season` is omitted, `get_cap_scenario` and `get_trade_legality`
+choose the furthest contract year represented by explicit `SALARY_YYYY_YY`
+columns; `get_roster_fit` and stat/leaderboard tools fall back to the
+latest completed season with warehouse coverage. While
 2026-27 is early and partial, an unspecified season-long total or
 leaderboard ask ("who leads the league in corner threes") wants the latest
 completed season — query `_season = '2025-26'` rows and label that season
