@@ -83,7 +83,7 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
                      "formula": "2*PTS + 50*TS + USG"}}
 
 
-@tool(description='Draft combine measurements plus shooting drills for one draft year.')
+@tool(description='Draft combine measurements plus shooting drills for one draft year. Returns at most 25 rows: for cohort-wide rankings, counts, means, or every-prospect sweeps (rank the whole class, how many prospects, cohort average), query silver_combine via sql_exec instead — the full class is there and this slice will not match it.')
 def get_combine(season: str = "2025") -> dict[str, Any]:
     pkg = _pkg()
     season = pkg.resolve_season(season)
@@ -121,6 +121,12 @@ def get_combine(season: str = "2025") -> dict[str, Any]:
     if not rows:
         return {"tool": "get_combine", "ok": False,
                 "error": meta.get("error") or "empty upstream response"}
+    if len(rows) > 25:
+        meta = dict(meta)
+        meta["truncation"] = (f"showing 25 of {len(rows)} rows — for "
+                              "cohort-wide rankings, counts or means query "
+                              "silver_combine via sql_exec; the full class "
+                              "is there")
     return {"tool": "get_combine", "ok": True, "rows": rows[:25],
             "meta": meta}
 

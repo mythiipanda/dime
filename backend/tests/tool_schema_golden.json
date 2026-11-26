@@ -1578,7 +1578,7 @@
     },
     "get_combine": {
       "name": "get_combine",
-      "description": "Draft combine measurements plus shooting drills for one draft year. Warehouse-backed with live fallback.",
+      "description": "Draft combine measurements plus shooting drills for one draft year. Returns at most 25 rows: for cohort-wide rankings, counts, means, or every-prospect sweeps (rank the whole class, how many prospects, cohort average), query silver_combine via sql_exec instead — the full class is there and this slice will not match it. Warehouse-backed with live fallback.",
       "args_schema": {
         "description": "Anthropometric measurements (height, wingspan, reach, weight) and athletic drills.",
         "properties": {
