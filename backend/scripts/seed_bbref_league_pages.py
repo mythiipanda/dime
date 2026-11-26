@@ -203,7 +203,7 @@ def seed_season(season: str, nm: dict | None = None,
 
 def run(seasons: list[str], nm: dict | None = None,
         fetch_page=None) -> dict:
-    done = loaded_seasons()
+    done = loaded_seasons() & loaded_seasons(ZONES_TABLE)
     skipped: list[str] = []
     loaded: dict[str, int] = {}
     for season in seasons:

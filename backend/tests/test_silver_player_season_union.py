@@ -210,6 +210,21 @@ def test_bbref_tot_team_rule_and_provenance(scratch):
     assert lebron["_prov_PPG"] == bbref.BBREF
     assert lebron["_prov_TS_PCT"] == bbref.ABSENT_TS
 
+def test_bbref_player_season_present_zones_missing_not_skipped(scratch):
+    nm = {"LeBron James": LEBRON, "Stephen Curry": CURRY}
+
+    def fetch_page(page: str, year: int) -> pd.DataFrame:
+        assert page == "per_game"
+        return _bbref_pg()
+
+    first = bbref.run(["2025-26"], nm=nm, fetch_page=fetch_page)
+    assert first["loaded"] == {"2025-26": 2}
+    assert "2025-26" in bbref.loaded_seasons()
+    assert "2025-26" not in bbref.loaded_seasons(bbref.ZONES_TABLE)
+    second = bbref.run(["2025-26"], nm=nm, fetch_page=fetch_page)
+    assert second["skipped"] == []
+    assert second["loaded"] == {"2025-26": 2}
+
 def test_bbref_season_idempotent_and_empty_names_season(scratch):
     nm = {"LeBron James": LEBRON, "Stephen Curry": CURRY}
 
@@ -222,7 +237,8 @@ def test_bbref_season_idempotent_and_empty_names_season(scratch):
     second = bbref.run(["2025-26"], nm=nm, fetch_page=fetch_page)
 
     assert first["loaded"] == {"2025-26": 2}
-    assert second["skipped"] == ["2025-26"]
+    assert second["skipped"] == []
+    assert second["loaded"] == {"2025-26": 2}
     assert _seasons(scratch, bbref.TABLE) == {"2025-26"}
     assert store.read_frame(bbref.TABLE).height == 2
 
