@@ -196,7 +196,6 @@ def get_cap_scenario(team: str = "", signings: str = "",
                         team, out_unknown, team, in_unknown, con)}
         salary_date = _salary_date(con)
         source = _payroll_source(con)
-    state_before = _apron_state(pay_before)
     room_before = max(0, CAP["cap"] - pay_before)
     pay = pay_before
     rows = [{"step": 0, "kind": "payroll",
@@ -229,14 +228,14 @@ def get_cap_scenario(team: str = "", signings: str = "",
     matching: dict[str, Any] | None = None
     if out_names and in_names:
         aggregates = len(out_names) > 1 or len(in_names) > 1
-        if state_before["over_apron2"] and aggregates:
+        if state_after["over_apron2"] and aggregates:
             issues.append("cannot aggregate salaries above the second apron")
             matching = {"incoming": in_total, "outgoing": out_total,
                         "legal": False, "match_rule": "no aggregation (above the second apron)",
                         "allowed_incoming": 0}
         else:
             allow, rule = _allowed_incoming(
-                out_total, bool(state_before["over_apron1"]), room_before)
+                out_total, bool(state_after["over_apron1"]), room_before)
             matching = {"incoming": in_total, "outgoing": out_total,
                         "allowed_incoming": allow, "match_rule": rule,
                         "legal": in_total <= allow}
