@@ -51,6 +51,10 @@ jobs:
     if: github.event_name != 'pull_request' || needs.changes.outputs.backend == 'true'
     needs: [changes]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -72,7 +76,7 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt pytest pytest-xdist
       - name: Run backend test suite
-        run: python -m pytest backend/tests -q -m "not canonical_warehouse" -n 4
+        run: python -m pytest $(ls backend/tests/test_*.py | awk -v n=2 -v i=${{ matrix.shard }} 'NR%n==i') -q -m "not canonical_warehouse" -n 4
   frontend:
     if: github.event_name != 'pull_request' || needs.changes.outputs.frontend == 'true'
     needs: [changes]
@@ -83,6 +87,12 @@ jobs:
         with:
           node-version: "22"
       - uses: oven-sh/setup-bun@v2
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
+          restore-keys: ${{ runner.os }}-bun-
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
         working-directory: frontend
@@ -107,6 +117,12 @@ jobs:
         with:
           node-version: "22"
       - uses: oven-sh/setup-bun@v2
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock', '**/bun.lockb') }}
+          restore-keys: ${{ runner.os }}-bun-
       - name: Install backend and analyst dependencies
         run: pip install -r backend/requirements.txt & (cd backend/analyst && bun install --frozen-lockfile) & wait
       - name: Run the analyst suites
