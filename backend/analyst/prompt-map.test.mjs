@@ -23,3 +23,14 @@ test("canonical tool map steers per-game leaderboards to the rate categories, no
   assert.match(runtimeSource, /PPG\/RPG\/APG\/SPG\/BPG\/TS_PCT/);
   assert.match(runtimeSource, /season-totals boards/);
 });
+
+test("canonical tool map steers raw impact metrics and salary-value mismatch audits to the impact tables", () => {
+  assert.match(runtimeSource, /silver_rapm \(one row per player-season: name, rapm, possessions, _season\)/);
+  assert.match(runtimeSource, /silver_impact \(BPM, VORP per player-season\)/);
+  assert.match(runtimeSource, /neither substitutes for the raw impact tables/);
+});
+
+test("canonical tool map bars web_search for warehouse-covered facts", () => {
+  assert.match(runtimeSource, /web results reflect the real world, not this warehouse/);
+  assert.match(runtimeSource, /web_search can never resolve a player's team, stats, salary, contract, trade/);
+});
