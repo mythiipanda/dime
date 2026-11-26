@@ -57,3 +57,10 @@ def test_parse_output_matches_warehouse_row_shape():
     assert isinstance(out[0], list) and isinstance(out[1], list)
     keys = set(out[0][0].keys())
     assert keys == {"On", "Off", "stat"}
+
+
+def test_writes_default_on_dry_run_opts_out() -> None:
+    import inspect
+    src = inspect.getsource(ff.main)
+    assert 'if not args.dry_run' in src
+    assert '"--apply"' not in src

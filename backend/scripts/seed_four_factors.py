@@ -68,7 +68,6 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--season", default="2026-27")
     ap.add_argument("--warehouse", default=str(Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"))
-    ap.add_argument("--apply", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
@@ -111,7 +110,7 @@ def main(argv=None) -> int:
     if args.limit:
         todo = todo[:args.limit]
     print(f"{len(pairs)} player-team pairs ({pair_source}), {len(have)} fresh this week, fetching {len(todo)}")
-    if args.dry_run and not args.apply:
+    if args.dry_run:
         for p, t in todo[:5]:
             print(f"  would fetch player:{p} team:{t}")
         if len(todo) > 5:
@@ -130,7 +129,7 @@ def main(argv=None) -> int:
         frame = getattr(res, "frame", None)
         return pid, parse_four_factor_frame(frame, args.season, fetched_at, f"player:{pid}")
 
-    if args.apply:
+    if not args.dry_run:
         done = 0
         with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
             for pid, parsed in pool.map(fetch, todo):
@@ -148,7 +147,7 @@ def main(argv=None) -> int:
         con.execute("CHECKPOINT")
         print(f"done: {ins} players written, {fail} empty/failed — applied + checkpointed")
     else:
-        print("dry-run rolled back (pass --apply to write)")
+        print("dry-run rolled back (writes happen without --dry-run)")
     con.close()
     return 0
 
