@@ -89,6 +89,14 @@ _TABLE_CONSTANTS: dict[str, dict[str, Any]] = {
         ),
         "season_type": "'regular-season' or 'playoffs' (lowercase-hyphenated)",
     },
+    "silver_lineups": {
+        "GROUP_ID": "hyphen-joined player ids, uppercase — there is no lineup_id/lineup_name; GROUP_NAME is the hyphen-joined player names",
+        "MEASURE": (
+            "'advanced' rows carry OFF_RATING/DEF_RATING/NET_RATING/POSS/PIE; 'base' rows carry counting stats with NULL ratings — "
+            "always filter MEASURE='advanced' for rating screens or the result is mostly NULLs"
+        ),
+        "shape": "multiplexed — the same unit appears once per MEASURE slice and can repeat within a season; dedupe with DISTINCT or GROUP BY group_name when counting units",
+    },
     "silver_boxscores": {
         "columns": (
             "camelCase: teamTricode (not team_abbreviation), firstName/familyName (not player_name), "
