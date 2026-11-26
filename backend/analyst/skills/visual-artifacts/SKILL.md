@@ -1,7 +1,6 @@
 ---
 name: visual-artifacts
-description: Select grounded generative answer components from Dime's bounded catalog (player_card, team_card, scatter, shot_chart, compare, table, chart).
-description: Select grounded generative answer components from Dime's bounded catalog (player_card, scatter, shot_chart, compare, table, chart, memo).---
+description: Select grounded generative answer components from Dime's bounded catalog (player_card, team_card, scatter, shot_chart, compare, table, chart, memo).
 
 # Dime Visual Artifacts & Multimodal Output Guide
 
@@ -19,6 +18,29 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 | **Rankings, Rosters, Ledgers, Multi-Metric Lists** | `table` | Sortable columns with typed numeric formatting, source citation headers, CSV export. |
 | **Time-Series, Trajectories, Multi-Game Trends** | `chart` | Line/bar series over ordered games, months, or seasons with `unit`, `xLabels`, and semantic `tone`. `variant:"bar"` renders a ranked leaderboard; `marks`, `annotations`, `labelValues`, `xLabel`/`yLabel`, `subtitle` cover threshold lines, callouts and axis labels. |
 | **Executive Briefings, GM/Owner Deliverables, Multi-Section Reports** | `memo` | Titled document with headed `sections`, per-section citation `anchors`, and markdown export. |
+
+---
+
+## 1b. Inline JSON specs when the ask names one
+
+When the task explicitly asks for a structured JSON chart payload (for example a spec with `"kind": "line"`), embed the spec as a JSON code block directly in the answer text — do not substitute a catalog artifact. Catalog artifacts use their own `kind` values (`chart`, not `line`), so they do not satisfy a spec-shaped ask. Multi-series trend example:
+
+```json
+{
+  "kind": "line",
+  "title": "Nuggets net rating peaked in 2023-24",
+  "xLabels": ["2015-16", "2016-17", "2017-18"],
+  "series": [
+    { "name": "offensive rating", "values": [105.1, 106.2, 107.3] },
+    { "name": "defensive rating", "values": [108.4, 107.5, 106.6] },
+    { "name": "net rating", "values": [-3.3, -1.3, 0.7] }
+  ],
+  "xLabel": "Season",
+  "yLabel": "Rating per game"
+}
+```
+
+Values come from the queried rows only — one entry per xLabel per series, no gaps.
 
 ---
 
