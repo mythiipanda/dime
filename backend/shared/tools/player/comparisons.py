@@ -502,13 +502,27 @@ def _metric_row(
     return {"metric": metric, "label": label, "method": method, "a": fa, "b": fb, "leader": leader, "note": note}
 
 
+def _player_name_key_sql(column: str) -> str:
+    ws = r"\s\p{Z}"
+    cleaned = (f"regexp_replace(strip_accents(lower({column})), "
+               f"'[^a-z0-9{ws}]', '', 'g')")
+    trimmed = (f"regexp_replace({cleaned}, "
+               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
+    suffixless = (f"regexp_replace({trimmed}, "
+                  f"'(?:^|[{ws}]+)(?:iii|ii|iv|jr|sr|v)"
+                  f"(?:[{ws}]+(?:iii|ii|iv|jr|sr|v))*$', '', 'g')")
+    return f"regexp_replace({suffixless}, '[{ws}]+', '', 'g')"
+
+
 def _metric_player_stats(pid: int, name: str, season: str) -> dict[str, Any]:
     pkg = _pkg()
     out: dict[str, Any] = {}
     try:
         r = pkg._read_df(
             "SELECT RAPTOR_OFFENSE, RAPTOR_DEFENSE, RAPTOR_TOTAL, WAR_TOTAL, _season "
-            "FROM silver_raptor_player WHERE LOWER(PLAYER_NAME) = LOWER(?) ORDER BY _season DESC LIMIT 1",
+            "FROM silver_raptor_player WHERE "
+            f"{_player_name_key_sql('PLAYER_NAME')} = {_player_name_key_sql('?')} "
+            "ORDER BY _season DESC LIMIT 1",
             [name],
         )
         if r:
