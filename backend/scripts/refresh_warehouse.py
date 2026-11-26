@@ -52,6 +52,7 @@ SEEDERS = [
     ("rosters", "seed_rosters.py", ["--season"], False),
     ("hustle_player", "seed_hustle_player.py", ["--season"], False),
     ("clutch", "seed_clutch.py", ["--season"], False),
+    ("wowy", "seed_wowy.py", ["--season"], True),
 ]
 
 
