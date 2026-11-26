@@ -1317,7 +1317,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 continue;
                             }
                         }
-                        if (!giveUpSteerUsed) {
+                        if (!giveUpSteerUsed && !zeroEvidenceDataAsk) {
                             const remainingMs = start.runTimeoutMs !== undefined
                                 ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
                                 : undefined;
