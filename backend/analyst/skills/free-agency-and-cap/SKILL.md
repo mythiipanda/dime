@@ -25,6 +25,31 @@ Use this playbook for free-agent fits, cap-room computations, contract value com
 | `get_salary_history` | A player's year-by-year salary with cap/tax/apron context, team payroll history, or the league cap table. | Historical contract questions and market anchors for what a comp signed at. |
 | `get_trade_legality` | Full multi-team trade verdict: salary matching, apron aggregation, sign-and-trade, TPE/cash, Stepien picks. | Concrete multi-team or sign-and-trade proposals — `get_trade_check` covers the simple two-team case. |
 
+### League-wide scans are one query
+
+Any all-30-team sweep, league-wide scan, payroll-tier count, or cross-team ranking is ONE `sql_exec` over `silver_cap_room` or `silver_salaries` (as appropriate), never 30 per-team tool calls. Use `silver_cap_room` for committed-salary, projected-room, cap/tax/apron scans; use `silver_salaries` only when the ask is explicitly salary-ledger payroll, aggregated from the correct season-tagged salary column. Per-team cap tools are for single-team depth after the scan, not for assembling the league table.
+
+```sql
+SELECT CAP_SEASON, payroll_tier, COUNT(*) AS teams
+FROM (
+    SELECT TEAM,
+           CAP_SEASON,
+           CASE
+               WHEN COMMITTED_SALARY > PROJECTED_APRON2 THEN 'over apron 2'
+               WHEN COMMITTED_SALARY > PROJECTED_APRON1 THEN 'over apron 1'
+               WHEN COMMITTED_SALARY > PROJECTED_TAX THEN 'over tax line'
+               WHEN COMMITTED_SALARY > PROJECTED_CAP THEN 'over cap line'
+               ELSE 'at or below cap line'
+           END AS payroll_tier
+    FROM silver_cap_room
+    WHERE CAP_SEASON = (SELECT MAX(CAP_SEASON) FROM silver_cap_room)
+) AS team_tiers
+GROUP BY CAP_SEASON, payroll_tier
+ORDER BY CAP_SEASON, teams DESC, payroll_tier;
+```
+
+Pin the `CAP_SEASON` filter to the asked cap season; the subquery form is only for an unqualified current-scan ask. When the answer needs team rows rather than tier counts, select the team rows from the same one filtered query and order them there.
+
 ## 1. Cap Room Is an Estimate, Not a Number
 
 - A team's usable room is `PROJECTED_ROOM` from `silver_cap_room` minus what the scenario consumes: cap holds (`FA_HOLDS_EST`), incomplete-roster charges, and any signing you add. Report the components, not just the headline room.
