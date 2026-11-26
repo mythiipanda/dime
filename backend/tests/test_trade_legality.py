@@ -181,3 +181,38 @@ def test_stepien_issue_windows():
     assert _stepien_issues("BOS", {2027, 2029, 2031, 2033}, 2026) == []
     gaps = _stepien_issues("BOS", {2027, 2030, 2031, 2032, 2033}, 2026)
     assert len(gaps) == 1 and "2028" in gaps[0] and "2029" in gaps[0]
+
+
+def test_frozen_pick_excludes_final_tradable_draft(monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 230_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 230_000_000, [("Beta Two", 30_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One",'
+                '"picks":[{"year":2033,"round":1}]},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert not any("frozen" in issue for issue in out["issues"])
+    assert out["legal"] is True, out["issues"]
+
+
+def test_frozen_pick_includes_first_draft_after_seventh_season(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 230_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 230_000_000, [("Beta Two", 30_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One",'
+                '"picks":[{"year":2034,"round":1}]},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert any("2034 first-round pick is frozen" in issue
+               for issue in out["issues"])
+    assert any("2034 pick - more than 7 drafts out" in issue
+               for issue in out["issues"])

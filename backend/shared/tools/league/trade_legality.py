@@ -21,6 +21,7 @@ from .cba_cap import (
 from .trade_value import _trade_guard_vintage_error
 
 _STEPIEN_WINDOW = 7
+_FROZEN_PICK_OFFSET = 8
 _TPE_CUSHION = 250_000
 _TPE_KINDS = {
     "ordinary": "ordinary",
@@ -505,7 +506,7 @@ def _frozen_pick_issues(team: str, picks_out: list[dict[str, Any]],
                         season_start: int | None) -> list[str]:
     if not season_start:
         return []
-    frozen_year = season_start + _STEPIEN_WINDOW
+    frozen_year = season_start + _FROZEN_PICK_OFFSET
     return [f"{team}'s {frozen_year} first-round pick is frozen above "
             "the second apron"
             for pick in picks_out
