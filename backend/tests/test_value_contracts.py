@@ -83,7 +83,7 @@ def test_basic_rows_and_flags(monkeypatch, tmp_path):
     assert rows["No Stats"]["no_production"] is True
     assert res["summary"]["rotation_players"] == 2
     assert any(c["rule"] == "value proxy" for c in res["checks"])
-    assert res["meta"]["cap"] == 165_000_000
+    assert res["meta"]["cap"] == 164_961_000
 
 
 def test_mid_band_and_overpaid(monkeypatch, tmp_path):

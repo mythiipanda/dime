@@ -37,7 +37,7 @@ def test_under_cap_absorption_and_minimum_outgoing_are_tool_visible(
 
     _use_salary_warehouse(
         monkeypatch, tmp_path,
-        _roster("BOS", 150_000_000, [("Alpha One", 20_000_000)])
+        _roster("BOS", 149_961_000, [("Alpha One", 20_000_000)])
         + _roster("MIA", 180_000_000, [("Beta Two", 35_250_000)]))
     out = get_trade_check.invoke({
         "team_a": "BOS", "players_a": "Alpha One",
@@ -63,7 +63,7 @@ def test_mid_band_minimum_outgoing_is_inverted_exactly(monkeypatch, tmp_path):
     _use_salary_warehouse(
         monkeypatch, tmp_path,
         _roster("BOS", 180_000_000, [("Alpha One", 20_000_000)])
-        + _roster("MIA", 180_000_000, [("Beta Two", 27_500_000)]))
+        + _roster("MIA", 180_000_000, [("Beta Two", 29_096_000)]))
     out = get_trade_check.invoke({
         "team_a": "BOS", "players_a": "Alpha One",
         "team_b": "MIA", "players_b": "Beta Two",
@@ -73,9 +73,9 @@ def test_mid_band_minimum_outgoing_is_inverted_exactly(monkeypatch, tmp_path):
     rows = out["rows"]
     assert rows["legal"] is True, rows["issues"]
     side = rows["team_a"]
-    assert side["allowed_in"] == 27_500_000
+    assert side["allowed_in"] == 29_096_000
     assert side["match_rule"] == (
-        "outgoing salary plus $7.5M (below the first apron)")
+        "outgoing salary plus $9.096M (below the first apron)")
     assert side["outgoing_needed"] == 20_000_000
 
 

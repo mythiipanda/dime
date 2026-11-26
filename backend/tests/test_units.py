@@ -110,18 +110,26 @@ def test_portability_fit_branches():
 def test_apron_matching_rules():
     from shared.tools.league import CAP, _allowed_incoming, _apron_state
 
+    assert CAP == {"cap": 164_961_000, "tax": 200_428_000,
+                   "apron1": 209_015_000, "apron2": 221_686_000}
     assert _allowed_incoming(20_000_000, True) == (
         20_000_000, "100% (above the first apron)")
     assert _allowed_incoming(5_000_000, False) == (
         10_250_000, "200% plus $250k (below the first apron)")
+    assert _allowed_incoming(8_846_000, False) == (
+        17_942_000, "200% plus $250k (below the first apron)")
+    assert _allowed_incoming(35_384_000, False) == (
+        44_480_000, "outgoing salary plus $9.096M (below the first apron)")
+    assert _allowed_incoming(35_384_001, False) == (
+        44_480_001, "125% plus $250k (below the first apron)")
     assert _allowed_incoming(20_000_000, False) == (
-        27_500_000, "outgoing salary plus $7.5M (below the first apron)")
+        29_096_000, "outgoing salary plus $9.096M (below the first apron)")
     assert _allowed_incoming(40_000_000, False) == (
         50_250_000, "125% plus $250k (below the first apron)")
     assert _allowed_incoming(20_000_000, False, 13_330_652) == (
         33_580_652, "cap room plus outgoing salary plus $250k (under the cap)")
     assert _allowed_incoming(20_000_000, False, 1_000_000) == (
-        27_500_000, "outgoing salary plus $7.5M (below the first apron)")
+        29_096_000, "outgoing salary plus $9.096M (below the first apron)")
     over = _apron_state(CAP["apron2"] + 1)
     assert over["over_apron1"] and over["over_apron2"]
     under = _apron_state(0)
@@ -133,8 +141,10 @@ def test_outgoing_needed_inverts_matching():
 
     assert _outgoing_needed(19_512_195, True) == 19_512_195
     need = _outgoing_needed(34_206_898, False)
+    assert need == 25_110_898
     assert _allowed_incoming(need, False)[0] >= 34_206_898
     assert _allowed_incoming(need - 1, False)[0] < 34_206_898
+    assert _outgoing_needed(29_096_000, False) == 20_000_000
     small = _outgoing_needed(10_000_000, False)
     assert small == 4_875_000
     assert _allowed_incoming(small, False)[0] >= 10_000_000

@@ -1708,7 +1708,7 @@
     },
     "get_trade_check": {
       "name": "get_trade_check",
-      "description": "Trade legality check. Player names comma separated per side.\n\n2023 CBA matching below the first apron: 200 percent plus 250k when\noutgoing is up to 7.5M, outgoing plus 7.5M up to 29M, 125 percent\nplus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Cash and exceptions stay out.",
+      "description": "Trade legality check. Player names comma separated per side.\n\n2023 CBA matching for 2026-27 below the first apron: 200 percent plus\n250k when outgoing is up to 8.846M, outgoing plus 9.096M up to 35.384M,\n125 percent plus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Cash and exceptions stay out.",
       "args_schema": {
         "description": "CBA trade legality check under 2023 CBA apron and salary matching rules.",
         "properties": {

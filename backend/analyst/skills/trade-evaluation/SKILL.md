@@ -15,18 +15,18 @@ and every tool reports its own sources, so cite them.
 For a non-apron over-cap team, maximum incoming salary is:
 
 ```text
-outgoing ≤ 7.5M → 200%+250k
-7.5–29M → outgoing+7.5M
->29M → 125%+250k
+outgoing ≤ 8.846M → 200%+250k
+8.846–35.384M → outgoing+9.096M
+>35.384M → 125%+250k
 ```
 
 NEVER use 125%+$100k — that rule does not exist in the CBA; the $100k figure is a hallucination trap
 
 `get_trade_check` is the primary legality check for a concrete two-team player swap; use `get_trade_legality` when picks, cash, exceptions, sign-and-trade, or multiple teams are involved. Manual band math is verification/fallback, not the primary path. `cba-trade-analysis` owns the detailed CBA mechanics, inverse floors, and apron edge cases; load it when legality turns on those details.
 
-Band boundaries in full dollars: outgoing at most $7,500,000 uses 200% of outgoing + $250,000; above $7,500,000 through $29,000,000 uses outgoing + $7,500,000; above $29,000,000 uses 125% of outgoing + $250,000. First-apron teams can take back at most 100% of outgoing salary, and second-apron teams additionally cannot aggregate salaries.
+Band boundaries in full 2026-27 dollars: outgoing at most $8,846,000 uses 200% of outgoing + $250,000; above $8,846,000 through $35,384,000 uses outgoing + $9,096,000; above $35,384,000 uses 125% of outgoing + $250,000. First-apron teams can take back at most 100% of outgoing salary, and second-apron teams additionally cannot aggregate salaries.
 
-Anchor: 26,382,060 → 33,882,060 because outgoing $26,382,060 is in the middle band and the ceiling is $26,382,060 + $7,500,000.
+Anchor: 26,382,060 → 35,478,060 because outgoing $26,382,060 is in the middle band and the ceiling is $26,382,060 + $9,096,000.
 
 ## 1. Tools and when they matter
 
