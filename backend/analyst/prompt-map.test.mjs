@@ -34,3 +34,10 @@ test("canonical tool map bars web_search for warehouse-covered facts", () => {
   assert.match(runtimeSource, /web results reflect the real world, not this warehouse/);
   assert.match(runtimeSource, /web_search can never resolve a player's team, stats, salary, contract, trade/);
 });
+
+test("load_skill and run_status teaching uses plain direct calls, not the tools. prefix fiction", () => {
+  assert.ok(!/await tools\.load_skill/.test(runtimeSource));
+  assert.ok(!/await tools\.run_status/.test(runtimeSource));
+  assert.match(runtimeSource, /call load_skill with name 'statistical-modeling' as a plain direct tool call/);
+  assert.match(runtimeSource, /a direct run_status call reports elapsed_ms/);
+});
