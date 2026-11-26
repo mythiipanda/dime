@@ -10,8 +10,11 @@ from shared.sources import espn, nba_stats
 
 def main() -> None:
     args = argparse.ArgumentParser()
-    args.add_argument("--season", default="2025-26")
+    args.add_argument("--season", default=None)
     ns = args.parse_args()
+    if not ns.season:
+        from shared.tools._core import current_season
+        ns.season = current_season() or "2025-26"
     season: str = ns.season
 
     total = 0

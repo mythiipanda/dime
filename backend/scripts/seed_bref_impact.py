@@ -111,9 +111,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scratch-db", default="")
     parser.add_argument("--first", default="2021-22")
-    parser.add_argument("--last", default="2025-26")
+    parser.add_argument("--last", default=None)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    if not args.last:
+        from shared.tools._core import completed_season_for_date
+        from datetime import date
+        args.last = completed_season_for_date(date.today()) or "2025-26"
 
     target = resolve_target(args.scratch_db)
     if target is None:

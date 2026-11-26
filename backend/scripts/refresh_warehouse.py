@@ -12,7 +12,9 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS_DIR.parent.parent
 LOCAL_WAREHOUSE = REPO_ROOT / "backend" / "data" / "warehouse.duckdb"
 DEFAULT_DATASET = "mythiix/dime-warehouse"
-DEFAULT_SEASON = "2025-26"
+def default_season() -> str:
+    from shared.tools._core import current_season
+    return current_season() or "2025-26"
 
 sys.path.insert(0, str(SCRIPTS_DIR.parent))
 
@@ -243,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", default=os.environ.get(
         "DIME_WAREHOUSE_DATASET", DEFAULT_DATASET))
-    parser.add_argument("--season", default=DEFAULT_SEASON)
+    parser.add_argument("--season", default=None)
     parser.add_argument("--work-dir", default="")
     parser.add_argument("--seeders", default="",
                         help="comma list; default runs all")
@@ -255,6 +257,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-shrink", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    if not args.season:
+        args.season = default_season()
 
     work_dir = (Path(args.work_dir).expanduser().resolve() if args.work_dir
                 else Path(tempfile.mkdtemp(prefix="dime-refresh-")))

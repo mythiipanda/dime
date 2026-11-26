@@ -54,8 +54,13 @@ def transform_player_season_stats(df: pl.DataFrame) -> pl.DataFrame:
 def main() -> None:
     args = argparse.ArgumentParser()
     args.add_argument("--start", type=int, default=2015)
-    args.add_argument("--end", type=int, default=2024)
+    args.add_argument("--end", type=int, default=0)
     ns = args.parse_args()
+    if not ns.end:
+        from shared.tools._core import completed_season_for_date
+        from datetime import date
+        cs = completed_season_for_date(date.today()) or "2025-26"
+        ns.end = 2000 + int(cs.split("-")[1])
     total = 0
     for y in range(ns.start, ns.end + 1):
         try:
