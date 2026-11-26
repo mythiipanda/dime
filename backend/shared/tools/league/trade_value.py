@@ -22,6 +22,7 @@ from .cba_cap import (
     _season_player_team,
     _salary_vintage,
     _unknown_player_hints,
+    _used_expanded_matching,
 )
 
 PICK_VALUE_M: dict[int, float] = {
@@ -177,10 +178,11 @@ def _trade_match_sides(team_a: str, players_a: str, team_b: str,
 
 
 def _trade_side_rows(team: str, side: tuple, payroll: int, state: dict,
-                     allow: int, rule: str, needed: int) -> dict[str, Any]:
+                     allow: int, rule: str, needed: int,
+                     hard_cap: str) -> dict[str, Any]:
     return {"team": team.upper(), "out": side[0], "players": side[1],
             "payroll": payroll, "allowed_in": allow, "match_rule": rule,
-            "outgoing_needed": needed,
+            "outgoing_needed": needed, "hard_cap": hard_cap,
             **{k: v for k, v in state.items()}}
 
 
@@ -200,6 +202,21 @@ def _trade_check_issues(team_a: str, state_a: dict, names_a: list[str],
     return issues
 
 
+def _expanded_matching_issues(team_a: str, expanded_a: bool,
+                              pay_after_a: int, team_b: str,
+                              expanded_b: bool, pay_after_b: int) -> list[str]:
+    issues = []
+    for team, expanded, pay_after in (
+            (team_a, expanded_a, pay_after_a),
+            (team_b, expanded_b, pay_after_b)):
+        if expanded and pay_after > CAP["apron1"]:
+            issues.append(
+                f"{team.upper()} is hard-capped at the first apron by "
+                "expanded salary matching "
+                f"(post-trade payroll ${pay_after:,} > ${CAP['apron1']:,})")
+    return issues
+
+
 def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
                         rule_b: str) -> list[dict[str, Any]]:
     return [
@@ -212,7 +229,7 @@ def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
     ]
 
 
-@tool(description='Trade legality check. Player names comma separated per side.\n\n2023 CBA matching for 2026-27 below the first apron: 200 percent plus\n250k when outgoing is up to 8.846M, outgoing plus 9.096M up to 35.384M,\n125 percent plus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Cash and exceptions stay out.')
+@tool(description='Trade legality check. Player names comma separated per side.\n\n2023 CBA matching for 2026-27 below the first apron: 200 percent plus\n250k when outgoing is up to 8.846M, outgoing plus 9.096M up to 35.384M,\n125 percent plus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Expanded matching use hard-caps at the\nfirst apron; cap-room absorption does not. Cash and exceptions stay out.')
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
     season: str | None = None,
@@ -278,13 +295,21 @@ def get_trade_check(
     allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]), room_b)
     need_a = _outgoing_needed(out_b, bool(state_a["over_apron1"]), room_a)
     need_b = _outgoing_needed(out_a, bool(state_b["over_apron1"]), room_b)
+    expanded_a = _used_expanded_matching(out_b, out_a, room_a)
+    expanded_b = _used_expanded_matching(out_a, out_b, room_b)
+    hard_cap_a = "first apron" if expanded_a else ""
+    hard_cap_b = "first apron" if expanded_b else ""
     issues = _trade_check_issues(team_a, state_a, names_a, team_b, state_b,
                                  names_b, out_a, allow_a, out_b, allow_b)
+    issues.extend(_expanded_matching_issues(
+        team_a, expanded_a, pay_after_a, team_b, expanded_b, pay_after_b))
     return {"tool": "get_trade_check", "ok": True,
             "rows": {"team_a": _trade_side_rows(
-                         team_a, side_a, pay_a, state_a, allow_a, rule_a, need_a),
+                         team_a, side_a, pay_a, state_a, allow_a, rule_a,
+                         need_a, hard_cap_a),
                      "team_b": _trade_side_rows(
-                         team_b, side_b, pay_b, state_b, allow_b, rule_b, need_b),
+                         team_b, side_b, pay_b, state_b, allow_b, rule_b,
+                         need_b, hard_cap_b),
                      "legal": not issues, "issues": issues,
                      "checks": _trade_check_checks(team_a, rule_a, team_b,
                                                    rule_b),

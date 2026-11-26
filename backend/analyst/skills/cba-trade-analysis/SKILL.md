@@ -29,6 +29,7 @@ A team becomes hard-capped at the **First Apron** if it:
 1. Uses the Non-Taxpayer Mid-Level Exception (NT-MLE).
 2. Uses the Bi-Annual Exception (BAE).
 3. Acquires a player via sign-and-trade.
+4. Uses the Expanded Traded Player Exception by taking back more salary than it sends out through matching; cap-room absorption does not trigger this hard cap.
 
 A team becomes hard-capped at the **Second Apron** if it:
 1. Uses the Taxpayer Mid-Level Exception (TP-MLE).

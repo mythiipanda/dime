@@ -17,6 +17,7 @@ from .cba_cap import (
     _payroll_source,
     _resolve_team_abbr,
     _salary_date,
+    _used_expanded_matching,
 )
 from .trade_value import _trade_guard_vintage_error
 
@@ -186,31 +187,56 @@ def _seasonize_tpes(rows: list[dict[str, Any]],
 
 
 def _placement_fits(salaries: list[int], capacities: list[int],
-                    required_bins: int) -> bool:
+                    required_bins: int,
+                    matching_limit: int | None = None) -> bool:
     ordered = sorted((int(salary or 0) for salary in salaries), reverse=True)
     bins = tuple(int(capacity or 0) for capacity in capacities)
 
     @lru_cache(maxsize=None)
-    def place(index: int, remaining: tuple[int, ...], used: int) -> bool:
+    def place(index: int, remaining: tuple[int, ...], used: int,
+              matching_total: int) -> bool:
         if index == len(ordered):
             return (used & required_bins) == required_bins
         salary = ordered[index]
         if salary <= 0:
-            return place(index + 1, remaining, used)
-        seen: set[tuple[int, bool, bool]] = set()
+            return place(index + 1, remaining, used, matching_total)
+        seen: set[tuple[int, bool, bool, bool]] = set()
         for position, capacity in enumerate(remaining):
-            marker = (capacity, bool(used & (1 << position)),
+            marker = (capacity, position == 0,
+                      bool(used & (1 << position)),
                       bool(required_bins & (1 << position)))
             if capacity < salary or marker in seen:
                 continue
             seen.add(marker)
+            next_matching = (matching_total + salary if position == 0
+                             else matching_total)
+            if (matching_limit is not None
+                    and next_matching > matching_limit):
+                continue
             reduced = (remaining[:position] + (capacity - salary,) +
                        remaining[position + 1:])
-            if place(index + 1, reduced, used | (1 << position)):
+            if place(index + 1, reduced, used | (1 << position),
+                     next_matching):
                 return True
         return False
 
-    return place(0, bins, 0)
+    return place(0, bins, 0, 0)
+
+
+def _expanded_matching_use(incoming_salaries: list[int], in_total: int,
+                           out_eff: int, room_before: int,
+                           capacities: list[int],
+                           required_bins: int) -> bool:
+    if not _used_expanded_matching(in_total, out_eff, room_before):
+        return False
+    if not capacities:
+        return True
+    strict_limit = out_eff
+    if room_before > 0:
+        strict_limit += room_before + _TPE_CUSHION
+    return not _placement_fits(
+        incoming_salaries, [strict_limit] + capacities, required_bins,
+        strict_limit)
 
 
 def _add_hard_cap(hard_caps: list[str], apron: str) -> None:
@@ -487,7 +513,8 @@ def _inactive_tpe_issues(team: str,
 
 
 def _team_hard_caps(aggregates: bool, cash_out: int, prior_tpe: bool,
-                    snt_tpe: bool, is_snt_receiver: bool) -> list[str]:
+                    snt_tpe: bool, is_snt_receiver: bool,
+                    expanded_matching: bool) -> list[str]:
     hard_caps: list[str] = []
     if aggregates:
         _add_hard_cap(hard_caps, "second apron")
@@ -498,6 +525,8 @@ def _team_hard_caps(aggregates: bool, cash_out: int, prior_tpe: bool,
     if snt_tpe:
         _add_hard_cap(hard_caps, "second apron")
     if is_snt_receiver:
+        _add_hard_cap(hard_caps, "first apron")
+    if expanded_matching:
         _add_hard_cap(hard_caps, "first apron")
     return hard_caps
 
@@ -528,7 +557,8 @@ def _apron2_issues(team: str, out_names: list[str], cash_out: int,
 
 
 def _hard_cap_issues(team: str, hard_caps: list[str], pay_after: int,
-                     is_snt_receiver: bool, prior_tpe: bool) -> list[str]:
+                     is_snt_receiver: bool, prior_tpe: bool,
+                     expanded_matching: bool) -> list[str]:
     issues: list[str] = []
     if "second apron" in hard_caps and pay_after > CAP["apron2"]:
         issues.append(
@@ -541,6 +571,8 @@ def _hard_cap_issues(team: str, hard_caps: list[str], pay_after: int,
         causes.append("the sign-and-trade")
     if prior_tpe:
         causes.append("the prior-year traded player exception")
+    if expanded_matching:
+        causes.append("expanded salary matching")
     cause = " and ".join(causes) or "this deal"
     issues.append(
         f"{team} is hard-capped at the first apron by {cause} "
@@ -602,14 +634,19 @@ def _evaluate_team(team: str, side: dict[str, Any],
     picks_in = [pick for move in moves if move["to"] == team
                 for pick in move["picks"]]
     is_snt_receiver = team == snt_receiver
+    expanded_matching = _expanded_matching_use(
+        incoming_salaries, side["in_total"], out_eff, room_before,
+        usage["capacities"], required_tpe_bins)
     hard_caps = _team_hard_caps(aggregates, cash_out, usage["prior"],
-                                usage["snt"], is_snt_receiver)
+                                usage["snt"], is_snt_receiver,
+                                expanded_matching)
     issues = _inactive_tpe_issues(team, usage["inactive"])
     if state_after["over_apron2"]:
         issues.extend(_apron2_issues(team, side["out_names"], cash_out,
                                      picks_out, season_start))
     issues.extend(_hard_cap_issues(team, hard_caps, pay_after,
-                                   is_snt_receiver, usage["prior"]))
+                                   is_snt_receiver, usage["prior"],
+                                   expanded_matching))
     issues.extend(_matching_issue(team, salary_fit, usage["active"],
                                   side["in_total"], allow, rule))
     issues.extend(_future_pick_issues(team, picks_out, season_start))

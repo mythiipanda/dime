@@ -137,6 +137,167 @@ def test_crossing_first_apron_uses_post_trade_strict_matching(monkeypatch, tmp_p
     assert any("BOS takes back too much" in issue for issue in out["issues"])
 
 
+def test_expanded_matching_below_first_apron_is_legal_hard_cap_trigger(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 190_000_000, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 28_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 198_000_000
+    assert row["over_apron1"] is False
+    assert row["hard_cap"] == "first apron"
+
+
+def test_expanded_matching_cannot_finish_above_first_apron(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is False
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 210_000_000
+    assert row["hard_cap"] == "first apron"
+    assert any("hard-capped at the first apron" in issue
+               and "expanded salary matching" in issue
+               for issue in out["issues"])
+
+
+def test_expanded_matching_can_be_required_alongside_disjoint_tpe(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 190_000_000, [("Alpha One", 10_000_000)])
+          + _roster("MIA", 150_000_000,
+                    [("Beta Two", 12_000_000),
+                     ("Gamma Three", 11_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS",'
+                '"players":"Beta Two, Gamma Three"}]',
+        "tpe": '[{"team":"BOS","amount":11000000,"kind":"ordinary",'
+               '"origin_season":"2026-27"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 203_000_000
+    assert row["matching_ok"] is True
+    assert row["hard_cap"] == "first apron"
+
+
+def test_trade_check_expanded_matching_surfaces_first_apron_hard_cap(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_check
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 190_000_000, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 28_000_000)]))
+    out = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One",
+        "team_b": "MIA", "players_b": "Beta Two",
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    rows = out["rows"]
+    assert rows["legal"] is True, rows["issues"]
+    assert rows["team_a"]["hard_cap"] == "first apron"
+    assert rows["team_b"]["hard_cap"] == ""
+
+
+def test_trade_check_expanded_matching_over_first_apron_issue(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_check
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
+    out = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One",
+        "team_b": "MIA", "players_b": "Beta Two",
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    rows = out["rows"]
+    assert rows["legal"] is False
+    assert rows["team_a"]["hard_cap"] == "first apron"
+    assert any("hard-capped at the first apron" in issue
+               and "expanded salary matching" in issue
+               for issue in rows["issues"])
+
+
+def test_trade_check_cap_room_absorption_is_not_expanded_matching(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_check
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 149_961_000, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 180_000_000, [("Beta Two", 35_250_000)]))
+    out = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One",
+        "team_b": "MIA", "players_b": "Beta Two",
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    rows = out["rows"]
+    assert rows["legal"] is True, rows["issues"]
+    assert rows["team_a"]["hard_cap"] == ""
+
+
+def test_cap_scenario_expanded_matching_surfaces_first_apron_hard_cap(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 190_000_000, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 28_000_000)]))
+    out = get_cap_scenario.invoke({
+        "team": "BOS", "out_players": "Alpha One",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == 198_000_000
+    assert out["summary"]["hard_cap"] == "first apron"
+    assert out["matching"]["legal"] is True
+
+
+def test_cap_scenario_expanded_matching_cannot_finish_above_first_apron(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
+    out = get_cap_scenario.invoke({
+        "team": "BOS", "out_players": "Alpha One",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == 210_000_000
+    assert out["summary"]["hard_cap"] == "first apron"
+    assert any("hard-capped at the first apron" in issue
+               and "expanded salary matching" in issue
+               for issue in out["issues"])
+
+
 def test_aggregation_below_second_apron_is_legal_hard_cap_trigger(
         monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
