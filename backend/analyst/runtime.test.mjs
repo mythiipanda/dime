@@ -87,6 +87,7 @@ async function fixture(name, code, tools) {
   assert(session.systemPrompt.includes("that table is the authoritative source"));
   assert(session.systemPrompt.includes("never answer warehouse-held data"));
   assert(session.systemPrompt.includes("never derive a per-game ranking by dividing"));
+  assert(session.systemPrompt.includes("do not spend turns on schema-discovery probes"));
   assert(session.systemPrompt.includes("silver_hist_player_seasons"));
   return { session, requests };
 }
