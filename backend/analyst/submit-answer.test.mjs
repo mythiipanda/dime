@@ -2027,14 +2027,14 @@ test("createPiExecution corrects a tool-not-found error with bare registered nam
   }
 
   const corrections = events.filter((e) => e.type === "tool_call" && e.name === "tool_not_found_correction");
-  const correctionContext = seenContexts.find((c) => c.includes("the tools ARE available and working"));
+  const correctionContext = seenContexts.find((c) => c.includes("nothing is missing"));
   assert.equal(runError, null, "run completes after the malformed call");
-  assert.equal(corrections.length, 1, "not-found correction fires exactly once");
+  assert.ok(corrections.length >= 1, "not-found correction fires at least once, per-occurrence");
   assert.ok(correctionContext, "correction text reaches the model context");
   assert.ok(correctionContext.includes("invocation form was wrong"), "correction frames the error as invocation form, not missing tools");
   assert.ok(correctionContext.includes("tools.submit_answer"), "correction names the malformed invocation");
-  assert.ok(correctionContext.includes("no tools. prefix"), "correction blocks the tools. prefixed form");
-  assert.ok(correctionContext.includes("sql_exec"), "correction lists bare registered bridge tool names");
+  assert.ok(correctionContext.includes("no tools.xxx invocation form"), "correction blocks the tools. prefixed form");
+  assert.ok(correctionContext.includes("sql_exec"), "correction names the bare registered tools");
   assert.ok(correctionContext.includes("submit_answer"), "correction lists bare registered direct tool names");
   assert.ok(!correctionContext.includes("Available right now: tools."), "correction lists only bare names");
   assert.equal(execRequests >= 4, true, "model recovers to bare sql_exec and submit_answer calls after the correction");
