@@ -245,7 +245,7 @@
     },
     {
       "name": "get_on_off",
-      "description": "Single-player on/off-court splits for one team, possession level: the team's OFF/DEF/NET rating per 100 possessions with the player on the floor versus off, the on-minus-off gap, and the possession count in each bucket.\n\nREACH FOR THIS for 'how does the team do when X sits', 'does the team fall apart without X', 'net rating with X on vs off', 'on-minus-off gap' asks \u2014 it returns the answer-shaped split directly. For a 2-5 player combination split use get_lineup_on_off; for a named two-player 2x2 use get_wowy or get_on_off_leaders; for game-level record when a player SAT OUT entirely (missed games, not minutes) use get_availability_impact; for five-man unit ratings use get_lineup_stats.",
+      "description": "Single-player on/off-court splits for one team, possession level: the team's OFF/DEF/NET rating per 100 possessions with the player on the floor versus off, the on-minus-off gap, and the possession count in each bucket.\n\nREACH FOR THIS for 'how does the team do when X sits', 'does the team fall apart without X', 'net rating with X on vs off', 'on-minus-off gap' asks — it returns the answer-shaped split directly. For a 2-5 player combination split use get_lineup_on_off; for a named two-player 2x2 use get_wowy or get_on_off_leaders; for game-level record when a player SAT OUT entirely (missed games, not minutes) use get_availability_impact; for five-man unit ratings use get_lineup_stats.",
       "namespace": "player",
       "schema_description": "On and off splits for one player on one team. Possession level.",
       "network_source": "pbpstats",
@@ -255,7 +255,7 @@
     },
     {
       "name": "get_availability_impact",
-      "description": "Game-level availability impact: split a team's results into the games a player played versus the games they missed (game counts, record, win pct, average margin). Pass a player for the single-player split; add teammate to split that player's own per-game scoring/FGA/plus-minus by the teammate's presence; or leave player empty for a league-wide ranking of high-minute one-team players by win-rate drop when sitting (min_minutes/min_missed qualifiers). Warehouse coverage: 2015-16 onward, regular season. Possession-level net rating with the player on vs off the floor is a different question \u2014 use get_on_off (one player) or get_on_off_leaders (boards and pairs).",
+      "description": "Game-level availability impact: split a team's results into the games a player played versus the games they missed (game counts, record, win pct, average margin). Pass a player for the single-player split; add teammate to split that player's own per-game scoring/FGA/plus-minus by the teammate's presence; or leave player empty for a league-wide ranking of high-minute one-team players by win-rate drop when sitting (min_minutes/min_missed qualifiers). Warehouse coverage: 2015-16 onward, regular season. Possession-level net rating with the player on vs off the floor is a different question — use get_on_off (one player) or get_on_off_leaders (boards and pairs).",
       "namespace": "player",
       "schema_description": "Game-level availability splits: a team's record, win pct, and average margin in games a player played vs missed; optional teammate-presence per-game scoring split; or a league-wide win-drop ranking when player is blank. Warehouse 2015-16+.",
       "params": {
@@ -408,14 +408,14 @@
     },
     {
       "name": "get_leaders",
-      "description": "Qualified league leaderboard for one stat category.\n\nranking_direction is ``desc`` for highest-first or ``asc`` for\nlowest-first. min_attempts carries an explicit user volume floor for\npercentage metrics; zero keeps the league qualification.\n\nPercentage boards use the NBA minimums carried by the warehouse\ninstead of an arbitrary attempts floor. For 3P%, the qualification is\n82 made threes over an 82-game season. This keeps the board comparable\nto the official league leaderboard and excludes tiny samples.",
+      "description": "Qualified league leaderboard for one stat category.\n\nranking_direction is ``desc`` for highest-first or ``asc`` for\nlowest-first. min_attempts carries an explicit user volume floor for\npercentage metrics; zero keeps the league qualification.\n\nPercentage boards use the NBA minimums carried by the warehouse\ninstead of an arbitrary attempts floor. For 3P%, the qualification is\n82 made threes over an 82-game season. This keeps the board comparable\nto the official league leaderboard and excludes tiny samples.\n\nRows are season totals ranked by total volume: no per-game column and no custom games-played floor. When the ask is a per-game ranking (PPG, RPG, APG) or carries its own qualification floor (games played, minutes, a custom threshold), this board cannot answer it: a player outside the totals leaders can still lead per-game, so dividing these totals by GP invents the ranking. Run one sql_exec over silver_hist_player_seasons instead (per-game columns and gp; season is an integer year like 2025 for 2024-25) with the ask floor in WHERE and ORDER BY the per-game column.",
       "namespace": "league",
       "schema_description": "Qualified league statistical leaders for any category.",
       "network_source": "stats.nba.com"
     },
     {
       "name": "get_lineup_leaders",
-      "description": "League-wide five-man lineup leaderboard.\n\nOFF_RATING, DEF_RATING, NET_RATING and PACE are the official\nper-100-possessions ratings joined from the lineup table's advanced\nmeasure; MIN, GP and PLUS_MINUS are raw totals from its base measure.\nsort picks the ranking axis: 'net' best net rating first (default),\n'worst' worst net rating first, 'minutes' most minutes first \u2014 use\n'worst' for bottom/worst-offender asks and 'minutes' for most-used\nunit rankings.\nA minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a junk slice and never tops the\nboard (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.",
+      "description": "League-wide five-man lineup leaderboard.\n\nOFF_RATING, DEF_RATING, NET_RATING and PACE are the official\nper-100-possessions ratings joined from the lineup table's advanced\nmeasure; MIN, GP and PLUS_MINUS are raw totals from its base measure.\nsort picks the ranking axis: 'net' best net rating first (default),\n'worst' worst net rating first, 'minutes' most minutes first — use\n'worst' for bottom/worst-offender asks and 'minutes' for most-used\nunit rankings.\nA minimum-minutes floor (default 100) is ALWAYS applied and\nstated: a +3 in 4 minutes is a junk slice and never tops the\nboard (F50).\nFor a player on-versus-off split (not units) use get_on_off or\nget_on_off_leaders.",
       "namespace": "team",
       "schema_description": "League-wide 5-man lineup leaderboard (official per-100 ratings) with minutes floor and sort axis: net, worst, or minutes.",
       "guidelines": [
@@ -676,7 +676,7 @@
       "schema_description": "With-or-without-you (WOWY) 4-way lineup combination splits for two players.",
       "network_source": "pbpstats",
       "guidelines": [
-        "Use for two players' four-way with/without-you lineup-rating reads. Do not infer individual causation from small cells; rows are lineup-state minutes and ratings per possession on a lineup-row basis \u2014 for possession-count or net-per-100 four-way splits use silver_stints via sql_exec."
+        "Use for two players' four-way with/without-you lineup-rating reads. Do not infer individual causation from small cells; rows are lineup-state minutes and ratings per possession on a lineup-row basis — for possession-count or net-per-100 four-way splits use silver_stints via sql_exec."
       ],
       "params": {
         "season_type": "'regular-season' or 'playoffs'. Default: {d}."
@@ -853,7 +853,7 @@
     },
     {
       "name": "run_python",
-      "description": "Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations. Code runs at module top level in a fresh namespace per call: return results by assigning `out = <value>` or print() (never `return`), and never reassign `con` or call duckdb.connect() \u2014 the provided `con` is the warehouse.",
+      "description": "Execute read-only Python code over the warehouse DuckDB connection (con), polars (pl), numpy (np), math, and statistics. Useful for ad-hoc statistical modeling, linear algebra, shrinkage, and aggregations. Code runs at module top level in a fresh namespace per call: return results by assigning `out = <value>` or print() (never `return`), and never reassign `con` or call duckdb.connect() — the provided `con` is the warehouse.",
       "guidelines": [
         "Use for statistical modeling, custom aggregation, shrinkage, regression, or multi-step Polars/DuckDB work that domain tools do not cover. Do not use for simple lookups already served by specialized tools; preserve source units and treat stdout/rows as derived Python output."
       ]
@@ -950,7 +950,7 @@
     },
     {
       "name": "get_player_report",
-      "description": "Multi-part player report: season line, advanced profile, recent shot log sample, clutch. Not a zone-diet source \u2014 use get_shot_zones or get_zone_deltas for zone splits.",
+      "description": "Multi-part player report: season line, advanced profile, recent shot log sample, clutch. Not a zone-diet source — use get_shot_zones or get_zone_deltas for zone splits.",
       "namespace": "player",
       "network_source": "stats.nba.com"
     },
