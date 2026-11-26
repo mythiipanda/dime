@@ -145,6 +145,9 @@ card across sources — roster size, payroll vs cap and aprons, four factors and
 rank, top lineup, injuries, future picks — each citing its own `ref`/`row` with
 per-section provenance. One `ref`/`row` selects one source row, so multi-row
 sections like a roster or pick list belong in `table`, not `fields`.
+For the canonical `get_team_four_factors` source, the row exposes uppercase
+top-level keys; use `EFG_PCT`, `TOV_PCT`, `ORB_PCT` and `FT_RATE` exactly as
+returned.
 
 ```typescript
 {
@@ -162,10 +165,10 @@ sections like a roster or pick list belong in `table`, not `fields`.
       metrics: [{ column: "total_salary", label: "Payroll" },
                 { column: "first_apron_room", label: "Apron room" }] },
     { label: "Four factors", ref: "ref-4f", row: 0,
-      metrics: [{ column: "efg_pct", label: "eFG%" },
-                { column: "tov_pct", label: "TOV%" },
-                { column: "oreb_pct", label: "ORB%" },
-                { column: "ftr", label: "FTr" }] },
+      metrics: [{ column: "EFG_PCT", label: "eFG%" },
+                { column: "TOV_PCT", label: "TOV%" },
+                { column: "ORB_PCT", label: "ORB%" },
+                { column: "FT_RATE", label: "FTr" }] },
     { label: "Injuries", ref: "ref-inj", row: 0,
       fields: [{ column: "injury_summary", label: "Out/DTD" }] },
     { label: "Draft capital", ref: "ref-picks", row: 0,
