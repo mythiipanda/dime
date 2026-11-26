@@ -56,3 +56,10 @@ def test_skill_teaches_deadline_awareness():
     src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
     assert "stop verifying and fixing" in src
     assert "partial deliverable inside budget" in src
+
+
+
+def test_skill_teaches_summary_stat_home_and_no_prose_markdown():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "labeled summary row" in src
+    assert "Never present data as a prose markdown table" in src
