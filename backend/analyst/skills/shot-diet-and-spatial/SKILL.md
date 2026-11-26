@@ -60,7 +60,7 @@ Evaluate a team or player's offensive health using three structural ratios:
 | `get_shot_compare` | Two players' zone-by-zone diet side by side. | "Compare X and Y's shot selection" — cells flag missing data instead of inventing zeros. |
 | `get_zone_deltas` | One player's zone FG% vs pooled league FG% in percentage points. | "Where is X above/below average" — efficiency deltas, not volume. |
 | `get_phase_shot_splits` | Zone diet, eFG, and shot-family splits (catch-and-shoot / pull-up / rim) with playoff-minus-regular deltas. | "How does their diet change in the playoffs" — the RS-vs-playoff drift is already computed. |
-| `search_shots` | Shot-level rows or grouped aggregates by player, team, zone, period, clock. | Clutch/late-clock or filter-driven questions the zone aggregates don't cover. |
+| `search_shots` | Shot-level rows or player/team grouped aggregates under player, team, zone, period, and late-clock filters. | Time-based late-clock (not score-aware clutch) or filter-driven questions the zone aggregates don't cover. |
 | `get_tracking_profile` / `get_playtype_profile` | Tracking aggregates (drives, touches, speed) and Synergy play-type frequency/PPP/percentile. | The "how" behind a zone profile — rim pressure from drives, creation type from playtypes. |
 | `get_shot_chart` | Shot-chart artifact data for `submit_answer`. | When the answer needs the visual, not just the table. |
 
