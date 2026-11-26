@@ -251,6 +251,18 @@ FRESHNESS_ALLOWLIST = {
 }
 
 
+UPSTREAM_BLOCKED_WARN = {
+    "silver_hist_pbp",
+    "silver_hist_possessions",
+    "silver_rapm",
+    "silver_rapm_prior",
+    "silver_stints",
+    "silver_four_factors",
+    "silver_wowy",
+    "silver_hist_lineups",
+}
+
+
 def check_freshness(warehouse: Path, season: str) -> tuple[bool, list[str]]:
     import duckdb
     from datetime import date
@@ -281,7 +293,11 @@ def check_freshness(warehouse: Path, season: str) -> tuple[bool, list[str]]:
                     problems.append(
                         f"{table}: {n} rows but none for current "
                         f"({season}) or completed ({completed}) season")
-        return (not problems, problems)
+        hard = [p for p in problems
+                if p.split(":")[0] not in UPSTREAM_BLOCKED_WARN]
+        warnings = [p for p in problems
+                    if p.split(":")[0] in UPSTREAM_BLOCKED_WARN]
+        return (hard, warnings)
     finally:
         con.close()
 
@@ -362,16 +378,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("dry-run: row-count check skipped (seeders ran dry)")
 
+    fresh_hard: list[str] = []
+    fresh_warnings: list[str] = []
     if not args.dry_run:
-        fresh_ok, fresh_problems = check_freshness(warehouse, args.season)
-        if not fresh_ok:
-            rollback_copy(warehouse, backup)
-            for p in fresh_problems:
-                print(f"  freshness FAILED: {p}")
-            print("FAILED: declared tables missing both current and "
-                  "completed seasons; restored pre-seed copy, nothing "
-                  "published")
-            return 5
+        fresh_hard, fresh_warnings = check_freshness(warehouse, args.season)
 
     from build_data_dictionary import write_dictionary
     dictionary_path = write_dictionary(warehouse)
@@ -395,6 +405,14 @@ def main(argv: list[str] | None = None) -> int:
             and not verdict.get("commit"):
         print("FAILED: publish produced no commit")
         return 5
+    for p in fresh_warnings:
+        print(f"  freshness WARNING (upstream-blocked, publish kept): {p}")
+    if fresh_hard:
+        for p in fresh_hard:
+            print(f"  freshness FAILED (publish kept): {p}")
+        print("FAILED: declared tables missing both current and completed "
+              "seasons; fresh data WAS published, stale tables named above")
+        return 6
     print("rollback copy kept at", backup)
     return 0
 

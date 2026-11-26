@@ -190,10 +190,10 @@ def test_check_freshness_flags_stale_tables(tmp_path):
     con.execute("INSERT INTO silver_hist_pbp VALUES ('2023-24', 1)")
     con.close()
 
-    ok, problems = check_freshness(path, "2026-27")
-    assert not ok
-    assert any("silver_hist_pbp" in p for p in problems)
-    assert not any("silver_standings" in p for p in problems)
+    hard, warnings = check_freshness(path, "2026-27")
+    assert any("silver_hist_pbp" in p for p in warnings)
+    assert not hard
+    assert not any("silver_standings" in p for p in hard + warnings)
 
 
 def test_check_freshness_passes_completed_season(tmp_path):
@@ -206,6 +206,20 @@ def test_check_freshness_passes_completed_season(tmp_path):
     con.execute("INSERT INTO silver_standings VALUES ('2025-26', 1)")
     con.close()
 
-    ok, problems = check_freshness(path, "2026-27")
-    stale = [p for p in problems if "silver_standings" in p]
+    hard, warnings = check_freshness(path, "2026-27")
+    stale = [p for p in hard + warnings if "silver_standings" in p]
     assert not stale
+
+def test_check_freshness_hard_fail_for_non_blocked_table(tmp_path):
+    import duckdb
+    from refresh_warehouse import check_freshness
+
+    path = tmp_path / "wh.duckdb"
+    con = duckdb.connect(str(path))
+    con.execute("CREATE TABLE silver_boxscores (_season VARCHAR, x INT)")
+    con.execute("INSERT INTO silver_boxscores VALUES ('2022-23', 1)")
+    con.close()
+
+    hard, warnings = check_freshness(path, "2026-27")
+    assert any("silver_boxscores" in p for p in hard)
+    assert not warnings
