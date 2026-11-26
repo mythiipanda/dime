@@ -1,7 +1,6 @@
 import itertools as _it
 import re as _re
 from typing import Any
-import unicodedata as _ud
 
 from langchain_core.tools import tool
 
@@ -428,8 +427,7 @@ _TRADE_TAG_NEEDS = {"spacer": "need_shooting",
 
 
 def _trade_value_norm(s: object) -> str:
-    return "".join(c for c in _ud.normalize("NFKD", str(s or ""))
-                   if not _ud.combining(c)).strip().lower()
+    return normalize_name(s)
 
 
 class _TradeWarehouse:
@@ -481,7 +479,7 @@ def _trade_leader_weights(warehouse: _TradeWarehouse) -> dict[str, float]:
 
 
 def _trade_adv_rows(con, warehouse: _TradeWarehouse,
-                    prod_season: str) -> dict[str, dict]:
+                    prod_season: str) -> dict[tuple[str, object], dict]:
     if "silver_advanced" not in warehouse.tables:
         warehouse.note("silver_advanced missing: age, TS_PCT, USG_PCT "
                        "and NET_RATING unavailable")
@@ -490,12 +488,16 @@ def _trade_adv_rows(con, warehouse: _TradeWarehouse,
         "silver_advanced", ["PLAYER_NAME", "AGE", "TS_PCT", "USG_PCT"])
     if missing:
         warehouse.note("silver_advanced missing columns: " + ", ".join(missing))
-    rows: dict[str, dict] = {}
+    pid = "PLAYER_ID" if "PLAYER_ID" in warehouse.cols.get(
+        "silver_advanced", set()) else "NULL"
+    rows: dict[tuple[str, object], dict] = {}
     for r in con.execute(
-            "SELECT PLAYER_NAME, AGE, TS_PCT, USG_PCT FROM "
+            f"SELECT PLAYER_NAME, AGE, TS_PCT, USG_PCT, {pid} FROM "
             "silver_advanced WHERE _season = ?", [prod_season]).fetchall():
-        rows.setdefault(_trade_value_norm(r[0]),
-                        {"age": r[1], "ts": r[2], "usg": r[3]})
+        row = {"age": r[1], "ts": r[2], "usg": r[3]}
+        rows.setdefault(("name", _trade_value_norm(r[0])), row)
+        if r[4] is not None:
+            rows.setdefault(("id", r[4]), row)
     return rows
 
 
@@ -622,7 +624,10 @@ def _trade_value_player(display: str, leaders: dict, adv: dict,
     matches = [(k, v) for k, v in leaders.items() if normalize_name(v.get('contract', {}).get('PLAYER_NAME')) == normalize_name(display)]
     if len(matches) == 1:
         key, lead = matches[0]
-    advanced = adv.get(key, {})
+    player_id = lead.get("PLAYER_ID") if lead else None
+    advanced = adv.get(("id", player_id), {}) if player_id is not None else {}
+    if not advanced:
+        advanced = adv.get(("name", key), {})
     gp = lead["gp"] if lead else 0
     out: dict[str, Any] = {
         **contract_details(lead.get('contract') if lead else None),

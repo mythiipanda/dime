@@ -7,6 +7,8 @@ description: What each warehouse table can and cannot answer — cap/salary, inj
 
 Use this guide when a coverage gap, usage error, or schema question arises: find the table that actually holds the answer, check its grain and coverage below, then `warehouse_schema` for exact columns before `sql_exec`. If a table is listed as missing or thin, say the data is unavailable — do not substitute a different season or invent the figure.
 
+A requested metric or dataset may not exist in the warehouse at all (for example a proprietary tracking metric the warehouse never ingested). The correct answer then is the verdict itself: state that the metric does not exist in the warehouse, and back the verdict with the verification evidence — the tables and columns you checked via `warehouse_schema`/`sql_exec`, and the closest related tables that do exist. That verdict, with its evidence, is a complete honest answer. Never substitute proxies (nearest boxscore stats, invented composites) and never narrate the submission instead of writing the verdict.
+
 ## Canonical spelling and grain
 
 - `_season` is the season string (`'2025-26'`) on most `silver_*` tables; `silver_hist_*` uses `_season` too but some legacy columns use a start-year int. Confirm on the table itself via `warehouse_schema`.

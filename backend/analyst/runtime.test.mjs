@@ -81,7 +81,7 @@ async function fixture(name, code, tools) {
   });
   const session = await createAnalystSession({ cwd, agentDir, model: runtime.getModel("fixture", "fixture"), modelRuntime: runtime, tools,
     settings: { retry: { enabled: false }, compaction: { enabled: false } } });
-  assert.deepEqual(session.getActiveToolNames(), ["codemode"]);
+  assert.deepEqual(session.getActiveToolNames(), ["codemode", ...["submit_answer", "verify_answer_numbers", "run_status", "load_skill", "sql_exec", "run_python", "warehouse_schema"].filter(n => tools.some(t => t.name === n) || n === "load_skill")]);
   assert.deepEqual(new Set(session.getCallableToolNames()), new Set([...tools.map(t => t.name), "load_skill"]));
   assert(!session.systemPrompt.includes("PROFILE_CONTEXT_MUST_NOT_LOAD"));
   assert(session.systemPrompt.includes("that table is the authoritative source"));
