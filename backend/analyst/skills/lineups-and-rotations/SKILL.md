@@ -8,6 +8,10 @@ description: Analyze 5-man lineup net ratings with sample-size caveats, possessi
 Use this playbook for 5-man lineup evaluation, two-player With-Or-Without-You (WOWY) synergy splits, bench survival analysis, and playoff rotation tightening.
 
 
+## 0. Warehouse reference: lineup table shape
+
+Lineup unit identity columns are `GROUP_ID` / `GROUP_NAME` (uppercase in `silver_lineups`, lowercase in `silver_hist_lineups`) — `lineup_id`, `lineup_name`, and `lineup_players` do not exist in any table. In `silver_lineups` the table multiplexes on `MEASURE`: `MEASURE='advanced'` rows carry OFF/DEF/NET_RATING, POSS, PIE; `MEASURE='base'` rows carry counting stats with NULL ratings — a rating screen without the measure filter returns mostly NULLs. `silver_hist_lineups` is the multi-season coverage table; player season-aggregate tables (`silver_hist_player_seasons` etc.) carry no lineup-unit data.
+
 ## Single-pass lineup screens
 
 A "every five-man unit with at least N minutes, ranked" ask resolves in ONE aggregate query against `silver_hist_lineups` — never enumerate teams or players in a loop. The table is already lineup-unit grain with `min` and `net_rating` per `_season`/`team_abbreviation`:

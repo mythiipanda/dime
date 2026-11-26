@@ -3,6 +3,16 @@ name: shot-diet-and-spatial
 description: Analyze player and team spatial shot charts, shooting zone distributions, expected value per shot, and rim pressure dynamics.
 ---
 
+## 0. Warehouse reference: where shot-location data lives
+
+| Table | Grain | What it carries |
+|---|---|---|
+| `silver_hist_shots` | one row per shot attempt, multi-season | `shot_value`, `shot_distance`, `x_legacy`/`y_legacy`, shooting `team_id`/`team_tricode` — the defending team is the opponent in the same `game_id` |
+| `silver_shots` | one row per shot attempt, current season | `SHOT_ZONE_BASIC`/`SHOT_ZONE_AREA`/`SHOT_ZONE_RANGE`, `SHOT_DISTANCE`, `LOC_X`/`LOC_Y`, `HTM`/`VTM` (home/away — the defender is the non-shooting team) |
+| `silver_zone_splits` | pre-aggregated zone ranges per player-season | `ZONE` × `FGA`/`FGM`/`FG_PCT` rows |
+
+Season-aggregate tables (`silver_hist_player_seasons`, `silver_player_season`, `silver_advanced`, `silver_leaders_*`, `silver_team_ratings`) carry totals only — `fg3m`/`fg3a` are season totals, not zone breakdowns. Columns like `rim_fga`, `0-3ft_fga`, or `zone_share` do not exist in any table.
+
 # Shot Diet & Spatial Analytics Playbook
 
 This playbook establishes methodology for decomposing basketball scoring efficiency into court location zones, shot selection profiles, and expected value models.
