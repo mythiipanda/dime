@@ -95,8 +95,21 @@ def normalize_mode(mode: object) -> str | None:
         return "leaders"
     return MODE_ALIASES.get(text)
 
-RAPTOR_JOIN = ("LEFT JOIN silver_raptor_player r ON LOWER(r.PLAYER_NAME) = "
-               "LOWER(h.player_name) AND r.SEASON = h.season")
+def _player_name_key_sql(column: str) -> str:
+    ws = r"\s\p{Z}"
+    cleaned = (f"regexp_replace(strip_accents(lower({column})), "
+               f"'[^a-z0-9{ws}]', '', 'g')")
+    trimmed = (f"regexp_replace({cleaned}, "
+               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
+    suffixless = (f"regexp_replace({trimmed}, "
+                  f"'(?:^|[{ws}]+)(?:iii|ii|iv|jr|sr|v)"
+                  f"(?:[{ws}]+(?:iii|ii|iv|jr|sr|v))*$', '', 'g')")
+    return f"regexp_replace({suffixless}, '[{ws}]+', '', 'g')"
+
+RAPTOR_JOIN = ("LEFT JOIN silver_raptor_player r ON "
+               f"{_player_name_key_sql('r.PLAYER_NAME')} = "
+               f"{_player_name_key_sql('h.player_name')} "
+               "AND r.SEASON = h.season")
 
 def _tables() -> set[str]:
     con = store.connect(read_only=True)
