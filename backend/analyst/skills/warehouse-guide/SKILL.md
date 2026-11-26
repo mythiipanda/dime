@@ -62,8 +62,9 @@ A requested metric or dataset may not exist in the warehouse at all (for example
 | `silver_hist_pbp` | Event-level plays: clock, action, shooter, shot result/distance, coordinates. | Lineups on floor per event — join `silver_hist_possessions`/`silver_stints`. |
 | `silver_hist_possessions` | Possession boundaries: offense/defense teams, duration, points, start type. | Shot-by-shot detail (join `silver_hist_pbp`). |
 | `silver_stints` | Lineup stints per game: in/out clock, duration, team ids. | Aggregate ratings — compute from `silver_hist_possessions` or use `silver_hist_lineups`. |
-| `silver_on_off` | Single-player on/off splits. | WOWY two-player matrices — `get_wowy`/`silver_wowy`. |
-| `silver_wowy` | With/without-you payloads. | Three-plus-player combos — compute from stints. |
+| `silver_on_off` | Single-player on/off splits. | WOWY differentials — `silver_wowy_derived`. |
+| `silver_wowy_derived` | Canonical pre-aggregated WOWY/on-off surface: one row per player-season (`_season`, player_id, player_name, team_id) with games_on, games_played, on_minutes, on_net_per48, off_net_per48, and wowy_diff_per48 (team net per 48 with the player on minus off — positive is good). Covers 2009-10 through 2025-26; current-season 2026-27 is absent because stint coverage lags — that is a coverage lag, not missing data to retry. Use this table for any WOWY/on-off ask; always filter on on_minutes — tiny-minute players produce extreme noise values. | Anything per-game or per-stint granularity (use `silver_stints`); 2026-27 rows. |
+| `silver_wowy` | Raw unparsed JSON blobs — do not use; query `silver_wowy_derived` instead. | Everything — superseded by `silver_wowy_derived`. |
 | `silver_hist_lineups` | Five-man unit season aggregates (see `lineups-and-rotations` for variant columns). | Per-game lineup minutes (use `silver_stints`). |
 
 ## Shots, zones & playtypes
