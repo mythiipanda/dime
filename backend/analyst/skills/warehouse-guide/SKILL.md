@@ -18,7 +18,8 @@ Use this guide when a coverage gap, usage error, or schema question arises: find
 | Table | Can answer | Cannot answer |
 |---|---|---|
 | `silver_cap_room` | Projected room, committed salary, holds, and projected cap/tax/apron1/apron2 per `CAP_SEASON`. | Exact live cap-sheet minutiae (trade exceptions, stretch math). |
-| `silver_cap_players` | Per-player team salary, contract type, options, guaranteed. | Historical salary; league-average contract distributions. |
+| `silver_cap_players` | Per-player team salary, contract type, options, guaranteed — cap-sheet rows only, narrower coverage than silver_salaries. | Historical salary; league-average contract distributions. |
+| `silver_salaries` | The complete player-salary table — one row per player with TEAM and season-tagged columns SALARY_2025_26 (current year), SALARY_2026_27 and forward. This is the table for trade matching-band math, salary lookups, and any current-or-forward salary figure. | Contract-type/option detail (use silver_cap_players/silver_contracts); historical salaries before 2022 (use silver_hist_salaries). |
 | `silver_contracts` | Contract rows: options, qualifying offers, two-way flags. | Dead-cap after waives; extension rule checks. |
 | `silver_free_agents` | FA pool by year with type, prior salary, hold estimate. | Bird-rights details; market predictions beyond hold anchor. |
 | `silver_rosters` | Current roster membership. | Historical rosters (use `silver_boxscores`/`silver_hist_gamelogs` for who played). |
@@ -77,7 +78,7 @@ Use this guide when a coverage gap, usage error, or schema question arises: find
 
 | Table | Can answer | Cannot answer |
 |---|---|---|
-| `silver_hist_player_seasons` / `silver_hist_team_seasons` | Multi-season player/team totals and rates. | Current-season rows — use `silver_player_season`/`silver_team_ratings`. |
+| `silver_hist_player_seasons` / `silver_hist_team_seasons` | Multi-season player/team totals and rates — performance stats only, no salary columns. | Current-season rows — use `silver_player_season`/`silver_team_ratings`; salaries never live here, use `silver_salaries`. |
 | `silver_standings` / `silver_hist_standings` | Standings snapshots. | Tie-breaker resolution logic — state when tied records need them. |
 | `silver_schedule` / `silver_scoreboard` | Upcoming/recent game slate, results. | Historical full schedules before ingest coverage — check `_season`. |
 | `silver_preseason_projections` | Stored projection inputs. | Actuals vs projections needs a join, not a single table. |
