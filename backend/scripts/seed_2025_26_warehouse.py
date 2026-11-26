@@ -18,19 +18,30 @@ TEAM_GAME_COLS = [
     "_source", "_season", "_fetched_at", "_entity",
 ]
 
+LINEUP_COUNTING_COLS = [
+    "GP", "W", "L", "W_PCT", "MIN",
+    "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
+    "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB",
+    "AST", "TOV", "STL", "BLK", "BLKA", "PF", "PFD", "PTS", "PLUS_MINUS",
+]
+LINEUP_RATING_COLS = [
+    "E_OFF_RATING", "OFF_RATING", "E_DEF_RATING", "DEF_RATING",
+    "E_NET_RATING", "NET_RATING", "AST_PCT", "AST_TO", "AST_RATIO",
+    "OREB_PCT", "DREB_PCT", "REB_PCT", "TM_TOV_PCT", "EFG_PCT", "TS_PCT",
+    "E_PACE", "PACE", "PACE_PER40", "POSS", "PIE",
+]
+LINEUP_RATING_RANK_COLS = [
+    "OFF_RATING_RANK", "DEF_RATING_RANK", "NET_RATING_RANK",
+    "AST_PCT_RANK", "AST_TO_RANK", "AST_RATIO_RANK",
+    "OREB_PCT_RANK", "DREB_PCT_RANK", "REB_PCT_RANK", "TM_TOV_PCT_RANK",
+    "EFG_PCT_RANK", "TS_PCT_RANK", "PACE_RANK", "PIE_RANK",
+]
 LINEUP_COLS = [
     "GROUP_SET", "GROUP_ID", "GROUP_NAME", "TEAM_ID", "TEAM_ABBREVIATION",
-    "GP", "W", "L", "W_PCT", "MIN",
-    "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
-    "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB",
-    "AST", "TOV", "STL", "BLK", "BLKA", "PF", "PFD", "PTS", "PLUS_MINUS",
-] + [c + "_RANK" for c in [
-    "GP", "W", "L", "W_PCT", "MIN",
-    "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
-    "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB",
-    "AST", "TOV", "STL", "BLK", "BLKA", "PF", "PFD", "PTS", "PLUS_MINUS",
-]] + [
-    "SUM_TIME_PLAYED", "_source", "_season", "_fetched_at", "_entity",
+] + LINEUP_COUNTING_COLS + [c + "_RANK" for c in LINEUP_COUNTING_COLS] + [
+    "SUM_TIME_PLAYED", "MEASURE",
+] + LINEUP_RATING_COLS + LINEUP_RATING_RANK_COLS + [
+    "_source", "_season", "_fetched_at", "_entity",
 ]
 
 TEAM_GAME_SELECT = """
@@ -86,8 +97,10 @@ SELECT {cols}, 'sportsdataverse' AS "_source", ? AS "_season",
 FROM silver_hist_lineups
 WHERE season = ?
 """.format(
-    cols=", ".join(f"{c.lower()} AS \"{c}\"" for c in LINEUP_COLS
-                   if c not in ("_source", "_season", "_fetched_at", "_entity"))
+    cols=", ".join(
+        f"{'measure_type' if c == 'MEASURE' else c.lower()} AS \"{c}\""
+        for c in LINEUP_COLS
+        if c not in ("_source", "_season", "_fetched_at", "_entity"))
 )
 
 def report(con) -> dict[str, int]:
