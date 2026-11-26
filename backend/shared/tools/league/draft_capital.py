@@ -7,7 +7,9 @@ from ._helpers import _owned_connection, _pkg, _warehouse_tables
 
 PICK_ONE_VALUE_M = 45.0
 
-_PICKS_SEASON = "2026-27"
+def _picks_season(con) -> str:
+    row = con.execute("select max(_season) from silver_future_picks").fetchone()
+    return row[0] if row and row[0] else (_pkg().current_season() or "")
 
 
 def _pick_tables(con) -> set[str]:
@@ -37,7 +39,7 @@ def _curve(con) -> dict[int, float]:
     try:
         return {int(slot): float(idx) for slot, idx in con.execute(
             "select SLOT, VALUE_INDEX from silver_draft_value_curve "
-            "where _season = ?", [_PICKS_SEASON]).fetchall()}
+            "where _season = ?", [_picks_season(con)]).fetchall()}
     except Exception:
         return {}
 
@@ -61,7 +63,7 @@ def _pick_rows(con, team: str, years: list[int] | None) -> list[dict[str, Any]]:
     sql = ("select DRAFT_YEAR, ROUND, ORIG_TEAM, STATUS, HELD_BY, "
            "PROTECTION, POOLED, CONDITIONAL, SUMMARY, LAST_EDITED "
            "from silver_future_picks where _season = ?")
-    params: list[Any] = [_PICKS_SEASON]
+    params: list[Any] = [_picks_season(con)]
     if years:
         sql += " and DRAFT_YEAR in (" + ",".join("?" * len(years)) + ")"
         params += years
@@ -179,11 +181,16 @@ def _league_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 @tool(description='Future draft pick ownership and capital audit: who holds '
-                  'each team\'s 2027+ picks, protections, swap rights and '
+                  'each team\'s future picks, protections, swap rights and '
                   'forfeits, valued on an empirical draft-value curve. With '
                   'team + optional years_ahead horizon: per-year '
                   'kept/incoming/outgoing inventory, Stepien-rule first-round '
-                  'coverage, and net draft-capital liquidity. Requires seeded '
+                  'coverage, and net draft-capital liquidity. With no team: league-wide '
+                  'capital ranking plus per-pick detail rows in picks '
+                  '(every non-own or protected pick with its status, '
+                  'holder, protection terms and summary) and swaps — use '
+                  'these for protection-terms, owed-pick and conveyance '
+                  'asks rather than reconstructing them. Requires seeded '
                   'silver_future_picks.')
 def get_draft_capital(team: str = "", draft_year: str = "",
                       years_ahead: int | None = None) -> dict[str, Any]:
@@ -202,13 +209,13 @@ def get_draft_capital(team: str = "", draft_year: str = "",
         meta_rows = con.execute(
             "select max(LAST_EDITED), max(_fetched_at) "
             "from silver_future_picks where _season = ?",
-            [_PICKS_SEASON]).fetchone()
+            [_picks_season(con)]).fetchone()
         if team and not rows:
             team_rows = _pick_rows(con, team, None)
             team_years = sorted({r["draft_year"] for r in team_rows})
             all_years = [r[0] for r in con.execute(
                 "select distinct DRAFT_YEAR from silver_future_picks "
-                "where _season = ? order by 1", [_PICKS_SEASON]).fetchall()]
+                "where _season = ? order by 1", [_picks_season(con)]).fetchall()]
             if team_years:
                 detail = (f"no pick rows for {team.upper()} in "
                           f"{years}; {team.upper()} rows exist for "
@@ -252,18 +259,27 @@ def get_draft_capital(team: str = "", draft_year: str = "",
              "protection": r["protection"], "summary": r["summary"]}
             for r in rows if r["status"] == "swap"
         ]
+        out["picks"] = [
+            {"draft_year": r["draft_year"], "round": r["round"],
+             "orig_team": r["orig_team"], "status": r["status"],
+             "held_by": r["held_by"], "protection": r["protection"],
+             "conditional": r["conditional"], "pooled": r["pooled"],
+             "summary": r["summary"]}
+            for r in rows
+            if r["status"] != "own" or r["protection"]
+        ]
     if team:
         out["audit"] = _audit(rows, horizon)
     out.update({
             "meta": {
-                "season": _PICKS_SEASON,
+                "season": _picks_season(con),
                 "sources": [
                     "https://thedraftday.com/api/picks (hand-maintained "
                     "from RealGM's future draft pick listing)",
                     "silver_draft_value_curve derived from "
                     "silver_hist_draft + silver_raptor_player "
                     "(1997-2015 drafts, sportsdataverse + 538 RAPTOR)",
-                    "slot estimate from silver_team_ratings 2025-26 "
+                    "slot estimate from silver_team_ratings latest-season "
                     "NET_RATING_RANK",
                 ],
                 "value_basis": ("est_value_m = curve_index (mean career WAR "
