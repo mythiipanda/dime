@@ -11,3 +11,8 @@ def test_cap_ledger_description_redirects_leaguewide_audits():
         "get_cap_ledger must steer league-wide audits away from per-team fanout — "
         "its payroll basis differs from silver_cap_room committed salary (task 041)"
     )
+
+
+def test_cap_ledger_description_blocks_per_team_sweep():
+    assert "Any all-30-teams sweep or league-wide analysis is ONE sql_exec" in SRC
+    assert "never per-team calls of this tool" in SRC
