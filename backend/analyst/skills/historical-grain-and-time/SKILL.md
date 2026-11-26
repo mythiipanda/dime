@@ -16,7 +16,7 @@ Use this playbook before aggregating across `silver_hist_*`, `silver_boxscores`,
 
 ## 2. Season, Phase, And Game-ID Scope
 
-- Match the requested season in the encoding the table actually uses: `_season = 'YYYY-YY'`, numeric `season = YYYY`, or `season_id` start-year form. Do not mix encodings in one cohort.
+- `_season` is the varchar season label (`'YYYY-YY'`): for 2024-25 use `WHERE _season = '2024-25'`. `season` is the integer end-year: for the same 2024-25 season use `WHERE season = 2025`. Never substitute one for the other (`_season = 2025` or `season = '2024-25'`); inspect the schema and filter the column the table actually carries. `season_id` remains the start-year encoded form (`'22024'` for 2024-25); do not mix encodings in one cohort.
 - Filter phase explicitly. For NBA game IDs, `001` is preseason, `002` is regular season, and `004` is playoffs; when `season_type` exists, prefer it and use the game-ID prefix as a cross-check.
 - Historical tables can carry variant dimensions. For `silver_hist_lineups`, retain only the requested `season_type`, `measure_type`, and `per_mode` before ranking or comparing units; ratings and pace are not interchangeable across variants.
 - When comparing seasons, validate every season in the comparison, not only the final one, and state the exact season labels used.
