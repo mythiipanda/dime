@@ -169,8 +169,8 @@ def test_unmatched_season_column_fails_loud_not_wrong_value(
 
     _vintaged_warehouse(
         tmp_path, monkeypatch,
-        "SALARY_2024_25 INTEGER, SALARY_2025_26 INTEGER",
-        [("LeBron James", "LAL", 10, 20, "2025-26")])
+        "SALARY_2025_26 INTEGER",
+        [("LeBron James", "LAL", 20, "2025-26")])
     out = league_mod.get_trade_value.invoke(
         {"team_a": "LAL", "players_a": "LeBron James",
          "team_b": "MIA", "players_b": "LeBron James"})

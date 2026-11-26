@@ -16,8 +16,7 @@ def normalize_name(value: object) -> str:
 def resolve_salary_column(columns: set[str], season: str | None) -> str:
     if season:
         column = 'SALARY_' + season.replace('-', '_')
-        if column in columns:
-            return column
+        return column if column in columns else ''
     if 'SALARY' in columns:
         return 'SALARY'
     salary_columns = {c for c in columns if re.fullmatch(r'SALARY_\d{4}_\d{2}', c)}

@@ -28,9 +28,9 @@ HTML = '''<table id="contracts"><thead><tr>
 
 
 @pytest.mark.parametrize('column', ['SALARY_1999_00', 'SALARY_2025_26', 'SALARY_2031_32'])
-def test_single_season_salary_column_fallback(column):
+def test_single_season_salary_column_resolution(column):
     assert resolve_salary_column({'PLAYER_NAME', column}, None) == column
-    assert resolve_salary_column({'PLAYER_NAME', column}, '2026-27') == column
+    assert resolve_salary_column({'PLAYER_NAME', column}, '2026-27') == ''
 
 
 def test_salary_column_precedence_and_ambiguity():
@@ -39,7 +39,8 @@ def test_salary_column_precedence_and_ambiguity():
     assert resolve_salary_column(columns, '2026-27') == ''
     assert resolve_salary_column(columns, '2024-25') == 'SALARY_2024_25'
     assert resolve_salary_column(columns | {'SALARY'}, '2024-25') == 'SALARY_2024_25'
-    assert resolve_salary_column({'PLAYER_NAME', 'SALARY'}, '2024-25') == 'SALARY'
+    assert resolve_salary_column({'PLAYER_NAME', 'SALARY'}, '2024-25') == ''
+    assert resolve_salary_column({'PLAYER_NAME', 'SALARY'}, None) == 'SALARY'
     assert resolve_salary_column({'PLAYER_NAME', 'SALARY_notes'}, None) == ''
 
 
@@ -178,8 +179,8 @@ def test_requested_contract_year_beats_stale_bare_salary(warehouse):
         con.execute("INSERT INTO silver_salaries VALUES ('Exact Year Example', 'BOS', 999, 175, '2026-27')")
         exact = salary_records(con, salary_season='2027-28')
         assert exact[0]['salary'] == 175
-        fallback = salary_records(con, salary_season='2028-29')
-        assert fallback[0]['salary'] == 999
+        unavailable = salary_records(con, salary_season='2028-29')
+        assert unavailable == []
     finally:
         con.close()
 
