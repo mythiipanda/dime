@@ -84,6 +84,8 @@ async function fixture(name, code, tools) {
   assert.deepEqual(session.getActiveToolNames(), ["codemode"]);
   assert.deepEqual(new Set(session.getCallableToolNames()), new Set([...tools.map(t => t.name), "load_skill"]));
   assert(!session.systemPrompt.includes("PROFILE_CONTEXT_MUST_NOT_LOAD"));
+  assert(session.systemPrompt.includes("that table is the authoritative source"));
+  assert(session.systemPrompt.includes("never answer warehouse-held data"));
   return { session, requests };
 }
 
