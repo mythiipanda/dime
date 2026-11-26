@@ -1,5 +1,6 @@
 import json as _json
 import re as _re
+from functools import lru_cache
 from typing import Any
 
 from langchain_core.tools import tool
@@ -20,6 +21,15 @@ from .cba_cap import (
 from .trade_value import _trade_guard_vintage_error
 
 _STEPIEN_WINDOW = 7
+_TPE_CUSHION = 250_000
+_TPE_KINDS = {
+    "ordinary": "ordinary",
+    "standard": "ordinary",
+    "sign_and_trade": "sign_and_trade",
+    "sign_and_trade_generated": "sign_and_trade",
+    "snt": "sign_and_trade",
+    "snt_generated": "sign_and_trade",
+}
 
 
 def _parse_json_arg(text: str, label: str) -> tuple[Any, str | None]:
@@ -82,17 +92,123 @@ def _parse_cash(rows: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _parse_tpe(rows: Any) -> dict[str, int]:
+def _tpe_origin_year(raw: dict[str, Any]) -> tuple[int | None, str | None]:
+    year = None
+    if raw.get("origin_year") not in (None, ""):
+        try:
+            year = int(raw.get("origin_year"))
+        except (TypeError, ValueError):
+            return None, "origin_year must be an integer season-start year"
+    season_year = None
+    if raw.get("origin_season") not in (None, ""):
+        match = _re.match(r"(\d{4})", str(raw.get("origin_season")))
+        if not match:
+            return None, "origin_season must start with a four-digit year"
+        season_year = int(match.group(1))
+    if year is not None and season_year is not None and year != season_year:
+        return None, "origin_year and origin_season disagree"
+    return year if year is not None else season_year, None
+
+
+def _parse_tpe(rows: Any) -> tuple[list[dict[str, Any]], str | None]:
     if isinstance(rows, dict):
         rows = [rows]
-    out: dict[str, int] = {}
-    for raw in rows or []:
+    out: list[dict[str, Any]] = []
+    for index, raw in enumerate(rows or [], 1):
         if not isinstance(raw, dict):
-            continue
+            return [], f"tpe row {index} is not an object"
         team = _leg_team(raw.get("team"))
-        if team:
-            out[team] = out.get(team, 0) + int(raw.get("amount") or 0)
-    return out
+        if not team:
+            return [], f"tpe row {index} needs a team"
+        try:
+            amount = int(raw.get("amount"))
+        except (TypeError, ValueError):
+            return [], f"tpe row {index} needs an integer amount"
+        if amount <= 0:
+            return [], f"tpe row {index} amount must be positive"
+        key = str(raw.get("kind") or "ordinary").strip().lower()
+        key = key.replace("-", "_").replace(" ", "_")
+        kind = _TPE_KINDS.get(key)
+        if kind is None:
+            return [], (f"tpe row {index} kind must be ordinary or "
+                        "sign_and_trade")
+        origin_year, err = _tpe_origin_year(raw)
+        if err:
+            return [], f"tpe row {index} {err}"
+        typed = "kind" in raw and (
+            "origin_year" in raw or "origin_season" in raw)
+        out.append({"team": team, "amount": amount, "kind": kind,
+                    "origin_year": origin_year, "typed": typed})
+    return out, None
+
+
+def _tpe_status(origin_year: int, season_start: int) -> str:
+    if origin_year > season_start:
+        return "future"
+    if origin_year < season_start - 1:
+        return "expired"
+    return "current_year" if origin_year == season_start else "prior_year"
+
+
+def _season_label(season_start: int) -> str:
+    return f"{season_start}-{(season_start + 1) % 100:02d}"
+
+
+def _seasonize_tpes(rows: list[dict[str, Any]],
+                    season_start: int) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for raw in rows:
+        origin = (raw["origin_year"] if raw["origin_year"] is not None
+                  else season_start)
+        item = {"team": raw["team"], "amount": raw["amount"],
+                "kind": raw["kind"], "origin_year": origin,
+                "origin_season": _season_label(origin),
+                "status": _tpe_status(origin, season_start),
+                "legacy_defaults": not raw["typed"]}
+        grouped.setdefault(raw["team"], []).append(item)
+    return grouped
+
+
+def _placement_fits(salaries: list[int], capacities: list[int],
+                    required_bins: int) -> bool:
+    ordered = sorted((int(salary or 0) for salary in salaries), reverse=True)
+    bins = tuple(int(capacity or 0) for capacity in capacities)
+
+    @lru_cache(maxsize=None)
+    def place(index: int, remaining: tuple[int, ...], used: int) -> bool:
+        if index == len(ordered):
+            return (used & required_bins) == required_bins
+        salary = ordered[index]
+        if salary <= 0:
+            return place(index + 1, remaining, used)
+        seen: set[tuple[int, bool]] = set()
+        for position, capacity in enumerate(remaining):
+            marker = (capacity, bool(used & (1 << position)))
+            if capacity < salary or marker in seen:
+                continue
+            seen.add(marker)
+            reduced = (remaining[:position] + (capacity - salary,) +
+                       remaining[position + 1:])
+            if place(index + 1, reduced, used | (1 << position)):
+                return True
+        return False
+
+    return place(0, bins, 0)
+
+
+def _add_hard_cap(hard_caps: list[str], apron: str) -> None:
+    if apron not in hard_caps:
+        hard_caps.append(apron)
+
+
+def _public_tpe(tpe: dict[str, Any], over_apron1: bool) -> dict[str, Any]:
+    active = tpe["status"] in ("current_year", "prior_year")
+    cushion = 0 if over_apron1 or not active else _TPE_CUSHION
+    return {"amount": tpe["amount"], "kind": tpe["kind"],
+            "origin_year": tpe["origin_year"],
+            "origin_season": tpe["origin_season"],
+            "status": tpe["status"], "capacity": tpe["amount"] + cushion,
+            "legacy_defaults": tpe["legacy_defaults"]}
 
 
 def _parse_snt(value: Any) -> dict[str, Any] | None:
@@ -145,273 +261,430 @@ def _salary_season_start(season: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-@tool(description='Trade legality verdict across 2+ teams. "legs" is a JSON array:\n'
-    '[{"from":"BOS","to":"DEN","players":"Jayson Tatum, Sam Hauser",'
-    '"picks":[{"year":2028,"round":1,"protection":"top-4"},{"year":2030,"round":1,"swap":true}]}].\n'
-    'Optional "sign_and_trade" = {"player":"...","new_salary":0,"years":3} '
-    '(3-year minimum, BYC handled), "cash" = [{"from","to","amount"}], '
-    '"tpe" = [{"team","amount"}]. Checks 2023 CBA salary matching tiers, '
-    'apron aggregation bans, post-trade hard caps, TPE/cash bans, the '
-    'frozen second-apron pick, and Stepien consecutive-first rules. '
-    'REACH FOR THIS for any trade-legality ask beyond a trivial two-team '
-    'player swap: sign-and-trade, multi-team, picks/Stepien, apron '
-    'aggregation, TPE or cash involved. For a simple two-team salary '
-    'match get_trade_check is enough.')
-def get_trade_legality(legs: str = "", sign_and_trade: str = "",
-                       cash: str = "", tpe: str = "",
-                       season: str | None = None) -> dict[str, Any]:
-    legs_value, err = _parse_json_arg(legs, "legs")
-    if err:
-        return {"tool": "get_trade_legality", "ok": False, "error": err}
-    cash_value, err = _parse_json_arg(cash, "cash")
-    if err:
-        return {"tool": "get_trade_legality", "ok": False, "error": err}
-    tpe_value, err = _parse_json_arg(tpe, "tpe")
-    if err:
-        return {"tool": "get_trade_legality", "ok": False, "error": err}
-    snt_value, err = _parse_json_arg(sign_and_trade, "sign_and_trade")
-    if err:
-        return {"tool": "get_trade_legality", "ok": False, "error": err}
+def _trade_error(error: str, reason: str | None = None) -> dict[str, Any]:
+    out: dict[str, Any] = {"tool": "get_trade_legality", "ok": False,
+                           "error": error}
+    if reason is not None:
+        out["reason"] = reason
+    return out
 
+
+def _parse_trade_args(legs: str, cash: str, tpe: str,
+                      sign_and_trade: str) -> tuple[list[Any], str | None]:
+    parsed: list[Any] = []
+    for label, raw in (("legs", legs), ("cash", cash), ("tpe", tpe),
+                       ("sign_and_trade", sign_and_trade)):
+        value, err = _parse_json_arg(raw, label)
+        if err:
+            return [], err
+        parsed.append(value)
+    return parsed, None
+
+
+def _parse_moves(rows: Any) -> tuple[list[dict[str, Any]], str | None]:
     moves: list[dict[str, Any]] = []
-    for i, leg in enumerate(legs_value, 1):
+    for index, leg in enumerate(rows, 1):
         if not isinstance(leg, dict):
-            return {"tool": "get_trade_legality", "ok": False,
-                    "error": f"leg {i} is not an object"}
+            return [], f"leg {index} is not an object"
         src = _leg_team(leg.get("from"))
         dst = _leg_team(leg.get("to"))
         if not src or not dst:
-            return {"tool": "get_trade_legality", "ok": False,
-                    "error": f"leg {i} needs from and to teams"}
+            return [], f"leg {index} needs from and to teams"
         if src == dst:
-            return {"tool": "get_trade_legality", "ok": False,
-                    "error": f"leg {i} is {src} to itself - same team"}
+            return [], f"leg {index} is {src} to itself - same team"
         moves.append({"from": src, "to": dst,
                       "players": _leg_players(leg),
                       "picks": _leg_picks(leg)})
     if not any(m["players"] for m in moves) and not any(m["picks"] for m in moves):
-        return {"tool": "get_trade_legality", "ok": False,
-                "error": "no players or picks in the legs"}
+        return [], "no players or picks in the legs"
+    return moves, None
 
-    cash_moves = _parse_cash(cash_value)
-    tpe_by_team = _parse_tpe(tpe_value)
-    snt = _parse_snt(snt_value)
-    if snt and not any(snt["player"].lower() in p.lower()
-                       for m in moves for p in m["players"]):
-        return {"tool": "get_trade_legality", "ok": False,
-                "error": f"sign_and_trade player {snt['player']} is not in any leg"}
 
-    with _owned_connection(None, read_only=True) as con:
-        season = str(season or "").strip()
-        if not season:
-            cols = {r[1] for r in con.execute(
-                "PRAGMA table_info(silver_salaries)").fetchall()}
-            explicit = sorted(
-                c for c in cols
-                if _re.fullmatch(r"SALARY_\d{4}_\d{2}", c))
-            season = (explicit[-1][len("SALARY_"):].replace("_", "-")
-                      if explicit else
-                      (_pkg()._salary_vintage(con)[0]
-                       or _pkg().current_season()
-                       or _pkg().resolve_season(None)))
-        guard_error = _trade_guard_vintage_error(con, season)
-        if guard_error:
-            return {"tool": "get_trade_legality", "ok": False,
-                    "error": guard_error}
+def _snt_in_moves(snt: dict[str, Any], moves: list[dict[str, Any]]) -> bool:
+    return any(snt["player"].lower() in player.lower()
+               for move in moves for player in move["players"])
 
-        teams = sorted({m["from"] for m in moves} | {m["to"] for m in moves})
-        side: dict[str, dict[str, Any]] = {}
-        for team in teams:
-            plist = ",".join(p for m in moves if m["from"] == team
-                             for p in m["players"])
-            try:
-                out_total, out_names, out_unk = _match_trade_players(
-                    team, plist, con, season)
-            except SalaryColumnError as exc:
-                return {"tool": "get_trade_legality", "ok": False,
-                        "reason": exc.reason, "error": str(exc)}
-            if out_unk:
-                return {"tool": "get_trade_legality", "ok": False,
-                        "error": f"{team}: unknown outgoing players "
-                                 f"{'; '.join(out_unk)}"}
-            try:
-                pay_before, _ = _payroll(team, con, season)
-            except SalaryColumnError as exc:
-                return {"tool": "get_trade_legality", "ok": False,
-                        "reason": exc.reason, "error": str(exc)}
-            in_names: list[str] = []
-            in_total = 0
-            for m in moves:
-                if m["to"] != team:
-                    continue
-                for p in m["players"]:
-                    hit = _locate_player_team(p, con, season)
-                    if hit is None:
-                        return {"tool": "get_trade_legality", "ok": False,
-                                "error": f"cannot resolve incoming player {p} "
-                                         f"to {team}"}
-                    cname, _cteam, csal = hit
-                    in_names.append(cname)
-                    if snt and cname.lower() == snt["player"].lower() \
-                            and snt["new_salary"]:
-                        in_total += snt["new_salary"]
-                    else:
-                        in_total += int(csal or 0)
-            side[team] = {"out_names": out_names, "out_total": out_total,
-                          "in_names": in_names, "in_total": in_total,
-                          "pay_before": pay_before}
 
-        salary_date = _salary_date(con)
-        source = _payroll_source(con)
-        season_start = _salary_season_start(season)
-        pick_held = _pick_inventory(con, season_start) \
-            if season_start else None
-        snt_salary_prior = 0
-        if snt:
-            hit = _locate_player_team(snt["player"], con, season)
-            if hit is not None:
-                snt_salary_prior = int(hit[2] or 0)
+def _snt_receiver(snt: dict[str, Any] | None,
+                  moves: list[dict[str, Any]]) -> str | None:
+    if not snt:
+        return None
+    return next((move["to"] for move in moves
+                 if any(player.lower() == snt["player"].lower()
+                        for player in move["players"])), None)
 
-    issues: list[str] = []
-    checks: list[dict[str, Any]] = []
-    team_rows: dict[str, Any] = {}
-    snt_receiver = next((m["to"] for m in moves
-                         if snt and any(p.lower() == snt["player"].lower()
-                                        for p in m["players"])), None)
-    for team in teams:
-        s = side[team]
-        out_eff = s["out_total"]
-        byc_note = None
-        if snt and any(p.lower() == snt["player"].lower()
-                       for p in s["out_names"]) and snt["new_salary"]:
-            raise_ratio = (snt["new_salary"] / snt_salary_prior
-                           if snt_salary_prior else 0)
-            if raise_ratio > 1.2 and s["pay_before"] > CAP["cap"]:
-                byc = max(snt_salary_prior, snt["new_salary"] // 2)
-                out_eff = out_eff - snt_salary_prior + byc
-                byc_note = (f"{snt['player']} counts at ${byc:,} outgoing "
-                            "under base-year compensation")
-        pay_after = s["pay_before"] - s["out_total"] + s["in_total"]
-        state_after = _apron_state(pay_after)
-        state_before = _apron_state(s["pay_before"])
-        room_before = max(0, CAP["cap"] - s["pay_before"])
-        allow, rule = _allowed_incoming(
-            out_eff, bool(state_after["over_apron1"]), room_before)
-        tpe_used = tpe_by_team.get(team, 0)
-        if tpe_used:
-            allow += tpe_used
-            rule += " + TPE"
-        aggregates = len(s["out_names"]) > 1
-        cash_out = sum(c["amount"] for c in cash_moves if c["from"] == team)
-        cash_in = sum(c["amount"] for c in cash_moves if c["to"] == team)
-        picks_out = [p for m in moves if m["from"] == team for p in m["picks"]]
-        picks_in = [p for m in moves if m["to"] == team for p in m["picks"]]
-        hard_caps: list[str] = []
-        if aggregates:
-            hard_caps.append("second apron")
-        if cash_out:
-            hard_caps.append("second apron")
-        if tpe_used:
-            hard_caps.append("second apron")
-        if team == snt_receiver:
-            hard_caps.append("first apron")
-        if state_after["over_apron2"]:
-            if len(s["out_names"]) > 1:
-                issues.append(f"{team} cannot aggregate outgoing salaries "
-                              "above the second apron")
-            if cash_out:
-                issues.append(f"{team} cannot send cash above the second apron")
-            if tpe_used:
-                issues.append(f"{team} cannot use a traded player exception "
-                              "above the second apron")
-            if season_start:
-                frozen_year = season_start + _STEPIEN_WINDOW
-                for p in picks_out:
-                    if not p["swap"] and p["round"] == 1 and p["year"] == frozen_year:
-                        issues.append(
-                            f"{team}'s {frozen_year} first-round pick is "
-                            "frozen above the second apron")
-        if "second apron" in hard_caps and pay_after > CAP["apron2"]:
-            issues.append(
-                f"{team} is hard-capped at the second apron by this deal "
-                f"(post-trade payroll ${pay_after:,} > ${CAP['apron2']:,})")
-        if "first apron" in hard_caps and pay_after > CAP["apron1"]:
-            issues.append(
-                f"{team} is hard-capped at the first apron by the "
-                f"sign-and-trade (post-trade payroll ${pay_after:,} > "
-                f"${CAP['apron1']:,})")
-        if s["in_total"] > allow:
-            issues.append(
-                f"{team} takes back too much "
-                f"(${s['in_total']:,} vs ${allow:,} allowed under {rule})")
-        if season_start:
-            for p in picks_out:
-                if p["year"] > season_start + _STEPIEN_WINDOW:
-                    issues.append(
-                        f"{team} cannot trade a {p['year']} pick - more than "
-                        "7 drafts out")
-        team_rows[team] = {
-            "team": team,
-            "payroll_before": s["pay_before"],
-            "payroll_after": pay_after,
-            "outgoing": s["out_total"],
-            "outgoing_matching": out_eff,
-            "incoming": s["in_total"],
-            "players_out": s["out_names"],
-            "players_in": s["in_names"],
-            "picks_out": picks_out,
-            "picks_in": picks_in,
-            "cash_out": cash_out, "cash_in": cash_in,
-            "tpe_used": tpe_used,
-            "allowed_incoming": allow, "match_rule": rule,
-            "matching_ok": s["in_total"] <= allow,
-            "aggregates": aggregates,
-            "hard_cap": "+".join(hard_caps) if hard_caps else "",
-            "over_apron1": state_after["over_apron1"],
-            "over_apron2": state_after["over_apron2"],
-            "room_apron2": state_after["room_apron2"],
-            "over_apron1_before": state_before["over_apron1"],
-            "over_apron2_before": state_before["over_apron2"],
-            **({"byc_note": byc_note} if byc_note else {}),
-        }
 
-    if snt:
-        if snt["years"] and snt["years"] < 3:
-            issues.append("sign-and-trade contracts must run at least "
-                          "3 seasons")
-        checks.append({"rule": "sign-and-trade", "checked": True,
-                       "note": f"{snt['player']} to {snt_receiver or '?'}; "
-                               f"{snt_receiver} is hard-capped at the "
-                               "first apron"
-                               if snt_receiver else
-                               f"{snt['player']} is not moving teams"})
+def _resolve_legality_season(con: Any, season: str | None) -> str:
+    resolved = str(season or "").strip()
+    if resolved:
+        return resolved
+    cols = {row[1] for row in con.execute(
+        "PRAGMA table_info(silver_salaries)").fetchall()}
+    explicit = sorted(col for col in cols
+                      if _re.fullmatch(r"SALARY_\d{4}_\d{2}", col))
+    if explicit:
+        return explicit[-1][len("SALARY_"):].replace("_", "-")
+    return (_pkg()._salary_vintage(con)[0]
+            or _pkg().current_season()
+            or _pkg().resolve_season(None))
 
-    if pick_held is not None and season_start:
-        for team in teams:
-            owned = set(pick_held.get(team, set()))
-            for m in moves:
-                for p in m["picks"]:
-                    if p["round"] != 1:
-                        continue
-                    if m["from"] == team and not p["swap"]:
-                        owned.discard(p["year"])
-                    if m["to"] == team and not p["swap"]:
-                        owned.add(p["year"])
-            issues.extend(_stepien_issues(team, owned, season_start))
-        checks.append({"rule": "Stepien consecutive firsts + 7-year limit",
-                       "checked": True,
-                       "note": "verified against silver_future_picks"})
+
+def _incoming_player_row(team: str, player: str, con: Any, season: str,
+                         snt: dict[str, Any] | None
+                         ) -> tuple[dict[str, Any] | None, str | None]:
+    hit = _locate_player_team(player, con, season)
+    if hit is None:
+        return None, f"cannot resolve incoming player {player} to {team}"
+    cname, _cteam, csal = hit
+    if snt and cname.lower() == snt["player"].lower() and snt["new_salary"]:
+        salary = snt["new_salary"]
     else:
-        checks.append({"rule": "Stepien consecutive firsts + 7-year limit",
-                       "checked": False,
-                       "note": "silver_future_picks not seeded - pick "
-                               "ownership not verified"})
+        salary = int(csal or 0)
+    return {"player": cname, "salary": salary}, None
 
+
+def _incoming_rows(team: str, moves: list[dict[str, Any]], con: Any,
+                   season: str, snt: dict[str, Any] | None
+                   ) -> tuple[list[dict[str, Any]], list[str], int, str | None]:
+    rows: list[dict[str, Any]] = []
+    names: list[str] = []
+    total = 0
+    for move in moves:
+        if move["to"] != team:
+            continue
+        for player in move["players"]:
+            row, err = _incoming_player_row(team, player, con, season, snt)
+            if err or row is None:
+                return [], [], 0, err or "incoming player resolution failed"
+            rows.append(row)
+            names.append(row["player"])
+            total += row["salary"]
+    return rows, names, total, None
+
+
+def _team_side(team: str, moves: list[dict[str, Any]], con: Any,
+               season: str, snt: dict[str, Any] | None
+               ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    plist = ",".join(player for move in moves if move["from"] == team
+                     for player in move["players"])
+    try:
+        out_total, out_names, out_unk = _match_trade_players(
+            team, plist, con, season)
+    except SalaryColumnError as exc:
+        return None, _trade_error(str(exc), exc.reason)
+    if out_unk:
+        return None, _trade_error(
+            f"{team}: unknown outgoing players {'; '.join(out_unk)}")
+    try:
+        pay_before, _payroll_rows = _payroll(team, con, season)
+    except SalaryColumnError as exc:
+        return None, _trade_error(str(exc), exc.reason)
+    in_rows, in_names, in_total, err = _incoming_rows(
+        team, moves, con, season, snt)
+    if err:
+        return None, _trade_error(err)
+    return {"out_names": out_names, "out_total": out_total,
+            "in_names": in_names, "in_rows": in_rows,
+            "in_total": in_total, "pay_before": pay_before}, None
+
+
+def _load_trade_state(con: Any, moves: list[dict[str, Any]], season: str | None,
+                      snt: dict[str, Any] | None,
+                      tpe_rows: list[dict[str, Any]]
+                      ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    resolved_season = _resolve_legality_season(con, season)
+    guard_error = _trade_guard_vintage_error(con, resolved_season)
+    if guard_error:
+        return None, _trade_error(guard_error)
+    teams = sorted({move["from"] for move in moves} |
+                   {move["to"] for move in moves})
+    side: dict[str, dict[str, Any]] = {}
+    for team in teams:
+        row, err = _team_side(team, moves, con, resolved_season, snt)
+        if err or row is None:
+            return None, err or _trade_error("could not build team side")
+        side[team] = row
+    season_start = _salary_season_start(resolved_season)
+    if tpe_rows and season_start is None:
+        return None, _trade_error("season must be YYYY-YY when tpe is used")
+    pick_held = _pick_inventory(con, season_start) if season_start else None
+    snt_salary_prior = 0
+    if snt:
+        hit = _locate_player_team(snt["player"], con, resolved_season)
+        if hit is not None:
+            snt_salary_prior = int(hit[2] or 0)
+    return {"season": resolved_season, "teams": teams, "side": side,
+            "salary_date": _salary_date(con),
+            "source": _payroll_source(con),
+            "season_start": season_start, "pick_held": pick_held,
+            "snt_salary_prior": snt_salary_prior}, None
+
+
+def _byc_adjustment(side: dict[str, Any], snt: dict[str, Any] | None,
+                    snt_salary_prior: int) -> tuple[int, str | None]:
+    out_total = side["out_total"]
+    if not snt or not snt["new_salary"]:
+        return out_total, None
+    if not any(player.lower() == snt["player"].lower()
+               for player in side["out_names"]):
+        return out_total, None
+    raise_ratio = (snt["new_salary"] / snt_salary_prior
+                   if snt_salary_prior else 0)
+    if raise_ratio <= 1.2 or side["pay_before"] <= CAP["cap"]:
+        return out_total, None
+    byc = max(snt_salary_prior, snt["new_salary"] // 2)
+    adjusted = out_total - snt_salary_prior + byc
+    note = (f"{snt['player']} counts at ${byc:,} outgoing "
+            "under base-year compensation")
+    return adjusted, note
+
+
+def _tpe_usage(team_tpes: list[dict[str, Any]],
+               over_apron1: bool) -> dict[str, Any]:
+    active = [item for item in team_tpes
+              if item["status"] in ("current_year", "prior_year")]
+    inactive = [item for item in team_tpes
+                if item["status"] not in ("current_year", "prior_year")]
+    cushion = 0 if over_apron1 else _TPE_CUSHION
+    return {"active": active, "inactive": inactive,
+            "used": sum(item["amount"] for item in active),
+            "prior": any(item["status"] == "prior_year" for item in active),
+            "snt": any(item["kind"] == "sign_and_trade" for item in active),
+            "capacities": [item["amount"] + cushion for item in active]}
+
+
+def _inactive_tpe_issue(team: str, item: dict[str, Any]) -> str:
+    kind_label = ("sign-and-trade-generated"
+                  if item["kind"] == "sign_and_trade" else "ordinary")
+    if item["status"] == "expired":
+        ending = "it expired one year after creation"
+    else:
+        ending = "it is not yet available"
+    return (f"{team} cannot use the {kind_label} traded player exception "
+            f"from {item['origin_season']}; {ending}")
+
+
+def _inactive_tpe_issues(team: str,
+                         inactive_tpes: list[dict[str, Any]]) -> list[str]:
+    return [_inactive_tpe_issue(team, item) for item in inactive_tpes]
+
+
+def _team_hard_caps(aggregates: bool, cash_out: int, prior_tpe: bool,
+                    snt_tpe: bool, is_snt_receiver: bool) -> list[str]:
+    hard_caps: list[str] = []
+    if aggregates:
+        _add_hard_cap(hard_caps, "second apron")
+    if cash_out:
+        _add_hard_cap(hard_caps, "second apron")
+    if prior_tpe:
+        _add_hard_cap(hard_caps, "first apron")
+    if snt_tpe:
+        _add_hard_cap(hard_caps, "second apron")
+    if is_snt_receiver:
+        _add_hard_cap(hard_caps, "first apron")
+    return hard_caps
+
+
+def _frozen_pick_issues(team: str, picks_out: list[dict[str, Any]],
+                        season_start: int | None) -> list[str]:
+    if not season_start:
+        return []
+    frozen_year = season_start + _STEPIEN_WINDOW
+    return [f"{team}'s {frozen_year} first-round pick is frozen above "
+            "the second apron"
+            for pick in picks_out
+            if not pick["swap"] and pick["round"] == 1
+            and pick["year"] == frozen_year]
+
+
+def _apron2_issues(team: str, out_names: list[str], cash_out: int,
+                   picks_out: list[dict[str, Any]],
+                   season_start: int | None) -> list[str]:
+    issues: list[str] = []
+    if len(out_names) > 1:
+        issues.append(f"{team} cannot aggregate outgoing salaries above "
+                      "the second apron")
+    if cash_out:
+        issues.append(f"{team} cannot send cash above the second apron")
+    issues.extend(_frozen_pick_issues(team, picks_out, season_start))
+    return issues
+
+
+def _hard_cap_issues(team: str, hard_caps: list[str], pay_after: int,
+                     is_snt_receiver: bool, prior_tpe: bool) -> list[str]:
+    issues: list[str] = []
+    if "second apron" in hard_caps and pay_after > CAP["apron2"]:
+        issues.append(
+            f"{team} is hard-capped at the second apron by this deal "
+            f"(post-trade payroll ${pay_after:,} > ${CAP['apron2']:,})")
+    if "first apron" not in hard_caps or pay_after <= CAP["apron1"]:
+        return issues
+    causes: list[str] = []
+    if is_snt_receiver:
+        causes.append("the sign-and-trade")
+    if prior_tpe:
+        causes.append("the prior-year traded player exception")
+    cause = " and ".join(causes) or "this deal"
+    issues.append(
+        f"{team} is hard-capped at the first apron by {cause} "
+        f"(post-trade payroll ${pay_after:,} > ${CAP['apron1']:,})")
+    return issues
+
+
+def _matching_issue(team: str, salary_fit: bool, active_tpes: list[dict[str, Any]],
+                    in_total: int, allow: int, rule: str) -> list[str]:
+    if salary_fit:
+        return []
+    if active_tpes:
+        return [f"{team} takes back too much; traded player exceptions "
+                "cannot be combined with player salary or each other "
+                "for one acquisition"]
+    return [f"{team} takes back too much "
+            f"(${in_total:,} vs ${allow:,} allowed under {rule})"]
+
+
+def _future_pick_issues(team: str, picks_out: list[dict[str, Any]],
+                        season_start: int | None) -> list[str]:
+    if not season_start:
+        return []
+    return [f"{team} cannot trade a {pick['year']} pick - more than "
+            "7 drafts out"
+            for pick in picks_out
+            if pick["year"] > season_start + _STEPIEN_WINDOW]
+
+
+def _evaluate_team(team: str, side: dict[str, Any],
+                   moves: list[dict[str, Any]],
+                   cash_moves: list[dict[str, Any]],
+                   team_tpes: list[dict[str, Any]],
+                   snt_receiver: str | None,
+                   snt: dict[str, Any] | None,
+                   snt_salary_prior: int,
+                   season_start: int | None
+                   ) -> tuple[dict[str, Any], list[str]]:
+    out_eff, byc_note = _byc_adjustment(side, snt, snt_salary_prior)
+    pay_after = side["pay_before"] - side["out_total"] + side["in_total"]
+    state_after = _apron_state(pay_after)
+    state_before = _apron_state(side["pay_before"])
+    room_before = max(0, CAP["cap"] - side["pay_before"])
+    allow, rule = _allowed_incoming(
+        out_eff, bool(state_after["over_apron1"]), room_before)
+    usage = _tpe_usage(team_tpes, bool(state_after["over_apron1"]))
+    incoming_salaries = [row["salary"] for row in side["in_rows"]]
+    required_tpe_bins = sum(1 << (index + 1)
+                            for index in range(len(usage["capacities"])))
+    salary_fit = _placement_fits(
+        incoming_salaries, [allow] + usage["capacities"], required_tpe_bins)
+    aggregates = len(side["out_names"]) > 1
+    cash_out = sum(cash["amount"] for cash in cash_moves
+                   if cash["from"] == team)
+    cash_in = sum(cash["amount"] for cash in cash_moves
+                  if cash["to"] == team)
+    picks_out = [pick for move in moves if move["from"] == team
+                 for pick in move["picks"]]
+    picks_in = [pick for move in moves if move["to"] == team
+                for pick in move["picks"]]
+    is_snt_receiver = team == snt_receiver
+    hard_caps = _team_hard_caps(aggregates, cash_out, usage["prior"],
+                                usage["snt"], is_snt_receiver)
+    issues = _inactive_tpe_issues(team, usage["inactive"])
+    if state_after["over_apron2"]:
+        issues.extend(_apron2_issues(team, side["out_names"], cash_out,
+                                     picks_out, season_start))
+    issues.extend(_hard_cap_issues(team, hard_caps, pay_after,
+                                   is_snt_receiver, usage["prior"]))
+    issues.extend(_matching_issue(team, salary_fit, usage["active"],
+                                  side["in_total"], allow, rule))
+    issues.extend(_future_pick_issues(team, picks_out, season_start))
+    row = {
+        "team": team,
+        "payroll_before": side["pay_before"],
+        "payroll_after": pay_after,
+        "outgoing": side["out_total"],
+        "outgoing_matching": out_eff,
+        "incoming": side["in_total"],
+        "players_out": side["out_names"],
+        "players_in": side["in_names"],
+        "picks_out": picks_out,
+        "picks_in": picks_in,
+        "cash_out": cash_out, "cash_in": cash_in,
+        "tpe_used": usage["used"],
+        "tpe_details": [_public_tpe(item, bool(state_after["over_apron1"]))
+                        for item in team_tpes],
+        "allowed_incoming": allow, "match_rule": rule,
+        "matching_ok": salary_fit,
+        "aggregates": aggregates,
+        "hard_cap": "+".join(hard_caps) if hard_caps else "",
+        "over_apron1": state_after["over_apron1"],
+        "over_apron2": state_after["over_apron2"],
+        "room_apron2": state_after["room_apron2"],
+        "over_apron1_before": state_before["over_apron1"],
+        "over_apron2_before": state_before["over_apron2"],
+        **({"byc_note": byc_note} if byc_note else {}),
+    }
+    return row, issues
+
+
+def _snt_result(snt: dict[str, Any] | None,
+                receiver: str | None) -> tuple[list[str], dict[str, Any] | None]:
+    if not snt:
+        return [], None
+    issues: list[str] = []
+    if snt["years"] and snt["years"] < 3:
+        issues.append("sign-and-trade contracts must run at least 3 seasons")
+    if receiver:
+        note = (f"{snt['player']} to {receiver}; {receiver} is "
+                "hard-capped at the first apron")
+    else:
+        note = f"{snt['player']} is not moving teams"
+    return issues, {"rule": "sign-and-trade", "checked": True, "note": note}
+
+
+def _owned_after_trade(team: str, moves: list[dict[str, Any]],
+                       pick_held: dict[str, set[int]]) -> set[int]:
+    owned = set(pick_held.get(team, set()))
+    for move in moves:
+        for pick in move["picks"]:
+            if pick["round"] != 1:
+                continue
+            if move["from"] == team and not pick["swap"]:
+                owned.discard(pick["year"])
+            if move["to"] == team and not pick["swap"]:
+                owned.add(pick["year"])
+    return owned
+
+
+def _stepien_result(teams: list[str], moves: list[dict[str, Any]],
+                    pick_held: dict[str, set[int]] | None,
+                    season_start: int | None
+                    ) -> tuple[list[str], dict[str, Any]]:
+    if pick_held is None or not season_start:
+        return [], {"rule": "Stepien consecutive firsts + 7-year limit",
+                    "checked": False,
+                    "note": "silver_future_picks not seeded - pick "
+                            "ownership not verified"}
+    issues: list[str] = []
+    for team in teams:
+        owned = _owned_after_trade(team, moves, pick_held)
+        issues.extend(_stepien_issues(team, owned, season_start))
+    return issues, {"rule": "Stepien consecutive firsts + 7-year limit",
+                    "checked": True,
+                    "note": "verified against silver_future_picks"}
+
+
+def _build_checks(team_rows: dict[str, Any],
+                  snt_check: dict[str, Any] | None,
+                  stepien_check: dict[str, Any],
+                  legacy_tpes: bool) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    if snt_check:
+        checks.append(snt_check)
+    checks.append(stepien_check)
     checks.insert(0, {"rule": "salary matching",
                       "checked": True,
                       "note": "; ".join(
-                          f"{t} {team_rows[t]['match_rule']}"
-                          for t in sorted(team_rows))})
+                          f"{team} {team_rows[team]['match_rule']}"
+                          for team in sorted(team_rows))})
     checks.insert(1, {"rule": "apron aggregation bans",
                       "checked": True,
                       "note": "no aggregation above the second apron; "
@@ -420,21 +693,97 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                    "checked": True,
                    "note": "apron2 ban + second-apron hard-cap trigger "
                            "checked; annual cash limit not tracked"})
+    tpe_note = ("kind, origin timing, amount capacity and non-combination "
+                "checked for declared uses")
+    if legacy_tpes:
+        tpe_note += ("; missing kind/origin fields used ordinary and "
+                     "current-season defaults")
+    checks.append({"rule": "traded player exceptions",
+                   "checked": True, "note": tpe_note})
     checks.append({"rule": "no-trade clauses, trade kickers, rosters "
                           "minimums, prior TPE inventory",
                    "checked": False, "note": "not modeled"})
+    return checks
+
+
+@tool(description='Trade legality verdict across 2+ teams. "legs" is a JSON array:\n'
+    '[{"from":"BOS","to":"DEN","players":"Jayson Tatum, Sam Hauser",'
+    '"picks":[{"year":2028,"round":1,"protection":"top-4"},{"year":2030,"round":1,"swap":true}]}].\n'
+    'Optional "sign_and_trade" = {"player":"...","new_salary":0,"years":3} '
+    '(3-year minimum, BYC handled), "cash" = [{"from","to","amount"}], '
+    '"tpe" = [{"team","amount","kind":"ordinary|sign_and_trade",'
+    '"origin_season":"YYYY-YY"}]; rows are declared uses, not inventory. '
+    'Amount-only legacy rows assume an ordinary current-season origin. '
+    'TPE capacity is amount plus the '
+    'CBA $250k cushion, reduced to $0 over the first apron; entries '
+    'older than the prior season are treated as expired. Checks 2023 '
+    'CBA salary matching tiers, apron aggregation bans, post-trade '
+    'hard caps, typed TPE restrictions, cash bans, the frozen '
+    'second-apron pick, and Stepien consecutive-first rules. '
+    'REACH FOR THIS for any trade-legality ask beyond a trivial two-team '
+    'player swap: sign-and-trade, multi-team, picks/Stepien, apron '
+    'aggregation, TPE or cash involved. For a simple two-team salary '
+    'match get_trade_check is enough.')
+def get_trade_legality(legs: str = "", sign_and_trade: str = "",
+                       cash: str = "", tpe: str = "",
+                       season: str | None = None) -> dict[str, Any]:
+    values, err = _parse_trade_args(legs, cash, tpe, sign_and_trade)
+    if err:
+        return _trade_error(err)
+    legs_value, cash_value, tpe_value, snt_value = values
+    moves, err = _parse_moves(legs_value)
+    if err:
+        return _trade_error(err)
+
+    cash_moves = _parse_cash(cash_value)
+    tpe_rows, tpe_err = _parse_tpe(tpe_value)
+    if tpe_err:
+        return _trade_error(tpe_err)
+    snt = _parse_snt(snt_value)
+    if snt and not _snt_in_moves(snt, moves):
+        return _trade_error(
+            f"sign_and_trade player {snt['player']} is not in any leg")
+
+    with _owned_connection(None, read_only=True) as con:
+        state, load_error = _load_trade_state(con, moves, season, snt, tpe_rows)
+        if load_error or state is None:
+            return load_error or _trade_error("could not load trade state")
+
+    tpe_by_team = (_seasonize_tpes(tpe_rows, state["season_start"])
+                   if tpe_rows else {})
+    legacy_tpes = any(item["legacy_defaults"]
+                      for rows in tpe_by_team.values() for item in rows)
+    issues: list[str] = []
+    team_rows: dict[str, Any] = {}
+    receiver = _snt_receiver(snt, moves)
+    for team in state["teams"]:
+        row, team_issues = _evaluate_team(
+            team, state["side"][team], moves, cash_moves,
+            tpe_by_team.get(team, []), receiver, snt,
+            state["snt_salary_prior"], state["season_start"])
+        team_rows[team] = row
+        issues.extend(team_issues)
+
+    snt_issues, snt_check = _snt_result(snt, receiver)
+    issues.extend(snt_issues)
+    stepien_issues, stepien_check = _stepien_result(
+        state["teams"], moves, state["pick_held"], state["season_start"])
+    issues.extend(stepien_issues)
+    checks = _build_checks(team_rows, snt_check, stepien_check, legacy_tpes)
 
     return {"tool": "get_trade_legality", "ok": True,
-            "rows": [team_rows[t] for t in sorted(team_rows)],
+            "rows": [team_rows[team] for team in sorted(team_rows)],
             "legal": not issues,
             "issues": issues,
             "checks": checks,
-            "salary_date": salary_date,
-            "meta": {"source": source, "rules": "v2-2023cba-full",
-                     "salary_date": salary_date, "season": season,
+            "salary_date": state["salary_date"],
+            "meta": {"source": state["source"], "rules": "v2-2023cba-full",
+                     "salary_date": state["salary_date"],
+                     "season": state["season"],
                      "disclaimer": "Estimate only. Covers matching, apron "
-                     "aggregation, hard caps, TPE/cash bans, sign-and-trade "
-                     "minimums/BYC, Stepien and frozen-pick rules. Skips "
+                     "aggregation, hard caps, typed TPE restrictions, cash "
+                     "bans, sign-and-trade minimums/BYC, Stepien and "
+                     "frozen-pick rules. Skips "
                      "no-trade clauses, trade kickers, poison-pill and "
                      "minimum-salary exceptions. Confirm with a cap "
                      "specialist."}}
