@@ -78,6 +78,8 @@ Use this guide when a coverage gap, usage error, or schema question arises: find
 
 | Table | Can answer | Cannot answer |
 |---|---|---|
+| `silver_player_season` | Current/recent-season per-game counting lines: PPG/RPG/APG/SPG/BPG, MPG, GP/GS, AGE, TEAM, FG_PCT/FG3_PCT/FT_PCT, keyed by PLAYER_ID + `_season`. | No efficiency or usage columns — TS_PCT/USG_PCT/ratings are NOT here even when the ask names this table for them; they live in `silver_advanced`. |
+| `silver_advanced` | Season efficiency/usage/impact metrics per player: TS_PCT, USG_PCT, OFF/DEF/NET_RATING, AST_PCT, REB_PCT, EFG_PCT — join to `silver_player_season` on PLAYER_ID + `_season` (same-season rows only). Scoring-efficiency screens (PPG with TS_PCT/USG_PCT cutoffs) are ALWAYS this join, one grouped query. | Shot locations, playtypes, salary — those live in their own tables. |
 | `silver_hist_player_seasons` / `silver_hist_team_seasons` | Multi-season player/team totals and rates — performance stats only, no salary columns. | Current-season rows — use `silver_player_season`/`silver_team_ratings`; salaries never live here, use `silver_salaries`. |
 | `silver_standings` / `silver_hist_standings` | Standings snapshots. | Tie-breaker resolution logic — state when tied records need them. |
 | `silver_schedule` / `silver_scoreboard` | Upcoming/recent game slate, results. | Historical full schedules before ingest coverage — check `_season`. |
