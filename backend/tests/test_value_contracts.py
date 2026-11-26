@@ -145,7 +145,43 @@ def test_missing_team_error(monkeypatch, tmp_path):
     assert "no rows for SAS 2025-26" in res["error"]
 
 
-def test_requires_team(monkeypatch, tmp_path):
-    _seed(monkeypatch, tmp_path)
-    res = get_value_contracts.invoke({"team": ""})
+def test_unknown_team_errors(monkeypatch, tmp_path):
+    path = _seed(monkeypatch, tmp_path)
+    _load(path, _okc_prod(), _okc_cap())
+    res = get_value_contracts.invoke({"team": "ZZZ", "season": "2025-26"})
     assert res["ok"] is False
+
+
+def test_omitted_team_runs_league_wide(monkeypatch, tmp_path):
+    path = _seed(monkeypatch, tmp_path)
+    prod = _okc_prod() + [
+        {"player": "Den Star", "team": "DEN", "gp": 65, "min": 2200.0,
+         "pts": 28.0, "reb": 6.0, "ast": 7.0, "stl": 1.0, "blk": 0.6,
+         "tov": 3.0},
+        {"player": "Den Cheap", "team": "DEN", "gp": 60, "min": 1500.0,
+         "pts": 12.0, "reb": 4.0, "ast": 2.0, "stl": 0.8, "blk": 0.5,
+         "tov": 1.0},
+    ]
+    caps = _okc_cap() + [
+        {"player": "Den Star", "team": "DEN", "salary": 50_000_000},
+        {"player": "Den Cheap", "team": "DEN", "salary": 5_000_000},
+    ]
+    _load(path, prod, caps)
+    res = get_value_contracts.invoke({"team": "", "season": "2025-26"})
+    assert res["ok"] is True
+    teams = {r["team"] for r in res["rows"]}
+    assert teams == {"OKC", "DEN"}
+    assert res["meta"]["scope"] == "league-wide"
+    players = {r["player"] for r in res["rows"]}
+    assert "Den Cheap" in players and "Value Wing" in players
+
+
+def test_league_wide_per_team_medians(monkeypatch, tmp_path):
+    path = _seed(monkeypatch, tmp_path)
+    _load(path, _okc_prod(), _okc_cap())
+    solo = get_value_contracts.invoke({"team": "OKC", "season": "2025-26"})
+    wide = get_value_contracts.invoke({"team": "", "season": "2025-26"})
+    solo_flags = {r["player"]: r["value_flag"] for r in solo["rows"]}
+    wide_flags = {r["player"]: r["value_flag"] for r in wide["rows"]
+                  if r["team"] == "OKC"}
+    assert solo_flags == wide_flags

@@ -108,20 +108,21 @@ def _summary(rows: list[dict]) -> dict[str, Any]:
             "overpaid": sum(1 for r in rot if r["value_flag"] == "overpaid")}
 
 
-@tool(description="Value-contract depth audit for one team. Ranks the roster by "
+@tool(description="Value-contract depth audit. Ranks rosters by "
     "production per cap dollar: salary, cap share, pinned value score "
     "(PTS + 1.2REB + 1.5AST + 2STL + 2BLK - 1.5TOV per game), value per $1M, "
     "and cheap/expensive depth flags (Presti rule: rotation players under "
-    "~10% of cap). 'benchmark_team' adds the same audit for a comparison "
+    "~10% of cap). Omit 'team' for the league-wide audit in ONE call - "
+    "never fan this tool out team by team to locate a player or compare "
+    "across teams. 'benchmark_team' adds the same audit for a comparison "
     "roster plus summary deltas.")
 def get_value_contracts(team: str = "", season: str | None = None,
                         benchmark_team: str = "") -> dict[str, Any]:
     raw_team = str(team or "").strip()
     team = (_resolve_team_abbr(raw_team) or "").upper()
-    if not team:
+    if not team and raw_team:
         return {"tool": "get_value_contracts", "ok": False,
-                "error": "team needed" if not raw_team
-                         else team_error_message(raw_team)}
+                "error": team_error_message(raw_team)}
     bench = (_resolve_team_abbr(str(benchmark_team or "")) or "").upper() \
         if str(benchmark_team or "").strip() else ""
     with _owned_connection(None, read_only=True) as con:
@@ -141,9 +142,10 @@ def get_value_contracts(team: str = "", season: str | None = None,
                     "error": season_rows_error(con, "silver_leaders_pts",
                                                season)}
         from shared.contracts import salary_records
+        wanted = ({team, bench} - {""}) if team else set()
         cap = [r for r in salary_records(con)
-               if str(r.get("TEAM") or "").upper() in ({team, bench} - {""})]
-        if not any(str(r.get("TEAM")).upper() == team for r in cap):
+               if not wanted or str(r.get("TEAM") or "").upper() in wanted]
+        if team and not any(str(r.get("TEAM")).upper() == team for r in cap):
             return {"tool": "get_value_contracts", "ok": False,
                     "error": season_rows_error(con, "silver_salaries",
                                                season, team)}
@@ -152,9 +154,17 @@ def get_value_contracts(team: str = "", season: str | None = None,
     missing = [c for c in _PROD_WEIGHTS if c not in have]
     use_w = {c: (0.0 if c in missing else w)
              for c, w in _PROD_WEIGHTS.items()}
-    rows = _team_rows(team, prod, [c for c in cap
-                                   if str(c.get("TEAM")).upper() == team],
-                      have, use_w)
+    if team:
+        rows = _team_rows(team, prod, [c for c in cap
+                                       if str(c.get("TEAM")).upper() == team],
+                          have, use_w)
+    else:
+        rows = []
+        for t in sorted({str(c.get("TEAM") or "").upper() for c in cap
+                         if str(c.get("TEAM") or "").strip()}):
+            rows.extend(_team_rows(t, prod, [c for c in cap
+                                             if str(c.get("TEAM")).upper() == t],
+                                   have, use_w))
     checks = [
         {"rule": "value proxy", "checked": True,
          "note": "score = PTS + 1.2REB + 1.5AST + 2STL + 2BLK - 1.5TOV "
@@ -178,6 +188,7 @@ def get_value_contracts(team: str = "", season: str | None = None,
            "rows": rows, "summary": _summary(rows),
            "checks": checks, "salary_date": salary_date,
            "meta": {"source": source, "season": season,
+                    "scope": team or "league-wide",
                     "salary_date": salary_date,
                     "formula": "score = PTS + 1.2REB + 1.5AST + 2STL + "
                                "2BLK - 1.5TOV per game; value_per_m = "
