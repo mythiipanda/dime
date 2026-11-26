@@ -73,6 +73,7 @@ def run():
                         ("submit-answer", "submit-answer.test.mjs"),
                         ("verify-answer", "verify-answer.test.mjs"),
                         ("uvarc-guard", "uvarc-guard.test.mjs"),
+                        ("nim-guard", "nim-guard.test.mjs"),
                         ("prompt-map", "prompt-map.test.mjs")):
         env = environment(name)
         owned_warehouse(env)
