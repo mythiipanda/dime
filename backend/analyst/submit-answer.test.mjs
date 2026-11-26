@@ -1938,3 +1938,106 @@ test("createPiExecution salvages final narration when a normal-end run never sub
 
   await rm(cwd, { recursive: true, force: true });
 });
+
+test("createPiExecution corrects a tool-not-found error with bare registered names", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-notfound-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const canonical = "Giannis leads at 41.2%.";
+  const bridgeResults = new Map();
+  const fakeSqlExec = {
+    name: "sql_exec",
+    label: "sql_exec",
+    description: "fake",
+    parameters: Type.Object({ sql: Type.String(), intent: Type.Optional(Type.String()) }),
+    execute: async () => {
+      const record = makeSourceRecord("nf-ev-1", { rows: [{ player: "Giannis", ts_pct: 41.2 }] });
+      bridgeResults.set(record.ref, record);
+      return sourceResult(record);
+    },
+  };
+
+  let execRequests = 0;
+  const seenContexts = [];
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      seenContexts.push(JSON.stringify(context));
+      let msg;
+      if (execRequests === 1) {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-bogus", name: "tools.submit_answer", arguments: { blocks: [{ text: "x" }] } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else if (execRequests === 2) {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-sql", name: "sql_exec", arguments: { sql: "select 1", intent: "probe" } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else if (execRequests === 3) {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "toolCall", id: "call-sub", name: "submit_answer", arguments: { blocks: [{ text: canonical, anchors: [{ ref: "nf-ev-1", row: 0, columns: ["ts_pct"] }] }], artifacts: [{ kind: "table", title: "Leaders", columns: [{ key: "ts_pct", label: "TS%", numeric: true }], rows: [{ player: "Giannis", ts_pct: 41.2 }] }] } }], stopReason: "toolUse", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      } else {
+        msg = { role: "assistant", api: model.api, provider: model.provider, model: model.id, content: [{ type: "text", text: "Done." }], stopReason: "stop", timestamp: Date.now(), usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+      }
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: msg.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = { tools: [fakeSqlExec], results: bridgeResults, pid: 12345, close: async () => {} };
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const events = [];
+  let runError = null;
+  try {
+    for await (const event of pi.stream({
+      q: "Rank the top guards by ts% in 2024-25",
+      history: [],
+      model: "fixture:fixture",
+      sources: [],
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+  } catch (err) {
+    runError = err;
+  }
+
+  const corrections = events.filter((e) => e.type === "tool_call" && e.name === "tool_not_found_correction");
+  const correctionContext = seenContexts.find((c) => c.includes("the tools ARE available and working"));
+  assert.equal(runError, null, "run completes after the malformed call");
+  assert.equal(corrections.length, 1, "not-found correction fires exactly once");
+  assert.ok(correctionContext, "correction text reaches the model context");
+  assert.ok(correctionContext.includes("invocation form was wrong"), "correction frames the error as invocation form, not missing tools");
+  assert.ok(correctionContext.includes("tools.submit_answer"), "correction names the malformed invocation");
+  assert.ok(correctionContext.includes("no tools. prefix"), "correction blocks the tools. prefixed form");
+  assert.ok(correctionContext.includes("sql_exec"), "correction lists bare registered bridge tool names");
+  assert.ok(correctionContext.includes("submit_answer"), "correction lists bare registered direct tool names");
+  assert.ok(!correctionContext.includes("Available right now: tools."), "correction lists only bare names");
+  assert.equal(execRequests >= 4, true, "model recovers to bare sql_exec and submit_answer calls after the correction");
+
+  await rm(cwd, { recursive: true, force: true });
+});
