@@ -72,7 +72,8 @@ def run():
                         ("analyst", "analyst.test.mjs"), ("host", "host.test.mjs"),
                         ("submit-answer", "submit-answer.test.mjs"),
                         ("verify-answer", "verify-answer.test.mjs"),
-                        ("uvarc-guard", "uvarc-guard.test.mjs")):
+                        ("uvarc-guard", "uvarc-guard.test.mjs"),
+                        ("prompt-map", "prompt-map.test.mjs")):
         env = environment(name)
         owned_warehouse(env)
         node_suite(env, suite, "--test")
