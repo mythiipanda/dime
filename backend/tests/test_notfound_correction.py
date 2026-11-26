@@ -8,7 +8,8 @@ def test_correction_fires_per_occurrence_in_subscribe_not_turn_end_only():
     sub = SRC.index("session.subscribe(event =>")
     handler = SRC[sub:sub + 2400]
     assert "scannedToolResults" in handler, "the per-occurrence scan must live in the subscribe handler"
-    assert "notFoundCorrections < 3" in SRC, "per-occurrence firing capped at 3, not single-use"
+    assert "notFoundCorrections < 6" in SRC, "per-occurrence firing capped at 6, not single-use"
+    assert "correctedNotFoundNames.has" in SRC, "dedupe by malformed name so startup clusters do not burn the cap"
 
 
 def test_correction_names_direct_tool_call_channel():
@@ -21,3 +22,9 @@ def test_correction_drops_full_tool_list():
     seg = SRC[seg_start:seg_start + 900]
     assert "The same holds for sql_exec, verify_answer_numbers and the warehouse tools" in seg
     assert "Available right now:" not in seg, "no full bridge tool enumeration in the correction"
+
+
+
+def test_correction_events_carry_malformed_name():
+    assert 'args: { malformed: notFound[1] }' in SRC, "correction tool_call event must carry the malformed name for archive observability"
+    assert 'corrected malformed tool name: ${notFound[1]}' in SRC, "correction tool_result must name the malformed tool"
