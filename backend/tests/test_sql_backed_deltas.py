@@ -70,3 +70,11 @@ def test_skill_teaches_stipulation_echo():
     src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
     assert "Echo every methodological stipulation" in src
     assert "uncovered ask" in src
+
+
+
+def test_skill_teaches_fix_quality():
+    src = (ROOT / "backend/analyst/skills/factual-accuracy-and-exactness/SKILL.md").read_text()
+    assert "fix THAT figure surgically" in src
+    assert "query THAT table next" in src
+    assert "recheck the neighbors" in src
