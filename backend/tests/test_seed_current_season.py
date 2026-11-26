@@ -200,6 +200,17 @@ def test_load_player_season(scratch):
     assert row == ("Test Player", 2, 32.0, 24.0, 0.45, 27.0)
 
 
+def test_load_player_season_populates_ts_pct(scratch):
+    n = seed.load_player_season("2026-27", dry_run=False)
+    assert n == 1
+    con = store.connect()
+    row = con.execute(
+        "SELECT \"TS_PCT\" FROM silver_player_season").fetchone()
+    con.close()
+    assert row is not None and row[0] is not None
+    assert abs(row[0] - 0.535) < 0.002
+
+
 def test_main_dry_run(scratch, capsys):
     rc = seed.main(["--scratch-db", str(scratch), "--season", "2026-27",
                     "--dry-run", "--skip-live"])
