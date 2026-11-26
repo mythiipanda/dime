@@ -96,10 +96,14 @@ def main(argv: list[str] | None = None) -> int:
         description="Backfill LeagueDashPlayerStats Advanced into "
                     f"{TABLE}. Seasons already in the table are skipped.")
     ap.add_argument("--first", default=FIRST_SEASON)
-    ap.add_argument("--last", default=LAST_SEASON)
+    ap.add_argument("--last", default=None)
     ap.add_argument("--delay", type=float, default=DELAY_S,
                     help="seconds between upstream calls")
     ns = ap.parse_args(argv)
+    if not ns.last:
+        from datetime import date
+        from shared.tools._core import completed_season_for_date
+        ns.last = completed_season_for_date(date.today()) or LAST_SEASON
 
     seasons = season_slugs(ns.first, ns.last)
     try:

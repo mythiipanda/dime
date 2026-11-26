@@ -11,7 +11,9 @@ from shared import store
 from shared.sources.base import FetchMeta, FetchResult
 from shared.sources.draft_picks import future_picks
 
-CURVE_SEASON = "2026-27"
+def curve_season() -> str:
+    from shared.tools._core import current_season
+    return current_season() or "2026-27"
 CURVE_DRAFT_RANGE = (1997, 2015)
 
 def _norm_name(s: object) -> str:
@@ -97,10 +99,10 @@ def main() -> None:
         meta=FetchMeta(
             source=("derived:silver_hist_draft+silver_raptor_player "
                     f"{CURVE_DRAFT_RANGE[0]}-{CURVE_DRAFT_RANGE[1]}"),
-            season=CURVE_SEASON))
+            season=curve_season()))
     m = store.save_frame("silver_draft_value_curve", curve, entity='',
                          replace_season=True)
-    print(f"silver_draft_value_curve: {m} rows saved (season {CURVE_SEASON})")
+    print(f"silver_draft_value_curve: {m} rows saved (season {curve_season()})")
 
 if __name__ == "__main__":
     main()
