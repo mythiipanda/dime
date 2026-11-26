@@ -15,6 +15,14 @@ import { loadSkillTool } from "./pi-context.js";
 
 type SessionOptions = Pick<Parameters<typeof createAgentSession>[0] & {}, "cwd" | "agentDir" | "model" | "modelRuntime" | "customTools">;
 
+export function withStreamTimeout(
+    streamFunction: (model: unknown, context: unknown, options?: Record<string, unknown>) => unknown,
+    timeoutMs: number = Math.max(15000, Number(process.env.DIME_STREAM_TIMEOUT_MS ?? 120000) || 120000)
+) {
+    return (model: unknown, context: unknown, options?: Record<string, unknown>) =>
+        streamFunction(model, context, { timeoutMs, ...options });
+}
+
 function currentSeason(): string {
     const today = new Date();
     const startYear = today.getUTCMonth() >= 6
@@ -169,6 +177,11 @@ export async function createAnalystSession({
         session.setActiveToolsByName(["codemode"]);
         if (!session.getActiveToolNames().includes("codemode"))
             throw new Error("Pi codemode extension is not active");
+        const streamAgent = session.agent as unknown as {
+            streamFunction?: (model: unknown, context: unknown, options?: Record<string, unknown>) => unknown;
+        };
+        if (streamAgent.streamFunction)
+            streamAgent.streamFunction = withStreamTimeout(streamAgent.streamFunction);
         const compat = (model as { compat?: Record<string, unknown> }).compat;
         if (compat?.["requiresReasoningContentOnAssistantMessages"]) {
             const agent = session.agent as unknown as {
