@@ -12,10 +12,10 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 |---|---|---|
 | **One Player at a Glance** | `player_card` | Select identity and up to six metrics from a single actual source row. The host supplies values and declared units; no invented statistics, team names or portraits. |
 | **One Team at a Glance** | `team_card` | Team name plus up to six headline metrics from one row; optional sections each resolve their own source row for roster, payroll vs cap/aprons, four factors, lineups, injuries or picks, with per-section provenance. |
-| **Two Continuous Variables** (e.g., TS% vs USG%, ORAPM vs DRAPM) | `scatter` | Quadrant divisions via `xMid` & `yMid`, point labels, `highlight` flag for focal players, CSV export. |
+| **Two Continuous Variables** (e.g., TS% vs USG%, ORAPM vs DRAPM) | `scatter` | Quadrant divisions via `xMid` & `yMid`, point labels, `highlight` flag for focal players, CSV copy. |
 | **Court Location & Shooting Profiles** | `shot_chart` | Court zones with attempt counts (`att`) and shooting percentages (`pct`). |
 | **Head-to-Head Showdowns** (2 players or 2 teams) | `compare` | Visual bars comparing normalized metrics between entity `a` and entity `b`. |
-| **Rankings, Rosters, Ledgers, Multi-Metric Lists** | `table` | Sortable columns with typed numeric formatting, source citation headers, CSV export. |
+| **Rankings, Rosters, Ledgers, Multi-Metric Lists** | `table` | Sortable columns with typed numeric formatting, source footnotes, CSV copy. |
 | **Time-Series, Trajectories, Multi-Game Trends** | `chart` | Line/bar series over ordered games, months, or seasons with `unit`, `xLabels`, and semantic `tone`. `variant:"bar"` renders a ranked leaderboard; `marks`, `annotations`, `labelValues`, `xLabel`/`yLabel`, `subtitle` cover threshold lines, callouts and axis labels. |
 | **Executive Briefings, GM/Owner Deliverables, Multi-Section Reports** | `memo` | Titled document with headed `sections`, per-section citation `anchors`, and markdown export. |
 
@@ -64,15 +64,18 @@ The inline spec and catalog artifacts coexist — you may emit BOTH: the inline 
 
 ## 2. Artifact Schema Specifications
 
-`submit_answer` validates these schemas and rejects a malformed known artifact with
-field-level errors; fix the artifact and resubmit. Kinds outside this catalog pass
-through but are not rendered.
+`submit_answer` checks artifacts before accepting them. Typed table, compare, chart,
+scatter and shot_chart payloads that reach schema validation are rejected with
+field-level errors when malformed; player_card and team_card are validated when
+source-resolved, and memo sections/anchors are checked. Kinds outside this catalog
+or without usable data are dropped and reported as warnings. Fix the artifact and
+resubmit.
 
 ### `player_card`
 
 Use for a compact player overview, not a ranking or a replacement for the prose.
 Query a row with a player name and numeric statistics first. Select fields; never
-copy values into this artifact. All fields refer to the same `ref` and `row` so
+copy values into this artifact. Header fields refer to the same `ref` and `row` so
 identity cannot accidentally be joined to a different player's statistics.
 The host rejects missing/error sources, missing columns, nonnumeric metrics and
 model-supplied values or units. Null stays missing; zero stays zero. Units come
@@ -161,7 +164,7 @@ sections like a roster or pick list belong in `table`, not `fields`.
     { label: "Four factors", ref: "ref-4f", row: 0,
       metrics: [{ column: "efg_pct", label: "eFG%" },
                 { column: "tov_pct", label: "TOV%" },
-                { column: "orb_pct", label: "ORB%" },
+                { column: "oreb_pct", label: "ORB%" },
                 { column: "ftr", label: "FTr" }] },
     { label: "Injuries", ref: "ref-inj", row: 0,
       fields: [{ column: "injury_summary", label: "Out/DTD" }] },
@@ -185,7 +188,7 @@ sections like a roster or pick list belong in `table`, not `fields`.
     { label: "Shai Gilgeous-Alexander", x: 32.1, y: 64.2, highlight: true },
     { label: "League Average", x: 20.0, y: 57.5 }
   ],
-  footnote: "Source: silver_boxscores. Highlight indicates All-NBA first team candidates."
+  footnote: "Source: silver_hist_player_seasons. Highlight indicates All-NBA first team candidates."
 }
 ```
 
@@ -209,17 +212,17 @@ sections like a roster or pick list belong in `table`, not `fields`.
 ```typescript
 {
   kind: "table",
-  title: "Top 5 Defensive RAPM Leaders (2025-26)",
+  title: "Top 5 RAPM Leaders (2025-26)",
   columns: [
     { key: "rank", label: "Rank", numeric: true },
     { key: "player", label: "Player" },
     { key: "team", label: "Team" },
-    { key: "drapm", label: "DRAPM", numeric: true },
+    { key: "rapm", label: "RAPM", numeric: true },
     { key: "possessions", label: "Possessions", numeric: true }
   ],
   rows: [
-    { rank: 1, player: "Victor Wembanyama", team: "SAS", drapm: 4.82, possessions: 3450 },
-    { rank: 2, player: "Rudy Gobert", team: "MIN", drapm: 3.91, possessions: 3820 }
+    { rank: 1, player: "Victor Wembanyama", team: "SAS", rapm: 4.82, possessions: 3450 },
+    { rank: 2, player: "Rudy Gobert", team: "MIN", rapm: 3.91, possessions: 3820 }
   ],
   footnote: "Source: silver_rapm. n=5 leaders shown of 12 qualified."
 }
@@ -268,7 +271,7 @@ For a leaderboard bar chart, pass one series and pre-sorted `xLabels`:
   marks: [{ value: 54.45, label: "Max-slot threshold" }],
   annotations: [{ index: 4, text: "ORL is the last team that clears a full max" }],
   labelValues: true,
-  footnote: "Source: silver_team_payroll · 7 teams shown of 30"
+  footnote: "Source: silver_cap_room · 7 teams shown of 30"
 }
 ```
 
@@ -324,9 +327,9 @@ Every quantitative claim and artifact must be anchored in queried evidence withi
 
 ```typescript
 {
-  text: "Victor Wembanyama leads the NBA in Defensive RAPM (+4.82) over 3,450 defensive possessions...",
+  text: "Victor Wembanyama leads the NBA in RAPM (+4.82) over 3,450 possessions...",
   anchors: [
-    { ref: "ref_rapm_query", row: 0, columns: ["player_name", "drapm", "possessions"] }
+    { ref: "ref_rapm_query", row: 0, columns: ["name", "rapm", "possessions"] }
   ],
 }
 ```
@@ -347,7 +350,7 @@ the series it is derived from, does not count as delivered inside the artifact.
   `"n=11 eligible · 14625.2 min · mean AST/36 3.62 · mean TOV/36 1.93"`), and/or
   include summary and denominator rows (e.g. `Months: 7`, `Season games: 82`,
   first/last rows) alongside the detail rows. `title` is the wrong home — a
-  number that only lives in the title is not part of the payload.
+  number that only lives in the title does not count as artifact data.
 - `chart`: put scope counts and endpoint values in `footnote` — it renders and
   stays inside the payload (e.g.
   `"7 months · 82 games · eFG 0.464 → 0.502 · TOV/g 16.5 → 13.0"`).
@@ -356,8 +359,8 @@ the series it is derived from, does not count as delivered inside the artifact.
 - `compare`: headline values go in their own `rows` entries.
 - `memo`: each section's `body` states its own figures; `footnote` carries scope.
 
-Before submitting, re-check each artifact dict: could a reader (or an audit)
-recover every reported headline number from that payload alone? If not, add the
+Before submitting, re-check each artifact dict: could a reader recover every
+reported headline number from that payload alone? If not, add the
 missing rows or the footnote line rather than hoping the prose covers it.
 
 ## 5. Analyst Chart Craft — What Separates a Take From a Plot
