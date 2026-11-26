@@ -123,8 +123,9 @@ def test_main_remaps_foreign_host(monkeypatch, capsys):
     monkeypatch.setattr(dab_run, "terminate_host", lambda host, keep: None)
 
     rc = dab_run.main(["--model", "amd:X", "--port", "8062", "--out-name", "t"])
-    assert rc == 0
-    assert seen_ports == [8063]
+    assert rc == 1
+    assert seen_ports == []
+    assert "refusing to drift" in capsys.readouterr().err
 
 
 def test_main_refuses_foreign_owner_after_health(monkeypatch, capsys):
