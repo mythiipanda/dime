@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts import seed_free_agents as sf
+from scripts import vendor_cap as vc
 from shared import store
 from shared.sources.base import FetchMeta, FetchResult
 from shared.tools.league.free_agents import get_free_agents
@@ -43,6 +44,13 @@ def _contracts():
         "OPTION_2028_29": [None, None, None],
         "GUARANTEED": [43_000_000, 15_000_000, 10_000_000],
     })
+
+
+def test_official_2026_27_constants():
+    expected = {"cap": 164_961_000, "tax": 200_428_000,
+                "apron1": 209_015_000, "apron2": 221_686_000}
+    assert sf.CAP_2026_27 == expected
+    assert vc.THRESHOLDS == {"season": "2026-27", **expected}
 
 
 def test_build_frames():

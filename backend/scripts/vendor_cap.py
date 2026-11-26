@@ -16,10 +16,10 @@ URL = ("https://raw.githubusercontent.com/orojas119/nba-salary-cap"
 
 THRESHOLDS = {
     "season": "2026-27",
-    "cap": 165_000_000,
-    "tax": 201_048_000,
-    "apron1": 209_661_000,
-    "apron2": 222_372_000,
+    "cap": 164_961_000,
+    "tax": 200_428_000,
+    "apron1": 209_015_000,
+    "apron2": 221_686_000,
 }
 
 def main() -> None:
