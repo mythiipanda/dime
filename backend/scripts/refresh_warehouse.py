@@ -57,6 +57,7 @@ SEEDERS = [
     ("clutch", "seed_clutch.py", ["--season"], False),
     ("wowy", "seed_wowy.py", ["--season"], True),
     ("on_off_derived", "seed_on_off_derived.py", [], False),
+    ("warehouse_inventory", "build_warehouse_inventory.py", [], False),
 ]
 
 

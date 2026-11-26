@@ -1,4 +1,6 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { sourceResult, type SourceRecord } from "./python-tools.js";
 import { submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
 
@@ -320,6 +322,192 @@ const ASK_FORMAT_DIRECTIVE_MAX_CHARS = 70;
 const ARTIFACT_ASK_RE = /\b(?:tables?|compare|comparison|charts?|graphs?|scatters?|shot_?charts?|memos?|cards?|visualizations?|visualisations?|deliverables?|dashboards?|payloads?|artifacts?|artefacts?|specs?)\b/gi;
 const ARTIFACT_KIND_TOKENS: Record<string, string> = { table: "table", tables: "table", compare: "compare", comparison: "compare", chart: "chart", charts: "chart", graph: "chart", graphs: "chart", scatter: "scatter", scatters: "scatter", shot_chart: "shot_chart", shotchart: "shot_chart", memo: "memo", memos: "memo", card: "card", cards: "card" };
 export const WAREHOUSE_TABLE_RE = /\b(?:silver|gold|bronze)_[a-z0-9_]+\b/gi;
+
+export type WarehouseInventory = {
+    tables: Record<string, { key_column?: string; seasons: Record<string, number> }>;
+};
+
+export type LimitationChallenge = {
+    claim: string;
+    table: string;
+    season: string;
+    rows: number;
+    kind: "absence" | "coverage";
+};
+
+let inventoryCache: WarehouseInventory | null | undefined;
+
+export function loadWarehouseInventory(): WarehouseInventory | null {
+    if (inventoryCache !== undefined)
+        return inventoryCache;
+    inventoryCache = null;
+    const override = process.env.DIME_WAREHOUSE_INVENTORY;
+    const candidates = override
+        ? [override]
+        : [
+            fileURLToPath(new URL("../data/warehouse-inventory.json", import.meta.url)),
+            fileURLToPath(new URL("../../data/warehouse-inventory.json", import.meta.url)),
+        ];
+    for (const path of candidates) {
+        try {
+            if (existsSync(path)) {
+                inventoryCache = JSON.parse(readFileSync(path, "utf8")) as WarehouseInventory;
+                break;
+            }
+        }
+        catch {
+        }
+    }
+    return inventoryCache;
+}
+
+const LIMITATION_ABSENCE_RES: RegExp[] = [
+    /\bnot\s+available\s+in\s+the\s+(?:dime\s+)?warehouse\b/i,
+    /\b(?:data|rows|records|coverage)\s+(?:is|are)\s+(?:not\s+available|unavailable|missing)\b/i,
+    /\bdoes\s+not\s+exist\s+in\s+the\s+(?:dime\s+)?warehouse\b/i,
+    /\bdoes\s+not\s+contain\b[^.!?\n]{0,80}\bdata\b/i,
+    /\breturned\s+no\s+(?:rows|players|results|data|games)\b/i,
+    /\bcannot\s+be\s+(?:completed|computed|analyzed|analysed|executed|populated|determined)\b[^.!?\n]{0,100}\b(?:warehouse|data)\b/i,
+    /\b(?:warehouse|data)\b[^.!?\n]{0,60}\bcannot\s+be\s+(?:completed|computed|analyzed|analysed|executed|populated|determined)\b/i,
+    /\bunable\s+to\s+(?:complete|compute|populate|determine|analyze|analyse)\b[^.!?\n]{0,100}\b(?:warehouse|data)\b/i,
+];
+const LIMITATION_COVERAGE_RE = /\b(?:contains?|covers?|holds?)\b[^.!?\n]{0,120}?\bfor\s+the\s+(?:19|20)\d\d\s*[-/–—]\s*\d{2,4}\s+season\s+only\b/i;
+const LIMITATION_SUFFICIENCY_RE = /\bsmall\s+sample|\blimited\s+(?:sample|minutes|games|playing\s+time)|few\s+games|small\s+cohort|sample\s+size/i;
+const LIMITATION_PROXY_RE = /\bproxy\b|\bas\s+a\s+substitute\b|\bfallback\s+(?:metric|measure|proxy)\b/i;
+
+const LIMITATION_TABLE_FAMILIES: Record<string, { terms: RegExp; tables: string[] }> = {
+    shots: { terms: /\bshots?\b|\bshot[- ]level\b|\bshot\s+(?:chart|diet|quality|zone|selection)\b|\bfgs?\b|\bfield\s+goals?\b|\bmicrofasta\b/i, tables: ["silver_hist_shots", "silver_shots"] },
+    gamelogs: { terms: /\bgame[- ]?logs?\b|\bgame[- ]level\s+(?:data|stats?|records?)\b/i, tables: ["silver_hist_gamelogs", "silver_player_gamelogs", "silver_playoff_gamelogs"] },
+    tracking: { terms: /\btracking\b|\bdefensive\s+impact\s+tracking\b/i, tables: ["silver_tracking_pt_defend", "silver_tracking_pt_shot", "silver_tracking_pt_stats"] },
+    lineups: { terms: /\blineups?\b|\bfive[- ]man\b|\bunits?\b/i, tables: ["silver_lineups", "silver_hist_lineups"] },
+    possessions: { terms: /\bpossessions?\b|\bpossession[- ]level\b/i, tables: ["silver_hist_possessions"] },
+    onoff: { terms: /\bon[- ]?off\b|\bwowy\b|\bplus[- ]minus\s+splits?\b/i, tables: ["silver_on_off", "silver_wowy"] },
+    stints: { terms: /\bstints?\b|\brotation\s+segments?\b/i, tables: ["silver_stints"] },
+    playerseasons: { terms: /\bseason[- ]level\b|\bplayer\s+seasons?\b|\bseason\s+stats?\b|\bseason\s+totals?\b|\bseason\s+averages?\b/i, tables: ["silver_hist_player_seasons", "silver_player_season"] },
+};
+
+function normalizeSeasonLabel(raw: string): string | null {
+    const match = raw.match(/\b((?:19|20)\d\d)\s*[-/–—]\s*(\d{2,4})\b/);
+    if (!match)
+        return null;
+    const start = Number(match[1]);
+    let end = Number(match[2]);
+    if (end >= 100)
+        end = end % 100;
+    if (end !== (start + 1) % 100)
+        return null;
+    return `${start}-${String(end).padStart(2, "0")}`;
+}
+
+function seasonsNear(text: string): string[] {
+    const out: string[] = [];
+    for (const match of text.matchAll(/\b(?:19|20)\d\d\s*[-/–—]\s*\d{2,4}\b/g)) {
+        const label = normalizeSeasonLabel(match[0]);
+        if (label && !out.includes(label))
+            out.push(label);
+    }
+    return out;
+}
+
+function splitSentences(text: string): string[] {
+    return text.split(/\n+|(?<=[.!?])\s+/).map(part => part.trim()).filter(part => part.length > 0);
+}
+
+function familyForExplicitTable(table: string): string | null {
+    for (const [family, def] of Object.entries(LIMITATION_TABLE_FAMILIES))
+        if (def.tables.includes(table))
+            return family;
+    return null;
+}
+
+export function auditLimitationClaims(
+    input: Pick<AnswerSubmission, "blocks">,
+    inventory: WarehouseInventory | null
+): LimitationChallenge[] {
+    if (!inventory)
+        return [];
+    const text = input.blocks.map(block => block.text).join("\n");
+    const sentences = splitSentences(text);
+    const challenges: LimitationChallenge[] = [];
+    const seen = new Set<string>();
+    for (let index = 0; index < sentences.length; index++) {
+        const sentence = sentences[index];
+        const absence = LIMITATION_ABSENCE_RES.some(pattern => pattern.test(sentence));
+        const coverage = LIMITATION_COVERAGE_RE.test(sentence);
+        if (!absence && !coverage)
+            continue;
+        if (LIMITATION_SUFFICIENCY_RE.test(sentence) || META_CONTEXT_RE.test(sentence))
+            continue;
+        const following = sentences.slice(index, index + 2).join(" ");
+        if (LIMITATION_PROXY_RE.test(following))
+            continue;
+        const explicitTables = [...new Set((sentence.match(WAREHOUSE_TABLE_RE) ?? []).map(token => token.toLowerCase()))]
+            .filter(table => inventory.tables[table] !== undefined);
+        const families = new Set<string>();
+        for (const table of explicitTables) {
+            const family = familyForExplicitTable(table);
+            if (family)
+                families.add(family);
+            else
+                families.add(`table:${table}`);
+        }
+        for (const [family, def] of Object.entries(LIMITATION_TABLE_FAMILIES))
+            if (def.terms.test(sentence))
+                families.add(family);
+        if (families.size !== 1)
+            continue;
+        const family = [...families][0];
+        const tables = family.startsWith("table:")
+            ? [family.slice("table:".length)]
+            : LIMITATION_TABLE_FAMILIES[family].tables.filter(table => inventory.tables[table] !== undefined);
+        if (tables.length === 0)
+            continue;
+        const windowText = seasonsNear(sentence).length > 0 ? sentence : `${sentences[index - 1] ?? ""} ${sentence}`;
+        const seasons = seasonsNear(windowText);
+        if (seasons.length === 0)
+            continue;
+        if (coverage && !absence) {
+            for (const season of seasons) {
+                for (const table of tables) {
+                    const entries = inventory.tables[table]?.seasons ?? {};
+                    const others = Object.entries(entries).filter(([key, rows]) => key !== season && rows > 0);
+                    if (others.length === 0)
+                        continue;
+                    const [otherSeason, otherRows] = others.sort((a, b) => b[1] - a[1])[0];
+                    const key = `${table}|${otherSeason}|coverage`;
+                    if (seen.has(key))
+                        continue;
+                    seen.add(key);
+                    challenges.push({ claim: sentence.slice(0, 160), table, season: otherSeason, rows: otherRows, kind: "coverage" });
+                    break;
+                }
+            }
+            continue;
+        }
+        for (const season of seasons) {
+            let best: { table: string; rows: number } | null = null;
+            for (const table of tables) {
+                const rows = inventory.tables[table]?.seasons?.[season] ?? 0;
+                if (rows > 0 && (best === null || rows > best.rows))
+                    best = { table, rows };
+            }
+            if (!best)
+                continue;
+            const key = `${best.table}|${season}|absence`;
+            if (seen.has(key))
+                continue;
+            seen.add(key);
+            challenges.push({ claim: sentence.slice(0, 160), table: best.table, season, rows: best.rows, kind: "absence" });
+        }
+    }
+    return challenges;
+}
+
+export function limitationChallengeAdvisory(challenge: LimitationChallenge): string {
+    if (challenge.kind === "coverage")
+        return `The submission claims warehouse data exists only for a narrow season scope, but inventory shows ${challenge.table} contains ${challenge.rows.toLocaleString("en-US")} rows for season '${challenge.season}' as well. Seasons in silver tables are keyed by the _season column with labels like '${challenge.season}' — filter with _season = '${challenge.season}'. Re-query before concluding coverage is narrow; if a query returned empty, debug the query — wrong season encoding, wrong table, or over-narrow filters are the common causes.`;
+    return `The submission claims data is unavailable for season '${challenge.season}', but warehouse inventory shows ${challenge.table} contains ${challenge.rows.toLocaleString("en-US")} rows for season '${challenge.season}'. Seasons in silver tables are keyed by the _season column with labels like '${challenge.season}' — filter with _season = '${challenge.season}'. Query the data before concluding it is missing; if your query returned empty, debug the query — wrong season encoding, wrong table, or over-narrow filters are the common causes.`;
+}
 
 export function missingRequiredTables(question: string | undefined, consulted: ReadonlySet<string>): string[] {
     if (!question)
