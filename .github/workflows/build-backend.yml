@@ -29,6 +29,7 @@ jobs:
       backend: ${{ steps.f.outputs.backend }}
       frontend: ${{ steps.f.outputs.frontend }}
       analyst: ${{ steps.f.outputs.analyst }}
+      container: ${{ steps.f.outputs.container }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -45,6 +46,20 @@ jobs:
               - '.github/actions/**'
             analyst:
               - 'backend/analyst/**'
+              - '.github/workflows/build-backend.yml'
+              - '.github/actions/**'
+            container:
+              - 'backend/Dockerfile'
+              - 'backend/.dockerignore'
+              - 'backend/analyst/package.json'
+              - 'backend/analyst/package-lock.json'
+              - 'backend/analyst/tsconfig.json'
+              - 'backend/analyst/gen-manifest.mjs'
+              - 'backend/analyst/*.py'
+              - 'backend/analyst/*.ts'
+              - 'backend/analyst/tools/**'
+              - 'backend/analyst/skills/**'
+              - 'backend/analyst/http-assets/**'
               - '.github/workflows/build-backend.yml'
               - '.github/actions/**'
   test:
@@ -128,6 +143,15 @@ jobs:
       - name: Run the analyst suites
         run: npm test
         working-directory: backend/analyst
+  container-smoke:
+    if: github.event_name == 'pull_request' && needs.changes.outputs.container == 'true'
+    needs: [changes]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the analyst packaging stage without publishing
+        run: docker build --target analyst-deps --progress=plain -t dime-backend-analyst-smoke:${{ github.sha }} .
+        working-directory: backend
   build:
     if: github.event_name != 'pull_request'
     needs: [changes, test, frontend, analyst]

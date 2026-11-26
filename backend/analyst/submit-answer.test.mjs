@@ -399,7 +399,7 @@ test("Pi session fixture validates current and prior refs, rejects invalid selec
   });
 
   try {
-    assert.deepEqual(session.getActiveToolNames(), ["codemode"]);
+    assert.deepEqual(session.getActiveToolNames(), ["codemode", "submit_answer", "load_skill"]);
     assert.deepEqual(new Set(session.getCallableToolNames()), new Set(["submit_answer", "read_source", "load_skill"]));
 
     await session.prompt("Run synthetic submission fixture");

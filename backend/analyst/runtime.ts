@@ -103,6 +103,8 @@ function discoverSkillDirs(cwd: string, agentDir: string): string[] {
     ])).filter((dir) => existsSync(dir));
 }
 
+const DIRECT_CHANNEL_TOOLS = new Set(["submit_answer", "verify_answer_numbers", "run_status", "load_skill", "sql_exec", "run_python", "warehouse_schema"]);
+
 export async function createAnalystSession({
     cwd,
     agentDir,
@@ -170,11 +172,11 @@ export async function createAnalystSession({
         settingsManager,
         sessionManager: SessionManager.inMemory(cwd),
         tools: ["codemode", ...names],
-        customTools: sessionTools.map((tool) => ({ ...tool, exposure: "codemode" })),
+        customTools: sessionTools.map((tool) => ({ ...tool, exposure: DIRECT_CHANNEL_TOOLS.has(tool.name) ? "direct" : "codemode" })),
     });
     try {
         await session.bindExtensions({});
-        session.setActiveToolsByName(["codemode"]);
+        session.setActiveToolsByName(["codemode", ...[...DIRECT_CHANNEL_TOOLS].filter(name => names.includes(name))]);
         if (!session.getActiveToolNames().includes("codemode"))
             throw new Error("Pi codemode extension is not active");
         const streamAgent = session.agent as unknown as {
