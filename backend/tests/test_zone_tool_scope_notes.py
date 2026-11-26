@@ -5,7 +5,7 @@ MANIFEST = Path(__file__).resolve().parents[1] / "analyst" / "tools" / "manifest
 
 
 def test_zone_tools_point_distance_bucket_asks_at_silver_zone_splits():
-    manifest = json.loads(MANIFEST.read_text())
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     descriptions = {t["name"]: t.get("description") or "" for t in manifest["tools"]}
     for name in ("get_zone_deltas", "get_phase_shot_splits", "get_shot_zones"):
         desc = descriptions[name]
