@@ -432,13 +432,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"port {args.port} already serves this worktree (pid {owner}); reusing it")
         else:
             detail = f"pid {owner} cwd {proc_cwd(owner)}" if owner is not None else "pid unknown"
-            picked = free_port(args.port + 1)
-            if picked is None:
-                print(f"port {args.port} already listening, held by {detail}; no free port in the next 50", file=sys.stderr)
-                return 1
-            print(f"port {args.port} already listening, held by {detail}; using {picked} instead", file=sys.stderr)
-            args.port = picked
-            env["PORT"] = str(args.port)
+            print(f"port {args.port} already listening, held by foreign host ({detail}); refusing to drift ports — kill the stale host or pass a free port", file=sys.stderr)
+            return 1
 
     warehouse_errors, warehouse_tables = verify_runtime_warehouse()
     if warehouse_errors:
