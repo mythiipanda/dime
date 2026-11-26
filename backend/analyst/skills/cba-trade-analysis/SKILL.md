@@ -40,9 +40,10 @@ A team becomes hard-capped at the **Second Apron** if it:
 When teams are above the salary cap, outgoing salary dictates the maximum allowable incoming salary:
 
 ### Non-Taxpayer Teams
-- **Outgoing $\le \$7.5\text{M}$**: Allowed incoming is $200\% \text{ of outgoing} + \$250,000$.
-- **Outgoing $\$7.5\text{M} - \$29.0\text{M}$**: Allowed incoming is $\text{outgoing} + \$7,500,000$.
-- **Outgoing $> \$29.0\text{M}$**: Allowed incoming is $125\% \text{ of outgoing} + \$250,000$.
+For the 2026-27 cap year:
+- **Outgoing $\le \$8.846\text{M}$**: Allowed incoming is $200\% \text{ of outgoing} + \$250,000$.
+- **Outgoing $\$8.846\text{M} - \$35.384\text{M}$**: Allowed incoming is $\text{outgoing} + \$9,096,000$.
+- **Outgoing $> \$35.384\text{M}$**: Allowed incoming is $125\% \text{ of outgoing} + \$250,000$.
 
 ### First Apron Teams
 - **Strict $100\%$ Matching**: A First Apron team cannot take back more salary than it sends out ($100\%$ match max).
@@ -65,13 +66,13 @@ Teams operating at or above the Second Apron face the most punitive roster restr
 When a question asks for the *smallest* outgoing package that legalizes a target incoming salary, invert the matching bands — work top-down, since each band's range implies its own outgoing floor:
 
 - **100% apron match**: `outgoing ≥ incoming`. The ceiling and floor coincide; any outgoing below incoming fails outright (and a Second Apron team additionally cannot combine contracts to reach it).
-- **High band (> $29M outgoing)**: `outgoing ≥ (incoming − $250,000) / 1.25`. Valid only if the solution lands above $29M.
-- **Mid band ($7.5M–$29M)**: `outgoing ≥ incoming − $7,500,000`. Valid only if the solution lands inside the band.
-- **Low band (≤ $7.5M)**: `outgoing ≥ (incoming − $250,000) / 2`. Valid only if the solution lands at or under $7.5M.
+- **High band (> $35.384M outgoing)**: `outgoing ≥ (incoming − $250,000) / 1.25`. Valid only if the solution lands above $35.384M.
+- **Mid band ($8.846M–$35.384M)**: `outgoing ≥ incoming − $9,096,000`. Valid only if the solution lands inside the band.
+- **Low band (≤ $8.846M)**: `outgoing ≥ (incoming − $250,000) / 2`. Valid only if the solution lands at or under $8.846M.
 
 Compute the floor under each band that can contain the answer, then take the smallest valid one — plus the cap-space route: if outgoing can be zero and `incoming ≤ cap_room`, no matching is needed at all. When comparing rule vintages (e.g. historical vs current matching), state which rule set you applied and why the question's stipulated year controls it.
 
-Worked example: to take back $35M as a non-apron over-cap team — high-band floor is $(35.0 − 0.25)/1.25 = $27.8M`, which is *below* $29M so the high band doesn't apply; mid-band floor is $35.0 − 7.5 = $27.5M`, valid inside the band → minimum outgoing is **$27.5M**.
+Worked example: to take back $35M as a non-apron over-cap team — high-band floor is $(35.0 − 0.25)/1.25 = $27.8M`, which is *below* $35.384M so the high band doesn't apply; mid-band floor is $35.0 − 9.096 = $25.904M`, valid inside the band → minimum outgoing is **$25.904M**.
 
 ---
 

@@ -8,8 +8,11 @@ from .._core import coerce_team_id, team_error_message
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 
-CAP = {"cap": 165_000_000, "tax": 201_048_000,
-       "apron1": 209_661_000, "apron2": 222_372_000}
+CAP = {"cap": 164_961_000, "tax": 200_428_000,
+       "apron1": 209_015_000, "apron2": 221_686_000}
+_EXPANDED_TPE_CUSHION = 9_096_000
+_EXPANDED_TPE_LOW_MAX = _EXPANDED_TPE_CUSHION - 250_000
+_EXPANDED_TPE_MID_MAX = 4 * _EXPANDED_TPE_LOW_MAX
 
 
 def _team_salary_lookup(con, name: str) -> str | None:
@@ -301,14 +304,15 @@ def _allowed_incoming(outgoing: int, over_apron1: bool,
                       cap_room: int = 0) -> tuple[int, str]:
     if over_apron1:
         return outgoing, "100% (above the first apron)"
-    if outgoing <= 7_500_000:
-        matched = int(outgoing * 2 + 250_000)
+    low = outgoing * 2 + 250_000
+    middle = outgoing + _EXPANDED_TPE_CUSHION
+    high = outgoing * 1.25 + 250_000
+    matched = int(max(min(low, middle), high))
+    if outgoing <= _EXPANDED_TPE_LOW_MAX:
         rule = "200% plus $250k (below the first apron)"
-    elif outgoing <= 29_000_000:
-        matched = int(outgoing + 7_500_000)
-        rule = "outgoing salary plus $7.5M (below the first apron)"
+    elif outgoing <= _EXPANDED_TPE_MID_MAX:
+        rule = "outgoing salary plus $9.096M (below the first apron)"
     else:
-        matched = int(outgoing * 1.25 + 250_000)
         rule = "125% plus $250k (below the first apron)"
     if cap_room > 0 and outgoing + cap_room + 250_000 > matched:
         return outgoing + cap_room + 250_000, "cap room plus outgoing salary plus $250k (under the cap)"
@@ -321,13 +325,13 @@ def _outgoing_needed(incoming: int, over_apron1: bool,
         return incoming
     candidates: list[int] = []
     tier1 = -(-(incoming - 250_000) // 2)
-    if 0 < tier1 <= 7_500_000:
+    if 0 < tier1 <= _EXPANDED_TPE_LOW_MAX:
         candidates.append(tier1)
-    tier2 = incoming - 7_500_000
-    if 7_500_000 < tier2 <= 29_000_000:
+    tier2 = incoming - _EXPANDED_TPE_CUSHION
+    if _EXPANDED_TPE_LOW_MAX < tier2 <= _EXPANDED_TPE_MID_MAX:
         candidates.append(tier2)
     tier3 = -(-(incoming - 250_000) * 4 // 5)
-    if tier3 > 29_000_000:
+    if tier3 > _EXPANDED_TPE_MID_MAX:
         candidates.append(tier3)
     needed = min(candidates) if candidates else 0
     if cap_room > 0:

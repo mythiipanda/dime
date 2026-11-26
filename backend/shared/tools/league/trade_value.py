@@ -212,7 +212,7 @@ def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
     ]
 
 
-@tool(description='Trade legality check. Player names comma separated per side.\n\n2023 CBA matching below the first apron: 200 percent plus 250k when\noutgoing is up to 7.5M, outgoing plus 7.5M up to 29M, 125 percent\nplus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Cash and exceptions stay out.')
+@tool(description='Trade legality check. Player names comma separated per side.\n\n2023 CBA matching for 2026-27 below the first apron: 200 percent plus\n250k when outgoing is up to 8.846M, outgoing plus 9.096M up to 35.384M,\n125 percent plus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Cash and exceptions stay out.')
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
     season: str | None = None,
