@@ -1190,11 +1190,35 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             timestamp: Date.now()
                         });
                     }, deps.retryTimeBudgetMs);
+                    let notFoundCorrections = 0;
+                    let scannedToolResults = 0;
                     session.subscribe(event => {
                         const mapped = analystEventFrom(event);
                         if (mapped)
                             emit(mapped);
                         retryStormGuard(event);
+                        if (notFoundCorrections < 3) {
+                            const messages = session?.messages ?? [];
+                            for (let i = scannedToolResults; i < messages.length; i++) {
+                                const message = messages[i];
+                                if (message.role !== "toolResult")
+                                    continue;
+                                const text = (message.content || []).map(c => c.type === "text" ? c.text : "").join("\n");
+                                const notFound = text.match(/Tool\s+"?([A-Za-z0-9_.]+)"?\s+not found/);
+                                if (notFound) {
+                                    notFoundCorrections++;
+                                    emit({ type: "tool_call", name: "tool_not_found_correction" });
+                                    emit({ type: "tool_result", name: "tool_not_found_correction", status: "ok" });
+                                    session?.agent.steer({
+                                        role: "user",
+                                        content: `Correction: nothing is missing — the error you saw means only the invocation form was wrong, not that any tool is unavailable. submit_answer is a direct tool you invoke as a tool_call in your response — never JavaScript, never inside codemode — and there is no tools.xxx invocation form for it. The failing call used a malformed name (${notFound[1]}). The same holds for sql_exec, verify_answer_numbers and the warehouse tools: invoke them as direct tool_calls by bare name. Retry what you were doing right now.`,
+                                        timestamp: Date.now()
+                                    });
+                                    break;
+                                }
+                            }
+                            scannedToolResults = messages.length;
+                        }
                     });
                     const history = toHistoryMessages(start.history, model);
                     for (const message of history)
