@@ -178,6 +178,9 @@ def load_player_season(season: str, dry_run: bool) -> int:
             .alias("FG3_PCT"),
         (pl.col("ftm").sum() / pl.col("fta").sum()).round(3)
             .alias("FT_PCT"),
+        (pl.col("pts").sum()
+            / (2 * (pl.col("fga").sum() + 0.44 * pl.col("fta").sum())))
+            .round(3).alias("TS_PCT"),
     ])
     out = pl.DataFrame({
         "PLAYER_ID": agg["player_id"],
@@ -189,7 +192,7 @@ def load_player_season(season: str, dry_run: bool) -> int:
         "MPG": agg["MPG"], "PPG": agg["PPG"], "RPG": agg["RPG"],
         "APG": agg["APG"], "SPG": agg["SPG"], "BPG": agg["BPG"],
         "FG_PCT": agg["FG_PCT"], "FG3_PCT": agg["FG3_PCT"],
-        "FT_PCT": agg["FT_PCT"],
+        "FT_PCT": agg["FT_PCT"], "TS_PCT": agg["TS_PCT"],
     }).sort("PPG", descending=True)
     return save("silver_player_season", out, SRC_PSS, season,
                 "league", dry_run)
