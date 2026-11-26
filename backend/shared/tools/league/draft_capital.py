@@ -18,7 +18,7 @@ def _team_abbr_map(con) -> dict[int, str]:
     try:
         return {int(tid): abbr for tid, abbr in con.execute(
             "select distinct TEAM_ID, TEAM from silver_leaders_pts "
-            "where _season = '2025-26'").fetchall()}
+            "where _season = (select max(_season) from silver_leaders_pts)").fetchall()}
     except Exception:
         return {}
 
@@ -28,7 +28,7 @@ def _net_ranks(con) -> dict[str, int]:
         tid_to_abbr = _team_abbr_map(con)
         return {tid_to_abbr[tid]: int(rank) for tid, rank in con.execute(
             "select TEAM_ID, NET_RATING_RANK from silver_team_ratings "
-            "where _season = '2025-26'").fetchall() if tid in tid_to_abbr}
+            "where _season = (select max(_season) from silver_team_ratings)").fetchall() if tid in tid_to_abbr}
     except Exception:
         return {}
 
