@@ -45,6 +45,8 @@ For "strongest", "smallest", "largest", "best", "worst", or delta questions:
 
 Do not infer the winner from a narrative, a single season-summary row, or an unverified tool summary. If the answer hinges on a delta, show the two endpoint values that produced it.
 
+Compute every derived figure — deltas, differences from a threshold or cap line, sums across rows, shares, percentage-point gaps — inside `sql_exec` itself (`SELECT team, payroll, 221200000 - payroll AS apron_room ...`), never by mental arithmetic on tool results. The submission audit rejects any narrated figure that does not appear verbatim in a tool result: a mentally computed delta is unbacked even when both endpoints are backed, and the rejection loop costs the run. One query that emits the endpoints and the derived column together backs every number the answer will cite.
+
 ## 5. Denominator Discipline for Ratios
 
 Before reporting a share, rate, or percentage:
@@ -61,6 +63,7 @@ Before `submit_answer`, check every requested deliverable:
 - Every exact requested number appears as an exact number, not a range.
 - Every ratio names its denominator and uses the requested one.
 - Every ranking/delta names the recomputed endpoints.
+- Every derived figure (delta, gap to a threshold, share, total) appears verbatim in a tool result; if it does not, recompute it inside sql_exec before submitting.
 - Methods/caveats disclose filters, sample size, and any custom classification.
 - Every scope qualifier echoed in prose or artifacts corresponds to a filter the executed query actually applied. Re-read the last query before claiming `regular season`, `002%`, or a denominator it never restricted — a claimed-but-unimplemented filter is fabricated methodology, not a rounding issue.
 
