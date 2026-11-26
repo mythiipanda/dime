@@ -96,9 +96,22 @@ transferable":
 Asks like "against the qualified pool", "closest statistical matches",
 "percentile profile", or "rank the under-23 core" define an eligible pool
 then rank or measure each player inside it. Compute every one of these in
-`sql_exec` against `silver_hist_player_seasons` — never pull the pool into
-context with `get_leaders`/`get_dataset` dumps; a whole-pool payload (~570
-rows) burns the turn budget and the context window.
+`sql_exec` against the season-appropriate pool table —
+`silver_hist_player_seasons` for historical or multi-season pools,
+`silver_player_season` for the current snapshot when its columns cover the
+screen — never pull the pool into context with
+`get_leaders`/`get_dataset` dumps; a whole-pool payload (~570 rows) burns the
+turn budget and the context window.
+
+Efficiency screens are single-table first: `silver_player_season` carries
+`TS_PCT` beside GP/MPG/PPG and the shooting percentages, so a current
+scoring-efficiency cutoff, rank, percentile, or comparison that needs only
+true shooting belongs in one aggregate query over that table.
+Join `silver_advanced` on `PLAYER_ID` + `_season` only when the screen needs an
+advanced-only column (`USG_PCT`, `OFF_RATING`, `DEF_RATING`, `NET_RATING`,
+`AST_PCT`, `REB_PCT`, or `EFG_PCT`); for historical or multi-season pools,
+use `silver_hist_player_seasons`, whose lowercase `ts_pct` and usage/rating
+columns already cover the same computation without a second table.
 
 Grain facts that trip these queries:
 
