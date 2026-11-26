@@ -32,6 +32,7 @@ Scope qualifiers are WHERE clauses, not prose decoration. When the request names
 
 - If the prompt asks for exact counts or values for each requested entity, report them exactly. Do not replace them with ranges, "about", only the leader, or only the most extreme row.
 - If a requested exact figure is unavailable in the warehouse, state which figure is unavailable and why; do not silently substitute a nearby proxy.
+- Never compress or round a figure in prose: write "$4,446,789" or whatever the tool result shows verbatim, never "$4.447M", "$750M-ish", "about $290M" or "exceeding $290M". The submission audit matches figures verbatim against tool results and artifact payloads — a compressed or rounded rendering is unbacked even when the underlying computation is exact, and "exceeding X" phrases an approximation as a comparison the evidence never made.
 - Keep units attached to every number: attempts vs makes, games vs possessions, per-game vs per-100, percentage points vs percent.
 
 ## 4. Recompute Rankings and Deltas From Raw Rows
@@ -64,6 +65,8 @@ Before `submit_answer`, check every requested deliverable:
 - Every ratio names its denominator and uses the requested one.
 - Every ranking/delta names the recomputed endpoints.
 - Every derived figure (delta, gap to a threshold, share, total) appears verbatim in a tool result; if it does not, recompute it inside sql_exec before submitting.
+- Before every submission or resubmission, re-check ALL prose figures against the audit criteria — exact, tool-backed, present in an artifact — not only the figure the last rejection flagged. Rejections arrive one figure at a time; fixing only the flagged one guarantees another rejection cycle, and each cycle burns budget the answer needs.
+- Every figure stated in the prose blocks also lives in an artifact row. The submission audit rejects any prose figure missing from the artifact payloads with missing_in_artifacts — prose-only numbers are undeliverable no matter how correct. When a key comparison figure exists only in your sentences, add it to the table/compare/memo artifact rows before submitting; the artifact is the backing exhibit, not decoration, so a figure the reader must trust must appear in both places.
 - Methods/caveats disclose filters, sample size, and any custom classification.
 - Every scope qualifier echoed in prose or artifacts corresponds to a filter the executed query actually applied. Re-read the last query before claiming `regular season`, `002%`, or a denominator it never restricted — a claimed-but-unimplemented filter is fabricated methodology, not a rounding issue.
 
