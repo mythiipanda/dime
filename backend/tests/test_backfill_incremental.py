@@ -1,4 +1,3 @@
-"""Incremental boxscores game-selection: missing diff, correction window, cap."""
 import sys
 from pathlib import Path
 
