@@ -1028,8 +1028,6 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let modelApiKey: string | undefined;
                 let budgetNudge: ReturnType<typeof setTimeout> | undefined;
                 let narrationSalvage: ReturnType<typeof setTimeout> | undefined;
-                let emittedFromNarration = false;
-                let narrationSubmissionRef: unknown;
                 const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
@@ -1256,15 +1254,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 return;
                             if (!session.messages.some(message => message.role === "toolResult"))
                                 return;
-                            const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd));
-                            const salvaged = drafted ?? salvageNarrationSubmission(session.messages);
+                            const salvaged = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd))
+                                ?? salvageNarrationSubmission(session.messages);
                             if (!salvaged)
                                 return;
                             acceptedSubmission = salvaged;
-                            if (!drafted) {
-                                emittedFromNarration = true;
-                                narrationSubmissionRef = salvaged;
-                            }
                             emitAcceptedAnswer();
                         }, salvageAtMs);
                         narrationSalvage.unref();
@@ -1383,17 +1377,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         const narrated = salvageNarrationSubmission(session.messages);
                         if (narrated) {
                             acceptedSubmission = narrated;
-                            emittedFromNarration = true;
-                            narrationSubmissionRef = narrated;
                             emitAcceptedAnswer();
-                        }
-                    }
-                    if (emittedFromNarration && acceptedSubmission === narrationSubmissionRef && session) {
-                        const upgrade = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), bridgeCwd));
-                        if (upgrade && upgrade.blocks.map(block => block.text).join("\n\n") !== acceptedSubmission?.blocks.map(block => block.text).join("\n\n")) {
-                            acceptedSubmission = upgrade;
-                            emittedFromNarration = false;
-                            emit({ type: "answer", text: upgrade.blocks.map(block => block.text).join("\n\n"), submission: upgrade });
                         }
                     }
                     if (!answerEmitted && !controller.signal.aborted)

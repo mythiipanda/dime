@@ -162,10 +162,10 @@ function sanitizeUvarcMessages(init: RequestInit | undefined): RequestInit | und
         messages = elided.messages;
         dirty = true;
     }
-    const outbound = { ...(parsed as Record<string, unknown>), messages, reasoning_effort: "low" };
+    const outbound = { ...(parsed as Record<string, unknown>), messages };
     if (!dirty && JSON.stringify(outbound) === init.body)
         return init;
-    return { ...init, body: JSON.stringify(outbound) };
+    return { ...init, body: JSON.stringify({ ...parsed, messages }) };
 }
 
 export function uvarcGuardedFetch(baseUrl: string, realFetch: typeof globalThis.fetch): typeof globalThis.fetch {
