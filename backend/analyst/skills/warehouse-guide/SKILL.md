@@ -72,9 +72,41 @@ A requested metric or dataset may not exist in the warehouse at all (for example
 |---|---|---|
 | `silver_shots` / `silver_hist_shots` | Shot events with zone/distance; hex/zone aggregates. | Playtype tags (spot-up, P&R ball-handler) — use playtype tables. |
 | `silver_zone_splits` | Player/team shooting by zone. | Below-zone distance detail (query shots). |
-| `silver_playtypes` | Synergy-style playtype PPP/frequency per player/team where ingested. | Defense-side playtype suppression unless defensive playtype rows exist — verify with `warehouse_schema` first. |
-| `silver_synergy` | Seeded synergy aggregates (2015-16→2026-27 per seed). | Coverage varies by season; confirm rows exist for the asked season before quoting. |
+| Playtype PPP/frequency (spot-up, P&R ball-handler) | Not currently warehoused — no playtype or synergy table exists in the runtime warehouse; do not probe `silver_playtypes`/`silver_synergy`, they are absent. The correct answer for a playtype ask is the verified-unavailability verdict with the schema checks as evidence. | `silver_playtype_profile` does not exist as a table either — it is a named tool, not a table. |
 | `silver_clutch` | Clutch-window stats — filter `GROUP_SET='Players'` for player rows (the table multiplexes group sets; without the filter the player pool reads near-empty). | Custom time-window filters (compute from `silver_hist_pbp`/`silver_stints`). |
+
+## Impact, ratings & four factors
+
+| Table | Can answer | Cannot answer |
+|---|---|---|
+| `silver_rapm` | Raw regularized plus-minus: one row per player (player_id, name, rapm, possessions) for 2025-26 only. | Prior seasons; blended priors (use `silver_rapm_prior`). |
+| `silver_impact` | BPM, OBPM, DBPM, VORP, WS/WS48 per player-season (uppercase PLAYER_NAME/TEAM columns), 2021-22 through 2024-25. | Current-season impact — not yet ingested for 2025-26. |
+| `silver_raptor_player` / `silver_raptor_team` | Historical RAPTOR/PREDATOR ratings and WAR per player — the season column is `SEASON` as a start-year integer (1977 through 2022), not `_season`. | Current seasons — ingest ends at start-year 2022. |
+| `silver_four_factors_team` | Team four-factors per season: EFG_PCT, TOV_PCT, ORB_PCT, FT_RATE plus opponent counterparts, keyed by TEAM + `_season`, 2025-26 and 2026-27. | Historical four-factors before 2025-26. |
+| `silver_four_factors` | Thin experimental table (2 rows) of on/off four-factor results — not a general source. | Anything beyond its two rows — prefer `silver_four_factors_team`. |
+
+## Game logs & team games
+
+| Table | Can answer | Cannot answer |
+|---|---|---|
+| `silver_player_gamelogs` | Per-player game lines (MIN, PTS, REB, AST, PLUS_MINUS, uppercase columns) for 2024-25 onward. | Older game logs — use `silver_hist_gamelogs`. |
+| `silver_playoff_gamelogs` | Same shape for playoff games, 2010-11 onward. | Regular-season games. |
+| `silver_playoffs` | Team-level playoff game results (TEAM_ID, GAME_ID, MATCHUP, PTS, plus/minus) for 2025-26. | Player lines — use `silver_playoff_gamelogs`. |
+| `silver_team_games` | Team game results with shooting splits, 2021-22 onward. | Player-level lines (use `silver_player_gamelogs`). |
+| `silver_boxscores_ext` | Extended per-player-per-game boxscores including ADV_ advanced columns (offensive/defensive rating, pace, pie) covering 2015-16 through 2024-25 — large table, always filter by season/game; no current-season rows. | Anything needing playtype tags or possession context. |
+
+## Cap history & league financials
+
+| Table | Can answer | Cannot answer |
+|---|---|---|
+| `silver_cap_history` | League cap/tax/apron lines by season: season, salary_cap, luxury_tax, apron_1, apron_2, max-salary tier percentages, cba_era — one row per season at league grain. | Team-level cap positions (use `silver_cap_room`/`silver_cap_players`). |
+
+## Award voting & category leaderboards
+
+| Table | Can answer | Cannot answer |
+|---|---|---|
+| `silver_bbref_awards` | Historical award voting: SEASON, AWARD, RANK, PLAYER, POINTS_WON, AWARD_SHARE, VOTES_FIRST — 1976-77 onward. | Winners before 1976-77; current-season projections. |
+| `silver_leaders_pts` / `_reb` / `_ast` / `_stl` / `_blk` / `_dreb` / `_fg_pct` | Per-category season leaderboards (RANK, PLAYER, TEAM, counting stats) spanning 2019-20 through 2026-27 including the current season. | Custom per-game floors or blends — compute from `silver_hist_player_seasons` instead. |
 
 ## Seasons, standings & schedule
 
