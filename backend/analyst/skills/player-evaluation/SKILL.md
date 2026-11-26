@@ -11,6 +11,20 @@ question; skip the rest. Every number is warehouse-sourced — never a live
 endpoint at question time — and each tool reports its own sources, so
 cite them.
 
+
+## Single-pass aging curves and season-spanning screens
+
+An aging curve or multi-season player screen is ONE grouped query over `silver_hist_player_seasons` — never a season-by-season loop. The table carries per-game rate columns (`pts`, `min`, `gp`, `age`, `ts_pct`, `usg_pct`) plus `_season`, so ten seasons aggregate in a single pass:
+
+```sql
+SELECT age, COUNT(DISTINCT player_id) AS players, ROUND(AVG(pts), 1) AS avg_ppg
+FROM silver_hist_player_seasons
+WHERE _season BETWEEN '2015-16' AND '2024-25' AND min >= 20 AND gp >= 20
+GROUP BY age ORDER BY age
+```
+
+(verified executable against the warehouse — age 19-22 rows return immediately). Looping one season at a time costs 10x the round trips and is the exact pattern that runs assembly-heavy asks into the time wall; if a column is missing, fix the query not the shape.
+
 ## 1. Tools and when they matter
 
 | Tool | Answers | Reach for it when |
