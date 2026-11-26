@@ -1841,3 +1841,100 @@ test("createPiExecution salvages a rejected submission over a thin meta-echo end
 
   await rm(cwd, { recursive: true, force: true });
 });
+
+test("createPiExecution salvages final narration when a normal-end run never submits", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-exec-narrsalv-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  const currentRecord = makeSourceRecord("src-current", { rows: [{ gp: 75, ppg: 18.43 }] });
+  const runtime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
+
+  const narration = "Reconciling the stints: Detroit 28 games at 10.79 points per game, Brooklyn 23 games at 18.43 points per game, Golden State 24 games at 10.58 points per game, for a confirmed total of 75 games matching the season summary row exactly.";
+  let execRequests = 0;
+  runtime.registerProvider("fixture", {
+    api: "openai-completions",
+    apiKey: "synthetic",
+    baseUrl: "http://invalid.test",
+    models: [
+      {
+        id: "fixture",
+        name: "Fixture",
+        input: ["text"],
+        reasoning: false,
+        contextWindow: 100000,
+        maxTokens: 4000,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ],
+    streamSimple(model, context) {
+      execRequests++;
+      const isFirst = execRequests === 1;
+      const content = isFirst
+        ? [{ type: "toolCall", id: "call-1", name: "codemode", arguments: { code: "await tools.query_tool({ q: 'gp' }); return { done: true };" } }]
+        : [{ type: "text", text: narration }];
+      const msg = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content,
+        stopReason: isFirst ? "toolUse" : "stop",
+        timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: isFirst ? "toolUse" : "stop", message: msg });
+      stream.end();
+      return stream;
+    },
+  });
+
+  const mockBridge = {
+    tools: [
+      {
+        name: "query_tool",
+        label: "Query Tool",
+        description: "Run query",
+        parameters: Type.Object({ q: Type.String() }),
+        async execute() {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ rows: [{ gp: 75, ppg: 18.43 }] }) }],
+            structuredContent: { ref: "src-current", tool: "query_tool", isError: false, result: { rows: [{ gp: 75, ppg: 18.43 }] } },
+          };
+        },
+      },
+    ],
+    results: new Map([["src-current", currentRecord]]),
+    pid: 12345,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  const events = [];
+  for await (const event of pi.stream({
+    q: "Reconcile the stints.",
+    history: [],
+    model: "fixture:fixture",
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+
+  const answerEvent = events.find((e) => e.type === "answer");
+  assert.ok(answerEvent, "narration should be salvaged into an accepted answer on normal end");
+  assert.equal(answerEvent.text, narration);
+
+  await rm(cwd, { recursive: true, force: true });
+});
