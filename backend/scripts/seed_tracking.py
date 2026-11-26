@@ -171,7 +171,7 @@ def table_count(table: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--seasons", default="2024-25,2025-26")
+    ap.add_argument("--seasons", default="")
     ap.add_argument("--season-types", default="Regular Season")
     ap.add_argument("--scratch-db", default="")
     ap.add_argument("--limit-units", type=int, default=0)
@@ -191,6 +191,12 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run(args, target) -> int:
     seasons = [s.strip() for s in str(args.seasons).split(",") if s.strip()]
+    if not seasons:
+        from shared.tools._core import completed_season_for_date, current_season
+        from datetime import date
+        cur = current_season() or "2026-27"
+        comp = completed_season_for_date(date.today()) or "2025-26"
+        seasons = sorted({cur, comp}, reverse=True)
     season_types = tuple(
         t.strip() for t in str(args.season_types).split(",") if t.strip())
     units = planned_units(seasons, season_types)
