@@ -360,7 +360,20 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                     errors.append({"move": str(i), "error": f"unknown exception '{exception}'"})
                     continue
                 effect["exception"] = exception
+                term_years = raw.get("years")
+                if isinstance(term_years, int) and term_years > 1:
+                    effect["term"] = f"{term_years}_year_flat_disclosed"
                 add_effect(target, {k: v for k, v in effect.items() if k != "season"})
+                if isinstance(term_years, int) and term_years > 1:
+                    forward = [s for s in seasons if s > target][:term_years - 1]
+                    for year_index, season in enumerate(forward, start=2):
+                        continuation = {k: v for k, v in effect.items() if k not in ("season", "exception")}
+                        continuation["detail"] = f"{effect['detail']} — year {year_index} of {term_years}"
+                        continuation["roster_delta"] = 0
+                        continuation["continuation"] = True
+                        add_effect(season, continuation)
+                    if term_years - 1 > len(forward):
+                        warnings.append(f"{effect['detail']} continues beyond the projection horizon")
         elif kind == "extend":
             effects, error = _extend_effects(raw, i, target, seasons, schedules, team)
             if error:
@@ -439,7 +452,8 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                                   if e.get("exception") and e["exception"] != "cap_room"})
         season_moves = moves_by_season.get(season, [])
         ordering_notes = []
-        signings = [e for e in effects if e["kind"] == "signing" and e.get("exception", "cap_room") == "cap_room"]
+        signings = [e for e in effects if e["kind"] == "signing" and not e.get("continuation")
+                    and e.get("exception", "cap_room") == "cap_room"]
         for effect in signings:
             prior_deltas = sum(int(e["delta"]) for e in effects if e["move"] < effect["move"])
             running_pay = int(base["payroll"]) + prior_deltas
@@ -482,7 +496,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         })
 
     disclosures = [
-        "signings project as one-year deals — contract structure (years, raises) arrives with the signing move vocabulary",
+        "signings without a stated term project as one-year deals; multi-year signings carry flat annual salary across the term — raise structure is not modeled",
         "apron and tax comparisons use committed-payroll proxies per the cap-rules derivation contract, not full CBA Apron Team Salary",
     ]
     hold_seasons = [s for s in seasons if holds_by_season[s]["rows"]]

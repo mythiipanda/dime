@@ -59,6 +59,39 @@ def test_one_year_signing_affects_only_its_target_season():
     assert any("one-year" in d for d in out["disclosures"])
 
 
+def test_multi_year_signing_carries_salary_across_the_term():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 12_000_000, "years": 2,
+                             "exception": "mle", "season": "2026-27"}])
+    finally:
+        con.close()
+    assert block(out, "2026-27")["pay_after"] == 30_000_000 + 12_000_000
+    assert block(out, "2027-28")["pay_after"] == 30_000_000 + 12_000_000
+    assert block(out, "2028-29")["pay_after"] == 30_000_000
+    first_year = block(out, "2026-27")
+    second_year = block(out, "2027-28")
+    mle_first = next(e for e in first_year["exceptions"] if e["exception"] == "mle")
+    mle_second = next(e for e in second_year["exceptions"] if e["exception"] == "mle")
+    assert mle_first["used"] == 12_000_000
+    assert mle_second["used"] == 0
+    assert first_year["roster_after"] == first_year["roster_before"] + 1
+    assert second_year["roster_after"] == second_year["roster_before"]
+    assert any("flat" in d for d in out["disclosures"])
+
+
+def test_multi_year_signing_beyond_horizon_discloses_truncation():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 5_000_000, "years": 5,
+                             "season": "2028-29"}])
+    finally:
+        con.close()
+    assert block(out, "2028-29")["pay_after"] == 30_000_000 + 5_000_000
+    assert block(out, "2029-30")["pay_after"] == 5_000_000
+    assert any("horizon" in w for w in out["warnings"])
+
+
 def test_trade_out_removes_player_in_trade_season_and_forward():
     con = memory_con()
     try:
