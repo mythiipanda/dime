@@ -333,6 +333,48 @@ def _option_dependency_error(hold: dict[str, Any] | None, declined: set[str],
     return None
 
 
+def _signing_move(raw: dict[str, Any], hold_index: dict[str, dict[str, Any]],
+                  declined_holds: set[str], extinguished_holds: set[str],
+                  cap_hold_events: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str | None]:
+    amount = raw.get("amount")
+    if not isinstance(amount, (int, float)) or amount <= 0:
+        return None, "signing needs a positive amount"
+    label = str(raw.get("label") or f"${amount / 1_000_000:g}M signing")
+    hold_match = _match_hold(hold_index, raw.get("player") or label)
+    option_error = _option_dependency_error(hold_match, declined_holds, "signing")
+    if option_error is not None:
+        return None, option_error
+    if hold_match is not None:
+        key = normalize_name(hold_match.get("player"))
+        extinguished_holds.add(key)
+        cap_hold_events.append({"kind": "signed", "player": hold_match.get("player"),
+                                "amount": hold_match.get("cap_hold"),
+                                "money_unit": "usd_dollars"})
+    return {"kind": "signing", "detail": f"sign {label}",
+            "amount": int(amount)}, None
+
+
+def _renounce_error(team: str, raw: dict[str, Any], hold_index: dict[str, dict[str, Any]],
+                    declined_holds: set[str], extinguished_holds: set[str],
+                    cap_hold_events: list[dict[str, Any]]) -> str | None:
+    player = str(raw.get("player") or raw.get("label") or "").strip()
+    if not player:
+        return "renounce needs a player"
+    hold_match = _match_hold(hold_index, player)
+    if hold_match is None:
+        return f"no {team} free-agent cap hold found for {player}"
+    key = normalize_name(hold_match.get("player"))
+    option_error = _option_dependency_error(hold_match, declined_holds, "renouncing")
+    if option_error is not None:
+        return option_error
+    extinguished_holds.add(key)
+    cap_hold_events.append({"kind": "renounced", "player": hold_match.get("player"),
+                            "amount": hold_match.get("cap_hold"),
+                            "money_unit": "usd_dollars",
+                            "scenario_dependency": hold_match.get("scenario_dependency")})
+    return None
+
+
 def _hold_inclusion(rows: list[dict[str, Any]], declined: set[str],
                     extinguished: set[str]) -> tuple[list[dict[str, Any]], int, int]:
     detailed = []
@@ -395,24 +437,12 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             continue
         kind = str(raw.get("kind") or "").strip()
         if kind == "signing":
-            amount = raw.get("amount")
-            if not isinstance(amount, (int, float)) or amount <= 0:
-                errors.append({"move": str(i), "error": "signing needs a positive amount"})
+            move, error = _signing_move(raw, hold_index, declined_holds,
+                                        extinguished_holds, cap_hold_events)
+            if error:
+                errors.append({"move": str(i), "error": error})
                 continue
-            label = str(raw.get("label") or f"${amount / 1_000_000:g}M signing")
-            hold_match = _match_hold(hold_index, raw.get("player") or label)
-            option_error = _option_dependency_error(hold_match, declined_holds, "signing")
-            if option_error is not None:
-                errors.append({"move": str(i), "error": option_error})
-                continue
-            moves.append({"kind": "signing", "detail": f"sign {label}",
-                          "amount": int(amount)})
-            if hold_match is not None:
-                key = normalize_name(hold_match.get("player"))
-                extinguished_holds.add(key)
-                cap_hold_events.append({"kind": "signed", "player": hold_match.get("player"),
-                                        "amount": hold_match.get("cap_hold"),
-                                        "money_unit": "usd_dollars"})
+            moves.append(move)
             sign_count += 1
             roster_delta += 1
         elif kind == "trade_out":
@@ -466,25 +496,10 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                                      timing=waiver_timing))
             roster_delta -= 1
         elif kind == "renounce":
-            player = str(raw.get("player") or raw.get("label") or "").strip()
-            if not player:
-                errors.append({"move": str(i), "error": "renounce needs a player"})
-                continue
-            hold_match = _match_hold(hold_index, player)
-            if hold_match is None:
-                errors.append({"move": str(i),
-                               "error": f"no {team} free-agent cap hold found for {player}"})
-                continue
-            key = normalize_name(hold_match.get("player"))
-            option_error = _option_dependency_error(hold_match, declined_holds, "renouncing")
-            if option_error is not None:
-                errors.append({"move": str(i), "error": option_error})
-                continue
-            extinguished_holds.add(key)
-            cap_hold_events.append({"kind": "renounced", "player": hold_match.get("player"),
-                                    "amount": hold_match.get("cap_hold"),
-                                    "money_unit": "usd_dollars",
-                                    "scenario_dependency": hold_match.get("scenario_dependency")})
+            error = _renounce_error(team, raw, hold_index, declined_holds,
+                                    extinguished_holds, cap_hold_events)
+            if error:
+                errors.append({"move": str(i), "error": error})
         elif kind == "option_decision":
             player = str(raw.get("player") or "").strip()
             exercise = bool(raw.get("exercise", True))
