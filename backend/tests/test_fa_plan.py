@@ -133,46 +133,44 @@ def test_scenario_arithmetic(monkeypatch, tmp_path):
     _load(path, _okc_fa(), [_okc_room()])
     res = get_fa_plan.invoke({"team": "OKC", "fa_year": "2027"})
     scen = {(s["scenario"], s["player"]): s for s in res["scenarios"]}
-    assert scen[("keep_all", None)]["projected_room"] == -30_442_900
+    assert scen[("keep_all", None)]["projected_room"] == -16_936_439
     assert scen[("keep_all", None)]["path"] == "over_cap"
-    assert scen[("keep_all", None)]["cap_holds_retained"] == 81_900_000
+    assert scen[("keep_all", None)]["cap_holds_retained"] == 66_900_000
     assert scen[("keep_all", None)]["cap_holds_renounced"] == 0
-    assert scen[("keep_all", None)]["roster_charges"] == 0
-    assert scen[("keep_all", None)]["roster_charges"] \
-        == res["context"]["roster_charges"]
+    assert scen[("keep_all", None)]["roster_charges"] == 1_493_539
     assert scen[("renounce_all", None)]["projected_room"] == 45_482_944
     assert scen[("renounce_all", None)]["path"] == "under_cap"
     assert scen[("renounce_all", None)]["cap_holds_retained"] == 0
-    assert scen[("renounce_all", None)]["cap_holds_renounced"] == 81_900_000
+    assert scen[("renounce_all", None)]["cap_holds_renounced"] == 66_900_000
     assert scen[("renounce_all", None)]["roster_charges"] == 5_974_156
-    assert scen[("renounce", "Star Wing")]["projected_room"] == 28_063_561
+    assert scen[("renounce", "Star Wing")]["projected_room"] == 41_570_022
     assert scen[("renounce", "Star Wing")]["cap_holds_renounced"] \
         == 60_000_000
-    assert scen[("renounce", "Star Wing")]["roster_charges"] == 1_493_539
+    assert scen[("renounce", "Star Wing")]["roster_charges"] == 2_987_078
     assert scen[("keep_only", "Star Wing")]["projected_room"] \
         == -13_023_517
     assert scen[("keep_only", "Star Wing")]["cap_holds_retained"] \
         == 60_000_000
     assert scen[("keep_only", "Star Wing")]["cap_holds_renounced"] \
-        == 21_900_000
+        == 6_900_000
     assert scen[("keep_only", "Star Wing")]["roster_charges"] == 4_480_617
     assert scen[("renounce", "Cheap Guard")]["projected_room"] \
-        == -25_936_439
+        == -12_429_978
     assert scen[("renounce", "Cheap Guard")]["cap_holds_renounced"] \
         == 6_000_000
 
 
-def test_keep_all_charge_matches_seeded_baseline(monkeypatch, tmp_path):
+def test_roster_charge_counts_only_active_holds(monkeypatch, tmp_path):
     path = _seed(monkeypatch, tmp_path)
     _load(path, _bos_fa(), [_bos_room()])
     res = get_fa_plan.invoke({"team": "BOS", "fa_year": "2027"})
     scen = {(s["scenario"], s["player"]): s for s in res["scenarios"]}
     keep = scen[("keep_all", None)]
     renounce = scen[("renounce", "Expiring Man")]
-    assert keep["roster_charges"] == 11_948_312
-    assert keep["roster_charges"] == res["context"]["roster_charges"]
-    assert keep["projected_room"] == 95_008_788
-    assert renounce["projected_room"] == 108_515_249
+    assert keep["roster_charges"] == 13_441_851
+    assert keep["roster_charges"] != res["context"]["roster_charges"]
+    assert keep["projected_room"] == 116_015_249
+    assert renounce["projected_room"] == 129_521_710
     assert renounce["projected_room"] - keep["projected_room"] \
         == 13_506_461
 
@@ -197,7 +195,7 @@ def test_fa_year_maps_to_matching_cap_season(monkeypatch, tmp_path):
     assert res["cap_season"] == "2028-29"
     assert res["context"]["committed_salary"] == 100_000_000
     scen = {(s["scenario"], s["player"]): s for s in res["scenarios"]}
-    assert scen[("keep_all", None)]["projected_room"] == -10_442_900
+    assert scen[("keep_all", None)]["projected_room"] == 3_063_561
     assert scen[("renounce_all", None)]["projected_room"] == 65_482_944
 
 
