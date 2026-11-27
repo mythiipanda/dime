@@ -88,6 +88,13 @@ export type DirectOperations = {
     product_awards: {
         season: string;
     };
+    product_cap_sheet: {
+        team: string;
+        season: string;
+    };
+    product_cap_scenario_eval: {
+        payload: Record<string, unknown>;
+    };
     product_briefing: {
         season: string;
     };
