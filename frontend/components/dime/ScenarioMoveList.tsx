@@ -17,6 +17,7 @@ export default function ScenarioMoveList({
   onChange,
   reorderable = false,
   numbered = false,
+  readOnly = false,
 }: {
   moves: ScenarioMove[];
   groups: MoveGroupsMap;
@@ -24,6 +25,7 @@ export default function ScenarioMoveList({
   onChange: (next: ScenarioMove[]) => void;
   reorderable?: boolean;
   numbered?: boolean;
+  readOnly?: boolean;
 }) {
   const units = unitizeMoves(moves);
   return (
@@ -59,19 +61,21 @@ export default function ScenarioMoveList({
                 <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3">
                   {numbered && <span className="mr-1.5 font-mono normal-case tracking-normal">{unitIndex + 1}</span>}Trade{meta?.partner ? ` with ${meta.partner}` : ""} — {outCount} out / {inCount} in
                 </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  {reorder}
-                  <button
-                    className={action}
-                    title="The moves stay, but the result may no longer represent a legal trade"
-                    onClick={() => onChange(ungroupAt(moves, unitIndex))}
-                  >
-                    split
-                  </button>
-                  <button className={action} onClick={() => onChange(removeUnitAt(moves, unitIndex))}>
-                    remove
-                  </button>
-                </span>
+                {!readOnly && (
+                  <span className="flex shrink-0 items-center gap-2">
+                    {reorder}
+                    <button
+                      className={action}
+                      title="The moves stay, but the result may no longer represent a legal trade"
+                      onClick={() => onChange(ungroupAt(moves, unitIndex))}
+                    >
+                      split
+                    </button>
+                    <button className={action} onClick={() => onChange(removeUnitAt(moves, unitIndex))}>
+                      remove
+                    </button>
+                  </span>
+                )}
               </div>
               <div className="mt-1 space-y-1">
                 {unit.entries.map((entry) => (
@@ -102,12 +106,14 @@ export default function ScenarioMoveList({
                 <span className="mt-0.5 block text-[11px] leading-[1.45] text-ink-2">{basis}</span>
               )}
             </div>
-            <span className="flex shrink-0 items-center gap-2">
-              {reorder}
-              <button className={action} onClick={() => onChange(removeUnitAt(moves, unitIndex))}>
-                remove
-              </button>
-            </span>
+            {!readOnly && (
+              <span className="flex shrink-0 items-center gap-2">
+                {reorder}
+                <button className={action} onClick={() => onChange(removeUnitAt(moves, unitIndex))}>
+                  remove
+                </button>
+              </span>
+            )}
           </div>
         );
       })}
