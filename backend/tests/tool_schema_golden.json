@@ -5579,6 +5579,12 @@
             "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2026-27'.",
             "title": "Season",
             "type": "string"
+          },
+          "tpes": {
+            "default": "",
+            "description": "JSON array of traded-player-exception rows: [{'team','amount','kind','origin_year'}]; amount integer dollars, kind ordinary or sign_and_trade. Rows represent exceptions the user explicitly carries into the evaluation — never auto-derived league state. Default: ''.",
+            "title": "Tpes",
+            "type": "string"
           }
         },
         "required": [

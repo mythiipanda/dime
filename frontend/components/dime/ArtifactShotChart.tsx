@@ -2,7 +2,7 @@
 
 import type { ShotZone } from "@/lib/dime-data";
 
-const LINE = "var(--line-strong)";
+const LINE = "var(--ink-3)";
 
 function Court() {
   return (

@@ -1,6 +1,7 @@
 import json as _json
 import re as _re
 from calendar import monthrange
+from itertools import combinations
 from datetime import date, timedelta
 from functools import lru_cache
 from typing import Any
@@ -748,6 +749,21 @@ def _tpe_usage(team_tpes: list[dict[str, Any]],
             "capacities": [item["amount"] + cushion for item in active]}
 
 
+def _elect_tpe_subset(incoming_salaries: list[int], allow: int,
+                      capacities: list[int]) -> tuple[int, ...] | None:
+    if _placement_fits(incoming_salaries, [allow], 0):
+        return ()
+    if not capacities:
+        return None
+    for size in range(1, len(capacities) + 1):
+        for combo in combinations(range(len(capacities)), size):
+            bins = [capacities[index] for index in combo]
+            required = sum(1 << (position + 1) for position in range(len(bins)))
+            if _placement_fits(incoming_salaries, [allow] + bins, required):
+                return combo
+    return None
+
+
 def _inactive_tpe_issue(team: str, item: dict[str, Any]) -> str:
     kind_label = ("sign-and-trade-generated"
                   if item["kind"] == "sign_and_trade" else "ordinary")
@@ -836,10 +852,19 @@ def _evaluate_team(team: str, side: dict[str, Any],
         out_eff, bool(state_after["over_apron1"]), room_before)
     usage = _tpe_usage(team_tpes, bool(state_after["over_apron1"]))
     incoming_salaries = [row["salary"] for row in side["in_rows"]]
+    elected = _elect_tpe_subset(incoming_salaries, allow, usage["capacities"])
+    elected_active = [usage["active"][index] for index in elected] if elected else []
+    usage["used"] = sum(item["amount"] for item in elected_active)
+    usage["prior"] = any(item["status"] == "prior_year" for item in elected_active)
+    usage["snt"] = any(item["kind"] == "sign_and_trade" for item in elected_active)
+    elected_capacities = ([usage["capacities"][index] for index in elected]
+                          if elected else [])
+    if elected is None and usage["capacities"]:
+        elected_capacities = usage["capacities"]
     required_tpe_bins = sum(1 << (index + 1)
-                            for index in range(len(usage["capacities"])))
-    salary_fit = _placement_fits(
-        incoming_salaries, [allow] + usage["capacities"], required_tpe_bins)
+                            for index in range(len(elected_capacities)))
+    salary_fit = (elected is not None) and _placement_fits(
+        incoming_salaries, [allow] + elected_capacities, required_tpe_bins)
     aggregates = len(side["out_names"]) > 1
     cash_out = sum(cash["amount"] for cash in cash_moves
                    if canonical_team_abbr(cash["from"]) == team)
@@ -855,11 +880,13 @@ def _evaluate_team(team: str, side: dict[str, Any],
     cushion = 0 if state_after["over_apron1"] else _TPE_CUSHION
     expanded_matching = _expanded_matching_use(
         incoming_salaries, side["in_total"], out_eff, room_before,
-        usage["capacities"], required_tpe_bins, cushion)
+        elected_capacities, required_tpe_bins, cushion)
+    tpe_in_structure = (bool(elected_active)
+                        or (elected is None and bool(usage["capacities"])))
     election = _matching_election(
         side["in_total"], out_eff, room_before, cushion,
         len(side["out_names"]), expanded_matching,
-        bool(usage["active"]))
+        tpe_in_structure)
     rule = _operative_match_rule(rule, election)
     hard_cap = _hard_cap_consequences(
         team, pay_after, aggregates=aggregates, cash_out=cash_out,

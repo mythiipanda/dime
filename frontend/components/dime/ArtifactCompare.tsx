@@ -32,19 +32,19 @@ export default function ArtifactCompare({
                   <span className={!aLead ? "font-semibold text-ink" : "text-ink-3"}>{r.fmt(r.b)}</span>
                 </span>
               </div>
-              <div className="mt-1.5 grid grid-cols-2 gap-1.5" aria-hidden>
-                <div className="h-1 overflow-hidden rounded-full bg-field">
-                  <div
-                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line-strong"}`}
-                    style={{ width: `${(r.a / max) * 100}%` }}
-                  />
-                </div>
-                <div className="h-1 overflow-hidden rounded-full bg-field">
-                  <div
-                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line-strong"}`}
-                    style={{ width: `${(r.b / max) * 100}%` }}
-                  />
-                </div>
+              <div className="relative mt-1.5 h-1.5 overflow-hidden rounded-full bg-field" aria-hidden>
+                {[
+                  { v: r.a, tone: "bg-ink", player: "a" as const },
+                  { v: r.b, tone: "bg-ink-3", player: "b" as const },
+                ]
+                  .sort((x, y) => y.v - x.v || (x.player === "a" ? -1 : 1))
+                  .map((bar) => (
+                    <div
+                      key={bar.player}
+                      className={`absolute inset-y-0 left-0 rounded-full ${bar.tone}`}
+                      style={{ width: `${(Math.max(bar.v, 0) / max) * 100}%` }}
+                    />
+                  ))}
               </div>
             </div>
           );
@@ -52,8 +52,8 @@ export default function ArtifactCompare({
       </div>
       <div className="flex items-center gap-1.5 py-2.5 text-[11px] text-ink-3">
         <span className="inline-block size-2 rounded-[2px] bg-ink" /> {aName}
-        <span className="ml-2 inline-block size-2 rounded-[2px] bg-line-strong" /> {bName}
-        <span className="ml-1">solid marks the leader</span>
+        <span className="ml-2 inline-block size-2 rounded-[2px] bg-ink-3" /> {bName}
+        <span className="ml-1">bars share one baseline — the protruding tip is the gap</span>
       </div>
     </div>
   );
