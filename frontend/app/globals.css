@@ -163,7 +163,6 @@ html {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 }
 
@@ -350,7 +349,7 @@ select:focus-visible,
   background: currentColor;
   transform: scaleX(0);
   transform-origin: left center;
-  transition: transform 280ms var(--ease-link);
+  transition: none;
 }
 
 a:hover .animated-underline::after,
@@ -545,7 +544,7 @@ a:focus-visible .animated-underline::after {
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
-  transition: background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong), transform 140ms var(--ease-out-strong), box-shadow 140ms var(--ease-out-strong);
+  transition: background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong), box-shadow 140ms var(--ease-out-strong);
 }
 
 .records-select-button {
@@ -747,7 +746,7 @@ a:focus-visible .animated-underline::after {
   content: "";
   opacity: 0;
   transform: scaleY(0.65);
-  transition: opacity 120ms ease-out, transform 150ms var(--ease-out-strong);
+  transition: opacity 120ms ease-out;
 }
 
 .records-resize-handle:hover::after,
@@ -796,7 +795,7 @@ a:focus-visible .animated-underline::after {
   flex-shrink: 0;
   margin-left: auto;
   opacity: 0;
-  transition: opacity 120ms ease-out, transform 160ms var(--ease-out-strong);
+  transition: opacity 120ms ease-out;
 }
 
 .records-header-button:hover .records-sort,
@@ -857,7 +856,7 @@ a:focus-visible .animated-underline::after {
   border-radius: 6px;
   color: oklch(0.446 0.018 251.343);
   background: oklch(1 0 0);
-  transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out, transform 140ms var(--ease-out-strong);
+  transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out;
 }
 
 .records-checkbox:hover .records-checkbox-box {
@@ -1212,7 +1211,7 @@ th.is-colsel .records-header-icon {
   font-size: 14px;
   font-weight: 500;
   line-height: 1;
-  transition: color 120ms ease-out, transform 140ms var(--ease-out-strong);
+  transition: color 120ms ease-out;
 }
 
 .records-add-calculation:hover {
@@ -1503,12 +1502,57 @@ th.is-colsel .records-header-icon {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+
+@media (prefers-reduced-motion: no-preference) {
+  .records-resize-handle::after {
+    transition: opacity 120ms ease-out, transform 150ms var(--ease-out-strong);
   }
+
+  .records-sort {
+    transition: opacity 120ms ease-out, transform 160ms var(--ease-out-strong);
+  }
+
+  .records-primary-button {
+    transition: background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong), transform 140ms var(--ease-out-strong), box-shadow 140ms var(--ease-out-strong);
+  }
+
+  .records-checkbox-box {
+    transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out, transform 140ms var(--ease-out-strong);
+  }
+
+  .records-add-calculation {
+    transition: color 120ms ease-out, transform 140ms var(--ease-out-strong);
+  }
+
+  .animated-underline::after {
+    transition: transform 280ms var(--ease-link);
+  }
+}
+
+.dime-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+  color: var(--ink);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.dime-toast[data-type="error"] {
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line-strong));
+}
+
+.dime-toast-title {
+  font-weight: 500;
+}
+
+.dime-toast-description {
+  color: var(--ink-2);
 }

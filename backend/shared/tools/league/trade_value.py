@@ -221,7 +221,24 @@ def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
     ]
 
 
+def _tpe_creation_block(outgoing: int, incoming: int, pay_before: int,
+                        pay_after: int, over_apron1: bool) -> dict[str, Any] | None:
+    if not (outgoing > incoming and pay_before > CAP["cap"]
+            and pay_after > CAP["cap"] and not over_apron1):
+        return None
+    amount = outgoing - incoming
+    return {
+        "amount": amount,
+        "expiry": "one year from the trade execution date",
+        "condition": ("would generate only if this construction is executed as a "
+                      "non-simultaneous trade — a simultaneous execution forfeits the exception"),
+        "copy": (f"If executed as a non-simultaneous trade, this construction would generate "
+                 f"a ${amount / 1_000_000:.1f}M trade exception expiring one year from the "
+                 f"execution date. Executed simultaneously, it generates nothing."),
+    }
+
 @tool(description='Trade legality check. Player names comma separated per side.\n\n2023 CBA matching for 2026-27 below the first apron: 200 percent plus\n250k when outgoing is up to 8.846M, outgoing plus 9.096M up to 35.384M,\n125 percent plus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Expanded matching use hard-caps at the\nfirst apron; cap-room absorption does not. Cash and exceptions stay out.')
+
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
     season: str | None = None,
@@ -309,13 +326,19 @@ def get_trade_check(
                                  names_b, out_a, allow_a, out_b, allow_b)
     issues.extend(hard_cap_a["issues"])
     issues.extend(hard_cap_b["issues"])
+    rows_a = _trade_side_rows(
+        team_a, side_a, pay_a, state_a, allow_a, rule_a,
+        need_a, hard_cap_a["hard_cap"], election_a)
+    rows_b = _trade_side_rows(
+        team_b, side_b, pay_b, state_b, allow_b, rule_b,
+        need_b, hard_cap_b["hard_cap"], election_b)
+    rows_a["tpe_creation"] = _tpe_creation_block(
+        out_a, out_b, pay_a, pay_after_a, bool(state_a["over_apron1"]))
+    rows_b["tpe_creation"] = _tpe_creation_block(
+        out_b, out_a, pay_b, pay_after_b, bool(state_b["over_apron1"]))
     return {"tool": "get_trade_check", "ok": True,
-            "rows": {"team_a": _trade_side_rows(
-                         team_a, side_a, pay_a, state_a, allow_a, rule_a,
-                         need_a, hard_cap_a["hard_cap"], election_a),
-                     "team_b": _trade_side_rows(
-                         team_b, side_b, pay_b, state_b, allow_b, rule_b,
-                         need_b, hard_cap_b["hard_cap"], election_b),
+            "rows": {"team_a": rows_a,
+                     "team_b": rows_b,
                      "legal": not issues, "issues": issues,
                      "checks": _trade_check_checks(team_a, rule_a, team_b,
                                                    rule_b),

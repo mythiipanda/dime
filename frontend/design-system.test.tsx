@@ -239,3 +239,17 @@ test("entrances keep opacity fades under reduced motion and layer movement behin
   const base = globals.match(/\.artifact-enter \{\n\s+animation: artifact-fade/);
   assert.ok(base, "the base artifact entrance is the opacity-only fade");
 });
+
+test("reduced motion keeps opacity fades while movement transitions are opt-in gated", () => {
+  const globals = readFileSync(new URL("./app/globals.css", import.meta.url), "utf8");
+  const reduceBlocks = [...globals.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map(m => m[1]);
+  const blanket = reduceBlocks.find(b => b.includes("animation-duration"));
+  assert.ok(blanket, "a reduced-motion animation override exists");
+  assert.ok(!blanket!.includes("transition-duration"), "the blanket override must not kill opacity/color transitions");
+  const noPreference = [...globals.matchAll(/@media \(prefers-reduced-motion: no-preference\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join("\n");
+  for (const sel of [".records-resize-handle::after", ".records-sort", ".records-primary-button", ".records-checkbox-box", ".records-add-calculation", ".animated-underline::after"]) {
+    assert.ok(noPreference.includes(sel), `${sel} transform transition is gated behind no-preference`);
+  }
+  const sortBase = globals.match(/\.records-sort \{(?!.*transform)[\s\S]*?transition: opacity 120ms ease-out;/);
+  assert.ok(sortBase, "the base rule keeps the opacity fade without the transform");
+});

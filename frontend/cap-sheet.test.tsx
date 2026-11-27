@@ -266,3 +266,26 @@ test("roster rows without player_ids render distinctly — no key collapse for u
   }
 });
 
+
+test("draft sync failure surfaces a sonner toast instead of dying silently", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    const { default: DimeToaster } = await import("./components/dime/DimeToaster");
+    const toasterHost = mounted.host.ownerDocument.createElement("div");
+    mounted.host.ownerDocument.body.appendChild(toasterHost);
+    const toasterRoot = createRoot(toasterHost);
+    await act(async () => toasterRoot.render(<DimeToaster />));
+    forceObjectError.value = true;
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    });
+    const toastText = mounted.host.ownerDocument.body.textContent ?? "";
+    assert.match(toastText, /aren't saving/i, "the sync failure surfaces as a toast");
+    assert.match(toastText, /retries as you keep editing/i, "the toast states the honest recovery behavior");
+    await act(async () => toasterRoot.unmount());
+  } finally {
+    forceObjectError.value = false;
+    await mounted.cleanup();
+  }
+});

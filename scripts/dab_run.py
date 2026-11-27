@@ -42,6 +42,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--judge-model", default="gemini-3-flash-preview")
     parser.add_argument("--judge-base-url", default="https://generativelanguage.googleapis.com/v1beta/openai/")
     parser.add_argument("--split", default="dev")
+    parser.add_argument("--data-dir", default=None, help="Override the benchmark task data directory (e.g. the artifact-lane scratch dir)")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--tasks", default=None, help="Comma-separated dev task IDs for a spot check")
     parser.add_argument("--workers", type=int, default=1, help="Run DAB adapter tasks concurrently")
@@ -251,6 +252,8 @@ def eval_command(args: argparse.Namespace) -> list[str]:
         "--base-url", f"http://127.0.0.1:{args.port}",
         "--split", args.split,
     ]
+    if args.data_dir:
+        cmd.extend(["--data-dir", args.data_dir])
     if args.limit is not None:
         cmd.extend(["--limit", str(args.limit)])
     if args.tasks:
