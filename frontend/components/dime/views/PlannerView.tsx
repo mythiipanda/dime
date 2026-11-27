@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { loadCapDraft } from "@/lib/cap-draft";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { loadCapDraft, syncCapDraft } from "@/lib/cap-draft";
 import { fetchProjection, formatMoney, type ProjectionResponse, type ProjectionSeason } from "@/lib/planner";
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
 
@@ -12,6 +12,7 @@ const TEAMS = [
 ];
 
 const BASE_SEASON = "2026-27";
+const EXCEPTIONS = ["cap_room", "mle", "bae", "minimum", "bird"] as const;
 
 function cellTone(value: number, cap: number): string {
   if (value > cap) return "text-red";
@@ -47,12 +48,40 @@ function SeasonSummary({ block }: { block: ProjectionSeason }) {
   );
 }
 
+function moveLabel(move: ScenarioMove): string {
+  if (move.label) return move.label;
+  if (move.kind === "waive") return `Waive ${move.player ?? ""}${move.stretch ? " (stretch)" : ""}`.trim();
+  if (move.kind === "option_decision") return `${move.exercise ? "Exercise" : "Decline"} option — ${move.player ?? ""}`;
+  if (move.kind === "extend") return `Extend ${move.player ?? ""} — ${move.years ?? 1}yr`;
+  if (move.kind === "signing") return `Sign ${move.player ?? move.label ?? "free agent"}`;
+  if (move.kind === "trade_out") return `Trade out ${move.player ?? ""}`;
+  if (move.kind === "trade_in") return `Trade in ${move.player ?? ""}`;
+  return move.kind;
+}
+
+const actionButton = "rounded px-1.5 py-0.5 text-[10.5px] font-medium text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink";
+
 export default function PlannerView() {
   const [team, setTeam] = useState("BOS");
   const [moves, setMoves] = useState<ScenarioMove[]>([]);
   const [projection, setProjection] = useState<ProjectionResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [hydratedTeam, setHydratedTeam] = useState<string | null>(null);
+  const [signName, setSignName] = useState("");
+  const [signAmount, setSignAmount] = useState("");
+  const [signYears, setSignYears] = useState("1");
+  const [signException, setSignException] = useState<string>("cap_room");
+  const [extendTarget, setExtendTarget] = useState<string | null>(null);
+  const [extendAmount, setExtendAmount] = useState("");
+  const [extendYears, setExtendYears] = useState("1");
+
+  const project = useCallback(async (teamCode: string, scenarioMoves: ScenarioMove[]) => {
+    const result = await fetchProjection(teamCode, BASE_SEASON, scenarioMoves);
+    setProjection(result);
+    setFailed(result === null);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,15 +90,27 @@ export default function PlannerView() {
     void (async () => {
       const draft = await loadCapDraft(team, BASE_SEASON).catch(() => null);
       const scenarioMoves = draft ?? [];
-      const result = await fetchProjection(team, BASE_SEASON, scenarioMoves);
       if (cancelled) return;
       setMoves(scenarioMoves);
-      setProjection(result);
-      setFailed(result === null);
-      setLoading(false);
+      setHydratedTeam(team);
+      await project(team, scenarioMoves);
     })();
     return () => { cancelled = true; };
-  }, [team]);
+  }, [team, project]);
+
+  const applyMoves = useCallback((next: ScenarioMove[]) => {
+    setMoves(next);
+    void syncCapDraft(team, BASE_SEASON, next).catch(() => {});
+    void project(team, next);
+  }, [team, project]);
+
+  const addMove = useCallback((move: ScenarioMove) => {
+    applyMoves([...moves, move]);
+  }, [moves, applyMoves]);
+
+  const removeMove = useCallback((index: number) => {
+    applyMoves(moves.filter((_, i) => i !== index));
+  }, [moves, applyMoves]);
 
   const grid = useMemo(() => {
     if (!projection) return null;
@@ -87,6 +128,35 @@ export default function PlannerView() {
     }));
     return { seasons, rows };
   }, [projection]);
+
+  const editing = hydratedTeam === team;
+
+  const submitSigning = () => {
+    const amount = Number(signAmount) * 1_000_000;
+    if (!signName.trim() || !Number.isFinite(amount) || amount <= 0) return;
+    const years = Math.max(1, Math.min(4, Number(signYears) || 1));
+    addMove({
+      kind: "signing",
+      label: signName.trim(),
+      amount,
+      years,
+      exception: signException as ScenarioMove["exception"],
+    });
+    setSignName("");
+    setSignAmount("");
+    setSignYears("1");
+  };
+
+  const submitExtension = () => {
+    if (!extendTarget) return;
+    const amount = Number(extendAmount) * 1_000_000;
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const years = Math.max(1, Math.min(4, Number(extendYears) || 1));
+    addMove({ kind: "extend", player: extendTarget, first_year_amount: amount, years });
+    setExtendTarget(null);
+    setExtendAmount("");
+    setExtendYears("1");
+  };
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
@@ -122,12 +192,7 @@ export default function PlannerView() {
         <>
           {moves.length === 0 && (
             <p className="mt-6 rounded-[10px] bg-surface px-4 py-2.5 text-[12.5px] text-ink-2 shadow-hairline">
-              Baseline projection — no scenario moves yet. Build moves in the cap sheet&apos;s scenario panel and they project here.
-            </p>
-          )}
-          {moves.length > 0 && (
-            <p className="mt-6 rounded-[10px] bg-surface px-4 py-2.5 text-[12.5px] text-ink-2 shadow-hairline">
-              Projecting the working scenario · {moves.length} move{moves.length === 1 ? "" : "s"}
+              Baseline projection — no scenario moves yet. Add moves here or in the cap sheet; they write through to the shared draft.
             </p>
           )}
 
@@ -151,11 +216,12 @@ export default function PlannerView() {
                   {grid.seasons.map(block => (
                     <th key={block.season} className="px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-ink-3">{block.season}</th>
                   ))}
+                  {editing && <th className="px-3 py-2.5 text-right text-[11px] font-medium uppercase tracking-wide text-ink-3">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {grid.rows.map(row => (
-                  <tr key={row.player} className="border-b border-line/60 last:border-0">
+                  <tr key={row.player} className="group border-b border-line/60 last:border-0">
                     <td className="px-4 py-2 font-medium text-ink">{row.player}</td>
                     {row.cells.map((cell, i) => (
                       <td key={i} className={`px-3 py-2 text-right tabular-nums ${cell ? cellTone(cell.salary, grid.seasons[i].lines.cap) : "text-ink-3"}`}>
@@ -163,10 +229,24 @@ export default function PlannerView() {
                         {cell?.option && <span className="ml-1 text-[10px] text-ink-3">{cell.option === "team" ? "TO" : "PO"}</span>}
                       </td>
                     ))}
+                    {editing && (
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        <button type="button" className={actionButton} onClick={() => addMove({ kind: "waive", player: row.player })}>waive</button>
+                        <button type="button" className={actionButton} onClick={() => addMove({ kind: "waive", player: row.player, stretch: true })}>stretch</button>
+                        {row.cells[0]?.option && (
+                          <button type="button" className={actionButton} onClick={() => addMove({ kind: "option_decision", player: row.player, exercise: false })}>decline opt</button>
+                        )}
+                        <button
+                          type="button"
+                          className={actionButton}
+                          onClick={() => { setExtendTarget(extendTarget === row.player ? null : row.player); setExtendAmount(""); setExtendYears("1"); }}
+                        >extend</button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {grid.rows.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-6 text-center text-ink-3">No contract data in the warehouse for {team} — the grid is honestly empty rather than zero-filled.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-6 text-center text-ink-3">No contract data in the warehouse for {team} — the grid is honestly empty rather than zero-filled.</td></tr>
                 )}
               </tbody>
               <tfoot>
@@ -175,10 +255,103 @@ export default function PlannerView() {
                   {projection.seasons.map(block => (
                     <td key={block.season} className="px-3 py-2 text-right font-semibold tabular-nums text-ink">{formatMoney(block.pay_after)}</td>
                   ))}
+                  {editing && <td />}
                 </tr>
               </tfoot>
             </table>
           </div>
+
+          {extendTarget && (
+            <div className="mt-4 flex flex-wrap items-end gap-2 rounded-[10px] bg-surface p-4 shadow-hairline">
+              <p className="w-full text-[12.5px] font-medium text-ink">Extend {extendTarget}</p>
+              <label className="text-[11px] text-ink-3">
+                First-year salary ($M)
+                <input
+                  value={extendAmount}
+                  onChange={event => setExtendAmount(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="30"
+                  className="mt-1 block w-24 rounded-[6px] border border-line bg-surface px-2 py-1 text-[12.5px] text-ink"
+                />
+              </label>
+              <label className="text-[11px] text-ink-3">
+                Years
+                <input
+                  value={extendYears}
+                  onChange={event => setExtendYears(event.target.value)}
+                  inputMode="numeric"
+                  className="mt-1 block w-14 rounded-[6px] border border-line bg-surface px-2 py-1 text-[12.5px] text-ink"
+                />
+              </label>
+              <button type="button" onClick={submitExtension} className="rounded-[6px] bg-[var(--accent)] px-3 py-1.5 text-[12px] font-medium text-white">Add extension</button>
+              <button type="button" onClick={() => setExtendTarget(null)} className="rounded-[6px] px-3 py-1.5 text-[12px] font-medium text-ink-3 hover:text-ink">Cancel</button>
+              <p className="w-full text-[11px] leading-[1.5] text-ink-3">Flat structure, starts the season after the contract&apos;s last year — labeled unvalidated against exact CBA extension rules.</p>
+            </div>
+          )}
+
+          {editing && (
+            <div className="mt-4 rounded-[10px] bg-surface p-4 shadow-hairline">
+              <h2 className="text-[13px] font-semibold text-ink">Sign a free agent</h2>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <label className="text-[11px] text-ink-3">
+                  Player
+                  <input
+                    value={signName}
+                    onChange={event => setSignName(event.target.value)}
+                    placeholder="Free agent name"
+                    className="mt-1 block w-44 rounded-[6px] border border-line bg-surface px-2 py-1 text-[12.5px] text-ink"
+                  />
+                </label>
+                <label className="text-[11px] text-ink-3">
+                  Salary ($M/yr)
+                  <input
+                    value={signAmount}
+                    onChange={event => setSignAmount(event.target.value)}
+                    inputMode="decimal"
+                    placeholder="12"
+                    className="mt-1 block w-24 rounded-[6px] border border-line bg-surface px-2 py-1 text-[12.5px] text-ink"
+                  />
+                </label>
+                <label className="text-[11px] text-ink-3">
+                  Years
+                  <input
+                    value={signYears}
+                    onChange={event => setSignYears(event.target.value)}
+                    inputMode="numeric"
+                    className="mt-1 block w-14 rounded-[6px] border border-line bg-surface px-2 py-1 text-[12.5px] text-ink"
+                  />
+                </label>
+                <label className="text-[11px] text-ink-3">
+                  Exception
+                  <select
+                    value={signException}
+                    onChange={event => setSignException(event.target.value)}
+                    className="mt-1 block rounded-[6px] border border-line bg-surface px-2 py-1 text-[12.5px] text-ink"
+                  >
+                    {EXCEPTIONS.map(ex => <option key={ex} value={ex}>{ex.replace("_", " ").toUpperCase()}</option>)}
+                  </select>
+                </label>
+                <button type="button" onClick={submitSigning} className="rounded-[6px] bg-[var(--accent)] px-3 py-1.5 text-[12px] font-medium text-white">Add signing</button>
+              </div>
+            </div>
+          )}
+
+          {moves.length > 0 && (
+            <div className="mt-4 rounded-[10px] bg-surface p-4 shadow-hairline">
+              <h2 className="text-[13px] font-semibold text-ink">Scenario moves · {moves.length}</h2>
+              <ul className="mt-2 space-y-1">
+                {moves.map((move, i) => (
+                  <li key={i} className="flex items-center justify-between gap-3 text-[12.5px]">
+                    <span className="text-ink-2"><span className="mr-2 font-mono text-[10.5px] text-ink-3">{i + 1}</span>{moveLabel(move)}</span>
+                    {editing && (
+                      <button type="button" onClick={() => removeMove(i)} className="rounded px-1.5 py-0.5 text-[11px] text-ink-3 hover:bg-surface-2 hover:text-red">remove</button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11px] leading-[1.5] text-ink-3">Order matters — a signing that fits after a trade may be flagged before it. Moves write through to the shared cap-sheet draft.</p>
+            </div>
+          )}
 
           {projection.seasons.some(block => block.effects.length > 0) && (
             <div className="mt-6 rounded-[10px] bg-surface p-4 shadow-hairline">
