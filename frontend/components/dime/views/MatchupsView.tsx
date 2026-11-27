@@ -87,18 +87,21 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
                   <span className="text-ink-3"> · </span>
                   <span className={!aLead ? "font-semibold text-ink" : "text-ink-3"}>{r.fmt(r.home)}</span>
                   <span className="ml-1 text-[10px] uppercase text-ink-3">{bName}</span>
+                  {Math.abs(r.away - r.home) > 0 && (
+                    <span className="ml-1.5 text-[10px] font-medium text-accent">Δ {r.fmt(Math.abs(r.away - r.home))}</span>
+                  )}
                 </span>
               </div>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5" aria-hidden>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line-strong"}`}
+                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.away) / max) * 100)}%` }}
                   />
                 </div>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line-strong"}`}
+                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.home) / max) * 100)}%` }}
                   />
                 </div>
@@ -106,11 +109,6 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
             </div>
           );
         })}
-      </div>
-      <div className="flex items-center gap-1.5 py-2.5 text-[11px] text-ink-3">
-        <span className="inline-block size-2 rounded-[2px] bg-ink" /> {aName}
-        <span className="ml-2 inline-block size-2 rounded-[2px] bg-line-strong" /> {bName}
-        <span className="ml-1">solid marks the leader</span>
       </div>
     </div>
   );
