@@ -19,7 +19,7 @@ def last_completed_season() -> str | None:
     global _LAST_SEASON_KEY, _LAST_SEASON_VALUE
     try:
         stat = store.DB_PATH.stat()
-        key = (stat.st_mtime_ns, stat.st_size)
+        key = (str(store.DB_PATH.resolve()), stat.st_mtime_ns, stat.st_size)
     except OSError:
         return None
     if _LAST_SEASON_KEY == key:
@@ -49,7 +49,7 @@ def warehouse_max_season() -> str | None:
     global _DATA_SEASON_KEY, _DATA_SEASON_VALUE
     try:
         stat = store.DB_PATH.stat()
-        key = (stat.st_mtime_ns, stat.st_size)
+        key = (str(store.DB_PATH.resolve()), stat.st_mtime_ns, stat.st_size)
     except OSError:
         return None
     if _DATA_SEASON_KEY == key:
@@ -107,16 +107,10 @@ def resolve_season(season: object | None = None,
         slug = _canonical_parts(text) or _bare_year_slug(text)
         return slug if slug is not None else text
     if table:
-        try:
-            from shared.coverage import parse_season_start
-            from shared.coverage import table_seasons
-            covered = sorted(
-                found for found in table_seasons(table)
-                if parse_season_start(found) is not None)
-            if covered:
-                return covered[-1]
-        except Exception:
-            pass
+        from shared.coverage import table_max_season
+        covered = table_max_season(table)
+        if covered is not None:
+            return covered
     return last_completed_season()
 
 def coverage_end() -> str:
@@ -166,11 +160,15 @@ def _bare_year_slug(text: str) -> str | None:
     return None
 
 def clamp_season(season: object, coverage_start: str = COVERAGE_START,
-                 coverage_end: str | None = None) -> str:
+                 coverage_end: str | None = None,
+                 table: str | None = None) -> str:
     if coverage_end is None:
         coverage_end = warehouse_max_season() or last_completed_season() or coverage_start
+        from shared.coverage import extend_coverage_end
+        coverage_end = extend_coverage_end(coverage_end, table)
     if season is None:
-        derived = last_completed_season()
+        from shared.coverage import table_max_season
+        derived = table_max_season(table) or last_completed_season()
         if derived is None:
             raise InvalidSeasonError(
                 season, coverage_start=coverage_start,

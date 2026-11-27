@@ -471,6 +471,20 @@ def table_seasons(table: str) -> frozenset[str]:
             _season_caches[key] = (fresh, seasons)
     return seasons
 
+def table_max_season(table: str | None) -> str | None:
+    if not table:
+        return None
+    covered = sorted(
+        found for found in table_seasons(table)
+        if parse_season_start(found) is not None)
+    return covered[-1] if covered else None
+
+def extend_coverage_end(end: str, table: str | None = None) -> str:
+    table_end = table_max_season(table)
+    if table_end is not None and table_end > end:
+        return table_end
+    return end
+
 def _read_league_seasons(
     path: Path, table: str, team_column: str, league_size: int,
 ) -> tuple[str, ...]:

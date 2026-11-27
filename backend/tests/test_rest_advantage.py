@@ -76,6 +76,58 @@ def _hermetic(monkeypatch, rows):
     monkeypatch.setattr(
         rest_mod, "_resolve_team",
         lambda raw: str(raw or "").strip().upper() or None)
+    monkeypatch.setattr(
+        rest_mod, "clamp_season", lambda season, **kwargs: season)
+
+def _clear_coverage_state():
+    from shared import coverage, store
+    from shared.tools._core import last_completed_season_cache_clear
+
+    store.warehouse_pool_clear()
+    store.warehouse_tables_cache_clear()
+    store.warehouse_identity_cache_clear()
+    coverage.coverage_cache_clear()
+    last_completed_season_cache_clear()
+
+@pytest.fixture()
+def scoreboard_coverage_warehouse(monkeypatch, tmp_path):
+    warehouse = tmp_path / "scoreboard-coverage.duckdb"
+    con = duckdb.connect(str(warehouse))
+    try:
+        con.execute(
+            "CREATE TABLE silver_hist_gamelogs "
+            "(GAME_ID VARCHAR, _season VARCHAR)")
+        con.execute(
+            "INSERT INTO silver_hist_gamelogs VALUES ('0022500001', '2025-26')")
+        con.execute(
+            "CREATE TABLE silver_scoreboard "
+            "(GAME_DATE_EST VARCHAR, GAME_ID VARCHAR, "
+            "HOME_TEAM_ABBREVIATION VARCHAR, VISITOR_TEAM_ABBREVIATION VARCHAR, "
+            "HOME_TEAM_PTS INTEGER, VISITOR_TEAM_PTS INTEGER, _season VARCHAR)")
+        con.executemany(
+            "INSERT INTO silver_scoreboard VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("2026-01-01", "0022500001", "LAL", "BOS", 110, 100, "2025-26"),
+                ("2026-01-02", "0022500002", "NYK", "LAL", 105, 100, "2025-26"),
+                ("2026-01-05", "0022500003", "LAL", "BOS", 120, 115, "2025-26"),
+                ("2026-10-20", "0022600001", "LAL", "BOS", 111, 101, "2026-27"),
+                ("2026-10-21", "0022600002", "NYK", "LAL", 106, 100, "2026-27"),
+                ("2026-10-24", "0022600003", "LAL", "BOS", 121, 116, "2026-27"),
+            ])
+        con.execute("CHECKPOINT")
+    finally:
+        con.close()
+
+    from shared import store
+    from shared.tools import _core as core_mod
+
+    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    monkeypatch.setattr(core_mod, "calendar_last_completed_season",
+                        lambda today=None: "2025-26")
+    _clear_coverage_state()
+    yield warehouse
+    _clear_coverage_state()
 
 def test_back_to_back_detection():
     aaa = _aaa_schedule()
@@ -247,24 +299,62 @@ def test_opponent_no_matchup_errors(monkeypatch):
     assert res["ok"] is False
     assert "no completed games between" in res["error"]
 
-def test_unknown_team_rejected():
+def test_default_season_uses_in_progress_scoreboard_rows(
+        scoreboard_coverage_warehouse):
+    from shared.tools._core import clamp_season, resolve_season
+
+    resolved = resolve_season(None, "silver_scoreboard")
+    assert resolved == "2026-27"
+    assert clamp_season(resolved, table="silver_scoreboard") == resolved
+
+    res = get_rest_advantage.invoke({"team": "LAL"})
+    assert res["ok"] is True
+    assert res["meta"]["season"] == "2026-27"
+    assert res["rows"]["summary"]["games"] == 3
+
+def test_table_aware_clamp_preserves_coverage_validation(
+        scoreboard_coverage_warehouse):
+    from shared.tools._core import InvalidSeasonError, clamp_season
+
+    assert clamp_season("2025-26", table="silver_scoreboard") == "2025-26"
+    assert clamp_season("2026-27", table="silver_scoreboard") == "2026-27"
+    with pytest.raises(InvalidSeasonError):
+        clamp_season("2026-27")
+    with pytest.raises(InvalidSeasonError):
+        clamp_season("2026-27", table="silver_hist_gamelogs")
+    with pytest.raises(InvalidSeasonError):
+        clamp_season("2027-28", table="silver_scoreboard")
+
+def test_explicit_completed_season_behavior_unchanged(
+        scoreboard_coverage_warehouse):
+    res = get_rest_advantage.invoke({"team": "LAL", "season": "2025-26"})
+    assert res["ok"] is True
+    assert res["meta"]["season"] == "2025-26"
+    assert res["rows"]["summary"]["games"] == 3
+    assert res["rows"]["games"][-1]["date"] == "2026-01-05"
+
+def test_beyond_coverage_season_still_errors(scoreboard_coverage_warehouse):
+    from shared.tools._core import InvalidSeasonError
+
+    with pytest.raises(InvalidSeasonError):
+        get_rest_advantage.invoke({"team": "LAL", "season": "2027-28"})
+
+def test_unknown_team_rejected(scoreboard_coverage_warehouse):
     res = get_rest_advantage.invoke({"team": "Not A Team"})
     assert res["ok"] is False
     assert res["tool"] == "get_rest_advantage"
     assert "unknown team" in res["error"]
 
-def test_bad_season_type_rejected():
+def test_bad_season_type_rejected(scoreboard_coverage_warehouse):
     res = get_rest_advantage.invoke({"season_type": "preseason"})
     assert res["ok"] is False
     assert res["tool"] == "get_rest_advantage"
     assert "season_type" in res["error"]
 
-def test_team_name_resolution():
+def test_team_name_resolution(scoreboard_coverage_warehouse):
     abbr = get_rest_advantage.invoke({"team": "LAL", "season": "2025-26"})
     full = get_rest_advantage.invoke({"team": "Los Angeles Lakers",
                                       "season": "2025-26"})
-    if not abbr["ok"] and "silver_scoreboard missing" in abbr.get("error", ""):
-        pytest.skip("release pack does not admit silver_scoreboard")
     assert abbr["ok"] is True
     assert full["ok"] is True
     assert full["rows"]["team"] == "LAL"
@@ -272,6 +362,10 @@ def test_team_name_resolution():
             == abbr["rows"]["summary"])
 
 def test_integration_regular_season_invariants_real_warehouse():
+    from shared import store
+
+    if not store.DB_PATH.exists():
+        pytest.skip("warehouse absent")
     league = get_rest_advantage.invoke({"team": "league", "season": "2025-26",
                                         "season_type": "regular"})
     if not league["ok"] and "silver_scoreboard missing" in league.get("error", ""):
