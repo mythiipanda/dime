@@ -111,7 +111,8 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     const id = liveId.current;
     const startedAt = Date.now();
     liveQuestion.current = q;
-    appendMessage(tabId, { role: "user", text: context ? serializeViewContext(context, q) : q });
+    const turnText = context ? serializeViewContext(context, q) : q;
+    appendMessage(tabId, { role: "user", text: turnText });
     setDraft("");
     setLive({
       id,
@@ -135,7 +136,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
           setLive((cur) => (cur && cur.id === id ? null : cur));
           appendMessage(tabId, assistantMessageFromSnapshot(snap, ""));
           if (thread && !options?.replay) {
-            cacheChatRun(thread, q, snap);
+            cacheChatRun(thread, turnText, snap);
             options?.onRunDone?.(q);
           }
         },
@@ -143,7 +144,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
           if (liveId.current !== id) return;
           setLive((cur) => (cur && cur.id === id ? null : cur));
           appendMessage(tabId, assistantMessageFromSnapshot(snap, message));
-          if (thread && !options?.replay) { cacheChatRun(thread, q, snap); options?.onRunDone?.(q); }
+          if (thread && !options?.replay) { cacheChatRun(thread, turnText, snap); options?.onRunDone?.(q); }
         },
       },
       { signal: ctrl.signal, model, thread, replay: options?.replay, ...(context ? { context } : {}) },
