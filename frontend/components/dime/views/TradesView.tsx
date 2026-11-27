@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { initialTeamParam, NBA_TEAM_ABBRS } from "@/lib/open-in-view";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 import type { DimeArtifact } from "@/lib/dime-stream";
@@ -95,8 +96,19 @@ type ScenarioSnapshot = {
   verdict: boolean | null;
 };
 
+function seedPartner(seeded: string): string {
+  for (const candidate of ["DAL", "NYK"]) {
+    if (candidate !== seeded) return candidate;
+  }
+  return NBA_TEAM_ABBRS.find(abbr => abbr !== seeded) ?? "DAL";
+}
+
 export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }) {
-  const [teams, setTeams] = useState<string[]>(["DAL", "NYK"]);
+  const [teams, setTeams] = useState<string[]>(() => {
+    const seeded = initialTeamParam();
+    if (!seeded) return ["DAL", "NYK"];
+    return [seeded, seedPartner(seeded)];
+  });
   const [pkgs, setPkgs] = useState<Package[]>([emptyPackage(), emptyPackage()]);
   const [assets, setAssets] = useState<Record<string, Assets>>({});
   const [check, setCheck] = useState<CheckState>({ state: "idle" });

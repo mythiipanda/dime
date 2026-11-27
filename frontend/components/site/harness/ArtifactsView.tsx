@@ -10,6 +10,7 @@ import ArtifactTable from "@/components/dime/ArtifactTable";
 import ArtifactMemo from "@/components/dime/ArtifactMemo";
 import ArtifactPlayerCard from "@/components/dime/ArtifactPlayerCard";
 import ArtifactTeamCard from "@/components/dime/ArtifactTeamCard";
+import OpenInViewButton from "@/components/dime/OpenInViewButton";
 import PinButton from "@/components/dime/PinButton";
 import {
   memoToMarkdown,
@@ -236,7 +237,7 @@ export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
           title={artifact.title}
           source={artifact.source}
           copyText={artifactToCopyText(artifact)}
-          actions={<PinButton artifact={artifact} />}
+          actions={<><OpenInViewButton artifact={artifact} /><PinButton artifact={artifact} /></>}
         >
           <ArtifactBody artifact={artifact} />
           <ProvenancePanel provenance={artifact.provenance ?? undeclaredProvenance()} />
