@@ -255,7 +255,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
         <div className="mt-4 flex flex-col gap-3 lg:flex-row">
           <div className="min-w-0 flex-1 rounded-[10px] bg-surface shadow-hairline">
             <div className="flex items-center justify-between px-4 pt-3">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-3">
+              <span className="text-[13px] font-semibold text-ink">
                 {sheet.team} · committed money by season
               </span>
               <label className="flex items-center gap-1.5 text-[11.5px] text-ink-2">
@@ -365,7 +365,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
 
           <aside className="w-full shrink-0 space-y-3 lg:w-[280px]">
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">scenario</h3>
+              <h3 className="text-[13px] font-semibold text-ink">Scenario</h3>
               {moves.length === 0 ? (
                 <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-3">
                   No moves yet. Toggle an option cell or add a signing below — the grid re-prices instantly.
@@ -456,7 +456,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
             </section>
 
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">apron state</h3>
+              <h3 className="text-[13px] font-semibold text-ink">Apron state</h3>
               {state ? (
                 <div className="mt-2 space-y-1 text-[12px]">
                   {([
@@ -478,7 +478,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
             </section>
 
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">restrictions</h3>
+              <h3 className="text-[13px] font-semibold text-ink">Restrictions</h3>
               {scenario?.restrictions?.length ? (
                 <div className="mt-2 space-y-2">
                   {scenario.restrictions.map((r, i) => (
