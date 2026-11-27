@@ -93,6 +93,54 @@ def test_trade_legality_stepien_consecutive_firsts(monkeypatch, tmp_path):
     assert any("Stepien" in i for i in out["issues"])
 
 
+def _balanced_pick_trade(monkeypatch, tmp_path, picks, declared_picks):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=picks)
+    return get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One",'
+                f'"picks":{declared_picks}}},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+
+
+def test_trade_legality_owned_pick_remains_valid(monkeypatch, tmp_path):
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, _all_firsts("BOS") + _all_firsts("MIA"),
+        '[{"year":2028,"round":1}]')
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    check = next(row for row in out["checks"]
+                 if row["rule"] == "pick ownership")
+    assert check["checked"] is True
+    assert "protections/swaps reconciliation not modeled" in check["note"]
+
+
+def test_trade_legality_rejects_pick_team_does_not_own(
+        monkeypatch, tmp_path):
+    bos_picks = [(y, 1, "BOS", "own", "BOS")
+                 for y in range(2027, 2034) if y != 2028]
+    bos_picks.append((2028, 1, "BOS", "traded", "MIA"))
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, bos_picks + _all_firsts("MIA"),
+        '[{"year":2028,"round":1}]')
+    assert out["ok"] is False
+    assert ("cannot declare a 2028 first-round pick it does not own"
+            in out["error"])
+
+
+def test_trade_legality_rejects_duplicate_pick_without_inventory(
+        monkeypatch, tmp_path):
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, None,
+        '[{"year":2028,"round":1},{"year":2028,"round":1}]')
+    assert out["ok"] is False
+    assert "more than once" in out["error"]
+
+
 def test_trade_legality_pick_beyond_seven_years(monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
     _seed(monkeypatch, tmp_path,

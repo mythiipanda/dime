@@ -291,6 +291,39 @@ def _pick_inventory(con, season_start: int) -> dict[str, set[int]] | None:
     return held
 
 
+def _outgoing_firsts(moves: list[dict[str, Any]]
+                     ) -> list[tuple[str, dict[str, Any]]]:
+    return [(canonical_team_abbr(move["from"]), pick)
+            for move in moves for pick in move["picks"]
+            if pick["round"] == 1]
+
+
+def _pick_duplicate_error(moves: list[dict[str, Any]]) -> str | None:
+    seen: set[tuple[str, int]] = set()
+    for team, pick in _outgoing_firsts(moves):
+        key = (team, pick["year"])
+        if key in seen:
+            return (f"{team} declares the {pick['year']} first-round pick "
+                    "more than once")
+        seen.add(key)
+    return None
+
+
+def _pick_ownership_error(moves: list[dict[str, Any]],
+                          pick_held: dict[str, set[int]] | None,
+                          season_start: int | None) -> str | None:
+    if pick_held is None or not season_start:
+        return None
+    for team, pick in _outgoing_firsts(moves):
+        year = pick["year"]
+        if not (season_start < year <= season_start + _STEPIEN_WINDOW):
+            continue
+        if year not in pick_held.get(team, set()):
+            return (f"{team} cannot declare a {year} first-round pick "
+                    "it does not own")
+    return None
+
+
 def _stepien_issues(team: str, owned: set[int], season_start: int) -> list[str]:
     issues: list[str] = []
     for y in range(season_start + 1, season_start + _STEPIEN_WINDOW):
@@ -678,6 +711,20 @@ def _owned_after_trade(team: str, moves: list[dict[str, Any]],
     return owned
 
 
+def _pick_inventory_check(pick_held: dict[str, set[int]] | None
+                          ) -> dict[str, Any]:
+    if pick_held is None:
+        return {"rule": "pick ownership", "checked": False,
+                "note": "duplicate declarations checked; silver_future_picks "
+                        "not seeded - ownership not verified; protections/"
+                        "swaps reconciliation not modeled"}
+    return {"rule": "pick ownership", "checked": True,
+            "note": "outgoing first-round ownership and duplicate "
+                    "declarations checked at year grain against "
+                    "silver_future_picks; protections/swaps reconciliation "
+                    "not modeled"}
+
+
 def _stepien_result(teams: list[str], moves: list[dict[str, Any]],
                     pick_held: dict[str, set[int]] | None,
                     season_start: int | None
@@ -699,11 +746,13 @@ def _stepien_result(teams: list[str], moves: list[dict[str, Any]],
 
 def _build_checks(team_rows: dict[str, Any],
                   snt_check: dict[str, Any] | None,
+                  pick_check: dict[str, Any],
                   stepien_check: dict[str, Any],
                   legacy_tpes: bool) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     if snt_check:
         checks.append(snt_check)
+    checks.append(pick_check)
     checks.append(stepien_check)
     checks.insert(0, {"rule": "salary matching",
                       "checked": True,
@@ -743,7 +792,10 @@ def _build_checks(team_rows: dict[str, Any],
     'ordinary current-season origin. '
     'TPE capacity is amount plus the '
     'CBA $250k cushion, reduced to $0 over the first apron; entries '
-    'older than the prior season are treated as expired. Checks 2023 '
+    'older than the prior season are treated as expired. Outgoing '
+    'first-round picks are duplicate-checked and validated at year grain '
+    'against silver_future_picks when seeded; protection/swap '
+    'reconciliation is not modeled. Checks 2023 '
     'CBA salary matching tiers, apron aggregation bans, post-trade '
     'hard caps, typed TPE restrictions, cash bans, the frozen '
     'second-apron pick, and Stepien consecutive-first rules. '
@@ -761,6 +813,9 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
     moves, err = _parse_moves(legs_value)
     if err:
         return _trade_error(err)
+    pick_error = _pick_duplicate_error(moves)
+    if pick_error:
+        return _trade_error(pick_error)
 
     cash_moves = _parse_cash(cash_value)
     tpe_rows, tpe_err = _parse_tpe(tpe_value)
@@ -775,6 +830,11 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
         state, load_error = _load_trade_state(con, moves, season, snt, tpe_rows)
         if load_error or state is None:
             return load_error or _trade_error("could not load trade state")
+
+    pick_error = _pick_ownership_error(
+        moves, state["pick_held"], state["season_start"])
+    if pick_error:
+        return _trade_error(pick_error)
 
     tpe_by_team = (_seasonize_tpes(tpe_rows, state["season_start"])
                    if tpe_rows else {})
@@ -796,7 +856,9 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
     stepien_issues, stepien_check = _stepien_result(
         state["teams"], moves, state["pick_held"], state["season_start"])
     issues.extend(stepien_issues)
-    checks = _build_checks(team_rows, snt_check, stepien_check, legacy_tpes)
+    pick_check = _pick_inventory_check(state["pick_held"])
+    checks = _build_checks(
+        team_rows, snt_check, pick_check, stepien_check, legacy_tpes)
 
     return {"tool": "get_trade_legality", "ok": True,
             "rows": [team_rows[team] for team in sorted(team_rows)],
@@ -809,8 +871,9 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                      "season": state["season"],
                      "disclaimer": "Estimate only. Covers matching, apron "
                      "aggregation, hard caps, typed TPE restrictions, cash "
-                     "bans, sign-and-trade minimums/BYC, Stepien and "
-                     "frozen-pick rules. Skips "
-                     "no-trade clauses, trade kickers, poison-pill and "
-                     "minimum-salary exceptions. Confirm with a cap "
+                     "bans, sign-and-trade minimums/BYC, year-grain pick "
+                     "ownership, Stepien and frozen-pick rules. Skips pick "
+                     "protection/swap reconciliation, no-trade clauses, "
+                     "trade kickers, poison-pill and minimum-salary "
+                     "exceptions. Confirm with a cap "
                      "specialist."}}
