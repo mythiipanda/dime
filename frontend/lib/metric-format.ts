@@ -1,3 +1,7 @@
+export function unitEmbeddedInline(unit: string | undefined): boolean {
+  return unit === "usd_dollars" || Boolean(unit && unit.startsWith("$"));
+}
+
 export function formatHeadlineMetric(value: unknown, unit: string | undefined): string {
   if (value === null || value === undefined) return "—";
   const num = typeof value === "number" ? value : Number(value);
