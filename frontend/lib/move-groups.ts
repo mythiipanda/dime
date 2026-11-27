@@ -63,3 +63,13 @@ export function pruneGroups(moves: ScenarioMove[], groups: MoveGroupsMap): MoveG
   if (!changed && Object.keys(next).length === Object.keys(groups).length) return groups;
   return next;
 }
+
+export function moveUnit(moves: ScenarioMove[], unitIndex: number, direction: -1 | 1): ScenarioMove[] {
+  const units = unitizeMoves(moves);
+  const target = unitIndex + direction;
+  if (unitIndex < 0 || unitIndex >= units.length || target < 0 || target >= units.length) return moves;
+  const reordered = units.slice();
+  const [swapped] = reordered.splice(unitIndex, 1);
+  reordered.splice(target, 0, swapped);
+  return reordered.flatMap((unit) => unit.entries.map((entry) => entry.move));
+}
