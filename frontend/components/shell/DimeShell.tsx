@@ -123,7 +123,7 @@ export function DimeShell() {
         {tab === "workflows" && <WorkflowsPanel onRun={runWorkflow} />}
         {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={askBoard} />}
         {tab === "notebooks" && <NotebooksPanel notebookId={notebookId} onOpen={openNotebook} />}
-        {tab === "today" && <HomeView onAsk={() => navigate("workflows")} />}
+        {tab === "today" && <HomeView onAsk={() => navigate("workflows")} onMorningAsk={askBoard} />}
         {tab === "briefs" && <LibraryView onThread={pick} onBoard={openBoard} />}
         {tab === "data" && <DataView />}
         {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} /></div>}
