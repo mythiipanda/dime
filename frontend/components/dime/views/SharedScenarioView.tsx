@@ -111,7 +111,7 @@ export function SharedScenarioView({
                       )}
                     </span>
                     {step && (
-                      <span className={`shrink-0 font-mono text-[11px] tabular-nums ${step.delta > 0 ? "text-red" : step.delta < 0 ? "text-ink" : "text-ink-3"}`}>
+                      <span className={`shrink-0 font-mono text-[11px] tabular-nums ${step.delta !== 0 ? "text-ink-2" : "text-ink-3"}`}>
                         {step.delta > 0 ? "+" : ""}{money(step.delta)}
                       </span>
                     )}
