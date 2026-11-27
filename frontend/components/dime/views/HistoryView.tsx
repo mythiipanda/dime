@@ -29,20 +29,33 @@ type CareerResponse = {
   meta?: { player_id?: number; player?: string };
 };
 
+type CompDriver = { stat: string; target: number | null; comp: number | null };
+
 type CompRow = {
   PLAYER: string;
   PLAYER_ID: number;
   TEAM: string;
   season: string;
+  age?: number | null;
   similarity: number;
-  drivers?: string[];
+  drivers?: CompDriver[];
   archetype?: string;
   shared_archetype?: boolean;
 };
 
+type CompsQualification = {
+  gp: number;
+  min_pg: number;
+  total_min: number | null;
+  rule: string;
+};
+
 type CompsResponse = {
   ok: boolean;
+  qualified?: boolean;
   rows?: CompRow[];
+  qualification?: CompsQualification;
+  qualifying_seasons?: string[];
   error?: string;
 };
 
@@ -72,6 +85,15 @@ const CATEGORIES = [
 function fmt(value: number | null | undefined, digits = 1): string {
   if (value == null) return "–";
   return value.toFixed(digits);
+}
+
+
+const FRACTION_STAT = /efficiency|rate|true shooting/i;
+
+function fmtDriver(stat: string, value: number | null): string {
+  if (value == null) return "–";
+  if (FRACTION_STAT.test(stat)) return `${(value * 100).toFixed(1)}%`;
+  return String(value);
 }
 
 export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
@@ -129,7 +151,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     let cancelled = false;
     setCompsLoading(true);
     setCompsError(null);
-    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=8`)}`)
+    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=12`)}`)
       .then(async (response) => {
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new Error(body?.error || `era comps request failed (${response.status})`);
@@ -323,22 +345,76 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           <h3 className="text-[13px] font-semibold text-ink">
             Era-relative neighbors — {player} {selectedSeason}
           </h3>
-          {compsLoading && <p className="mt-2 text-[12.5px] text-ink-3">Scoring the pool…</p>}
+          {compsLoading && (
+            <div className="mt-2 space-y-2" aria-label="loading era comps">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[52px] rounded-[8px]" />)}
+            </div>
+          )}
           {compsError && !compsLoading && (
             <DataState tone="error" label={compsError} detail="No substitute data is shown." className="mt-2" />
           )}
-          {!compsLoading && !compsError && comps?.rows && (
-            <div className="mt-2 divide-y divide-line">
-              {comps.rows.map((comp, i) => (
-                <div key={i} className="flex items-baseline justify-between gap-2 py-1.5 text-[12.5px]">
-                  <span className="text-ink-2">
-                    {comp.PLAYER}
-                    <span className="ml-1.5 font-mono text-[10px] text-ink-3">{comp.season} {comp.TEAM}</span>
-                    {comp.shared_archetype && <span className="ml-1.5 rounded-full border border-line px-1.5 font-mono text-[9px] text-ink-3">{comp.archetype}</span>}
-                  </span>
-                  <span className="font-mono tabular-nums text-ink-3">{comp.similarity?.toFixed(1)}</span>
-                </div>
-              ))}
+          {!compsLoading && !compsError && comps?.qualified === false && comps.qualification && (
+            <div className="mt-2 rounded-[8px] bg-field p-3 text-[12.5px] text-ink-2">
+              <p>
+                {`${player}'s ${selectedSeason} does not meet the era comps qualification minimum (${comps.qualification.rule} — this season: ${comps.qualification.gp} gp, ${comps.qualification.total_min != null ? `${Math.round(comps.qualification.total_min)} total minutes` : "minutes unavailable"}).`}
+              </p>
+              {comps.qualifying_seasons && comps.qualifying_seasons.length > 0 && (
+                <p className="mt-1.5">
+                  qualifying seasons:{" "}
+                  {comps.qualifying_seasons.map((season, i) => (
+                    <span key={season}>
+                      {i > 0 && " · "}
+                      <button
+                        type="button"
+                        className="font-mono text-[11.5px] text-accent underline-offset-2 hover:underline"
+                        onClick={() => setSelectedSeason(season)}
+                      >
+                        {season}
+                      </button>
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
+          )}
+          {!compsLoading && !compsError && comps?.qualified !== false && comps?.rows && comps.rows.length > 0 && (
+            <div className="mt-2">
+              <p className="font-mono text-[10px] text-ink-3">driver values: target season vs comp</p>
+              {comps.rows.length === 0 && (
+                <p className="mt-1.5 text-[12.5px] text-ink-2">no era neighbors found within the pool window — widen the window or pick another season.</p>
+              )}
+              <div className="mt-1.5 divide-y divide-line">
+                {comps.rows.map((comp, i) => (
+                  <div key={`${comp.PLAYER_ID}-${comp.season}-${i}`} className="py-2.5">
+                    <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
+                      <span className="text-ink">
+                        {comp.PLAYER}
+                        <span className="ml-1.5 font-mono text-[10px] text-ink-3">
+                          {comp.season} {comp.TEAM}{comp.age != null ? ` · age ${comp.age}` : ""}
+                        </span>
+                        {comp.shared_archetype && comp.archetype && (
+                          <span className="ml-1.5 rounded-full border border-line px-1.5 font-mono text-[9px] text-ink-3">{comp.archetype}</span>
+                        )}
+                      </span>
+                      <span className="font-mono tabular-nums text-ink">{comp.similarity?.toFixed(1)}</span>
+                    </div>
+                    {comp.drivers && comp.drivers.length > 0 && (
+                      <div className="mt-1 space-y-0.5">
+                        {comp.drivers.map((driver) => (
+                          <div key={driver.stat} className="flex items-baseline justify-between gap-2 text-[11.5px]">
+                            <span className="text-ink-3">{driver.stat}</span>
+                            <span className="font-mono tabular-nums text-ink-2">
+                              {fmtDriver(driver.stat, driver.target)}
+                              <span className="mx-1 text-ink-3">vs</span>
+                              {fmtDriver(driver.stat, driver.comp)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           <p className="mt-2 font-mono text-[10px] leading-[1.6] text-ink-3">
