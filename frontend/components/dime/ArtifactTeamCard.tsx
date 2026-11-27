@@ -4,14 +4,14 @@ import { Database } from "lucide-react";
 import { Button } from "@/components/ds/Button";
 import { StatusPill } from "@/components/ds/StatusPill";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
-import { CardSection, CardSectionSources } from "@/components/dime/ArtifactCardSections";
+import { CardSection, CardSectionSources, cardSectionCitation } from "@/components/dime/ArtifactCardSections";
 import { formatHeadlineMetric } from "@/lib/metric-format";
 import type { TeamCardArtifactPayload } from "@/lib/dime-stream";
 
 export default function ArtifactTeamCard({ artifact }: { artifact: TeamCardArtifactPayload }) {
   return <div className="p-4">
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0 flex-1"><h3 className="mb-1 break-words text-xl font-medium tracking-tight text-ink">{artifact.teamName}</h3><p className="mt-1 break-words text-[13px] text-ink-2">{artifact.provenance?.season || "Scope not declared"}</p></div>
+      <div className="min-w-0 flex-1"><h3 className="mb-1 break-words text-xl font-medium tracking-tight text-ink">{artifact.teamName}</h3><p className="mt-1 break-words text-[13px] text-ink-2">{artifact.provenance?.season}</p></div>
       <StatusPill dot={false}>Source values</StatusPill>
     </div>
     <dl className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3">
@@ -21,9 +21,14 @@ export default function ArtifactTeamCard({ artifact }: { artifact: TeamCardArtif
         <dd className="mt-1 break-words text-xs text-ink-3">{metric.unit || "Unit not declared"}</dd>
       </div>)}
     </dl>
-    {artifact.sections && artifact.sections.length > 0 && <div className="mt-5 space-y-4">
-      {artifact.sections.map((section, i) => <CardSection key={`${section.label}-${i}`} section={section} />)}
-    </div>}
+    {artifact.sections && artifact.sections.length > 0 && (() => {
+      const citations = [...new Set(artifact.sections.map(cardSectionCitation).filter(Boolean))];
+      const sharedCitation = citations.length === 1 ? citations[0] : undefined;
+      return <div className="mt-5 space-y-4">
+        {sharedCitation && <p className="text-xs text-ink-3">{sharedCitation}</p>}
+        {artifact.sections.map((section, i) => <CardSection key={`${section.label}-${i}`} section={section} sharedCitation={sharedCitation} />)}
+      </div>;
+    })()}
     <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
       <p className="text-xs text-ink-3">Selected from source rows. Not a verification.</p>
       <Popover><PopoverTrigger asChild><Button size="sm" variant="quiet"><Database size={14} aria-hidden="true" />Inspect source values</Button></PopoverTrigger>

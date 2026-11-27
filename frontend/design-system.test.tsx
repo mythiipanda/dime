@@ -273,3 +273,13 @@ test("card bodies do not repeat the kind label the shell already carries", () =>
     assert.ok(!source.includes("Player snapshot</p>") && !source.includes("Team snapshot</p>"), `${file} re-labels the kind inside the body — redundant with the shell header`);
   }
 });
+
+test("card sections dedupe a citation shared by every section to one line", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactCardSections.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("sharedCitation"), "sections accept the card-level shared citation");
+  assert.ok(source.includes("citation !== sharedCitation"), "a section repeats its citation only when it differs from the shared one");
+  for (const file of ["./components/dime/ArtifactPlayerCard.tsx", "./components/dime/ArtifactTeamCard.tsx"]) {
+    const card = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(!card.includes("Scope not declared"), `${file} must not headline missing scope in the subtitle — the quiet provenance row carries it`);
+  }
+});
