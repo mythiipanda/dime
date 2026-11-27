@@ -177,7 +177,7 @@ export default function ScoutView() {
                   {form.avg_pts != null && <span className="text-ink-3">{form.avg_pts} for / {form.avg_opp_pts} against</span>}
                 </div>
                 <div className="mt-2 divide-y divide-line">
-                  {(form.games ?? []).slice(0, 6).map((g, i) => (
+                  {(form.games ?? []).map((g, i) => (
                     <div key={i} className="flex items-baseline justify-between py-1.5 text-[12.5px]">
                       <span className="text-ink-2">{g.matchup}</span>
                       <span className="font-mono tabular-nums text-ink-3">

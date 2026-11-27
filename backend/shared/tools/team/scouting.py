@@ -77,7 +77,7 @@ async def get_scout_pack(team: str = "", opponent: str = "", season: str | None 
         op = (o.get("top_lineups") or [{}])[0].get("PLUS_MINUS", 0)
         edge = (f"{t.get('abbrev', team)} ({t.get('record')}, net {tn:+.1f}) vs "
                 f"{o.get('abbrev', opponent)} ({o.get('record')}, net {on_:+.1f}): "
-                f"net gap {tn - on_:+.1f}, top-unit {tp} vs {op}.")
+                f"net gap {tn - on_:+.1f}, top-unit +/- {tp} vs {op}.")
         thin = [s.get("abbrev", "") for s in (t, o)
                 if (s.get("top_lineups") or [{}])[0].get("SAMPLE_TIER") == "medium"]
         if thin:
