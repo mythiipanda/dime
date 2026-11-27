@@ -179,10 +179,12 @@ def register() -> dict[str, Any]:
     @tool("get_trade_legality", description=_orig_get_trade_legality.description)
     def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                            cash: str = "", tpe: str = "",
-                           season: str | None = None) -> dict:
+                           season: str | None = None,
+                           evaluation_date: str = "") -> dict:
         res = call_sync(_orig_get_trade_legality, "get_trade_legality", {
             "legs": legs, "sign_and_trade": sign_and_trade,
-            "cash": cash, "tpe": tpe, "season": season,
+            "cash": cash, "tpe": tpe,
+            "evaluation_date": evaluation_date, "season": season,
         })
         default_cols = ["team", "payroll_before", "payroll_after", "outgoing",
                         "incoming", "allowed_incoming", "match_rule",

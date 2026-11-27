@@ -1,6 +1,7 @@
 import json as _json
 import re as _re
-from datetime import date
+from calendar import monthrange
+from datetime import date, timedelta
 from functools import lru_cache
 from typing import Any
 
@@ -130,7 +131,39 @@ def _iso_date(value: Any) -> date | None:
 
 
 def _today() -> date:
-    return date.today()
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo("America/New_York")).date()
+
+
+def _nth_weekday(year: int, month: int, weekday: int,
+                 occurrence: int) -> date:
+    first = date(year, month, 1)
+    offset = ((weekday - first.weekday()) % 7) + 7 * (occurrence - 1)
+    return first + timedelta(days=offset)
+
+
+def _last_weekday(year: int, month: int, weekday: int) -> date:
+    last = date(year, month, monthrange(year, month)[1])
+    return last - timedelta(days=(last.weekday() - weekday) % 7)
+
+
+def _federal_holidays(year: int) -> set[date]:
+    fixed = {date(year, month, day) for month, day in
+             ((1, 1), (6, 19), (7, 4), (11, 11), (12, 25))}
+    floating = (
+        _nth_weekday(year, 1, 0, 3), _nth_weekday(year, 2, 0, 3),
+        _last_weekday(year, 5, 0), _nth_weekday(year, 9, 0, 1),
+        _nth_weekday(year, 10, 0, 2), _nth_weekday(year, 11, 3, 4),
+    )
+    return fixed | set(floating)
+
+
+def _roll_business_deadline(day: date) -> date:
+    while day.weekday() >= 5 or day in _federal_holidays(day.year):
+        day += timedelta(days=1)
+    return day
 
 
 def _league_year_start(day: date) -> int:
@@ -245,23 +278,26 @@ def _season_label(season_start: int) -> str:
     return f"{season_start}-{(season_start + 1) % 100:02d}"
 
 
-def _tpe_expiry(raw: dict[str, Any]) -> tuple[date | None, bool]:
-    if raw["expiry_date"]:
-        return raw["expiry_date"], False
-    if raw["origin_date"]:
-        return _next_anniversary(raw["origin_date"]), True
-    return None, False
+def _tpe_expiry(raw: dict[str, Any]) -> tuple[date | None, date | None, bool]:
+    expiry = raw["expiry_date"]
+    derived = False
+    if not expiry and raw["origin_date"]:
+        expiry = _next_anniversary(raw["origin_date"])
+        derived = True
+    if expiry is None:
+        return None, None, False
+    return expiry, _roll_business_deadline(expiry), derived
 
 
 def _tpe_timing(raw: dict[str, Any], season_status: str,
                 as_of: date | None) -> dict[str, Any]:
-    expiry, derived = _tpe_expiry(raw)
+    expiry, effective_expiry, derived = _tpe_expiry(raw)
     exact = bool(as_of and (raw["origin_date"] or expiry))
     status = season_status
     if exact:
         if raw["origin_date"] and raw["origin_date"] > as_of:
             status = "future"
-        elif expiry and expiry <= as_of:
+        elif effective_expiry and effective_expiry < as_of:
             status = "expired"
     return {"status": status,
             "timing_basis": "exact_date" if exact else "season_approximate",
@@ -269,6 +305,8 @@ def _tpe_timing(raw: dict[str, Any], season_status: str,
             "origin_date": (raw["origin_date"].isoformat()
                             if raw["origin_date"] else None),
             "expiry_date": expiry.isoformat() if expiry else None,
+            "effective_expiry_date": (effective_expiry.isoformat()
+                                      if effective_expiry else None),
             "expiry_date_derived": derived}
 
 
@@ -354,6 +392,7 @@ def _public_tpe(tpe: dict[str, Any], over_apron1: bool) -> dict[str, Any]:
             "as_of_date": tpe["as_of_date"],
             "origin_date": tpe["origin_date"],
             "expiry_date": tpe["expiry_date"],
+            "effective_expiry_date": tpe["effective_expiry_date"],
             "expiry_date_derived": tpe["expiry_date_derived"]}
 
 
@@ -428,6 +467,15 @@ def _parse_trade_args(legs: str, cash: str, tpe: str,
         if err:
             return [], err
         parsed.append(value)
+    return parsed, None
+
+
+def _parse_evaluation_date(value: Any) -> tuple[date | None, str | None]:
+    if value in (None, ""):
+        return _today(), None
+    parsed = _iso_date(value)
+    if parsed is None:
+        return None, "evaluation_date must be YYYY-MM-DD"
     return parsed, None
 
 
@@ -611,8 +659,9 @@ def _inactive_tpe_issue(team: str, item: dict[str, Any]) -> str:
                   if item["kind"] == "sign_and_trade" else "ordinary")
     if item["status"] == "expired":
         if item["timing_basis"] == "exact_date":
-            ending = (f"its expiry date {item['expiry_date']} has been "
-                      f"reached at the {item['as_of_date']} evaluation date")
+            ending = (f"its effective expiry date "
+                      f"{item['effective_expiry_date']} passed before the "
+                      f"{item['as_of_date']} evaluation date")
         else:
             ending = ("season-only expiry is approximate; its season bin "
                       "is expired")
@@ -830,9 +879,11 @@ def _build_checks(team_rows: dict[str, Any],
                            "+ second-apron hard-cap trigger checked; annual "
                            "cash limit not tracked"})
     tpe_note = ("kind, origin timing, amount capacity and non-combination "
-                "checked for declared uses; exact expiry dates are compared "
-                "at the evaluation date, while season-only expiry uses "
-                "conservative approximate legacy season bins")
+                "checked for declared uses; exact expiry deadlines remain "
+                "usable through their date, roll forward from weekends and "
+                "federal holidays, and are compared with the evaluation "
+                "date, while season-only expiry uses conservative "
+                "approximate legacy season bins")
     if legacy_tpes:
         tpe_note += ("; untyped rows default missing kind/origin fields "
                      "to ordinary/current-season values")
@@ -854,12 +905,15 @@ def _build_checks(team_rows: dict[str, Any],
     '"origin_season":"YYYY-YY","origin_date":"YYYY-MM-DD",'
     '"expiry_date":"YYYY-MM-DD"}]; rows are declared uses, not inventory. '
     'Present keys must be non-null; omit unused optional keys. Amount and '
-    'origin_year must be JSON integers. Amount-only legacy rows assume an '
-    'ordinary current-season origin. origin_date must agree with '
-    'origin_year/origin_season when both are supplied and derives a '
-    'one-year expiry when expiry_date is omitted. Exact expiry dates are '
-    'compared with the evaluation date and are expired on that date; '
-    'season-only rows keep conservative approximate legacy season bins. '
+    'origin_year must be JSON integers. Optional "evaluation_date" is '
+    'YYYY-MM-DD and defaults to the league date in America/New_York. '
+    'Amount-only legacy rows assume an ordinary current-season origin. '
+    'origin_date must agree with origin_year/origin_season when both are '
+    'supplied and derives a one-year expiry when expiry_date is omitted. '
+    'Exact expiry deadlines remain usable through their date and expire '
+    'only afterward; weekend and federal-holiday deadlines roll to the '
+    'following business day. Season-only rows keep conservative '
+    'approximate legacy season bins. '
     'TPE capacity is amount plus the '
     'CBA $250k cushion, reduced to $0 over the first apron; entries '
     'older than the prior season are treated as expired. Checks 2023 '
@@ -872,7 +926,8 @@ def _build_checks(team_rows: dict[str, Any],
     'match get_trade_check is enough.')
 def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                        cash: str = "", tpe: str = "",
-                       season: str | None = None) -> dict[str, Any]:
+                       season: str | None = None,
+                       evaluation_date: str = "") -> dict[str, Any]:
     values, err = _parse_trade_args(legs, cash, tpe, sign_and_trade)
     if err:
         return _trade_error(err)
@@ -893,14 +948,17 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
     if snt and not _snt_in_moves(snt, moves):
         return _trade_error(
             f"sign_and_trade player {snt['player']} is not in any leg")
+    evaluation_day, evaluation_err = _parse_evaluation_date(evaluation_date)
+    if evaluation_err:
+        return _trade_error(evaluation_err)
 
     with _owned_connection(None, read_only=True) as con:
         state, load_error = _load_trade_state(con, moves, season, snt, tpe_rows)
         if load_error or state is None:
             return load_error or _trade_error("could not load trade state")
 
-    tpe_as_of = _today()
-    tpe_by_team = (_seasonize_tpes(tpe_rows, state["season_start"], tpe_as_of)
+    tpe_by_team = (_seasonize_tpes(tpe_rows, state["season_start"],
+                                   evaluation_day)
                    if tpe_rows else {})
     legacy_tpes = any(item["legacy_defaults"]
                       for rows in tpe_by_team.values() for item in rows)
