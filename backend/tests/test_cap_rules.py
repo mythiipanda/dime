@@ -6,6 +6,8 @@ from shared.tools.cap_rules import (
     frozen_pick_year,
     hard_cap_consequences,
     matching_band,
+    matching_election,
+    operative_match_rule,
     roster_issues,
     scenario_trace,
     used_expanded_matching,
@@ -65,6 +67,32 @@ def test_used_expanded_matching():
         20_000_000, 20_000_000, cushion=0) is False
     assert used_expanded_matching(35_000_000, 20_000_000, cap_room=15_000_000) is False
     assert used_expanded_matching(36_000_000, 20_000_000, cap_room=15_000_000) is True
+
+
+def test_matching_election_cap_room_precedes_standard_band():
+    election = matching_election(
+        20_100_000, 20_000_000, cap_room=14_961_000)
+    assert election["matching_structure"] == "cap_room"
+    assert election["matching_mechanisms"] == ["cap_room"]
+    assert election["expanded_required"] is False
+
+    standard = matching_election(20_100_000, 20_000_000)
+    assert standard["matching_structure"] == "standard_simultaneous"
+
+
+def test_operative_match_rule_follows_selected_mechanism():
+    expanded_rule = "outgoing salary plus $9.096M (below the first apron)"
+    standard = matching_election(20_100_000, 20_000_000)
+    cap_room = matching_election(
+        20_100_000, 20_000_000, cap_room=14_961_000)
+    expanded = matching_election(
+        20_250_001, 20_000_000, expanded_matching=True)
+    assert operative_match_rule(expanded_rule, standard) == (
+        "standard TPE matching: 100% of outgoing salary plus "
+        "applicable cushion")
+    assert operative_match_rule(expanded_rule, cap_room) == (
+        "cap room plus outgoing salary plus $250k (under the cap)")
+    assert operative_match_rule(expanded_rule, expanded) == expanded_rule
 
 
 def test_hard_cap_consequences_cover_both_triggers_post_trade():

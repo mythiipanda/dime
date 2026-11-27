@@ -18,6 +18,7 @@ from .cba_cap import (
     _match_trade_players,
     _matching_election,
     _norm_trade_teams,
+    _operative_match_rule,
     _payroll,
     _payroll_proxy_meta,
     _payroll_source,
@@ -296,6 +297,8 @@ def get_trade_check(
         out_b, out_a, room_a, cushion_a, len(names_a), expanded_a)
     election_b = _matching_election(
         out_a, out_b, room_b, cushion_b, len(names_b), expanded_b)
+    rule_a = _operative_match_rule(rule_a, election_a)
+    rule_b = _operative_match_rule(rule_b, election_b)
     hard_cap_a = _hard_cap_consequences(
         team_a.upper(), pay_after_a, aggregates=len(names_a) > 1,
         expanded_matching=expanded_a)

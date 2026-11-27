@@ -14,6 +14,7 @@ from .cba_cap import (
     _locate_player_team,
     _match_trade_players,
     _matching_election,
+    _operative_match_rule,
     _payroll,
     _payroll_proxy_meta,
     _payroll_source,
@@ -230,6 +231,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
         else:
             allow, rule = _allowed_incoming(
                 trade_total, bool(state_after["over_apron1"]), room_before)
+            rule = _operative_match_rule(rule, election)
             matching = {"incoming": in_total, "outgoing": trade_total,
                         "allowed_incoming": allow, "match_rule": rule,
                         "legal": in_total <= allow, **election}

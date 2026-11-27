@@ -17,6 +17,7 @@ from ..cap_rules import (
     apron_state as _apron_state,
     hard_cap_consequences as _hard_cap_consequences,
     matching_election as _matching_election,
+    operative_match_rule as _operative_match_rule,
     payroll_proxy_meta as _payroll_proxy_meta,
     used_expanded_matching as _used_expanded_matching,
 )

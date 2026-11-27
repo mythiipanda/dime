@@ -21,6 +21,7 @@ from .cba_cap import (
     _hard_cap_consequences,
     _locate_player_team,
     _match_trade_players,
+    _operative_match_rule,
     _payroll,
     _payroll_source,
     _resolve_team_abbr,
@@ -859,6 +860,7 @@ def _evaluate_team(team: str, side: dict[str, Any],
         side["in_total"], out_eff, room_before, cushion,
         len(side["out_names"]), expanded_matching,
         bool(usage["active"]))
+    rule = _operative_match_rule(rule, election)
     hard_cap = _hard_cap_consequences(
         team, pay_after, aggregates=aggregates, cash_out=cash_out,
         prior_tpe=usage["prior"], snt_tpe=usage["snt"],

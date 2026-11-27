@@ -98,11 +98,11 @@ def matching_election(incoming: int, outgoing: int, cap_room: int = 0,
         base = "no_salary_matching"
     elif expanded_matching:
         base = "expanded"
+    elif cap_room > 0 and incoming <= outgoing + cap_room + cushion:
+        base = "cap_room"
     elif outgoing > 0 and incoming <= outgoing + cushion:
         base = ("aggregated_standard" if outgoing_count > 1
                 else "standard_simultaneous")
-    elif cap_room > 0 and incoming <= outgoing + cap_room + cushion:
-        base = "cap_room"
     elif uses_declared_tpe and outgoing > 0:
         base = ("aggregated_standard" if outgoing_count > 1
                 else "standard_simultaneous")
@@ -152,6 +152,18 @@ def matching_election(incoming: int, outgoing: int, cap_room: int = 0,
             "matching_mechanisms": mechanisms,
             "expanded_required": bool(expanded_matching),
             "matching_note": note}
+
+
+def operative_match_rule(rule: str, election: dict[str, Any]) -> str:
+    mechanisms = election.get("matching_mechanisms") or []
+    selected = str(mechanisms[0] if mechanisms else
+                   election.get("matching_structure") or "").split("+", 1)[0]
+    if selected == "standard_simultaneous":
+        return ("standard TPE matching: 100% of outgoing salary plus "
+                "applicable cushion")
+    if selected == "cap_room":
+        return "cap room plus outgoing salary plus $250k (under the cap)"
+    return rule
 
 
 def hard_cap_consequences(team: str, payroll_after: int, *,

@@ -8,6 +8,7 @@ from ..cap_rules import (
     cba_restrictions,
     matching_band,
     matching_election,
+    operative_match_rule,
     payroll_proxy_meta,
     roster_issues,
     scenario_trace,
@@ -372,14 +373,15 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                         "allowed_incoming": 0, **election}
         else:
             band = matching_band(out_total, bool(state["over_apron1"]), room_before)
+            rule = operative_match_rule(band["match_rule"], election)
             matching = {"incoming": in_total, "outgoing": out_total,
                         "allowed_incoming": band["allowed_incoming"],
-                        "match_rule": band["match_rule"],
+                        "match_rule": rule,
                         "legal": in_total <= band["allowed_incoming"], **election}
             if not matching["legal"]:
                 issues.append(f"{team} takes back too much "
                               f"(${in_total:,} vs {band['allowed_incoming']:,} "
-                              f"allowed under {band['match_rule']})")
+                              f"allowed under {rule})")
         if aggregates and pay_after > lines["apron2"]:
             issues.append("aggregation would hard-cap the team at the second apron")
     roster_after = len(roster) + roster_delta
