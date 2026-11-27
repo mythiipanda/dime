@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { apiPath } from "@/lib/api";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { BACKEND } from "@/lib/chat";
 
 const TEAMS = [
@@ -154,8 +155,12 @@ export default function ScoutView() {
       )}
 
       {loading && team !== opponent && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Assembling the dossier…
+        <div className="mt-4 grid items-start gap-3 xl:grid-cols-2" aria-label="assembling the dossier">
+          <Skeleton className="h-[86px] rounded-[10px] xl:col-span-2" />
+          <Skeleton className="h-[300px] rounded-[10px]" />
+          <Skeleton className="h-[180px] rounded-[10px]" />
+          <Skeleton className="h-[240px] rounded-[10px]" />
+          <Skeleton className="h-[200px] rounded-[10px]" />
         </div>
       )}
 
