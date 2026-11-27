@@ -7,7 +7,7 @@ export type CapYear = {
 
 export type CapPlayer = {
   player: string;
-  player_id: number;
+  player_id: number | null;
   contract_type: string;
   years: CapYear[];
 };
@@ -151,7 +151,7 @@ function linesFor(index: number): CapLines {
 
 function player(
   player: string,
-  player_id: number,
+  player_id: number | null,
   contract_type: string,
   base: number,
   options: ("player" | "team" | null)[],
@@ -180,6 +180,8 @@ export const capSheetFixture: CapSheetResponse = {
     player("Derrick White", 1628401, "Veteran Extension", 28100000, [null, null, null, null, null, null]),
     player("Sam Hauser", 1630573, "Veteran Extension", 10044772, [null, null, null, "team", null, null]),
     player("Payton Pritchard", 1630202, "Rookie Extension", 7232014, [null, null, null, null, null, null]),
+    player("Camp Signing One", null, "Exhibit 10", 1275000, [null, null, null, null, null, null]),
+    player("Camp Signing Two", null, "Exhibit 10", 1275000, [null, null, null, null, null, null]),
     player("Neemias Queta", 1629674, "Minimum", 2524525, [null, "team", null, null, null, null]),
   ],
   totals: Object.fromEntries(

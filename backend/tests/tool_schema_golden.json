@@ -4629,9 +4629,9 @@
     },
     "get_fa_plan": {
       "name": "get_fa_plan",
-      "description": "Free-agent / extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table - keep all holds vs renounce all vs per-player renounce/keep-only - against the team's projected cap room and exceptions. Holds are CBA-formula estimates (150% of prior salary), marked ESTIMATED. Warehouse only; refresh with seed_free_agents.py. REACH FOR THIS for any forward-looking free-agency or cap-space decision ask: 'can the Lakers keep Reaves and still sign a wing?', 'what is Boston's cap room if they renounce X?', 'walk me the Knicks' 2027 offseason.' It returns the answer-shaped scenario table directly, so do not rebuild hold/room arithmetic from get_cap_ledger or get_cap_table - those show current committed salary only and cannot answer keep-vs-renounce questions. Pair with get_free_agents for the league-wide class and get_cap_scenario for explicit hypothetical signing amounts.",
+      "description": "Free-agent / extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table - keep all holds vs renounce all vs per-player renounce/keep-only - against the team's projected cap room and exceptions. Holds are CBA-formula estimates with per-input exactness/provenance and disclosed inference. Scenario rows expose retained/renounced unknown-hold counts, label known-dollar partial sums, and null exact projected room while unknown-amount holds remain retained. Warehouse only; refresh with seed_free_agents.py. REACH FOR THIS for any forward-looking free-agency or cap-space decision ask: 'can the Lakers keep Reaves and still sign a wing?', 'what is Boston's cap room if they renounce X?', 'walk me the Knicks' 2027 offseason.' It returns the answer-shaped scenario table directly, so do not rebuild hold/room arithmetic from get_cap_ledger or get_cap_table - those show current committed salary only and cannot answer keep-vs-renounce questions. Pair with get_free_agents for the league-wide class and get_cap_scenario for explicit hypothetical signing amounts.",
       "args_schema": {
-        "description": "Free-agent and extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table (keep all holds / renounce all / per-player renounce or keep-only) against projected cap room and exceptions.",
+        "description": "Free-agent and extension planning for one team's upcoming FA class: per-FA rows (type, prior salary, estimated cap hold, extension eligibility) plus a deterministic scenario table (keep all holds / renounce all / per-player renounce or keep-only) against projected cap room and exceptions, with unknown-hold counts and partial-sum semantics disclosed.",
         "properties": {
           "team": {
             "default": "",
@@ -5540,6 +5540,26 @@
           "payload"
         ],
         "title": "product_cap_scenario_eval",
+        "type": "object"
+      }
+    },
+    "product_cap_projection": {
+      "name": "product_cap_projection",
+      "description": "Project a typed cap scenario across multiple seasons with carry-forward move effects.",
+      "args_schema": {
+        "description": "Project a typed cap scenario across multiple seasons with carry-forward move effects.",
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "description": "JSON object carrying the artifact's section data.",
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "payload"
+        ],
+        "title": "product_cap_projection",
         "type": "object"
       }
     },

@@ -446,7 +446,8 @@ def _mode_failure(mechanism: str, rule: dict[str, Any], payroll_before: int,
 
 def _exception_candidate(mechanism: str, move: dict[str, Any], team: str,
                          payroll_before: int, lines: dict[str, Any],
-                         state: dict[str, Any]) -> dict[str, Any]:
+                         state: dict[str, Any],
+                         team_salary_before: int | None = None) -> dict[str, Any]:
     rule = scaled_exception_rules(lines)[mechanism]
     refs = list(rule["refs"])
     used_key = str(rule["used_key"])
@@ -494,8 +495,9 @@ def _exception_candidate(mechanism: str, move: dict[str, Any], team: str,
             "taxpayer mid-level use requires post-signing payroll proxy to exceed the first apron",
             exception_remaining=remaining, refs=refs,
             exception_amount=capacity)
+    room_basis = payroll_before if team_salary_before is None else int(team_salary_before)
     mode_failure = _mode_failure(
-        mechanism, rule, payroll_before, lines, state, remaining)
+        mechanism, rule, room_basis, lines, state, remaining)
     if mode_failure is not None:
         return mode_failure
     trigger = str(rule["apron"])
@@ -526,17 +528,20 @@ def _exception_candidate(mechanism: str, move: dict[str, Any], team: str,
 
 def _candidate_map(move: dict[str, Any], team: str, payroll_before: int,
                    lines: dict[str, Any], state: dict[str, Any], season: str,
-                   active_hard_caps: list[str]) -> dict[str, dict[str, Any]]:
+                   active_hard_caps: list[str],
+                   team_salary_before: int | None = None) -> dict[str, dict[str, Any]]:
     post_move = payroll_before + move["amount"]
+    room_basis = payroll_before if team_salary_before is None else int(team_salary_before)
     active_failure = active_hard_cap_failure(
         post_move, active_hard_caps, lines, transaction="signing")
     candidates = {
         "minimum": _minimum_candidate(move, season, lines),
-        "cap_room": _cap_room_candidate(move, payroll_before, lines),
+        "cap_room": _cap_room_candidate(move, room_basis, lines),
     }
     for mechanism in ("room_exception", "tmle", "ntmle", "bae"):
         candidates[mechanism] = _exception_candidate(
-            mechanism, move, team, payroll_before, lines, state)
+            mechanism, move, team, payroll_before, lines, state,
+            team_salary_before=room_basis)
     if active_failure:
         for mechanism, candidate in candidates.items():
             if candidate["ok"]:
@@ -634,7 +639,8 @@ def _input_error_result(raw: Any, errors: list[str]) -> dict[str, Any]:
 
 
 def _auto_choice(candidates: dict[str, dict[str, Any]], payroll_before: int,
-                 lines: dict[str, Any], state: dict[str, Any]
+                 lines: dict[str, Any], state: dict[str, Any],
+                 team_salary_before: int | None = None
                  ) -> tuple[str | None, str, list[str], str]:
     no_hard = [mechanism for mechanism in ("minimum", "cap_room", "room_exception")
                if candidates[mechanism]["ok"]]
@@ -656,7 +662,8 @@ def _auto_choice(candidates: dict[str, dict[str, Any]], payroll_before: int,
         candidate.get("mode_dependent") for candidate in candidates.values())
     if not mode_dependent:
         return None, "none", ["no valid signing mechanism under the declared scenario state"], ""
-    if payroll_before < lines["cap"] and state.get("operating_mode") == "unknown":
+    room_basis = payroll_before if team_salary_before is None else int(team_salary_before)
+    if room_basis < lines["cap"] and state.get("operating_mode") == "unknown":
         return None, "explicit_required", [
             "below-cap operating mode is unknown; auto inference requires an explicit signing mechanism"
         ], ""
@@ -667,7 +674,8 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
                      lines: dict[str, Any] | None = None,
                      exception_state: dict[str, Any] | None = None,
                      active_hard_caps: list[str] | None = None,
-                     season: str = "2026-27") -> dict[str, Any]:
+                     season: str = "2026-27",
+                     team_salary_before: int | None = None) -> dict[str, Any]:
     if lines is None and season != "2026-27":
         return _input_error_result(
             raw, [f"season-specific cap lines are required for {season}; 2026-27 exception constants cannot be applied"])
@@ -691,7 +699,7 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
     checks, generic_failures, missing = _generic_checks(move, lines, season)
     candidates = _candidate_map(
         move, team, payroll_before, lines, state, season,
-        list(active_hard_caps or []))
+        list(active_hard_caps or []), team_salary_before=team_salary_before)
     mechanism = move["mechanism"]
     if generic_failures:
         return _result(
@@ -701,7 +709,8 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
             lines=lines)
     if mechanism == "auto":
         selected, inference, blocking, tie_breaker = _auto_choice(
-            candidates, payroll_before, lines, state)
+            candidates, payroll_before, lines, state,
+            team_salary_before=team_salary_before)
         if selected:
             evaluation = candidates[selected]
             return _result(

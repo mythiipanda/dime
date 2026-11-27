@@ -55,6 +55,19 @@ export type TradeLegsEvaluation = {
   error?: string;
 };
 
+export type SharedBoardPin = {
+  kind: string;
+  object_id: string;
+  note?: string;
+  status: "ok" | "missing" | "archived";
+  title?: string;
+  payload?: Record<string, unknown>;
+  artifact?: Record<string, unknown> | null;
+  artifact_unavailable?: boolean;
+  capEvaluation?: ScenarioResponse | null;
+  tradeEvaluation?: TradeLegsEvaluation | null;
+};
+
 export type SharedBoardObject = {
   kind: string;
   title: string;
@@ -93,7 +106,7 @@ export type SharedScenarioState =
   | { status: "ok"; object: SharedObject; evaluation: ScenarioResponse | null }
   | { status: "ok-trade"; object: SharedTradeObject; evaluation: TradeLegsEvaluation | null }
   | { status: "ok-thread"; object: SharedThreadObject; transcript: TranscriptEntry[] }
-  | { status: "ok-board"; object: SharedBoardObject; board: Board | null; metrics: BoardMetric[] }
+  | { status: "ok-board"; object: SharedBoardObject; board: Board | null; metrics: BoardMetric[]; pins: SharedBoardPin[] }
   | { status: "ok-artifact"; object: SharedArtifactObject; artifact: Record<string, unknown> | null; evidence: SharedArtifactEvidence[]; captured_at: string | null; unavailable: boolean }
   | { status: "archived"; object: { kind: string; title: string } }
   | { status: "not_found" }
@@ -190,7 +203,7 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
 ): Promise<SharedScenarioState> {
   let envelope: { kind: string; title: string; payload: Record<string, unknown>; updated_at: string; archived: boolean };
   try {
-    const response = await fetchImpl(`${backend}/s/${encodeURIComponent(token)}`);
+    const response = await fetchImpl(`${backend}/s/${encodeURIComponent(token)}`, { cache: "no-store" });
     if (response.status === 404) return { status: "not_found" };
     if (response.status === 422) return { status: "invalid" };
     if (!response.ok) return { status: "unavailable" };
@@ -276,7 +289,57 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
     } catch {
       board = null;
     }
-    return { status: "ok-board", object, board, metrics };
+    const rawPins = Array.isArray((envelope as unknown as Record<string, unknown>).pins) ? (envelope as unknown as Record<string, unknown>).pins as Record<string, unknown>[] : [];
+    const pins: SharedBoardPin[] = await Promise.all(rawPins.map(async raw => {
+      const pin: SharedBoardPin = {
+        kind: typeof raw.kind === "string" ? raw.kind : "",
+        object_id: typeof raw.object_id === "string" ? raw.object_id : "",
+        ...(typeof raw.note === "string" ? { note: raw.note } : {}),
+        status: raw.status === "ok" ? "ok" : raw.status === "archived" ? "archived" : "missing",
+        ...(typeof raw.title === "string" ? { title: raw.title } : {}),
+        ...(raw.payload && typeof raw.payload === "object" ? { payload: raw.payload as Record<string, unknown> } : {}),
+      };
+      if (pin.kind === "artifact_ref") {
+        pin.artifact = raw.artifact && typeof raw.artifact === "object" ? raw.artifact as Record<string, unknown> : null;
+        pin.artifact_unavailable = raw.artifact_unavailable === true || !pin.artifact;
+      }
+      if (pin.status !== "ok" || !pin.payload) return pin;
+      if (pin.kind === "cap_scenario") {
+        try {
+          const response = await fetchImpl(`${backend}/api/cap/scenario`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              team: pin.payload.team,
+              season: pin.payload.season,
+              waiver_date: pin.payload.waiver_date ?? "",
+              moves: pin.payload.moves,
+            }),
+            cache: "no-store",
+          });
+          const body: unknown = await response.json().catch(() => null);
+          pin.capEvaluation = isScenarioResponse(body) ? body : null;
+        } catch {
+          pin.capEvaluation = null;
+        }
+      }
+      if (pin.kind === "trade_scenario") {
+        try {
+          const response = await fetchImpl(`${backend}/api/trade/legs`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ legs: pin.payload.legs, season: pin.payload.season }),
+            cache: "no-store",
+          });
+          const body: unknown = await response.json().catch(() => null);
+          pin.tradeEvaluation = isTradeEvaluation(body) ? body : null;
+        } catch {
+          pin.tradeEvaluation = null;
+        }
+      }
+      return pin;
+    }));
+    return { status: "ok-board", object, board, metrics, pins };
   }
 
   if (envelope.kind === "artifact_ref") {

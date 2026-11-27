@@ -300,11 +300,15 @@ def _payroll(team: str, con: object = None,
 
 def _outgoing_needed(incoming: int, over_apron1: bool,
                      cap_room: int = 0) -> int:
+    if incoming <= 0:
+        return 0
     if over_apron1:
         return incoming
+    if cap_room > 0 and incoming <= cap_room + 250_000:
+        return 0
     candidates: list[int] = []
-    tier1 = -(-(incoming - 250_000) // 2)
-    if 0 < tier1 <= _EXPANDED_TPE_LOW_MAX:
+    tier1 = max(1, -(-(incoming - 250_000) // 2))
+    if tier1 <= _EXPANDED_TPE_LOW_MAX:
         candidates.append(tier1)
     tier2 = incoming - _EXPANDED_TPE_CUSHION
     if _EXPANDED_TPE_LOW_MAX < tier2 <= _EXPANDED_TPE_MID_MAX:
@@ -314,8 +318,9 @@ def _outgoing_needed(incoming: int, over_apron1: bool,
         candidates.append(tier3)
     needed = min(candidates) if candidates else 0
     if cap_room > 0:
-        needed = min(needed, incoming - cap_room - 250_000)
-    return max(0, needed)
+        room_needed = max(1, incoming - cap_room - 250_000)
+        needed = min(needed, room_needed) if needed else room_needed
+    return needed
 
 
 def _season_player_team(con: object, name: str, season: str,

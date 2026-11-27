@@ -98,7 +98,7 @@ function PlayerSearch({ onPick, disabled }: { onPick: (player: ResolvePlayer) =>
   );
 }
 
-export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: string) => void; initialPicks?: Pick[] }) {
+export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void; initialPicks?: Pick[] }) {
   const [picks, setPicks] = useState<Pick[]>(initialPicks ?? []);
   const [data, setData] = useState<CompareData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -251,7 +251,7 @@ export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: st
         </div>
         {data && (
           <div className="flex flex-wrap items-center gap-2">
-            {onAsk && <Button size="sm" variant="secondary" onClick={() => onAsk(askText())}>Ask Dime to compare</Button>}
+            {onAsk && <Button size="sm" variant="secondary" onClick={() => onAsk(askText(), { kind: "compare", summary: `compare ${players.map(p => p.name).join(" vs ")}`, entities: { players: players.map(p => ({ name: p.name, season: p.season })) } })}>Ask Dime to compare</Button>}
             <PinButton artifact={pinArtifact()} />
             <Button size="sm" variant="secondary" disabled={exporting} onClick={() => exportReport(false)}>Report (.md)</Button>
             <Button size="sm" variant="secondary" disabled={exporting} onClick={() => exportReport(true)}>Report (PDF)</Button>

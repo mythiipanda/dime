@@ -29,13 +29,16 @@ type CareerResponse = {
   meta?: { player_id?: number; player?: string };
 };
 
+type CompDriver = { stat: string; target: number | null; comp: number | null };
+
 type CompRow = {
   PLAYER: string;
   PLAYER_ID: number;
   TEAM: string;
   season: string;
+  age?: number | null;
   similarity: number;
-  drivers?: string[];
+  drivers?: CompDriver[];
   archetype?: string;
   shared_archetype?: boolean;
 };
@@ -74,7 +77,20 @@ function fmt(value: number | null | undefined, digits = 1): string {
   return value.toFixed(digits);
 }
 
-export default function HistoryView() {
+
+const FRACTION_STAT = /efficiency|rate|true shooting/i;
+
+function fmtDriver(stat: string, value: number | null): string {
+  if (value == null) return "–";
+  if (FRACTION_STAT.test(stat)) return `${(value * 100).toFixed(1)}%`;
+  return String(value);
+}
+
+function qualifies(row: ArcSeason): boolean {
+  return (row.gp ?? 0) >= 25 && (row.min ?? 0) >= 500;
+}
+
+export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [query, setQuery] = useState("Jayson Tatum");
   const [player, setPlayer] = useState("Jayson Tatum");
   const [career, setCareer] = useState<CareerResponse | null>(null);
@@ -129,7 +145,7 @@ export default function HistoryView() {
     let cancelled = false;
     setCompsLoading(true);
     setCompsError(null);
-    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=8`)}`)
+    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=12`)}`)
       .then(async (response) => {
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new Error(body?.error || `era comps request failed (${response.status})`);
@@ -199,6 +215,28 @@ export default function HistoryView() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-[15px] font-semibold text-ink">History</h1>
         <span className="text-[11px] text-ink-2">{`1996-97 → ${SEASONS[0]} · era-relative throughout`}</span>
+        {onAsk && career && (
+          <span className="ml-auto">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onAsk(
+                `Break down ${player}'s career arc — the peak, the trajectory, and how the era-relative profile compares.${selectedSeason ? ` Focus on the ${selectedSeason} season.` : ""}`,
+                {
+                  kind: "career_arc",
+                  summary: `${player} career arc${selectedSeason ? ` · ${selectedSeason}` : ""}`,
+                  entities: {
+                    player,
+                    ...(selectedSeason ? { season: selectedSeason } : {}),
+                    seasons: (career.rows ?? []).map((row: Record<string, unknown>) => row.season).filter(Boolean),
+                  },
+                },
+              )}
+            >
+              Ask Dime about this arc
+            </Button>
+          </span>
+        )}
       </div>
 
       <div className="mt-4 xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-4">
@@ -301,22 +339,81 @@ export default function HistoryView() {
           <h3 className="text-[13px] font-semibold text-ink">
             Era-relative neighbors — {player} {selectedSeason}
           </h3>
-          {compsLoading && <p className="mt-2 text-[12.5px] text-ink-3">Scoring the pool…</p>}
-          {compsError && !compsLoading && (
-            <DataState tone="error" label={compsError} detail="No substitute data is shown." className="mt-2" />
+          {compsLoading && (
+            <div className="mt-2 space-y-2" aria-label="loading era comps">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[52px] rounded-[8px]" />)}
+            </div>
           )}
-          {!compsLoading && !compsError && comps?.rows && (
-            <div className="mt-2 divide-y divide-line">
-              {comps.rows.map((comp, i) => (
-                <div key={i} className="flex items-baseline justify-between gap-2 py-1.5 text-[12.5px]">
-                  <span className="text-ink-2">
-                    {comp.PLAYER}
-                    <span className="ml-1.5 font-mono text-[10px] text-ink-3">{comp.season} {comp.TEAM}</span>
-                    {comp.shared_archetype && <span className="ml-1.5 rounded-full border border-line px-1.5 font-mono text-[9px] text-ink-3">{comp.archetype}</span>}
-                  </span>
-                  <span className="font-mono tabular-nums text-ink-3">{comp.similarity?.toFixed(1)}</span>
+          {compsError && !compsLoading && (() => {
+            const arcRow = arc.find((row) => row.season === selectedSeason);
+            const qualifying = arc.filter(qualifies).map((row) => row.season);
+            if (arcRow && !qualifies(arcRow)) {
+              return (
+                <div className="mt-2 rounded-[8px] bg-field p-3 text-[12.5px] text-ink-2">
+                  <p>
+                    {player}&apos;s {selectedSeason} does not meet the era comps qualification
+                    minimum (25 games, 500 minutes — {arcRow.gp ?? 0} gp, {Math.round(arcRow.min ?? 0)} min).
+                  </p>
+                  {qualifying.length > 0 && (
+                    <p className="mt-1.5">
+                      qualifying seasons:{" "}
+                      {qualifying.map((season, i) => (
+                        <span key={season}>
+                          {i > 0 && " · "}
+                          <button
+                            type="button"
+                            className="font-mono text-[11.5px] text-accent underline-offset-2 hover:underline"
+                            onClick={() => setSelectedSeason(season)}
+                          >
+                            {season}
+                          </button>
+                        </span>
+                      ))}
+                    </p>
+                  )}
                 </div>
-              ))}
+              );
+            }
+            return <DataState tone="error" label={compsError} detail="No substitute data is shown." className="mt-2" />;
+          })()}
+          {!compsLoading && !compsError && comps?.rows && (
+            <div className="mt-2">
+              <p className="font-mono text-[10px] text-ink-3">driver values: target season vs comp</p>
+              {comps.rows.length === 0 && (
+                <p className="mt-1.5 text-[12.5px] text-ink-2">no era neighbors found within the pool window — widen the window or pick another season.</p>
+              )}
+              <div className="mt-1.5 divide-y divide-line">
+                {comps.rows.map((comp, i) => (
+                  <div key={`${comp.PLAYER_ID}-${comp.season}-${i}`} className="py-2.5">
+                    <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
+                      <span className="text-ink">
+                        {comp.PLAYER}
+                        <span className="ml-1.5 font-mono text-[10px] text-ink-3">
+                          {comp.season} {comp.TEAM}{comp.age != null ? ` · age ${comp.age}` : ""}
+                        </span>
+                        {comp.shared_archetype && comp.archetype && (
+                          <span className="ml-1.5 rounded-full border border-line px-1.5 font-mono text-[9px] text-ink-3">{comp.archetype}</span>
+                        )}
+                      </span>
+                      <span className="font-mono tabular-nums text-ink">{comp.similarity?.toFixed(1)}</span>
+                    </div>
+                    {comp.drivers && comp.drivers.length > 0 && (
+                      <div className="mt-1 space-y-0.5">
+                        {comp.drivers.map((driver) => (
+                          <div key={driver.stat} className="flex items-baseline justify-between gap-2 text-[11.5px]">
+                            <span className="text-ink-3">{driver.stat}</span>
+                            <span className="font-mono tabular-nums text-ink-2">
+                              {fmtDriver(driver.stat, driver.target)}
+                              <span className="mx-1 text-ink-3">vs</span>
+                              {fmtDriver(driver.stat, driver.comp)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           <p className="mt-2 font-mono text-[10px] leading-[1.6] text-ink-3">

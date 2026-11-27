@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
@@ -8,6 +8,7 @@ import { DataState } from "@/components/ds/DataState";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
 import { consumeCapHandoff } from "@/lib/cap-handoff";
+import { syncCapDraft, loadCapDraft } from "@/lib/cap-draft";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -50,7 +51,7 @@ function scenarioSeasonForMoves(moves: ScenarioMove[]): string | null {
   return seasons.size === 1 ? Array.from(seasons)[0] : null;
 }
 
-export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void }) {
+export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [team, setTeam] = useState(() => initialTeamParam() ?? "BOS");
   const [sheet, setSheet] = useState<CapSheetResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,13 +69,51 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const fixture = useFixture();
   const scenarioSeason = useMemo(() => scenarioSeasonForMoves(moves), [moves]);
 
+  const handoffConsumed = useRef(false);
   useEffect(() => {
     const handoff = consumeCapHandoff();
     if (!handoff) return;
+    handoffConsumed.current = true;
     setTeam(handoff.team);
     setMoves(handoff.moves);
     setHandoffNote(handoff.source ? `Imported from the trade machine — ${handoff.source}. The trade is a one-way copy: edits here don't affect it.` : null);
   }, []);
+
+  const draftKey = `${team}:${scenarioSeason ?? DEFAULT_SCENARIO_SEASON}`;
+  const settledDrafts = useRef<Set<string>>(new Set());
+  const [draftSettled, setDraftSettled] = useState(0);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("team") === team) return;
+    url.searchParams.set("team", team);
+    window.history.replaceState({}, "", url);
+  }, [team]);
+
+  useEffect(() => {
+    if (handoffConsumed.current) {
+      settledDrafts.current.add(draftKey);
+      setDraftSettled((count) => count + 1);
+      return;
+    }
+    let active = true;
+    loadCapDraft(team, scenarioSeason ?? DEFAULT_SCENARIO_SEASON).then((restored) => {
+      if (!active) return;
+      settledDrafts.current.add(draftKey);
+      setDraftSettled((count) => count + 1);
+      if (!restored) return;
+      setMoves((current) => current.length === 0 ? restored : current);
+    });
+    return () => { active = false; };
+  }, [draftKey, team, scenarioSeason]);
+
+  useEffect(() => {
+    if (!settledDrafts.current.has(draftKey)) return;
+    const currentSeason = scenarioSeason ?? DEFAULT_SCENARIO_SEASON;
+    const timer = setTimeout(() => {
+      void syncCapDraft(team, currentSeason, moves);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [draftKey, draftSettled, team, scenarioSeason, moves]);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -198,6 +237,20 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   }
 
   const state = scenario?.state ?? sheet?.state;
+
+  function scenarioContext(): import("@/lib/view-context").ViewContext {
+    const evaluationSeason = scenario?.season ?? scenarioSeason ?? DEFAULT_SCENARIO_SEASON;
+    return {
+      kind: "cap_scenario",
+      summary: `${sheet?.team ?? team} cap scenario · ${evaluationSeason} · ${moves.length} move${moves.length === 1 ? "" : "s"}`,
+      entities: {
+        team: sheet?.team ?? team,
+        season: evaluationSeason,
+        moves,
+        ...(scenario ? { payroll_after: scenario.pay_after } : {}),
+      },
+    };
+  }
 
   function serializeScenario(): string {
     const lines = moves.map((move) => {
@@ -344,7 +397,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                 </thead>
                 <tbody>
                   {sheet.players.map((player) => (
-                    <tr key={player.player_id} className="group">
+                    <tr key={player.player_id ?? `unsigned-${player.player}`} className="group">
                       <td className="sticky left-0 z-10 max-w-[220px] border-t border-line bg-surface px-2 py-1.5 leading-snug">
                         <span className="text-[12.5px] text-ink">{player.player}</span>
                         <span className="ml-1.5 font-mono text-[9.5px] text-ink-3">{player.contract_type}</span>
@@ -472,7 +525,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   {onAsk && (
                     <button
                       className="h-7 rounded-[7px] bg-[var(--accent)] px-2.5 text-[11.5px] font-medium text-white hover:opacity-90"
-                      onClick={() => onAsk(serializeScenario())}
+                      onClick={() => onAsk(serializeScenario(), scenarioContext())}
                     >
                       Ask about this scenario
                     </button>

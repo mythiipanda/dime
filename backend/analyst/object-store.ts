@@ -67,8 +67,15 @@ export const threadGrantPayloadSchema = Type.Object({
     granted_before: Type.String({ minLength: 10, maxLength: 40 })
 }, { additionalProperties: false });
 
+export const boardPinSchema = Type.Object({
+    kind: Type.Union([Type.Literal("cap_scenario"), Type.Literal("trade_scenario"), Type.Literal("artifact_ref")]),
+    object_id: Type.String({ minLength: 1, maxLength: 120 }),
+    note: Type.Optional(Type.String({ maxLength: 120 }))
+}, { additionalProperties: false });
+
 export const boardPayloadSchema = Type.Object({
     season: Type.String({ minLength: 1, maxLength: 12 }),
+    pins: Type.Optional(Type.Array(boardPinSchema, { maxItems: 20 })),
     rows: Type.Array(Type.Object({
         player_id: Type.Integer({ minimum: 1 })
     }, { additionalProperties: false }), { minItems: 1, maxItems: 50 }),

@@ -95,6 +95,9 @@ export type DirectOperations = {
     product_cap_scenario_eval: {
         payload: Record<string, unknown>;
     };
+    product_cap_projection: {
+        payload: Record<string, unknown>;
+    };
     product_scout_dossier: {
         team: string;
         opponent: string;

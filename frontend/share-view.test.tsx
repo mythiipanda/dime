@@ -207,7 +207,8 @@ test("shared trade construction renders legs, verdict, matching math and apron s
     assert.match(text, /in \$5\.4M/);
     assert.match(text, /incoming salary exceeds apron matching/);
     assert.match(text, /hard cap/);
-    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+    const controls = [...mounted.host.querySelectorAll("button, input, select, textarea")].filter(el => !/download/i.test(el.getAttribute("aria-label") || ""));
+    assert.equal(controls.length, 0);
   }
   finally {
     await mounted.cleanup();
@@ -281,7 +282,8 @@ test("shared thread renders transcript read-only with evidence attribution", asy
     assert.match(text, /Compare their shooting/);
     assert.match(text, /get_awards/);
     assert.match(text, /snapshot of the thread/);
-    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+    const controls = [...mounted.host.querySelectorAll("button, input, select, textarea")].filter(el => !/download/i.test(el.getAttribute("aria-label") || ""));
+    assert.equal(controls.length, 0);
   }
   finally {
     await mounted.cleanup();
@@ -322,7 +324,8 @@ const artifactShared = {
   payload: { artifact_index: 0 },
   artifact: {
     kind: "memo",
-    text: "The ledger case rests on capture-time figures.",
+    title: "The locked ledger",
+    sections: [{ heading: "Ledger case", body: "The ledger case rests on capture-time figures." }],
     provenance: { capability: "sql_exec", dataset: "silver_salaries", season: "2026-27" },
   },
   evidence: [
@@ -346,7 +349,8 @@ test("shared artifact renders body, provenance, evidence and capture honesty rea
     assert.match(text, /silver_salaries/);
     assert.match(text, /no longer resolvable/);
     assert.match(text, /capture-time snapshot/);
-    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+    const controls = [...mounted.host.querySelectorAll("button, input, select, textarea")].filter(el => !/download/i.test(el.getAttribute("aria-label") || ""));
+    assert.equal(controls.length, 0);
   }
   finally {
     await mounted.cleanup();
@@ -372,5 +376,122 @@ test("loadSharedScenario dispatches artifact_ref with evidence and capture time"
     assert.equal(result.evidence.length, 2);
     assert.equal(result.unavailable, false);
     assert.equal(result.captured_at, "2026-11-27T10:00:00.000Z");
+  }
+});
+
+test("shared artifact view normalizes object-shaped table rows into rendered cell values", async () => {
+  const { SharedArtifactView } = await import("./components/dime/views/SharedScenarioView");
+  const tableArtifact = {
+    ...artifactShared,
+    artifact: {
+      kind: "table",
+      title: "Cap table",
+      columns: [
+        { key: "team", label: "Team" },
+        { key: "salary", label: "Salary", numeric: true },
+      ],
+      rows: [
+        { team: "Fixture Team", salary: 218062392 },
+        { team: "Second Team", salary: 150000000 },
+      ],
+    },
+  };
+  const mounted = await mountView(<SharedArtifactView object={artifactShared} artifact={tableArtifact.artifact} evidence={artifactShared.evidence} capturedAt={artifactShared.captured_at} unavailable={false} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /Fixture Team/);
+    assert.match(text, /218062392/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+
+test("board share render shows pin cards with live evaluations and honest degradation", async () => {
+  const { SharedBoardView } = await import("./components/dime/views/SharedBoardView");
+  const boardObject = {
+    kind: "board",
+    title: "Guards board",
+    schema_version: 1,
+    updated_at: "2026-11-27T12:00:00.000Z",
+    archived: false,
+    payload: {
+      season: "2026-27",
+      rows: [{ player_id: 1628369 }],
+      columns: [{ metric_id: "ppg" }],
+    },
+  };
+  const pins = [
+    {
+      kind: "trade_scenario",
+      object_id: "obj-trade-1",
+      status: "ok" as const,
+      title: "Fixture trade",
+      note: "summer idea",
+      payload: { season: "2026-27", legs: [{ from: "BOS", to: "DAL", players: ["Fixture Player"] }] },
+      tradeEvaluation: { rows: [{ team: "BOS", matching_ok: true }] },
+    },
+    {
+      kind: "cap_scenario",
+      object_id: "obj-cap-1",
+      status: "archived" as const,
+    },
+  ];
+  const mounted = await mountView(<SharedBoardView object={boardObject} board={null} metrics={[]} pins={pins} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /Pinned to this board/);
+    assert.match(text, /Fixture trade/);
+    assert.match(text, /summer idea/);
+    assert.match(text, /Legal under current salary-matching rules/);
+    assert.match(text, /removed by its owner/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("loadSharedScenario board dispatch parses pins and evaluates cap and trade targets", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const envelope = {
+    kind: "board",
+    title: "b",
+    schema_version: 1,
+    updated_at: "2026-11-27T12:00:00.000Z",
+    archived: false,
+    payload: {
+      season: "2026-27",
+      rows: [{ player_id: 1628369 }],
+      columns: [{ metric_id: "ppg" }],
+      pins: [
+        { kind: "cap_scenario", object_id: "obj-cap", note: "n", status: "ok", title: "cap pin", payload: { team: "BOS", season: "2026-27", moves: [{ kind: "waive" }] } },
+        { kind: "trade_scenario", object_id: "obj-trade", status: "ok", title: "trade pin", payload: { season: "2026-27", legs: [{ from: "BOS", to: "DAL" }] } },
+        { kind: "artifact_ref", object_id: "obj-art", status: "missing" },
+      ],
+    },
+    pins: [
+      { kind: "cap_scenario", object_id: "obj-cap", note: "n", status: "ok", title: "cap pin", payload: { team: "BOS", season: "2026-27", moves: [{ kind: "waive" }] } },
+      { kind: "trade_scenario", object_id: "obj-trade", status: "ok", title: "trade pin", payload: { season: "2026-27", legs: [{ from: "BOS", to: "DAL" }] } },
+      { kind: "artifact_ref", object_id: "obj-art", status: "missing" },
+    ],
+  };
+  const responses = new Map<string, unknown>([
+    ["/s/", envelope],
+    ["/api/cap/scenario", { errors: [], summary: {} }],
+    ["/api/trade/legs", { rows: [{ team: "BOS", matching_ok: true }] }],
+    ["/api/boards/fill", null],
+    ["/api/boards/metrics", null],
+  ]);
+  const result = await loadSharedScenario("http://backend", "tok", async (url) => {
+    const key = [...responses.keys()].find(k => String(url).includes(k));
+    return Response.json(key ? responses.get(key) : null);
+  });
+  assert.equal(result.status, "ok-board");
+  if (result.status === "ok-board") {
+    assert.equal(result.pins.length, 3);
+    assert.equal(result.pins[0].capEvaluation !== null && result.pins[0].capEvaluation !== undefined, true);
+    assert.equal(result.pins[1].tradeEvaluation?.rows?.length, 1);
+    assert.equal(result.pins[2].status, "missing");
   }
 });

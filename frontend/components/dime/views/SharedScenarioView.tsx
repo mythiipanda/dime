@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { describeScenarioMove } from "@/lib/capsheet-fixture";
 import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
 import { ArtifactBody } from "@/components/site/harness/ArtifactsView";
+import { asResolvedArtifacts } from "@/lib/stream/artifacts";
 import type { ScenarioResponse } from "@/lib/capsheet-fixture";
 
 function money(value: number | null | undefined): string {
@@ -457,6 +458,8 @@ export function SharedArtifactView({
   unavailable: boolean;
 }) {
   const provenance = artifact && typeof artifact.provenance === "object" && artifact.provenance !== null ? artifact.provenance as Record<string, unknown> : null;
+  const resolved = artifact ? asResolvedArtifacts([artifact]) : [];
+  const resolvedArtifact = resolved.length > 0 ? resolved[0] : null;
   return (
     <SharedFrame label="shared artifact">
       <div className="mt-6">
@@ -467,7 +470,7 @@ export function SharedArtifactView({
       </div>
 
       <div className="mt-6 space-y-4">
-        {unavailable || !artifact ? (
+        {unavailable || !artifact || !resolvedArtifact ? (
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">This artifact can&apos;t be resolved</h2>
             <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
@@ -477,7 +480,7 @@ export function SharedArtifactView({
         ) : (
           <>
             <section className="rounded-[10px] bg-surface shadow-hairline">
-              <ArtifactBody artifact={artifact as never} />
+              <ArtifactBody artifact={resolvedArtifact} />
             </section>
 
             {provenance && (

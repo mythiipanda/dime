@@ -22,6 +22,8 @@ const branchCreate = Type.Object({ thread: text(80), client: text(80), parent_se
 const tradeLegsSchema = Type.Object({ legs: Type.Array(Type.Object({ from: Type.String({ minLength: 2, maxLength: 4 }), to: Type.String({ minLength: 2, maxLength: 4 }), players: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 })) }, { additionalProperties: true }), { minItems: 1, maxItems: 8 }), season: Type.Optional(Type.String()) }, { additionalProperties: false });
 const tradeSchema = Type.Object({ team_a: Type.Optional(Type.String()), team_b: Type.Optional(Type.String()), players_a: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), players_b: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), season: Type.Optional(Type.String()) }, { additionalProperties: false });
 const capScenarioSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), exception_state: Type.Optional(signingExceptionStateSchema), moves: Type.Array(capScenarioMoveSchema, { minItems: 1, maxItems: 40 }) }, { additionalProperties: false });
+const capProjectionMoveSchema = Type.Object({ kind: Type.String(), label: Type.Optional(Type.String()), amount: Type.Optional(Type.Number()), player: Type.Optional(Type.String()), exercise: Type.Optional(Type.Boolean()), stretch: Type.Optional(Type.Boolean()), season: Type.Optional(Type.String()), exception: Type.Optional(Type.String()), years: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })), first_year_amount: Type.Optional(Type.Number()) }, { additionalProperties: false });
+const capProjectionSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), horizon: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })), moves: Type.Array(capProjectionMoveSchema, { minItems: 0, maxItems: 40 }) }, { additionalProperties: false });
 const partnersSchema = Type.Object({ player: Type.Optional(Type.String()), season: Type.Optional(Type.String()), teams: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), max_packages: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }, { additionalProperties: false });
 const watchSchema = Type.Object({ entity_type: Type.String(), entity_id: Type.String(), season: Type.Optional(Type.String()) });
 const boardSeason = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}$" }));
@@ -319,6 +321,23 @@ export function createProductServer(options: {
             throw new HttpError(422, [validationDetail("artifact_index_out_of_range", ["body", "payload", "artifact_index"], "artifact index out of range for the run submission", null)]);
         return { run_id: runId, artifact_index: index, thread, owner };
     };
+    const validateBoardPins = (store: ObjectStore, owner: string, payload: unknown): string | null => {
+        const shape = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+        if (!Array.isArray(shape.pins))
+            return null;
+        for (const pin of shape.pins) {
+            const p = pin && typeof pin === "object" ? pin as Record<string, unknown> : {};
+            const target = typeof p.object_id === "string" ? store.get(p.object_id) : undefined;
+            if (!target)
+                return `pin target does not exist`;
+            if (target.owner !== owner)
+                return `pin target is owned by someone else — cross-owner pinning is not supported`;
+            if (target.kind !== p.kind)
+                return `pin kind does not match the referenced object`;
+        }
+        return null;
+    };
+
     route("POST", /^\/api\/objects$/, async ({ req, res }) => {
         objectWriteRate(req);
         const owner = objectOwner(req);
@@ -327,6 +346,9 @@ export function createProductServer(options: {
         const invalid = validateObjectPayload(input.kind, payload);
         if (invalid)
             throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], invalid, null)]);
+        const pinInvalid = input.kind === "board" ? validateBoardPins(objects, owner, payload) : null;
+        if (pinInvalid)
+            throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], pinInvalid, null)]);
         const created = objects.create({ kind: input.kind as ObjectKind, owner, title: input.title, payload });
         const value = objects.get(created.object_id);
         if (!value)
@@ -351,6 +373,9 @@ export function createProductServer(options: {
             const invalid = validateObjectPayload(value.kind, input.payload);
             if (invalid)
                 throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], invalid, null)]);
+            const pinInvalid = value.kind === "board" ? validateBoardPins(objects, value.owner, input.payload) : null;
+            if (pinInvalid)
+                throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], pinInvalid, null)]);
         }
         objects.update(value, input);
         const updated = objects.get(value.object_id);
@@ -388,6 +413,43 @@ export function createProductServer(options: {
                 };
             });
     };
+    const resolveArtifactRef = (payload: unknown): { artifact: unknown; evidence: unknown[]; unavailable: boolean } => {
+        const shape = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+        const runId = typeof shape.run_id === "string" ? shape.run_id : "";
+        const thread = typeof shape.thread === "string" ? shape.thread : "";
+        const owner = typeof shape.owner === "string" ? shape.owner : "";
+        const index = typeof shape.artifact_index === "number" ? shape.artifact_index : -1;
+        try {
+            const resolved = analyst.store.readSources({ owner, thread }, runId);
+            const artifacts = resolved.submission && Array.isArray((resolved.submission as Record<string, unknown>).artifacts) ? (resolved.submission as Record<string, unknown>).artifacts as unknown[] : [];
+            const artifact = index >= 0 && index < artifacts.length ? artifacts[index] : null;
+            if (!artifact)
+                throw new Error("artifact missing");
+            const selectors = artifact && typeof artifact === "object" && Array.isArray((artifact as Record<string, unknown>).sources) ? (artifact as Record<string, unknown>).sources as { ref?: string; rows?: number[]; columns?: string[] }[] : [];
+            const records = new Map((resolved.sources ?? []).map(record => [record.ref, record]));
+            const evidence = selectors.map(selector => {
+                const record = selector.ref ? records.get(selector.ref) : undefined;
+                if (!record)
+                    return { ref: selector.ref ?? "", missing: true };
+                const result = sourceResult(record);
+                const data = objectValue(result.structuredContent.result) ?? {};
+                const rows = Array.isArray(data.rows) ? data.rows as Record<string, unknown>[] : [];
+                const picked = Array.isArray(selector.rows) ? selector.rows.map(i => rows[i]).filter((row): row is Record<string, unknown> => !!row) : rows;
+                const meta = objectValue(data.meta);
+                return {
+                    ref: record.ref,
+                    tool: record.tool,
+                    ...(meta ? { meta } : {}),
+                    rows: picked.slice(0, 200)
+                };
+            });
+            return { artifact, evidence, unavailable: false };
+        }
+        catch {
+            return { artifact: null, evidence: [], unavailable: true };
+        }
+    };
+
     route("GET", /^\/s\/([^/]+)$/, async ({ res, params }) => {
         if (!readTokenShape.test(params[0]))
             throw new HttpError(422, [validationDetail("read_token_format", ["params", "read_token"], "Invalid share token", params[0])]);
@@ -395,6 +457,25 @@ export function createProductServer(options: {
         if (!value)
             throw new HttpError(404, "not found");
         const shared = publicObject(value);
+        if (value.kind === "board" && !value.archived) {
+            const shape = value.payload && typeof value.payload === "object" ? value.payload as Record<string, unknown> : {};
+            const pins = Array.isArray(shape.pins) ? shape.pins as { kind?: string; object_id?: string; note?: string }[] : [];
+            const resolvedPins = pins.map(pin => {
+                const target = typeof pin.object_id === "string" ? objects.get(pin.object_id) : undefined;
+                if (!target)
+                    return { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "missing" };
+                if (target.archived)
+                    return { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "archived" };
+                const base = { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "ok", title: target.title, payload: target.payload };
+                if (pin.kind === "artifact_ref") {
+                    const resolvedRef = resolveArtifactRef(target.payload);
+                    return { ...base, artifact: resolvedRef.artifact, artifact_unavailable: resolvedRef.unavailable };
+                }
+                return base;
+            });
+            json(res, { ...shared, pins: resolvedPins });
+            return;
+        }
         if (value.kind === "thread_grant" && !value.archived) {
             const transcript = await resolveThreadTranscript(value.payload);
             json(res, { ...shared, payload: { thread: true }, transcript });
@@ -402,47 +483,20 @@ export function createProductServer(options: {
         }
         if (value.kind === "artifact_ref" && !value.archived) {
             const shape = value.payload && typeof value.payload === "object" ? value.payload as Record<string, unknown> : {};
-            const runId = typeof shape.run_id === "string" ? shape.run_id : "";
-            const thread = typeof shape.thread === "string" ? shape.thread : "";
-            const owner = typeof shape.owner === "string" ? shape.owner : "";
             const index = typeof shape.artifact_index === "number" ? shape.artifact_index : -1;
-            try {
-                const resolved = analyst.store.readSources({ owner, thread }, runId);
-                const artifacts = resolved.submission && Array.isArray((resolved.submission as Record<string, unknown>).artifacts) ? (resolved.submission as Record<string, unknown>).artifacts as unknown[] : [];
-                const artifact = index >= 0 && index < artifacts.length ? artifacts[index] : null;
-                if (!artifact)
-                    throw new Error("artifact missing");
-                const selectors = artifact && typeof artifact === "object" && Array.isArray((artifact as Record<string, unknown>).sources) ? (artifact as Record<string, unknown>).sources as { ref?: string; rows?: number[]; columns?: string[] }[] : [];
-                const records = new Map((resolved.sources ?? []).map(record => [record.ref, record]));
-                const evidence = selectors.map(selector => {
-                    const record = selector.ref ? records.get(selector.ref) : undefined;
-                    if (!record)
-                        return { ref: selector.ref ?? "", missing: true };
-                    const result = sourceResult(record);
-                    const data = objectValue(result.structuredContent.result) ?? {};
-                    const rows = Array.isArray(data.rows) ? data.rows as Record<string, unknown>[] : [];
-                    const picked = Array.isArray(selector.rows) ? selector.rows.map(i => rows[i]).filter((row): row is Record<string, unknown> => !!row) : rows;
-                    const meta = objectValue(data.meta);
-                    return {
-                        ref: record.ref,
-                        tool: record.tool,
-                        ...(meta ? { meta } : {}),
-                        rows: picked.slice(0, 200)
-                    };
-                });
-                json(res, {
-                    ...shared,
-                    payload: { artifact_index: index },
-                    artifact,
-                    evidence,
-                    captured_at: typeof shape.granted_before === "string" ? shape.granted_before : value.created_at
-                });
-                return;
-            }
-            catch {
+            const resolvedRef = resolveArtifactRef(value.payload);
+            if (resolvedRef.unavailable) {
                 json(res, { ...shared, payload: { artifact_index: index }, artifact: null, evidence: [], unavailable: true });
                 return;
             }
+            json(res, {
+                ...shared,
+                payload: { artifact_index: index },
+                artifact: resolvedRef.artifact,
+                evidence: resolvedRef.evidence,
+                captured_at: typeof shape.granted_before === "string" ? shape.granted_before : value.created_at
+            });
+            return;
         }
         json(res, shared);
     });
@@ -463,6 +517,11 @@ export function createProductServer(options: {
     route("POST", /^\/api\/trade\/check$/, async ({ req, res }) => { const input = parseBody(tradeSchema, await body(req)); const players = (value: string | string[] | undefined) => Array.isArray(value) ? value.map(s => s.trim()).filter(Boolean).join(", ") : value ?? ""; const result = await data.call("product_trade", { team_a: input.team_a ?? "", team_b: input.team_b ?? "", players_a: players(input.players_a), players_b: players(input.players_b), season: input.season ?? "2026-27" }); json(res, result, result.ok === false ? 422 : 200); });
     route("GET", /^\/api\/cap\/sheet$/, async ({ res, url }) => {
         const result = await data.call("product_cap_sheet", { team: (url.searchParams.get("team") ?? "").slice(0, 12), season: url.searchParams.get("season") ?? "2026-27" });
+        json(res, result, result.ok === false ? 422 : 200);
+    });
+    route("POST", /^\/api\/cap\/projection$/, async ({ req, res }) => {
+        const input = parseBody(capProjectionSchema, await body(req));
+        const result = await data.call("product_cap_projection", { payload: { team: input.team ?? "", season: input.season ?? "2026-27", moves: input.moves ?? [], horizon: input.horizon } });
         json(res, result, result.ok === false ? 422 : 200);
     });
     route("POST", /^\/api\/cap\/scenario$/, async ({ req, res }) => {

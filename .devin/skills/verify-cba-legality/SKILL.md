@@ -50,7 +50,7 @@ stdlib seeded generation instead of adding a runtime or CI-only dependency.
 
 ## Coverage record
 
-Sync commit: `bb8e52d6c05ee1529c9760c7a57c8e76a24dd9ab`
+Sync commit: `29f5d793ae27068b3f7397b25a65480ae85f96c8`
 
 Covered files and functions at that commit:
 
@@ -65,7 +65,8 @@ cap room, payrolls, active current-year/prior-year TPE rows, cash-out presence,
 outgoing-player aggregation, and the first/second-apron lines encoded in `CAP`.
 Generated integration inputs satisfy the internal `_evaluate_team` shape produced
 by `_team_side`: incoming totals equal the sum of incoming row salaries, outgoing
-totals are nonnegative, and no sign-and-trade/BYC input is present.
+totals are nonnegative, zero-outgoing sides have no outgoing player names, and no
+sign-and-trade/BYC input is present.
 
 The exhaustive core checks all 23,360 combinations of up to three salaries in
 `{0,1,2}`, one to three bins with capacities in `{0,1,2,3}`, and every
@@ -75,8 +76,13 @@ direct expanded-matching detection, exact 2026-27 matching-band arithmetic and
 rule identity at the $8,846,000 and $35,384,000 scaled-band boundaries, a fixed
 least-restrictive matching-election vector matrix, matching inverse/monotonicity
 cases, all 64 hard-cap trigger boolean combinations at six apron-boundary
-payrolls, deterministic propagated `match_rule` vectors, and 600 seeded
-`_evaluate_team` team-side cases.
+payrolls, deterministic propagated `match_rule` vectors, fixed first-apron
+exact/$1-over expanded-matching cushion vectors, fixed zero-outgoing `$1`,
+`$250,000`, and `$250,001` no-capacity vectors, positive-minimum versus
+zero-salary outgoing-slot vectors, cap-room and declared-TPE absorption vectors,
+and 600 seeded `_evaluate_team` team-side cases including sub-`$1M` incoming
+salaries across zero-outgoing cap-room, declared-TPE, and
+no-available-structure paths.
 
 ## Read a failure
 
@@ -120,7 +126,7 @@ Before relying on the harness after pulling new work, compare the covered files
 with the sync commit:
 
 ```sh
-git diff bb8e52d6c05ee1529c9760c7a57c8e76a24dd9ab -- backend/shared/tools/cap_rules.py backend/shared/tools/league/cba_cap.py backend/shared/tools/league/trade_legality.py
+git diff 29f5d793ae27068b3f7397b25a65480ae85f96c8 -- backend/shared/tools/cap_rules.py backend/shared/tools/league/cba_cap.py backend/shared/tools/league/trade_legality.py
 ```
 
 If the diff is empty, the coverage record is current. If it is not empty, inspect

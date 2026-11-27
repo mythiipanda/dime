@@ -53,7 +53,7 @@ function MetricPicker({ metrics, board, onAdd }: { metrics: BoardMetric[]; board
   </Dialog>;
 }
 
-export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null; onOpen: (id: string | null) => void; onAsk: (prompt: string) => void }) {
+export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null; onOpen: (id: string | null) => void; onAsk: (prompt: string, context?: import("../lib/view-context").ViewContext) => void }) {
   const [board, setBoard] = useState<Board | null>(null);
   const [metrics, setMetrics] = useState<BoardMetric[]>([]);
   const [catalogError, setCatalogError] = useState("");
@@ -171,6 +171,6 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
     {(busy || seeding) && <p role="status" className="mb-4 text-xs text-ink-3">{seeding ? "Finding the starting player pool…" : "Filling from the warehouse…"}</p>}
     {board.rows.length && board.columns.length ? <BoardsTable board={board} metrics={metrics} loading={busy} sort={sort} onSort={metric => { const best = sort?.id === metric.id ? !sort.best : true; setSort({ id: metric.id, best }); commit(sortByColumn(board, metric, best)); }} onRemoveRow={id => commit(removeRow(board, id))} onRemoveColumn={id => commit(removeColumn(board, id))} onMoveRow={(from, to) => { setSort(null); commit(reorderRows(board, from, to)); }} onMoveColumn={(from, to) => commit(reorderColumns(board, from, to))} /> : <Panel title={seeding ? "Building your starting pool" : !board.rows.length ? "Make room for a better decision." : "Choose what to compare."} description={!board.rows.length ? "Add a player, then choose your metrics. Dime fills the grid from the warehouse." : "Add a metric to see warehouse-backed values."}>{!seeding && !board.rows.length && template?.seed && <Button onClick={() => void populate(board, template)}>Populate template</Button>}</Panel>}
     <BoardPins board={board} onCommit={commit} />
-    <div className="mt-5 flex flex-wrap items-start justify-between gap-4"><p className="max-w-lg text-xs leading-relaxed text-ink-3">Click a value to inspect its source. Best marks the strongest rank in this board; defensive rating and salary favor lower values. Salary uses 2026–27 data.</p><Button onClick={() => onAsk(boardPrompt(board, metrics))}>Ask Dime about this board<ArrowUpRight size={13} /></Button></div>
+    <div className="mt-5 flex flex-wrap items-start justify-between gap-4"><p className="max-w-lg text-xs leading-relaxed text-ink-3">Click a value to inspect its source. Best marks the strongest rank in this board; defensive rating and salary favor lower values. Salary uses 2026–27 data.</p><Button onClick={() => onAsk(boardPrompt(board, metrics), { kind: "board", summary: `${board.title} · ${board.rows.length} players · ${board.columns.length} metrics`, entities: { title: board.title, season: board.season, players: board.rows.map((row) => ({ player_id: row.player_id, name: row.name })), metrics: board.columns.map((column) => column.metric_id) } })}>Ask Dime about this board<ArrowUpRight size={13} /></Button></div>
   </div>;
 }

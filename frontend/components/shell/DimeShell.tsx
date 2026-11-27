@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Award, BookOpen, ClipboardList, Columns3, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, Target, Landmark, History, ArrowLeftRight, Workflow, Table2 } from "lucide-react";
+import { Award, BookOpen, ClipboardList, Columns3, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, Target, Landmark, History, ArrowLeftRight, Workflow, Table2, CalendarRange } from "lucide-react";
 import { SidebarNav } from "../ds/SidebarNav";
 import DimeCommandPalette, { type PaletteEntry } from "../site/DimeCommandPalette";
 import TradesView from "../dime/views/TradesView";
@@ -10,6 +10,7 @@ import DraftView from "../dime/views/DraftView";
 import MatchupsView from "../dime/views/MatchupsView";
 import ScoutView from "../dime/views/ScoutView";
 import CapSheetView from "../dime/views/CapSheetView";
+import PlannerView from "../dime/views/PlannerView";
 import HistoryView from "../dime/views/HistoryView";
 import AwardsView from "../dime/views/AwardsView";
 import { ChatView } from "./ChatView";
@@ -23,7 +24,7 @@ import { replayName } from "../../lib/replay";
 import { createWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
 export { parseShellTab, shellNavigation } from "../../lib/shell-navigation";
-const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, compare: Columns3, draft: ClipboardList, matchups: Swords, scout: Target, cap: Landmark, history: History, awards: Award };
+const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, compare: Columns3, draft: ClipboardList, matchups: Swords, scout: Target, cap: Landmark, planner: CalendarRange, history: History, awards: Award };
 const navigation = shellNavigation.map(item => { const Icon = icons[item.id]; return { ...item, icon: <Icon size={17} strokeWidth={1.5} /> }; });
 
 export function DimeShell() {
@@ -83,9 +84,9 @@ export function DimeShell() {
     if (id) url.searchParams.set("nb", id); else url.searchParams.delete("nb");
     window.history.replaceState({}, "", url);
   };
-  const askBoard = (text: string) => {
+  const askBoard = (text: string, context?: import("../../lib/view-context").ViewContext) => {
     const id = crypto.randomUUID();
-    saveWorkflowDraft({ ...createWorkflowDraft(id, text), edited: true });
+    saveWorkflowDraft({ ...createWorkflowDraft(id, text, context), edited: true });
     setWorkflowRequest(null); navigate("chat", id);
   };
   const runWorkflow = (text: string) => {
@@ -123,17 +124,18 @@ export function DimeShell() {
         {tab === "workflows" && <WorkflowsPanel onRun={runWorkflow} />}
         {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={askBoard} />}
         {tab === "notebooks" && <NotebooksPanel notebookId={notebookId} onOpen={openNotebook} />}
-        {tab === "today" && <HomeView onAsk={() => navigate("workflows")} />}
+        {tab === "today" && <HomeView onAsk={() => navigate("workflows")} onMorningAsk={askBoard} />}
         {tab === "briefs" && <LibraryView onThread={pick} onBoard={openBoard} />}
         {tab === "data" && <DataView />}
         {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} /></div>}
         {tab === "compare" && <div className="tools-view"><CompareView onAsk={askBoard} /></div>}
         {tab === "draft" && <div className="tools-view"><DraftView onAsk={askBoard} /></div>}
-        {tab === "matchups" && <div className="tools-view"><MatchupsView /></div>}
-        {tab === "scout" && <div className="tools-view"><ScoutView /></div>}
+        {tab === "matchups" && <div className="tools-view"><MatchupsView onAsk={askBoard} /></div>}
+        {tab === "scout" && <div className="tools-view"><ScoutView onAsk={askBoard} /></div>}
         {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard} /></div>}
-        {tab === "history" && <div className="tools-view"><HistoryView /></div>}
-        {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
+        {tab === "planner" && <div className="tools-view"><PlannerView /></div>}
+        {tab === "history" && <div className="tools-view"><HistoryView onAsk={askBoard} /></div>}
+        {tab === "awards" && <div className="tools-view"><AwardsView onAsk={askBoard} /></div>}
       </div>
     </main>
     <DimeCommandPalette open={palette} entries={entries} onClose={() => setPalette(false)} />

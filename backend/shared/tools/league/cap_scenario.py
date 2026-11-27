@@ -3,8 +3,16 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ...contracts import canonical_team_abbr
+from ...contracts import canonical_team_abbr, normalize_name
 from ._helpers import _owned_connection, _pkg
+from .cap_sheet import (
+    _cap_hold_payload,
+    _cap_room_charge_inputs,
+    _charge_players,
+    _hold_inclusion,
+    _roster_charge,
+    cap_lines_for_season,
+)
 from .cba_cap import (
     CAP,
     SalaryColumnError,
@@ -22,6 +30,7 @@ from .cba_cap import (
     _used_expanded_matching,
 )
 from ..cap_rules import (
+    apron_state as _apron_state_for_lines,
     cba_restrictions as _scenario_restrictions,
     roster_issues as _roster_issues,
     scenario_trace,
@@ -83,7 +92,10 @@ def _merge_cap_labels(*values: str) -> str:
 
 
 def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
-                              pay_before: int) -> dict[str, Any]:
+                              pay_before: int,
+                              lines: dict[str, Any] | None = None,
+                              team_salary_before: int | None = None,
+                              hold_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     state = initial_exception_state(None)
     active_hard_caps: list[str] = []
     validations: list[dict[str, Any]] = []
@@ -91,15 +103,28 @@ def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
     advisory: list[str] = []
     triggers: list[str] = []
     running = int(pay_before)
+    running_team_salary = int(pay_before if team_salary_before is None else team_salary_before)
+    lines = dict(lines or CAP)
+    hold_index = {normalize_name(row.get("player") or row.get("PLAYER_NAME")): row
+                  for row in list(hold_rows or [])
+                  if row.get("player") or row.get("PLAYER_NAME")}
+    extinguished_holds: set[str] = set()
     for move_index, move in enumerate(moves):
         if move.get("kind") != "signing":
-            running += _legacy_move_delta(move)
+            delta = _legacy_move_delta(move)
+            running += delta
+            running_team_salary += delta
             continue
+        hold = hold_index.get(normalize_name(move.get("player")))
+        validation_team_salary = running_team_salary
+        if hold is not None and normalize_name(hold.get("player")) not in extinguished_holds:
+            validation_team_salary -= int(hold.get("cap_hold") or 0)
         validation = validate_signing(
             {"kind": "signing", "player": move.get("player"),
              "amount": move.get("amount"), "mechanism": "auto"},
-            team=team, payroll_before=running, lines=CAP,
-            exception_state=state, active_hard_caps=active_hard_caps)
+            team=team, payroll_before=running, lines=lines,
+            exception_state=state, active_hard_caps=active_hard_caps,
+            team_salary_before=validation_team_salary)
         validation["move_index"] = move_index
         move["validation"] = validation
         validations.append(validation)
@@ -113,7 +138,15 @@ def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
             if (validation["hard_cap_trigger"]
                     and validation["hard_cap_trigger"] not in active_hard_caps):
                 active_hard_caps.append(validation["hard_cap_trigger"])
-        running += int(move.get("amount") or 0)
+        amount = int(move.get("amount") or 0)
+        running += amount
+        running_team_salary += amount
+        hold = hold_index.get(normalize_name(move.get("player")))
+        if hold is not None:
+            key = normalize_name(hold.get("player"))
+            if key not in extinguished_holds:
+                extinguished_holds.add(key)
+                running_team_salary -= int(hold.get("cap_hold") or 0)
     if validations:
         advisory.append(
             "legacy comma-string signings are grouped compatibility inputs with mechanism auto and one-year terms; caller chronological ordering cannot be represented")
@@ -210,6 +243,9 @@ def get_cap_scenario(team: str = "", signings: str = "",
         except SalaryColumnError as exc:
             return {"tool": "get_cap_scenario", "ok": False,
                     "reason": exc.reason, "error": str(exc)}
+        hold_payload = _cap_hold_payload(con, team, season)
+        hold_rows = list(hold_payload.get("rows") or [])
+        lines, lines_projected = cap_lines_for_season(con, season)
         trade_total, trade_names, trade_unknown = _match_trade_players(
             team, trade_out_players, con, season)
         _waive_total, waive_names, waive_unknown = _match_trade_players(
@@ -262,14 +298,43 @@ def get_cap_scenario(team: str = "", signings: str = "",
                           "amount": int(side["salary"] or 0)})
         salary_date = _salary_date(con)
         source = _payroll_source(con)
-    signing_validation = _validate_legacy_signings(team.upper(), moves, pay_before)
-    room_before = max(0, CAP["cap"] - pay_before)
+        charge_inputs = _cap_room_charge_inputs(con, team, season)
+    hold_names = {normalize_name(row.get("player") or row.get("PLAYER_NAME"))
+                  for row in hold_rows if row.get("player") or row.get("PLAYER_NAME")}
+    signed_holds = {normalize_name(name) for name, _amount in sign_rows
+                    if normalize_name(name) in hold_names}
+    holds_before_detail, cap_holds_before, hold_count_before = _hold_inclusion(
+        hold_rows, set(), set())
+    holds_after_detail, cap_holds_after, hold_count_after = _hold_inclusion(
+        hold_rows, set(), signed_holds)
+    players_charge_before = _charge_players(charge_inputs, len(roster))
+    if charge_inputs.get("available"):
+        roster_charges_before = _roster_charge(
+            players_charge_before, hold_count_before, int(charge_inputs["minimum"]))
+    else:
+        roster_charges_before = 0
+    team_salary_before = int(pay_before) + cap_holds_before + roster_charges_before
+    cap_room_before = lines["cap"] - team_salary_before
+    signing_validation = _validate_legacy_signings(
+        team.upper(), moves, pay_before, lines=lines,
+        team_salary_before=team_salary_before, hold_rows=hold_rows)
+    room_before = max(0, cap_room_before)
     trace = scenario_trace(pay_before, moves,
                            f"{team.upper()} committed payroll")
     rows = trace["steps"]
     step = trace["next_step"]
     pay_after = trace["pay_after"]
-    state_after = _apron_state(pay_after)
+    roster_delta = (len(in_names) + len(sign_rows)
+                    - len(trade_names) - len(waive_names))
+    players_charge_after = players_charge_before + roster_delta
+    if charge_inputs.get("available"):
+        roster_charges_after = _roster_charge(
+            players_charge_after, hold_count_after, int(charge_inputs["minimum"]))
+    else:
+        roster_charges_after = 0
+    team_salary_after = int(pay_after) + cap_holds_after + roster_charges_after
+    cap_room_after = lines["cap"] - team_salary_after
+    state_after = _apron_state_for_lines(int(pay_after), lines)
     issues: list[str] = []
     matching: dict[str, Any] | None = None
     hard_cap = ""
@@ -283,7 +348,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
             len(trade_names), expanded_matching)
         consequence = _hard_cap_consequences(
             team.upper(), pay_after, aggregates=aggregates,
-            expanded_matching=expanded_matching)
+            expanded_matching=expanded_matching, lines=lines)
         hard_cap = consequence["hard_cap"]
         issues.extend(consequence["issues"])
         if state_after["over_apron2"] and aggregates:
@@ -305,12 +370,22 @@ def get_cap_scenario(team: str = "", signings: str = "",
     hard_cap = _merge_cap_labels(hard_cap, signing_validation["hard_cap"])
     issues.extend(signing_validation["blocking"])
     roster_before = len(roster)
-    roster_after = (roster_before - len(trade_names) - len(waive_names)
-                    + len(in_names) + len(sign_rows))
+    roster_after = roster_before + roster_delta
     issues.extend(_roster_issues(roster_after))
     rows.append({"step": step, "kind": "post_move",
                  "detail": "post-move payroll", "delta": 0,
                  "payroll": pay_after})
+    before_by_name = {normalize_name(row.get("player")): row
+                      for row in holds_before_detail}
+    cap_hold_details = []
+    for row in holds_after_detail:
+        before = before_by_name.get(normalize_name(row.get("player"))) or {}
+        cap_hold_details.append({
+            **row,
+            "included_in_team_salary_before": before.get("included_in_team_salary", False),
+            "included_amount_before": before.get("included_amount", 0),
+            "included_in_team_salary_after": row.get("included_in_team_salary", False),
+            "included_amount_after": row.get("included_amount", 0)})
     res = {
         "tool": "get_cap_scenario", "ok": True,
         "salary_basis": _payroll_proxy_meta()["salary_basis"],
@@ -320,8 +395,19 @@ def get_cap_scenario(team: str = "", signings: str = "",
             "team": team.upper(), "season": season,
             "payroll_before": pay_before, "payroll_after": pay_after,
             "delta": pay_after - pay_before,
-            "cap_room": CAP["cap"] - pay_after,
-            "tax_room": CAP["tax"] - pay_after,
+            "team_salary_before": team_salary_before,
+            "team_salary_after": team_salary_after,
+            "team_salary_unit": "usd_dollars",
+            "cap_holds_before": cap_holds_before,
+            "cap_holds_after": cap_holds_after,
+            "cap_hold_money_unit": "usd_dollars",
+            "roster_charges_before": roster_charges_before,
+            "roster_charges_after": roster_charges_after,
+            "cap_room": cap_room_after,
+            "cap_room_before": cap_room_before,
+            "cap_room_unit": "usd_dollars",
+            "committed_payroll_cap_room": lines["cap"] - pay_after,
+            "tax_room": lines["tax"] - pay_after,
             "room_apron1": state_after["room_apron1"],
             "room_apron2": state_after["room_apron2"],
             "over_tax": state_after["over_tax"],
@@ -330,7 +416,8 @@ def get_cap_scenario(team: str = "", signings: str = "",
             "hard_cap": hard_cap,
             "roster_before": roster_before, "roster_after": roster_after,
         },
-        "restrictions": _scenario_restrictions({**state_after, "cap_room": CAP["cap"] - pay_after}, season),
+        "restrictions": _scenario_restrictions({**state_after, "cap_room": cap_room_after}, season),
+        "cap_hold_details": cap_hold_details,
         "issues": issues,
         "signing_validations": signing_validation["validations"],
         "signing_exception_state": signing_validation["state"],
@@ -340,6 +427,10 @@ def get_cap_scenario(team: str = "", signings: str = "",
                  "salary_date": salary_date, "season": season,
                  "signing_validation_version": SIGNING_VALIDATION_VERSION,
                  "signing_proxy_disclosure": SIGNING_PROXY_DISCLOSURE,
+                 "cap_lines": lines,
+                 "cap_lines_projected": lines_projected,
+                 "cap_hold_derivation": hold_payload.get("meta") or {},
+                 "team_salary_note": "summary cap_room uses team salary including active cap holds and dynamic incomplete-roster charges; payroll_after remains the committed payroll proxy used for tax/apron comparisons",
                  **_payroll_proxy_meta(),
                  "roster_note": "player counts come from the salary sheet and "
                                 "may include dead money; confirm against the "
