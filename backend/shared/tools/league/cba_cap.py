@@ -8,11 +8,15 @@ from .._core import coerce_team_id, team_error_message
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 
-CAP = {"cap": 164_961_000, "tax": 200_428_000,
-       "apron1": 209_015_000, "apron2": 221_686_000}
-_EXPANDED_TPE_CUSHION = 9_096_000
-_EXPANDED_TPE_LOW_MAX = _EXPANDED_TPE_CUSHION - 250_000
-_EXPANDED_TPE_MID_MAX = 4 * _EXPANDED_TPE_LOW_MAX
+from ..cap_rules import (
+    CAP,
+    EXPANDED_TPE_CUSHION as _EXPANDED_TPE_CUSHION,
+    EXPANDED_TPE_LOW_MAX as _EXPANDED_TPE_LOW_MAX,
+    EXPANDED_TPE_MID_MAX as _EXPANDED_TPE_MID_MAX,
+    allowed_incoming as _allowed_incoming,
+    apron_state as _apron_state,
+    used_expanded_matching as _used_expanded_matching,
+)
 
 
 def _team_salary_lookup(con, name: str) -> str | None:
@@ -288,44 +292,6 @@ def _payroll(team: str, con: object = None,
             con.close()
     players = [{"player": r[0], "salary": r[1], **contract_details(None)} for r in rows]
     return sum(r[1] or 0 for r in rows), players
-
-
-def _apron_state(payroll: int) -> dict[str, object]:
-    return {
-        "over_tax": payroll > CAP["tax"],
-        "over_apron1": payroll > CAP["apron1"],
-        "over_apron2": payroll > CAP["apron2"],
-        "room_apron1": CAP["apron1"] - payroll,
-        "room_apron2": CAP["apron2"] - payroll,
-    }
-
-
-def _allowed_incoming(outgoing: int, over_apron1: bool,
-                      cap_room: int = 0) -> tuple[int, str]:
-    if over_apron1:
-        return outgoing, "100% (above the first apron)"
-    low = outgoing * 2 + 250_000
-    middle = outgoing + _EXPANDED_TPE_CUSHION
-    high = outgoing * 1.25 + 250_000
-    matched = int(max(min(low, middle), high))
-    if outgoing <= _EXPANDED_TPE_LOW_MAX:
-        rule = "200% plus $250k (below the first apron)"
-    elif outgoing <= _EXPANDED_TPE_MID_MAX:
-        rule = "outgoing salary plus $9.096M (below the first apron)"
-    else:
-        rule = "125% plus $250k (below the first apron)"
-    if cap_room > 0 and outgoing + cap_room + 250_000 > matched:
-        return outgoing + cap_room + 250_000, "cap room plus outgoing salary plus $250k (under the cap)"
-    return matched, rule
-
-
-def _used_expanded_matching(incoming: int, outgoing: int,
-                            cap_room: int = 0) -> bool:
-    if outgoing <= 0 or incoming <= outgoing:
-        return False
-    if cap_room > 0 and incoming <= outgoing + cap_room + 250_000:
-        return False
-    return True
 
 
 def _outgoing_needed(incoming: int, over_apron1: bool,
