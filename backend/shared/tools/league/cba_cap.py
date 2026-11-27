@@ -16,6 +16,9 @@ from ..cap_rules import (
     allowed_incoming as _allowed_incoming,
     apron_state as _apron_state,
     hard_cap_consequences as _hard_cap_consequences,
+    matching_election as _matching_election,
+    operative_match_rule as _operative_match_rule,
+    payroll_proxy_meta as _payroll_proxy_meta,
     used_expanded_matching as _used_expanded_matching,
 )
 
@@ -447,6 +450,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
             "meta": {"source": source, "season": season or "2026-27",
                      "salary_date": salary_date,
                      **_pkg().store.warehouse_identity(),
+                     **_payroll_proxy_meta(),
                      **{k: v for k, v in CAP.items()}}}
 
 
@@ -485,6 +489,7 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
            "meta": {"source": source, "season": season or season_used or "2026-27",
                     "salary_date": salary_date,
                     **_pkg().store.warehouse_identity(),
+                    **_payroll_proxy_meta(),
                     **{k: v for k, v in CAP.items()}}}
     if missing:
         res["meta"]["missing_teams"] = missing

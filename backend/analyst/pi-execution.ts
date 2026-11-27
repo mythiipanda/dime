@@ -459,6 +459,27 @@ function sourceSummary(record: SourceRecord) {
     return sourceEvidenceCard(record);
 }
 
+const RATE_LIMIT_EVIDENCE = /(rate.?limit|too many (tokens|requests)|token[s]? per minute|\b429\b|quota exceeded|token_quota)/i;
+
+export function isRateLimitEvidence(text: string): boolean {
+    return RATE_LIMIT_EVIDENCE.test(text);
+}
+
+export function classifyFailureKind(kind: string, error: unknown, session: { messages: ReadonlyArray<{ role?: unknown; errorMessage?: unknown }> } | null | undefined, extraEvidence?: string): string {
+    if (kind !== "model")
+        return kind;
+    const parts: string[] = [error instanceof Error ? error.message : String(error ?? "")];
+    if (extraEvidence)
+        parts.push(extraEvidence);
+    if (session) {
+        for (const message of session.messages) {
+            if (message.role === "assistant" && typeof message.errorMessage === "string")
+                parts.push(message.errorMessage);
+        }
+    }
+    return parts.some(part => isRateLimitEvidence(part)) ? "quota" : kind;
+}
+
 function safeFailureMessage(kind: string, error: unknown, apiKey?: string): string {
     const raw = error instanceof Error ? error.message : String(error ?? "");
     let sanitized = raw.trim();
@@ -1180,6 +1201,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     return bridgeClosePromise;
                 };
                 let kind = "configuration";
+                let providerErrorEvidence = "";
                 let bridgeCwd: string | undefined;
                 let bridgePid: number | undefined;
                 let modelApiKey: string | undefined;
@@ -1367,6 +1389,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         if (mapped)
                             emit(mapped);
                         retryStormGuard(event);
+                        if (event.type === "auto_retry_end" && !event.success && typeof event.finalError === "string")
+                            providerErrorEvidence += ` ${event.finalError}`;
+                        if (event.type === "message_end" && event.message && event.message.role === "assistant" && typeof event.message.errorMessage === "string")
+                            providerErrorEvidence += ` ${event.message.errorMessage}`;
                         if (notFoundCorrections < 6) {
                             const messages = session?.messages ?? [];
                             for (let i = scannedToolResults; i < messages.length; i++) {
@@ -1641,8 +1667,14 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             emit({ type: "answer", text: upgrade.blocks.map(block => block.text).join("\n\n"), submission: upgrade });
                         }
                     }
-                    if (!answerEmitted && !controller.signal.aborted)
-                        emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
+                    if (!answerEmitted && !controller.signal.aborted) {
+                        const failureKind = classifyFailureKind(kind, error, session, providerErrorEvidence);
+                        const rawErrorText = error instanceof Error ? error.message : String(error ?? "");
+                        const failureError = failureKind === "quota" && !isRateLimitEvidence(rawErrorText)
+                            ? new Error("the model provider's rate limit or quota was exhausted mid-run")
+                            : error;
+                        emit({ type: "failure", kind: failureKind, message: safeFailureMessage(failureKind, failureError, modelApiKey) });
+                    }
                 }
                 finally {
                     if (budgetNudge)

@@ -39,11 +39,15 @@ const AWARD_LABELS: Record<string, string> = {
   MIP: "Most Improved",
 };
 
+function driverValue(driver: Driver): string {
+  const value = driver.stat.trimEnd().endsWith("%") && driver.value <= 1
+    ? (driver.value * 100).toFixed(1)
+    : String(driver.value);
+  return `${value} ${driver.stat.toLowerCase()}`;
+}
+
 function driverLine(drivers: Driver[]): string {
-  return drivers
-    .slice(0, 3)
-    .map((d) => `${d.stat.trimEnd().endsWith("%") && d.value <= 1 ? (d.value * 100).toFixed(1) : d.value} ${d.stat.toLowerCase()}`)
-    .join(" · ");
+  return drivers.slice(0, 3).map(driverValue).join(" · ");
 }
 
 function Board({ board }: { board: AwardBoard }) {
