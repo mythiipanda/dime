@@ -201,3 +201,91 @@ def test_exactness_labels_present_on_effects():
     for season in out["seasons"]:
         for effect in season["effects"]:
             assert effect["exactness"] in ("exact", "derived", "proxy", "unresolved")
+
+
+def test_extend_stacks_after_contract_end_with_unvalidated_label():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "extend", "player": "Alpha", "years": 2,
+                             "first_year_amount": 25_000_000, "season": "2026-27"}])
+    finally:
+        con.close()
+    assert out["errors"] == []
+    assert block(out, "2028-29")["pay_after"] == 30_000_000
+    y4 = block(out, "2029-30")
+    assert y4["pay_after"] == 25_000_000
+    ext = [e for e in y4["effects"] if e["kind"] == "extend"]
+    assert ext and ext[0]["exactness"] == "unvalidated"
+    assert "unvalidated against max-extension rules" in ext[0]["disclosure"]
+
+
+def test_extend_rejects_players_not_on_team():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "extend", "player": "Charlie", "years": 2,
+                             "first_year_amount": 25_000_000}])
+    finally:
+        con.close()
+    assert out["errors"] and "could not match" in out["errors"][0]["error"]
+
+
+def test_mle_signing_skips_room_check_and_triggers_hard_cap_state():
+    rows = [
+        ("Alpha", "TST", 1, 60_000_000,
+         20_000_000, 20_000_000, 20_000_000, None, None, None, None, None),
+        ("Maxed", "TST", 2, 500_000_000,
+         160_000_000, 160_000_000, 160_000_000, None, None, None, None, None),
+    ]
+    con = memory_con(rows)
+    try:
+        out = project(con, [{"kind": "signing", "amount": 13_000_000,
+                             "exception": "mle", "season": "2026-27"}])
+    finally:
+        con.close()
+    y1 = block(out, "2026-27")
+    assert y1["ordering_notes"] == [], "exception signings are not room-checked"
+    assert y1["hard_cap"] == "mle apron"
+    assert y1["exception_usage"] == ["mle"]
+    assert y1["hard_cap_violation"] == "" or "hard-capped" in y1["hard_cap_violation"]
+
+
+def test_cap_room_signing_still_room_checked_by_default():
+    rows = [
+        ("Alpha", "TST", 1, 60_000_000,
+         20_000_000, 20_000_000, 20_000_000, None, None, None, None, None),
+        ("Maxed", "TST", 2, 500_000_000,
+         160_000_000, 160_000_000, 160_000_000, None, None, None, None, None),
+    ]
+    con = memory_con(rows)
+    try:
+        out = project(con, [{"kind": "signing", "amount": 13_000_000, "season": "2026-27"}])
+    finally:
+        con.close()
+    assert block(out, "2026-27")["ordering_notes"], "default cap-room signings stay room-checked"
+
+
+def test_unknown_exception_errors_honestly():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 1_000_000, "exception": "tpje"}])
+    finally:
+        con.close()
+    assert out["errors"] and "unknown exception" in out["errors"][0]["error"]
+
+
+def test_hard_cap_violation_fires_over_first_apron():
+    rows = [
+        ("Alpha", "TST", 1, 60_000_000,
+         20_000_000, 20_000_000, 20_000_000, None, None, None, None, None),
+        ("Maxed", "TST", 2, 800_000_000,
+         200_000_000, 200_000_000, 200_000_000, None, None, None, None, None),
+    ]
+    con = memory_con(rows)
+    try:
+        out = project(con, [{"kind": "signing", "amount": 13_000_000,
+                             "exception": "mle", "season": "2026-27"}])
+    finally:
+        con.close()
+    y1 = block(out, "2026-27")
+    assert y1["pay_after"] == 233_000_000
+    assert "hard-capped at the first apron" in y1["hard_cap_violation"]
