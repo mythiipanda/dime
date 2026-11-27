@@ -55,6 +55,7 @@ type LegTeamRows = {
   over_apron1?: boolean;
   over_apron2?: boolean;
   hard_cap?: string | null;
+  tpe_creation?: { amount: number; expiry: string; condition: string; copy: string } | null;
   issues?: string[];
 };
 
@@ -584,6 +585,12 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
               {leg.hard_cap && <span className="text-red">hard-capped at {leg.hard_cap}</span>}
             </div>
             {leg.match_rule && <div className="mt-0.5 text-[11px] text-ink-2">{leg.match_rule}</div>}
+            {leg.tpe_creation && (
+              <div className="mt-1 rounded-[6px] border border-line bg-field px-2 py-1 text-[11px] leading-snug text-ink-2">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-accent">trade exception</span>{" "}
+                {leg.tpe_creation.copy}
+              </div>
+            )}
           </div>
         )}
         {(leg || check.state === "ok") && (
