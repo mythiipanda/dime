@@ -48,7 +48,7 @@ const artifact = (title: string, columns: string[], rows: (string | number)[][],
 
 function Section({ title, cite, pin, children, wide }: { title: string; cite?: Provenance; pin?: DimeArtifact; children: React.ReactNode; wide?: boolean }) {
   return (
-    <section className={`flex flex-col rounded-xl border border-line bg-surface p-5 ${wide ? "sm:col-span-2" : ""}`}>
+    <section className={`flex min-w-0 flex-col rounded-xl border border-line bg-surface p-5 ${wide ? "sm:col-span-2" : ""}`}>
       <div className="mb-4 flex items-center justify-between gap-2">
         <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">{title}</h3>
         {pin && <PinButton artifact={pin} />}
