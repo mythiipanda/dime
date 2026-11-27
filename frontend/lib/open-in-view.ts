@@ -8,8 +8,12 @@ export const NBA_TEAM_ABBRS = [
 
 const CAP_TOOLS = new Set(["get_cap_table", "get_cap_ledger", "get_cap_scenario"]);
 const TRADE_TOOLS = new Set(["get_trade_check", "get_trade_value", "get_trade_legality"]);
+const MATCHUP_TOOLS = new Set(["get_matchup_preview", "get_matchup_brief", "get_matchup_splits"]);
+const SCOUT_TOOLS = new Set(["get_scout_pack", "get_opponent_scout", "get_scouting_report"]);
+const AWARD_TOOLS = new Set(["get_award_race", "get_award_results"]);
+const COMPARE_TOOLS = new Set(["get_comps", "get_team_compare"]);
 
-export type ViewTarget = { tab: "cap" | "trades"; team?: string };
+export type ViewTarget = { tab: "cap" | "trades" | "matchups" | "scout" | "awards" | "compare"; team?: string };
 
 function sourceTool(source?: string): string {
   if (!source) return "";
@@ -18,8 +22,10 @@ function sourceTool(source?: string): string {
 
 function scanTeams(text: string): string[] {
   const found: string[] = [];
-  for (const abbr of NBA_TEAM_ABBRS) {
-    if (new RegExp(`\\b${abbr}\\b`).test(text)) found.push(abbr);
+  for (const match of text.matchAll(/\b[A-Z]{3}\b/g)) {
+    if ((NBA_TEAM_ABBRS as readonly string[]).includes(match[0]) && !found.includes(match[0])) {
+      found.push(match[0]);
+    }
   }
   return found;
 }
@@ -43,6 +49,10 @@ export function viewTargetForArtifact(artifact: DimeArtifact): ViewTarget | null
   const tool = sourceTool(artifact.source);
   if (CAP_TOOLS.has(tool)) return { tab: "cap", team: artifactTeam(artifact) };
   if (TRADE_TOOLS.has(tool)) return { tab: "trades", team: artifactTeam(artifact) };
+  if (MATCHUP_TOOLS.has(tool)) return { tab: "matchups", team: artifactTeam(artifact) };
+  if (SCOUT_TOOLS.has(tool)) return { tab: "scout", team: artifactTeam(artifact) };
+  if (AWARD_TOOLS.has(tool)) return { tab: "awards" };
+  if (COMPARE_TOOLS.has(tool)) return { tab: "compare" };
   return null;
 }
 
