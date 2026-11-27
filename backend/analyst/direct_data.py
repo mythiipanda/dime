@@ -475,6 +475,24 @@ def product_today(season: str = '2025-26') -> dict:
     from shared.tools.today import get_today
     return _decoded(get_today.invoke({'season':season}))
 
+
+def _live_scoreboard_games(timeout: float = 8.0) -> tuple[list, str | None]:
+    try:
+        import httpx
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Accept': 'application/json,text/plain,*/*',
+            'Referer': 'https://www.nba.com/',
+        }
+        r = httpx.get('https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json',
+                      headers=headers, timeout=timeout)
+        r.raise_for_status()
+        scoreboard = r.json().get('scoreboard', {})
+        return scoreboard.get('games', []) or [], scoreboard.get('gameDate')
+    except Exception:
+        return [], None
+
 @tool(description='Read the live matchups slate: next game-date games with team ratings, form, and injuries.')
 def product_matchups(season: str = '') -> dict:
     import ast
@@ -489,20 +507,47 @@ def product_matchups(season: str = '') -> dict:
             return {'ok': False, 'error': 'required warehouse tables missing', 'games': []}
         if 'silver_scoreboard' not in tables:
             return {'ok': False, 'error': 'required warehouse tables missing', 'games': []}
-        day = 'try_cast(GAME_DATE_EST AS DATE)'
-        slate = con.execute(f'SELECT max({day}) FROM silver_scoreboard').fetchone()[0]
-        if slate is None:
-            return {'ok': True, 'date': '', 'games': [], 'note': 'no games found'}
-        rows = con.execute(
-            f'SELECT GAME_ID, GAME_STATUS_TEXT, HOME_TEAM_ABBREVIATION, VISITOR_TEAM_ABBREVIATION, NATL_TV_BROADCASTER_ABBREVIATION, HOME_TV_BROADCASTER_ABBREVIATION, AWAY_TV_BROADCASTER_ABBREVIATION FROM silver_scoreboard WHERE {day} = cast(? AS DATE)',
-            [slate.isoformat()],
-        ).fetchall()
-        games_by_id = {}
-        for gid, status, home_abbr, away_abbr, natl, home_tv, away_tv in rows:
-            games_by_id.setdefault(str(gid), {
-                'id': str(gid), 'status': str(status or ''), 'home_abbr': str(home_abbr or ''),
-                'away_abbr': str(away_abbr or ''), 'network': str(natl or home_tv or away_tv or ''),
-            })
+        live_games, live_date = _live_scoreboard_games()
+        live = bool(live_games)
+        if live:
+            slate = None
+            slate_iso = live_date or ''
+            games_by_id = {}
+            for lg in live_games:
+                home_abbr = str((lg.get('homeTeam') or {}).get('teamTricode') or '')
+                away_abbr = str((lg.get('awayTeam') or {}).get('teamTricode') or '')
+                if not home_abbr or not away_abbr:
+                    continue
+                gid = str(lg.get('gameId') or '')
+                period = lg.get('period') or 0
+                clock = str(lg.get('gameClock') or '')
+                status_text = str(lg.get('gameStatusText') or '')
+                if period and clock:
+                    status_text = f"Q{period} {clock}"
+                games_by_id[gid] = {
+                    'id': gid, 'status': status_text, 'home_abbr': home_abbr,
+                    'away_abbr': away_abbr,
+                    'network': '',
+                    'home_score': (lg.get('homeTeam') or {}).get('score'),
+                    'away_score': (lg.get('awayTeam') or {}).get('score'),
+                    'in_progress': bool(period),
+                }
+        else:
+            day = 'try_cast(GAME_DATE_EST AS DATE)'
+            slate = con.execute(f'SELECT max({day}) FROM silver_scoreboard').fetchone()[0]
+            if slate is None:
+                return {'ok': True, 'date': '', 'games': [], 'note': 'no games found'}
+            slate_iso = slate.isoformat()
+            rows = con.execute(
+                f'SELECT GAME_ID, GAME_STATUS_TEXT, HOME_TEAM_ABBREVIATION, VISITOR_TEAM_ABBREVIATION, NATL_TV_BROADCASTER_ABBREVIATION, HOME_TV_BROADCASTER_ABBREVIATION, AWAY_TV_BROADCASTER_ABBREVIATION FROM silver_scoreboard WHERE {day} = cast(? AS DATE)',
+                [slate_iso],
+            ).fetchall()
+            games_by_id = {}
+            for gid, status, home_abbr, away_abbr, natl, home_tv, away_tv in rows:
+                games_by_id.setdefault(str(gid), {
+                    'id': str(gid), 'status': str(status or ''), 'home_abbr': str(home_abbr or ''),
+                    'away_abbr': str(away_abbr or ''), 'network': str(natl or home_tv or away_tv or ''),
+                })
         ratings_season = con.execute('SELECT max(_season) FROM silver_team_ratings').fetchone()[0]
         ratings = {}
         for team_id, team_name, w, l, offr, defr, netr, pace, ts in con.execute(
@@ -579,15 +624,24 @@ def product_matchups(season: str = '') -> dict:
         for game in sorted(games_by_id.values(), key=lambda g: g['status']):
             if not game['away_abbr'] or not game['home_abbr']:
                 continue
-            games.append({
+            entry = {
                 'id': game['id'],
                 'away': team_payload(game['away_abbr']),
                 'home': team_payload(game['home_abbr']),
                 'time': game['status'],
                 'network': game['network'],
-                'date': slate.isoformat(),
-            })
-        return {'ok': True, 'date': slate.isoformat(), 'season': ratings_season, 'games': games}
+                'date': slate_iso,
+            }
+            if game.get('in_progress'):
+                entry['home_score'] = game.get('home_score')
+                entry['away_score'] = game.get('away_score')
+            games.append(entry)
+        result = {'ok': True, 'date': slate_iso, 'season': ratings_season, 'games': games}
+        if live:
+            from datetime import datetime as _dt, timezone as _tz
+            result['live'] = True
+            result['fetched_at'] = _dt.now(_tz.utc).isoformat()
+        return result
     except Exception as exc:
         return {'ok': False, 'error': str(exc)[:200], 'games': []}
     finally:
