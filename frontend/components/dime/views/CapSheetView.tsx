@@ -80,14 +80,19 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   }, []);
 
   const draftKey = `${team}:${scenarioSeason ?? DEFAULT_SCENARIO_SEASON}`;
-  const restoreKey = useRef<string | null>(null);
   const settledDrafts = useRef<Set<string>>(new Set());
   const [draftSettled, setDraftSettled] = useState(0);
   useEffect(() => {
-    if (restoreKey.current === draftKey) return;
-    restoreKey.current = draftKey;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("team") === team) return;
+    url.searchParams.set("team", team);
+    window.history.replaceState({}, "", url);
+  }, [team]);
+
+  useEffect(() => {
     if (handoffConsumed.current) {
       settledDrafts.current.add(draftKey);
+      setDraftSettled((count) => count + 1);
       return;
     }
     let active = true;
