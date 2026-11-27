@@ -17,7 +17,7 @@ export function CitationChip({ index, detail, claim, onAccept, onFlag }: {
   const navigating = useRef(false);
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger className="citation-chip" aria-label={`Show source: ${claim || detail.label}`}>
-      <Database width={10} height={10} aria-hidden />{index + 1}<span className="max-w-28 truncate">{detail.label}</span>
+      <Database width={10} height={10} aria-hidden />{index + 1}
     </PopoverTrigger>
     <PopoverContent side="top" align="start" aria-label={`Source details: ${detail.label}`} onCloseAutoFocus={event => {
       if (navigating.current) { event.preventDefault(); navigating.current = false; }
@@ -26,7 +26,7 @@ export function CitationChip({ index, detail, claim, onAccept, onFlag }: {
       {claim && <p className="text-[12px] leading-relaxed text-ink-2">{claim}</p>}
       <dl className="grid grid-cols-[52px_1fr] gap-x-3 gap-y-2 border-y border-line py-3 text-[11px]"><dt className="text-ink-3">Table</dt><dd className="break-all font-mono">{detail.table}</dd><dt className="text-ink-3">Season</dt><dd>{detail.season}</dd><dt className="text-ink-3">Rows</dt><dd>{detail.count || "Not recorded"}</dd><dt className="text-ink-3">Source</dt><dd>{detail.origin}</dd></dl>
       <div><p className="mb-1.5 text-[10px] text-ink-3">QUERY</p><pre className="max-h-28 overflow-auto whitespace-pre-wrap rounded-md bg-inset p-2 font-mono text-[10px] leading-relaxed text-ink-2">{detail.query || "Query not recorded for this evidence."}</pre></div>
-      {detail.rows.length > 0 && <div className="max-h-24 overflow-auto rounded-md border border-line"><table className="w-full text-left text-[10px]"><tbody>{detail.rows.map((row, i) => <tr key={i}>{Object.entries(row).filter(([, value]) => value == null || typeof value !== "object").slice(0, 4).map(([key, value]) => <td key={key} className="border-b border-line px-2 py-1.5 last:border-r-0"><span className="block text-ink-3">{key}</span>{String(value ?? "—")}</td>)}</tr>)}</tbody></table></div>}
+      {detail.rows.length > 0 && <dl className="max-h-32 overflow-auto rounded-md border border-line px-2.5 py-1.5">{detail.rows.flatMap((row, i) => Object.entries(row).filter(([, value]) => value == null || typeof value !== "object").map(([key, value], j) => <div key={`${i}-${j}`} className="flex items-baseline justify-between gap-3 border-b border-line py-1 text-[10px] last:border-b-0"><dt className="shrink-0 text-ink-3">{key}</dt><dd className="break-words text-right font-medium text-ink">{String(value ?? "—")}</dd></div>))}</dl>}
       <div className="flex items-center gap-3 text-[11px] text-ink-2"><EvidenceAction target={detail.target} onNavigate={() => { navigating.current = true; setOpen(false); }} />{onAccept && <button onClick={onAccept}>Accept</button>}{onFlag && <button onClick={onFlag}>Flag</button>}</div>
     </PopoverContent>
   </Popover>;
