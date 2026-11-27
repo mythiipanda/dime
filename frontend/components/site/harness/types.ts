@@ -36,7 +36,7 @@ export type LiveRun = StreamSnapshot & { id: number; startedAt: number };
 export function assistantMessageFromSnapshot(
   snap: StreamSnapshot,
   message: string,
-  stopped = false,
+  stopped = snap.halted === true,
 ): Extract<ChatMsg, { role: "assistant" }> {
   return {
     role: "assistant",

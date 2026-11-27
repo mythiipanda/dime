@@ -282,6 +282,7 @@ export interface StreamSnapshot {
   carry: VerificationCarry | null;
   failed: StreamFailure | null;
   done: boolean;
+  halted?: boolean;
 }
 
 export interface DimeStreamCallbacks {
