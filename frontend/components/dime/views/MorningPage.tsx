@@ -1,5 +1,6 @@
 "use client";
 
+import { SourceLine } from "@/components/ds/SourceLine";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -48,7 +49,7 @@ function Card({ title, cite, artifact, children }: { title: string; cite?: Prove
         <PinButton artifact={artifact} />
       </div>
       <div className="min-h-12 flex-1">{children}</div>
-      <p className="mt-4 border-t border-line pt-3 font-mono text-[10px] text-ink-3">{cite?.table ?? "source unknown"}{cite?.as_of ? ` · as of ${String(cite.as_of).slice(0, 10)}` : ""}</p>
+      <SourceLine table={cite?.table} asOf={cite?.as_of ? String(cite.as_of) : null} />
     </section>
   );
 }
@@ -189,7 +190,7 @@ export default function MorningPage() {
             {blocks.news.error
               ? <BlockError block={blocks.news} empty="" />
               : blocks.news.rows.length
-                ? <ul className="space-y-2">{blocks.news.rows.slice(0, 5).map((row, index) => <li key={index} className="text-[12px] leading-snug"><span className="text-ink-2">{String(row.title ?? row.headline ?? "item")}</span>{Boolean(row.source || row.date) && <span className="ml-2 font-mono text-[10px] text-ink-3">{String(row.source ?? row.date)}</span>}</li>)}</ul>
+                ? <ul className="space-y-2">{blocks.news.rows.slice(0, 5).map((row, index) => <li key={index} className="text-[12px] leading-snug"><span className="text-ink-2">{String(row.title ?? row.headline ?? "item")}</span>{Boolean(row.source || row.date) && <span className="ml-2 text-[11px] text-ink-2">{String(row.source ?? row.date)}</span>}</li>)}</ul>
                 : <p className="py-2 text-[12px] text-ink-3">No news items matched this team.</p>}
           </Card>
           <Card title="Standings vs expectation" cite={blocks.standings.provenance} artifact={table(`${team} standings`, standingsRows(), blocks.standings.provenance)}>
