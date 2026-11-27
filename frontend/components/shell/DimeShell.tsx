@@ -83,9 +83,9 @@ export function DimeShell() {
     if (id) url.searchParams.set("nb", id); else url.searchParams.delete("nb");
     window.history.replaceState({}, "", url);
   };
-  const askBoard = (text: string) => {
+  const askBoard = (text: string, context?: import("../../lib/view-context").ViewContext) => {
     const id = crypto.randomUUID();
-    saveWorkflowDraft({ ...createWorkflowDraft(id, text), edited: true });
+    saveWorkflowDraft({ ...createWorkflowDraft(id, text, context), edited: true });
     setWorkflowRequest(null); navigate("chat", id);
   };
   const runWorkflow = (text: string) => {
@@ -129,7 +129,7 @@ export function DimeShell() {
         {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} /></div>}
         {tab === "compare" && <div className="tools-view"><CompareView onAsk={askBoard} /></div>}
         {tab === "draft" && <div className="tools-view"><DraftView onAsk={askBoard} /></div>}
-        {tab === "matchups" && <div className="tools-view"><MatchupsView /></div>}
+        {tab === "matchups" && <div className="tools-view"><MatchupsView onAsk={askBoard} /></div>}
         {tab === "scout" && <div className="tools-view"><ScoutView /></div>}
         {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard} /></div>}
         {tab === "history" && <div className="tools-view"><HistoryView /></div>}

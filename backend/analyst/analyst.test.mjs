@@ -133,6 +133,35 @@ test("createAnalyst retains persistent per-thread workspace across turns and cle
   assert(!entries.some(name=>name.startsWith("pi-")));
 });
 
+test("view context serializes into the model-visible turn and the persisted human message",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"dime-viewctx-"));
+  try {
+    const seenQ=[];
+    const saved=[];
+    const exec={
+      async *stream(ctx){
+        seenQ.push(ctx.q);
+        yield {type:"answer",text:"done",reasoning:"r"};
+        yield {type:"closed"};
+      }
+    };
+    const {analyst}=continuityHarness(dir,exec,{saveChat:async(thread,role,content)=>{saved.push({role,content});}});
+    const context={kind:"matchup",summary:"BOS @ NYK, 2025-26 season matchup",entities:{teams:["BOS","NYK"],season:"2025-26",date:"2026-11-27"}};
+    await drainEvents(analyst.stream({q:"Who has the edge?",thread:"t-ctx",client:"owner-a",context}));
+    assert(seenQ[0].startsWith('<dime-context kind="matchup">'),seenQ[0].slice(0,120));
+    assert(seenQ[0].includes('"teams":["BOS","NYK"]'));
+    assert(seenQ[0].indexOf("</dime-context>")<seenQ[0].indexOf("Who has the edge?"));
+    assert(seenQ[0].endsWith("Who has the edge?"));
+    const human=saved.find(row=>row.role === "human");
+    assert(human,"persisted human turn recorded");
+    assert(human.content.startsWith('<dime-context kind="matchup">'),"persisted human content carries the machine block");
+    const bare=[];
+    await drainEvents(analyst.stream({q:"plain question",thread:"t-ctx",client:"owner-a",context:null}));
+    assert.equal(seenQ.at(-1),"plain question");
+    await drainEvents(analyst.stream({q:"oversized",thread:"t-ctx",client:"owner-a",context:{kind:"matchup",summary:"s",entities:{pad:"x".repeat(5000)}}})).then(()=>assert.fail("oversized context must reject")).catch(err=>assert.equal(err.message,"Invalid analyst request"));
+  } finally {await rm(dir,{recursive:true,force:true});}
+});
+
 function continuitySource(ref,rows=[{value:1}]) {
   return {ref,callId:"call-"+ref,tool:"sql_exec",response:{content:[{type:"text",text:JSON.stringify({rows})}],structuredContent:{rows},isError:false}};
 }

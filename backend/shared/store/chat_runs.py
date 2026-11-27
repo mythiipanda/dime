@@ -102,6 +102,15 @@ def thread_facts(thread: str, limit: int = 20) -> list[str]:
         con.close()
 
 
+def strip_view_context(text: str) -> str:
+    if not text.startswith("<dime-context "):
+        return text
+    close = text.find("</dime-context>")
+    if close == -1:
+        return text
+    return text[close + len("</dime-context>"):].lstrip()
+
+
 def list_threads(owner: str = "") -> list[dict[str, str]]:
     con = _pkg().state_connect()
     try:
@@ -129,7 +138,7 @@ def list_threads(owner: str = "") -> list[dict[str, str]]:
                 ORDER BY created_at LIMIT 1""",
                 [r[0]],
             ).fetchone()
-            title = ((first[0] if first else "") or "")[:90]
+            title = strip_view_context((first[0] if first else "") or "")[:90]
             if not title.strip():
                 continue
             out.append({"id": r[0], "title": title, "updated": r[1], "turns": r[2]})

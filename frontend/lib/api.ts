@@ -274,7 +274,7 @@ export async function postChatStream(
   handlers: StreamHandlers,
   signal?: AbortSignal,
   thread?: string | null,
-  options?: { diagnostics?: boolean },
+  options?: { diagnostics?: boolean; context?: unknown },
 ): Promise<void> {
   const STALL_MS = 90_000;
   const FALLBACK_RUN_MS = 480_000;
@@ -319,6 +319,7 @@ export async function postChatStream(
         thread,
         client: getClientId(),
         ...(options?.diagnostics ? { diagnostics: true } : null),
+        ...(options?.context ? { context: options.context } : null),
       }),
       signal: ctrl.signal,
     });
