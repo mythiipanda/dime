@@ -5,6 +5,11 @@ import pytest
 
 STANDARD_MATCH_RULE = ("standard TPE matching: 100% of outgoing salary plus "
                        "applicable cushion")
+AGGREGATED_STANDARD_MATCH_RULE = (
+    "aggregated standard TPE matching: 100% of aggregated outgoing salary "
+    "plus applicable cushion")
+DECLARED_TPE_MATCH_RULE = (
+    "declared TPE capacity: separate non-combined exception bin")
 CAP_ROOM_MATCH_RULE = "cap room plus outgoing salary plus $250k (under the cap)"
 
 
@@ -583,6 +588,55 @@ def test_aggregation_below_second_apron_is_legal_hard_cap_trigger(
     assert rows["MIA"]["matching_ok"] is True
 
 
+def test_aggregated_standard_probe_match_rule_consistent_across_consumers(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario, get_trade_check, get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 190_000_000,
+                  [("Alpha One", 15_000_000), ("Beta Two", 15_000_000)])
+          + _roster("MIA", 150_000_000, [("Gamma Three", 30_100_000)]))
+    legality = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA",'
+                '"players":"Alpha One, Beta Two"},'
+                '{"from":"MIA","to":"BOS","players":"Gamma Three"}]',
+        "season": "2026-27",
+    })
+    check = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One, Beta Two",
+        "team_b": "MIA", "players_b": "Gamma Three",
+        "season": "2026-27",
+    })
+    scenario = get_cap_scenario.invoke({
+        "team": "BOS", "trade_out_players": "Alpha One, Beta Two",
+        "in_players": "Gamma Three", "season": "2026-27",
+    })
+    assert legality["ok"] is True
+    assert legality["legal"] is True, legality["issues"]
+    assert check["ok"] is True
+    assert check["rows"]["legal"] is True, check["rows"]["issues"]
+    assert scenario["ok"] is True
+
+    legality_row = _team_rows(legality)["BOS"]
+    check_row = check["rows"]["team_a"]
+    scenario_matching = scenario["matching"]
+    for elected in (legality_row, check_row, scenario_matching):
+        assert elected["matching_structure"] == "aggregated_standard"
+        assert elected["matching_mechanisms"] == ["aggregated_standard"]
+        assert elected["match_rule"] == AGGREGATED_STANDARD_MATCH_RULE
+        assert "aggregated standard TPE" in elected["match_rule"]
+        assert "$9.096M" not in elected["match_rule"]
+        assert "expanded" not in elected["match_rule"].lower()
+    assert legality_row["allowed_incoming"] == 39_096_000
+    assert check_row["allowed_in"] == 39_096_000
+    assert scenario_matching["allowed_incoming"] == 39_096_000
+    salary_note = next(item["note"] for item in legality["checks"]
+                       if item["rule"] == "salary matching")
+    assert f"BOS {AGGREGATED_STANDARD_MATCH_RULE}" in salary_note
+    assert "$9.096M" not in salary_note
+    assert "expanded" not in salary_note.lower()
+
+
 def test_second_apron_receiver_multiple_incoming_is_not_aggregation(
         monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
@@ -828,6 +882,13 @@ def test_tpe_absorbs_to_amount_plus_cushion(monkeypatch, tmp_path):
     })
     assert out["ok"] is True
     assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["matching_structure"] == "declared_tpe"
+    assert row["matching_mechanisms"] == ["declared_tpe"]
+    assert row["match_rule"] == DECLARED_TPE_MATCH_RULE
+    assert "$9.096M" not in row["match_rule"]
+    assert "200%" not in row["match_rule"]
+    assert "expanded" not in row["match_rule"].lower()
 
 
 def test_tpe_amount_cap_rejects_salary_above_cushion(monkeypatch, tmp_path):
@@ -956,6 +1017,13 @@ def test_matching_plus_one_tpe_covers_disjoint_review_shape(
     row = _team_rows(out)["BOS"]
     assert row["allowed_incoming"] == 14_000_000
     assert row["matching_ok"] is True
+    assert row["matching_structure"] == "standard_simultaneous+declared_tpe"
+    assert row["matching_mechanisms"] == [
+        "standard_simultaneous", "declared_tpe"]
+    assert row["match_rule"] == STANDARD_MATCH_RULE
+    assert "$9.096M" not in row["match_rule"]
+    assert "expanded" not in row["match_rule"].lower()
+    assert "separate non-combined capacity bins" in row["matching_note"]
 
 
 def test_prior_year_sign_and_trade_tpe_keeps_first_apron_timing(

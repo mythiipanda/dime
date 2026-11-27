@@ -161,8 +161,18 @@ def operative_match_rule(rule: str, election: dict[str, Any]) -> str:
     if selected == "standard_simultaneous":
         return ("standard TPE matching: 100% of outgoing salary plus "
                 "applicable cushion")
+    if selected == "aggregated_standard":
+        return ("aggregated standard TPE matching: 100% of aggregated "
+                "outgoing salary plus applicable cushion")
     if selected == "cap_room":
         return "cap room plus outgoing salary plus $250k (under the cap)"
+    if selected == "declared_tpe":
+        return "declared TPE capacity: separate non-combined exception bin"
+    if selected == "no_salary_matching":
+        return "no salary matching required (no incoming player salary)"
+    if selected == "no_available_structure":
+        return ("no available salary-matching structure "
+                "(no outgoing player salary)")
     return rule
 
 

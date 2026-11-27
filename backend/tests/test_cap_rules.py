@@ -83,6 +83,8 @@ def test_matching_election_cap_room_precedes_standard_band():
 def test_operative_match_rule_follows_selected_mechanism():
     expanded_rule = "outgoing salary plus $9.096M (below the first apron)"
     standard = matching_election(20_100_000, 20_000_000)
+    aggregated = matching_election(
+        30_100_000, 30_000_000, outgoing_count=2)
     cap_room = matching_election(
         20_100_000, 20_000_000, cap_room=14_961_000)
     expanded = matching_election(
@@ -90,9 +92,37 @@ def test_operative_match_rule_follows_selected_mechanism():
     assert operative_match_rule(expanded_rule, standard) == (
         "standard TPE matching: 100% of outgoing salary plus "
         "applicable cushion")
+    assert operative_match_rule(expanded_rule, aggregated) == (
+        "aggregated standard TPE matching: 100% of aggregated "
+        "outgoing salary plus applicable cushion")
     assert operative_match_rule(expanded_rule, cap_room) == (
         "cap room plus outgoing salary plus $250k (under the cap)")
     assert operative_match_rule(expanded_rule, expanded) == expanded_rule
+
+
+def test_operative_match_rule_non_expanded_fallback_shapes_are_coherent():
+    expanded_rule = "outgoing salary plus $9.096M (below the first apron)"
+    declared_only = matching_election(
+        8_200_000, 0, uses_declared_tpe=True)
+    combined = matching_election(
+        15_000_000, 14_000_000, uses_declared_tpe=True)
+    no_salary = matching_election(0, 20_000_000)
+    unavailable = matching_election(1_000_000, 0)
+    assert declared_only["matching_structure"] == "declared_tpe"
+    assert combined["matching_structure"] == "standard_simultaneous+declared_tpe"
+    assert operative_match_rule(expanded_rule, declared_only) == (
+        "declared TPE capacity: separate non-combined exception bin")
+    assert operative_match_rule(expanded_rule, combined) == (
+        "standard TPE matching: 100% of outgoing salary plus "
+        "applicable cushion")
+    assert operative_match_rule(expanded_rule, no_salary) == (
+        "no salary matching required (no incoming player salary)")
+    assert operative_match_rule(expanded_rule, unavailable) == (
+        "no available salary-matching structure (no outgoing player salary)")
+    for election in (declared_only, combined, no_salary, unavailable):
+        rule = operative_match_rule(expanded_rule, election)
+        assert "$9.096M" not in rule
+        assert "expanded" not in rule.lower()
 
 
 def test_hard_cap_consequences_cover_both_triggers_post_trade():
