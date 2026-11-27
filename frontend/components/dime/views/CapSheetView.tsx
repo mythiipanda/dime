@@ -417,13 +417,26 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                             key={season}
                             className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${
                               !year.guaranteed ? "text-ink-3" : "text-ink-2"
-                            } ${declined ? "line-through opacity-40" : ""} ${clickable ? "cursor-pointer transition-colors hover:bg-field" : ""}`}
-                            title={clickable ? `${year.option} option — click to mark ${declined ? "exercised" : "declined"} in the scenario` : undefined}
-                            onClick={clickable ? () => optionToggled(player, year.season) : undefined}
+                            } ${declined ? "line-through opacity-40" : ""} ${clickable ? "p-0" : ""}`}
                           >
-                            {money(year.salary)}
-                            {year.option && year.salary != null && (
-                              <span className={`ml-1 rounded-sm border px-0.5 text-[8.5px] uppercase ${clickable ? "border-accent/50 text-accent" : "border-line"}`}>{year.option[0]}</span>
+                            {clickable ? (
+                              <button
+                                type="button"
+                                className="block w-full cursor-pointer px-2 py-1.5 text-right font-mono tabular-nums transition-colors hover:bg-field"
+                                title={`${year.option} option — activate to mark ${declined ? "exercised" : "declined"} in the scenario`}
+                                aria-pressed={declined}
+                                onClick={() => optionToggled(player, year.season)}
+                              >
+                                {money(year.salary)}
+                                <span className="ml-1 rounded-sm border border-accent/50 px-0.5 text-[8.5px] uppercase text-accent">{year.option?.[0]}</span>
+                              </button>
+                            ) : (
+                              <>
+                                {money(year.salary)}
+                                {year.option && year.salary != null && (
+                                  <span className="ml-1 rounded-sm border border-line px-0.5 text-[8.5px] uppercase">{year.option[0]}</span>
+                                )}
+                              </>
                             )}
                           </td>
                         );

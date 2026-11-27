@@ -122,8 +122,11 @@ async function clickOption(host: ParentNode, playerName: string, season: string)
   const row = [...host.querySelectorAll("tr")].find((entry) => entry.textContent?.includes(playerName))!;
   const cell = row.querySelectorAll("td")[yearIndex + 1];
   assert.ok(cell);
-  assert.match(cell.getAttribute("title") ?? "", /option/);
-  await click(cell);
+  const toggle = cell.querySelector("button");
+  assert.ok(toggle, "option cells are native buttons — keyboard-operable without a key handler shim");
+  assert.match(toggle.getAttribute("title") ?? "", /option/);
+  assert.equal(toggle.getAttribute("aria-pressed") !== null, true, "toggle state is exposed to assistive tech");
+  await click(toggle);
 }
 
 test("mixed signing and future option stays in the current season and surfaces the backend rejection", async () => {
