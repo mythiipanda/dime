@@ -49,6 +49,54 @@ def used_expanded_matching(incoming: int, outgoing: int,
     return True
 
 
+def hard_cap_consequences(team: str, payroll_after: int, *,
+                          aggregates: bool = False, cash_out: int = 0,
+                          prior_tpe: bool = False, snt_tpe: bool = False,
+                          is_snt_receiver: bool = False,
+                          expanded_matching: bool = False,
+                          lines: dict | None = None) -> dict[str, Any]:
+    lines = lines or CAP
+    triggers: list[tuple[str, str]] = []
+    if aggregates:
+        triggers.append(("second apron", "aggregation"))
+    if cash_out:
+        triggers.append(("second apron", "sending cash"))
+    if prior_tpe:
+        triggers.append(("first apron", "the prior-year traded player exception"))
+    if snt_tpe:
+        triggers.append(("second apron", "a sign-and-trade generated exception"))
+    if is_snt_receiver:
+        triggers.append(("first apron", "the sign-and-trade"))
+    if expanded_matching:
+        triggers.append(("first apron", "expanded salary matching"))
+    aprons: list[str] = []
+    causes: dict[str, list[str]] = {}
+    for apron, cause in triggers:
+        if apron not in aprons:
+            aprons.append(apron)
+        causes.setdefault(apron, []).append(cause)
+    line_keys = {"first apron": "apron1", "second apron": "apron2"}
+    violations = [apron for apron in aprons
+                  if payroll_after > lines[line_keys[apron]]]
+    issues: list[str] = []
+    if "second apron" in violations:
+        issues.append(
+            f"{team} is hard-capped at the second apron by this deal "
+            f"(post-trade payroll ${payroll_after:,} > ${lines['apron2']:,})")
+    if "first apron" in violations:
+        first_order = ("the sign-and-trade",
+                       "the prior-year traded player exception",
+                       "expanded salary matching")
+        first_causes = causes.get("first apron", [])
+        cause = " and ".join(cause for cause in first_order
+                             if cause in first_causes) or "this deal"
+        issues.append(
+            f"{team} is hard-capped at the first apron by {cause} "
+            f"(post-trade payroll ${payroll_after:,} > ${lines['apron1']:,})")
+    return {"hard_cap": "+".join(aprons), "aprons": aprons,
+            "causes": causes, "violations": violations, "issues": issues}
+
+
 def matching_band(outgoing: int, over_apron1: bool,
                   cap_room: int = 0) -> dict[str, Any]:
     amount, rule = allowed_incoming(outgoing, over_apron1, cap_room)

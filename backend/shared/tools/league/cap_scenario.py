@@ -10,6 +10,7 @@ from .cba_cap import (
     SalaryColumnError,
     _allowed_incoming,
     _apron_state,
+    _hard_cap_consequences,
     _locate_player_team,
     _match_trade_players,
     _payroll,
@@ -166,13 +167,11 @@ def get_cap_scenario(team: str = "", signings: str = "",
         aggregates = len(out_names) > 1
         expanded_matching = _used_expanded_matching(
             in_total, out_total, room_before)
-        if expanded_matching:
-            hard_cap = "first apron"
-        if expanded_matching and pay_after > CAP["apron1"]:
-            issues.append(
-                f"{team.upper()} is hard-capped at the first apron by "
-                "expanded salary matching "
-                f"(post-trade payroll ${pay_after:,} > ${CAP['apron1']:,})")
+        consequence = _hard_cap_consequences(
+            team.upper(), pay_after, aggregates=aggregates,
+            expanded_matching=expanded_matching)
+        hard_cap = consequence["hard_cap"]
+        issues.extend(consequence["issues"])
         if state_after["over_apron2"] and aggregates:
             issues.append("cannot aggregate salaries above the second apron")
             matching = {"incoming": in_total, "outgoing": out_total,
@@ -188,8 +187,6 @@ def get_cap_scenario(team: str = "", signings: str = "",
                 issues.append(
                     f"{team.upper()} takes back too much "
                     f"(${in_total:,} vs {allow:,} allowed under {rule})")
-        if aggregates and pay_after > CAP["apron2"]:
-            issues.append("aggregation would hard-cap the team at the second apron")
     roster_before = len(roster)
     roster_after = roster_before - len(out_names) + len(in_names) + len(sign_rows)
     issues.extend(_roster_issues(roster_after))

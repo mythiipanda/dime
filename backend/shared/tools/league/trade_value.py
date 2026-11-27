@@ -13,6 +13,7 @@ from .cba_cap import (
     _outgoing_needed,
     _apron_state,
     _auto_correct_side,
+    _hard_cap_consequences,
     _locate_player_team,
     _match_trade_players,
     _norm_trade_teams,
@@ -203,21 +204,6 @@ def _trade_check_issues(team_a: str, state_a: dict, names_a: list[str],
     return issues
 
 
-def _expanded_matching_issues(team_a: str, expanded_a: bool,
-                              pay_after_a: int, team_b: str,
-                              expanded_b: bool, pay_after_b: int) -> list[str]:
-    issues = []
-    for team, expanded, pay_after in (
-            (team_a, expanded_a, pay_after_a),
-            (team_b, expanded_b, pay_after_b)):
-        if expanded and pay_after > CAP["apron1"]:
-            issues.append(
-                f"{team.upper()} is hard-capped at the first apron by "
-                "expanded salary matching "
-                f"(post-trade payroll ${pay_after:,} > ${CAP['apron1']:,})")
-    return issues
-
-
 def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
                         rule_b: str) -> list[dict[str, Any]]:
     return [
@@ -298,19 +284,23 @@ def get_trade_check(
     need_b = _outgoing_needed(out_a, bool(state_b["over_apron1"]), room_b)
     expanded_a = _used_expanded_matching(out_b, out_a, room_a)
     expanded_b = _used_expanded_matching(out_a, out_b, room_b)
-    hard_cap_a = "first apron" if expanded_a else ""
-    hard_cap_b = "first apron" if expanded_b else ""
+    hard_cap_a = _hard_cap_consequences(
+        team_a.upper(), pay_after_a, aggregates=len(names_a) > 1,
+        expanded_matching=expanded_a)
+    hard_cap_b = _hard_cap_consequences(
+        team_b.upper(), pay_after_b, aggregates=len(names_b) > 1,
+        expanded_matching=expanded_b)
     issues = _trade_check_issues(team_a, state_a, names_a, team_b, state_b,
                                  names_b, out_a, allow_a, out_b, allow_b)
-    issues.extend(_expanded_matching_issues(
-        team_a, expanded_a, pay_after_a, team_b, expanded_b, pay_after_b))
+    issues.extend(hard_cap_a["issues"])
+    issues.extend(hard_cap_b["issues"])
     return {"tool": "get_trade_check", "ok": True,
             "rows": {"team_a": _trade_side_rows(
                          team_a, side_a, pay_a, state_a, allow_a, rule_a,
-                         need_a, hard_cap_a),
+                         need_a, hard_cap_a["hard_cap"]),
                      "team_b": _trade_side_rows(
                          team_b, side_b, pay_b, state_b, allow_b, rule_b,
-                         need_b, hard_cap_b),
+                         need_b, hard_cap_b["hard_cap"]),
                      "legal": not issues, "issues": issues,
                      "checks": _trade_check_checks(team_a, rule_a, team_b,
                                                    rule_b),
