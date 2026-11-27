@@ -221,8 +221,8 @@ const draftFixture = {
   ok: true, team: "NYK", season: "",
   blocks: {
     board: { ok: true, season: "2027-28", rows: [
-      { pick: 1, name: "AJ Dybantsa", position: "F", school: "BYU", gp: 30, pts: 24.1, reb: 6.8, ast: 3.2, ts_pct: 0.61, usg: 0.31 },
-      { pick: 2, name: "Darryn Peterson", position: "G", school: "Kansas", gp: 28, pts: 21.4, reb: 4.0, ast: 4.8, ts_pct: 0.58, usg: 0.28 },
+      { pick: 1, name: "AJ Dybantsa", position: "F", school: "BYU", gp: 30, pts: 24.1, reb: 6.8, ast: 3.2, ts_pct: 0.61, usg: 31.0 },
+      { pick: 2, name: "Darryn Peterson", position: "G", school: "Kansas", gp: 28, pts: 21.4, reb: 4.0, ast: 4.8, ts_pct: 0.58, usg: 28.0 },
     ], provenance: { table: "silver_draft_boards + silver_prospect_stats", as_of: "2026-09-10T04:00:00Z" } },
     free_agents: { ok: true, rows: [
       { name: "Trae Young", team: "ATL", fa_type: "ufa", prior_salary: 45999600, cap_hold: 59799480 },
@@ -252,6 +252,8 @@ test("Draft view renders prospect board, free agents, cap room and fit with prov
   }, async host => {
     assert.match(host.textContent!, /AJ Dybantsa/);
     assert.match(host.textContent!, /BYU/);
+    assert.match(host.textContent!, /31\.0%/);
+    assert.doesNotMatch(host.textContent!, /3100\.0%/);
     assert.match(host.textContent!, /Trae Young/);
     assert.match(host.textContent!, /\$46\.0M/);
     assert.match(host.textContent!, /\$75\.0M/);

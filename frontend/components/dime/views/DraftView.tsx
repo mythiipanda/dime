@@ -11,7 +11,8 @@ import PinButton from "../PinButton";
 import { Button } from "../../ds/Button";
 
 const money = (v: number | null | undefined) => v == null ? "—" : `$${(v / 1_000_000).toFixed(1)}M`;
-const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+const fractionPct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+const percentPoints = (v: number | null | undefined) => v == null ? "—" : `${v.toFixed(1)}%`;
 const TEAM_KEY = "dime_draft_team_v1";
 
 type Provenance = { table?: string; as_of?: string | null };
@@ -104,7 +105,7 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
   const boardPin = () => artifact(
     `Draft board ${blocks?.board.season ?? ""}`,
     ["pick", "player", "pos", "school", "gp", "pts", "reb", "ast", "ts%", "usg"],
-    boardRows.map(row => [row.pick, row.name, row.position ?? "", row.school ?? "", row.gp ?? "", row.pts ?? "", row.reb ?? "", row.ast ?? "", row.ts_pct != null ? pct(row.ts_pct) : "", row.usg != null ? pct(row.usg) : ""]),
+    boardRows.map(row => [row.pick, row.name, row.position ?? "", row.school ?? "", row.gp ?? "", row.pts ?? "", row.reb ?? "", row.ast ?? "", row.ts_pct != null ? fractionPct(row.ts_pct) : "", row.usg != null ? percentPoints(row.usg) : ""]),
     blocks?.board.provenance);
 
   const agentsPin = () => artifact(
@@ -130,7 +131,7 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
     report.push({
       heading: "Prospect board",
       meta: [`season ${blocks?.board.season ?? "—"}`],
-      table: { columns: ["Pick", "Player", "Pos", "School", "PTS", "REB", "AST", "TS%"], rows: boardRows.map(row => [String(row.pick), row.name, row.position ?? "—", row.school ?? "—", row.pts != null ? String(row.pts) : "—", row.reb != null ? String(row.reb) : "—", row.ast != null ? String(row.ast) : "—", pct(row.ts_pct)]) },
+      table: { columns: ["Pick", "Player", "Pos", "School", "PTS", "REB", "AST", "TS%"], rows: boardRows.map(row => [String(row.pick), row.name, row.position ?? "—", row.school ?? "—", row.pts != null ? String(row.pts) : "—", row.reb != null ? String(row.reb) : "—", row.ast != null ? String(row.ast) : "—", fractionPct(row.ts_pct)]) },
       lines: [`Source: ${blocks?.board.provenance?.table ?? "unknown"}${blocks?.board.provenance?.as_of ? ` · as of ${String(blocks.board.provenance.as_of).slice(0, 10)}` : ""}`],
     });
     report.push({
@@ -225,8 +226,8 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
                         <td className="py-2 pr-3 font-mono tabular-nums">{row.pts ?? "—"}</td>
                         <td className="py-2 pr-3 font-mono tabular-nums">{row.reb ?? "—"}</td>
                         <td className="py-2 pr-3 font-mono tabular-nums">{row.ast ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{pct(row.ts_pct)}</td>
-                        <td className="py-2 text-right font-mono tabular-nums">{pct(row.usg)}</td>
+                        <td className="py-2 pr-3 font-mono tabular-nums">{fractionPct(row.ts_pct)}</td>
+                        <td className="py-2 text-right font-mono tabular-nums">{percentPoints(row.usg)}</td>
                       </tr>
                     ))}
                   </tbody>

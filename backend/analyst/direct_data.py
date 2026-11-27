@@ -917,21 +917,35 @@ def _draft_board(con, tables: set, season: str) -> dict:
         use = str(latest[0]) if latest and latest[0] else ""
     cite = {"table": "silver_draft_boards" + (" + silver_prospect_stats" if "silver_prospect_stats" in tables else ""),
             "as_of": _draft_as_of(con, "silver_draft_boards")}
-    if "silver_prospect_stats" in tables:
-        rows = con.execute(
-            'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL, s.GP, s.PTS, s.REB, s.AST, s.TS_PCT, s.USG / 100.0 '
-            'FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY lower(PLAYER_NAME), _season ORDER BY "ORDER") AS brn '
-            'FROM silver_draft_boards) b '
-            'LEFT JOIN ('
-            'SELECT PLAYER_NAME, _season, GP, PTS, REB, AST, TS_PCT, USG FROM ('
-            'SELECT *, ROW_NUMBER() OVER (PARTITION BY lower(PLAYER_NAME), _season ORDER BY GP DESC NULLS LAST) AS rn '
-            'FROM silver_prospect_stats) WHERE rn = 1'
-            ') s ON lower(s.PLAYER_NAME) = lower(b.PLAYER_NAME) AND s._season = b._season '
-            'WHERE b._season = ? AND b.brn = 1 ORDER BY b."ORDER" LIMIT 60', [use]).fetchall()
-    else:
-        rows = [r[:4] + (None,) * 6 for r in con.execute(
-            'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL FROM silver_draft_boards '
-            'WHERE _season = ? ORDER BY "ORDER" LIMIT 60', [use]).fetchall()]
+    board_row = con.execute(
+        'SELECT BOARD FROM silver_draft_boards WHERE _season = ? GROUP BY BOARD '
+        'ORDER BY CASE WHEN BOARD = \'big_board\' THEN 0 ELSE 1 END, BOARD LIMIT 1', [use]).fetchone()
+    rows = []
+    if board_row and board_row[0]:
+        board_name = str(board_row[0])
+        ranked_board = (
+            'FROM (SELECT *, ROW_NUMBER() OVER ('
+            'PARTITION BY _season, BOARD, COALESCE(NULLIF(PLAYER_SLUG, \'\'), \'unkeyed:\' || CAST(rowid AS VARCHAR)) '
+            'ORDER BY "ORDER") AS brn '
+            'FROM silver_draft_boards WHERE _season = ? AND BOARD = ?) b ')
+        if "silver_prospect_stats" in tables:
+            rows = con.execute(
+                'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL, s.GP, s.PTS, s.REB, s.AST, s.TS_PCT, s.USG '
+                + ranked_board +
+                'LEFT JOIN ('
+                'SELECT PLAYER_NAME, TEAM, _season, GP, PTS, REB, AST, TS_PCT, USG, name_rows, team_rn FROM ('
+                'SELECT *, COUNT(*) OVER (PARTITION BY lower(PLAYER_NAME), _season) AS name_rows, '
+                'ROW_NUMBER() OVER (PARTITION BY lower(PLAYER_NAME), _season, lower(COALESCE(TEAM, \'\')) '
+                'ORDER BY GP DESC NULLS LAST) AS team_rn '
+                'FROM silver_prospect_stats)'
+                ') s ON lower(s.PLAYER_NAME) = lower(b.PLAYER_NAME) AND s._season = b._season '
+                'AND s.team_rn = 1 AND (s.name_rows = 1 OR lower(COALESCE(s.TEAM, \'\')) = lower(COALESCE(b.SCHOOL, \'\'))) '
+                'WHERE b.brn = 1 ORDER BY b."ORDER" LIMIT 60', [use, board_name]).fetchall()
+        else:
+            rows = [r[:4] + (None,) * 6 for r in con.execute(
+                'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL '
+                + ranked_board +
+                'WHERE b.brn = 1 ORDER BY b."ORDER" LIMIT 60', [use, board_name]).fetchall()]
     board = [{"pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
               "gp": r[4], "pts": r[5], "reb": r[6], "ast": r[7], "ts_pct": r[8], "usg": r[9]}
              for r in rows]
