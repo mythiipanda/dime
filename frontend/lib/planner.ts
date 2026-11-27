@@ -14,6 +14,12 @@ export type ProjectionEffect = {
 
 export type ProjectionPlayer = { player: string; salary: number; option?: string };
 
+export type ProjectionCapHold = {
+  player: string;
+  amount: number | null;
+  fa_type: string;
+};
+
 export type ProjectionSeason = {
   season: string;
   pay_before: number;
@@ -31,6 +37,9 @@ export type ProjectionSeason = {
   ordering_notes: string[];
   lines: { cap: number; tax: number; apron1: number; apron2: number };
   lines_projected: boolean;
+  cap_holds?: number;
+  cap_holds_exactness?: string;
+  cap_hold_details?: ProjectionCapHold[];
 };
 
 export type ProjectionResponse = {

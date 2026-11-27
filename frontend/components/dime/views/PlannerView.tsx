@@ -55,6 +55,7 @@ function moveLabel(move: ScenarioMove): string {
   if (move.kind === "waive") return `Waive ${move.player ?? ""}${move.stretch ? " (stretch)" : ""}`.trim();
   if (move.kind === "option_decision") return `${move.exercise ? "Exercise" : "Decline"} option — ${move.player ?? ""}`;
   if (move.kind === "extend") return `Extend ${move.player ?? ""} — ${move.years ?? 1}yr`;
+  if (move.kind === "renounce") return `Renounce ${move.player ?? ""} — cap hold released`;
   if (move.kind === "signing") return `Sign ${move.player ?? move.label ?? "free agent"}`;
   if (move.kind === "trade_out") return `Trade out ${move.player ?? ""}`;
   if (move.kind === "trade_in") return `Trade in ${move.player ?? ""}`;
@@ -405,6 +406,38 @@ export default function PlannerView() {
                   The scenario couldn&apos;t be shared — the backend didn&apos;t accept the mint. Your moves are untouched; try again.
                 </p>
               )}
+            </div>
+          )}
+
+          {editing && projection.seasons.some(block => (block.cap_hold_details ?? []).length > 0) && (
+            <div className="mt-4 rounded-[10px] bg-surface p-4 shadow-hairline">
+              <h2 className="text-[13px] font-semibold text-ink">Cap holds</h2>
+              <p className="mt-1 text-[11px] leading-[1.5] text-ink-3">Expired contracts with retained rights count against the cap until renounced or re-signed. Renouncing frees the room but forfeits the rights.</p>
+              <div className="mt-2 space-y-2">
+                {projection.seasons.filter(block => (block.cap_hold_details ?? []).length > 0).map(block => (
+                  <div key={block.season}>
+                    <p className="font-mono text-[11px] text-ink-3">
+                      {block.season} · {block.cap_holds ? formatMoney(block.cap_holds) : "amounts unpriced"}
+                      {block.cap_holds_exactness && block.cap_holds_exactness !== "exact" && (
+                        <span className="ml-1.5 rounded bg-amber-500/10 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">{block.cap_holds_exactness}</span>
+                      )}
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {(block.cap_hold_details ?? []).map((hold, i) => (
+                        <li key={i} className="flex items-center justify-between gap-3 text-[12.5px]">
+                          <span className="text-ink-2">{hold.player} <span className="text-ink-3">· {hold.fa_type || "rights held"}</span></span>
+                          <span className="flex items-center gap-2">
+                            <span className="tabular-nums text-ink">{hold.amount != null ? formatMoney(hold.amount) : "unpriced"}</span>
+                            {hold.amount != null && (
+                              <button type="button" className={actionButton} onClick={() => addMove({ kind: "renounce", player: hold.player, season: block.season })}>renounce</button>
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
