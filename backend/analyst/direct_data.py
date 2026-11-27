@@ -485,6 +485,56 @@ def product_awards(season: str = '') -> dict:
         })
     seasons = [a['season'] for a in awards if a.get('season')]
     return {'ok': True, 'season': seasons[0] if seasons else season, 'awards': awards}
+@tool(description='Assemble the opponent-scout dossier: form, four factors, shot profile, lineups, rotation, injuries, head-to-head.')
+def product_scout_dossier(team: str, opponent: str, season: str = '') -> dict:
+    import asyncio
+    from shared.tools.team.scouting import get_opponent_scout, get_scout_pack
+    from shared.tools.team.lineups_rotations import get_rotation_check
+
+    if not team or not opponent:
+        return {'ok': False, 'error': 'pass both team and opponent', 'sections': {}}
+
+    def gather():
+        async def run():
+            scout = get_opponent_scout.invoke({'team': team, 'opponent': opponent, 'season': season or None})
+            pack = await get_scout_pack.ainvoke({'team': team, 'opponent': opponent, 'season': season or None})
+            rotation = await get_rotation_check.ainvoke({'team': opponent, 'season': season or None})
+            return scout, pack, rotation
+        return asyncio.run(run())
+
+    try:
+        scout, pack, rotation = gather()
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)[:200], 'sections': {}}
+    scout = _decoded(scout)
+    pack = _decoded(pack)
+    rotation = _decoded(rotation)
+    if not scout.get('ok'):
+        return {'ok': False, 'error': scout.get('error') or 'opponent scout failed', 'sections': {}}
+    rows = scout.get('rows') or {}
+    sections = {}
+    for key in ('recent_form', 'four_factors', 'shot_profile', 'top_lineups', 'injuries', 'head_to_head'):
+        section = rows.get(key)
+        if isinstance(section, dict):
+            sections[key] = section
+    rot_rows = rotation.get('rows')
+    sections['rotation'] = {
+        'source': 'rotation_check',
+        'ok': bool(rotation.get('ok')),
+        'error': rotation.get('error'),
+        'rows': rot_rows,
+    }
+    pack_rows = pack.get('rows') or {}
+    return {
+        'ok': True,
+        'season': (scout.get('meta') or {}).get('season') or season,
+        'team': {'abbrev': (scout.get('meta') or {}).get('team', team)},
+        'opponent': rows.get('opponent') or {'abbrev': opponent},
+        'edge': pack_rows.get('edge') if isinstance(pack_rows, dict) else None,
+        'pack': pack_rows if isinstance(pack_rows, dict) else {},
+        'sections': sections,
+    }
+
 @tool(description='Read the current watchlist data.')
 def product_watchlist(season: str = '2025-26') -> dict:
     from shared.tools.watchlist import get_watchlist
@@ -828,7 +878,7 @@ def internal_catalogue():
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
-        product_compare, product_draft, product_matchups, product_awards)
+        product_compare, product_draft, product_matchups, product_awards, product_scout_dossier)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description

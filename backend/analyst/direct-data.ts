@@ -88,6 +88,11 @@ export type DirectOperations = {
     product_awards: {
         season: string;
     };
+    product_scout_dossier: {
+        team: string;
+        opponent: string;
+        season: string;
+    };
     product_briefing: {
         season: string;
     };

@@ -319,6 +319,7 @@ export function createProductServer(options: {
     route("GET", /^\/api\/today$/, async ({ res, url }) => json(res, await data.call("product_today", { season: url.searchParams.get("season") ?? "2025-26" })));
     route("GET", /^\/api\/matchups$/, async ({ res, url }) => json(res, await data.call("product_matchups", { season: url.searchParams.get("season") ?? "" })));
     route("GET", /^\/api\/awards$/, async ({ res, url }) => json(res, await data.call("product_awards", { season: url.searchParams.get("season") ?? "" })));
+    route("GET", /^\/api\/scout-dossier$/, async ({ res, url }) => { const result = await data.call("product_scout_dossier", { team: (url.searchParams.get("team") ?? "").slice(0, 24), opponent: (url.searchParams.get("opponent") ?? "").slice(0, 24), season: url.searchParams.get("season") ?? "" }); json(res, result, result.ok === false ? 422 : 200); });
     route("GET", /^\/api\/watchlist$/, async ({ res, url }) => json(res, await data.call("product_watchlist", { season: url.searchParams.get("season") ?? "2025-26" })));
     route("POST", /^\/api\/watchlist$/, async ({ req, res }) => { const input = parseBody(watchSchema, await body(req)); json(res, await data.call("product_watchlist_add", { ...input, season: input.season ?? "2025-26" })); });
     route("DELETE", /^\/api\/watchlist$/, async ({ res, url }) => {

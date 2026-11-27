@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Award, BookOpen, ClipboardList, Columns3, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, ArrowLeftRight, Workflow, Table2 } from "lucide-react";
+import { Award, BookOpen, ClipboardList, Columns3, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, Target, ArrowLeftRight, Workflow, Table2 } from "lucide-react";
 import { SidebarNav } from "../ds/SidebarNav";
 import DimeCommandPalette, { type PaletteEntry } from "../site/DimeCommandPalette";
 import TradesView from "../dime/views/TradesView";
 import CompareView from "../dime/views/CompareView";
 import DraftView from "../dime/views/DraftView";
 import MatchupsView from "../dime/views/MatchupsView";
+import ScoutView from "../dime/views/ScoutView";
 import AwardsView from "../dime/views/AwardsView";
 import { ChatView } from "./ChatView";
 import { DataView, HomeView, LibraryView } from "./WorkspaceViews";
@@ -20,7 +21,7 @@ import { replayName } from "../../lib/replay";
 import { createWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
 export { parseShellTab, shellNavigation } from "../../lib/shell-navigation";
-const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, compare: Columns3, draft: ClipboardList, matchups: Swords, awards: Award };
+const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, compare: Columns3, draft: ClipboardList, matchups: Swords, scout: Target, awards: Award };
 const navigation = shellNavigation.map(item => { const Icon = icons[item.id]; return { ...item, icon: <Icon size={17} strokeWidth={1.5} /> }; });
 
 export function DimeShell() {
@@ -120,6 +121,7 @@ export function DimeShell() {
         {tab === "compare" && <div className="tools-view"><CompareView onAsk={askBoard} /></div>}
         {tab === "draft" && <div className="tools-view"><DraftView onAsk={askBoard} /></div>}
         {tab === "matchups" && <div className="tools-view"><MatchupsView /></div>}
+        {tab === "scout" && <div className="tools-view"><ScoutView /></div>}
         {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
       </div>
     </main>
