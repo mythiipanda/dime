@@ -1266,7 +1266,7 @@
     },
     "get_cap_scenario": {
       "name": "get_cap_scenario",
-      "description": "Cap-scenario arithmetic for one team. \"signings\" takes comma-separated amounts or name=amount pairs like \"Player=12M, 3000000\". \"in_players\" adds real contracts by name (league-wide lookup), \"out_players\" removes roster salaries. Returns the arithmetic trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA restrictions that trigger, and the matching verdict when a trade portion is present. REACH FOR THIS for any \"can X afford/sign Y\" or \"what if they waive/trade for Z\" ask: \"can the Warriors sign Player for $12M?\", \"what happens to Phoenix payroll if they waive Beal?\", \"does taking back $30M push DEN over the second apron?\" It computes post-move apron status and CBA restrictions directly - do not rebuild that arithmetic from get_cap_ledger rows.",
+      "description": "Cap-scenario arithmetic for one team. \"signings\" takes comma-separated amounts or name=amount pairs like \"Player=12M, 3000000\". \"in_players\" adds real contracts by name (league-wide lookup). \"trade_out_players\" removes roster salary only when those players are actually traded away. \"waive_players\" waives roster players; guaranteed money remains as estimated dead cap, and \"stretch\" applies the pre-Sep-1 two-times-years-plus-one estimate. The retired \"out_players\" input is rejected because it hid that distinction. Guarantee data is a remaining-contract pool, not per-year allocations. Returns the arithmetic trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA restrictions that trigger, and the matching verdict when a trade portion is present. REACH FOR THIS for any \"can X afford/sign Y\" or \"what if they waive/trade for Z\" ask: \"can the Warriors sign Player for $12M?\", \"what happens to Phoenix payroll if they waive Beal?\", \"does taking back $30M push DEN over the second apron?\" It computes post-move apron status and CBA restrictions directly - do not rebuild that arithmetic from get_cap_ledger rows.",
       "args_schema": {
         "description": "Cap-scenario arithmetic: post-move payroll vs cap/tax/aprons plus the 2023 CBA restrictions that trigger, for hypothetical signings and player moves on one team.",
         "properties": {
@@ -1288,10 +1288,16 @@
             "title": "In Players",
             "type": "string"
           },
-          "out_players": {
+          "trade_out_players": {
             "default": "",
-            "description": "Comma-separated roster players whose salary leaves. Default: ''.",
-            "title": "Out Players",
+            "description": "Comma-separated roster players actually traded away; their full salary leaves. Default: ''.",
+            "title": "Trade Out Players",
+            "type": "string"
+          },
+          "waive_players": {
+            "default": "",
+            "description": "Comma-separated roster players to waive; guaranteed money remains as estimated dead cap. Default: ''.",
+            "title": "Waive Players",
             "type": "string"
           },
           "season": {
@@ -1306,6 +1312,18 @@
             "default": null,
             "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
+          },
+          "stretch": {
+            "default": false,
+            "description": "true applies the pre-Sep-1 two-times-years-plus-one stretch estimate to waived players. Default: False.",
+            "title": "Stretch",
+            "type": "boolean"
+          },
+          "out_players": {
+            "default": "",
+            "description": "Retired ambiguous input; do not use. Use trade_out_players or waive_players. Default: ''.",
+            "title": "Out Players",
+            "type": "string"
           }
         },
         "title": "get_cap_scenario",

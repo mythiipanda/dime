@@ -173,7 +173,7 @@ def scenario_trace(pay_before: int, moves: list[dict[str, Any]],
     step = 1
     for move in moves:
         amount = int(move.get("amount") or 0)
-        delta = -amount if move.get("kind") == "trade_out" else amount
+        delta = -amount if move.get("kind") in ("trade_out", "waive") else amount
         pay += delta
         rows.append({"step": step, "kind": str(move.get("kind") or "move"),
                      "detail": str(move.get("detail") or move.get("label") or ""),

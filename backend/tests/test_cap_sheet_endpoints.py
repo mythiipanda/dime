@@ -111,12 +111,12 @@ def test_scenario_waive_relief_bounded(con):
         "team": "BOS", "season": "2026-27",
         "moves": [{"kind": "waive", "player": "Payton Pritchard"}]})
     assert out["ok"] is True
-    deltas = [s["delta"] for s in out["steps"] if s["kind"] == "trade_out"]
+    deltas = [s["delta"] for s in out["steps"] if s["kind"] == "waive"]
     assert deltas and deltas[0] <= 0
     stretched = evaluate_cap_scenario(con, {
         "team": "BOS", "season": "2026-27",
         "moves": [{"kind": "waive", "player": "Payton Pritchard", "stretch": True}]})
-    stretch_deltas = [s["delta"] for s in stretched["steps"] if s["kind"] == "trade_out"]
+    stretch_deltas = [s["delta"] for s in stretched["steps"] if s["kind"] == "waive"]
     assert stretch_deltas and stretch_deltas[0] <= 0
 
 
