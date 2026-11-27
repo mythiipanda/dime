@@ -26,10 +26,11 @@ Two processes, both from the repo root of the checkout under test:
    cd <repo-root> && PATH=$PWD/backend/.venv/bin:$PATH PORT=9910 \
      NVIDIA_NIM_API_KEY=<key from backend/.env> \
      DIME_EXPECTED_ASSET_MANIFEST=/tmp/dime-verify-manifest.json \
+     CORS_ALLOWED_ORIGINS=http://localhost:3010,http://localhost:3000 \
      nohup node backend/analyst/dist/host.js > /tmp/dime-verify-host.log 2>&1 &
    ```
 
-   Ready means `curl -s localhost:9910/api/health` returns 200. Boot takes seconds; check `/tmp/dime-verify-host.log` if health never comes up. AMD-lane models show "Unavailable" in the UI model picker unless `AMD_API_KEY` is also exported — irrelevant for view verification, relevant for live chat verification.
+   `CORS_ALLOWED_ORIGINS` must cover every frontend port you will drive (add others comma-separated, e.g. a production-build check on 3015) — without it browser calls fail with "Failed to fetch" even though curl succeeds. Restart the host after changing it. Ready means `curl -s localhost:9910/api/health` returns 200. Boot takes seconds; check `/tmp/dime-verify-host.log` if health never comes up. AMD-lane models show "Unavailable" in the UI model picker unless `AMD_API_KEY` is also exported — irrelevant for view verification, relevant for live chat verification.
 
 3. **Start the frontend dev server** on a verification port (default 3010):
 
