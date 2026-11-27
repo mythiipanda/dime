@@ -74,7 +74,7 @@ function fmt(value: number | null | undefined, digits = 1): string {
   return value.toFixed(digits);
 }
 
-export default function HistoryView() {
+export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [query, setQuery] = useState("Jayson Tatum");
   const [player, setPlayer] = useState("Jayson Tatum");
   const [career, setCareer] = useState<CareerResponse | null>(null);
@@ -199,6 +199,28 @@ export default function HistoryView() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-[15px] font-semibold text-ink">History</h1>
         <span className="text-[11px] text-ink-2">{`1996-97 → ${SEASONS[0]} · era-relative throughout`}</span>
+        {onAsk && career && (
+          <span className="ml-auto">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onAsk(
+                `Break down ${player}'s career arc — the peak, the trajectory, and how the era-relative profile compares.${selectedSeason ? ` Focus on the ${selectedSeason} season.` : ""}`,
+                {
+                  kind: "career_arc",
+                  summary: `${player} career arc${selectedSeason ? ` · ${selectedSeason}` : ""}`,
+                  entities: {
+                    player,
+                    ...(selectedSeason ? { season: selectedSeason } : {}),
+                    seasons: (career.rows ?? []).map((row: Record<string, unknown>) => row.season).filter(Boolean),
+                  },
+                },
+              )}
+            >
+              Ask Dime about this arc
+            </Button>
+          </span>
+        )}
       </div>
 
       <div className="mt-4 xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-4">

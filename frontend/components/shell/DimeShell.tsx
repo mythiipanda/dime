@@ -130,9 +130,9 @@ export function DimeShell() {
         {tab === "compare" && <div className="tools-view"><CompareView onAsk={askBoard} /></div>}
         {tab === "draft" && <div className="tools-view"><DraftView onAsk={askBoard} /></div>}
         {tab === "matchups" && <div className="tools-view"><MatchupsView onAsk={askBoard} /></div>}
-        {tab === "scout" && <div className="tools-view"><ScoutView /></div>}
+        {tab === "scout" && <div className="tools-view"><ScoutView onAsk={askBoard} /></div>}
         {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard} /></div>}
-        {tab === "history" && <div className="tools-view"><HistoryView /></div>}
+        {tab === "history" && <div className="tools-view"><HistoryView onAsk={askBoard} /></div>}
         {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
       </div>
     </main>
