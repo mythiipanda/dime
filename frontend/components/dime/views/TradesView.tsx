@@ -34,6 +34,7 @@ type TradeSideRows = {
   outgoing_needed: number;
   over_apron1: boolean;
   over_apron2: boolean;
+  tpe_creation?: { amount: number; expiry: string; condition: string; copy: string } | null;
 };
 
 type TradeCheckRows = {
@@ -422,7 +423,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
     const other = side === 0 ? rows.team_b : rows.team_a;
     const before = self.payroll / 1_000_000;
     const after = (self.payroll - self.out + other.out) / 1_000_000;
-    return { before, after, out: self.out / 1_000_000, allowed: self.allowed_in / 1_000_000, rule: self.match_rule, needed: self.outgoing_needed, apron1: self.over_apron1, apron2: self.over_apron2 };
+    return { before, after, out: self.out / 1_000_000, allowed: self.allowed_in / 1_000_000, rule: self.match_rule, needed: self.outgoing_needed, apron1: self.over_apron1, apron2: self.over_apron2, tpeCreation: self.tpe_creation ?? null };
   };
 
   const legRow = (side: number): LegTeamRows | null => {
@@ -569,6 +570,12 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
               {payroll.apron2 && <span className="text-red">over apron 2</span>}
             </div>
             <div className="mt-0.5 text-[11px] text-ink-2">{payroll.rule}</div>
+            {payroll.tpeCreation && (
+              <div className="mt-1 rounded-[6px] border border-line bg-field px-2 py-1 text-[11px] leading-snug text-ink-2">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-accent">trade exception</span>{" "}
+                {payroll.tpeCreation.copy}
+              </div>
+            )}
           </div>
         )}
         {leg && (
