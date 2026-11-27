@@ -175,8 +175,14 @@ def scenario_trace(pay_before: int, moves: list[dict[str, Any]],
         amount = int(move.get("amount") or 0)
         delta = -amount if move.get("kind") in ("trade_out", "waive") else amount
         pay += delta
-        rows.append({"step": step, "kind": str(move.get("kind") or "move"),
-                     "detail": str(move.get("detail") or move.get("label") or ""),
-                     "delta": delta, "payroll": pay})
+        row = {"step": step, "kind": str(move.get("kind") or "move"),
+               "detail": str(move.get("detail") or move.get("label") or ""),
+               "delta": delta, "payroll": pay}
+        for key in ("player", "dead_cap", "guaranteed", "stretch_years",
+                    "stretched_amount", "stretched_dead_cap", "waiver_window",
+                    "waiver_date", "waiver_date_defaulted", "estimate_basis"):
+            if key in move:
+                row[key] = move[key]
+        rows.append(row)
         step += 1
     return {"steps": rows, "pay_after": pay, "next_step": step}

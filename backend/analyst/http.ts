@@ -20,7 +20,7 @@ const workspaceUpdate = Type.Object({ name: Type.Optional(Type.Union([Type.Strin
 const branchCreate = Type.Object({ thread: text(80), client: text(80), parent_sequence: Type.Integer({ minimum: 1 }), branch_id: Type.Optional(Type.Union([text(64), Type.Null()])) }, { additionalProperties: false });
 const tradeLegsSchema = Type.Object({ legs: Type.Array(Type.Object({ from: Type.String({ minLength: 2, maxLength: 4 }), to: Type.String({ minLength: 2, maxLength: 4 }), players: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 })) }, { additionalProperties: true }), { minItems: 1, maxItems: 8 }), season: Type.Optional(Type.String()) }, { additionalProperties: false });
 const tradeSchema = Type.Object({ team_a: Type.Optional(Type.String()), team_b: Type.Optional(Type.String()), players_a: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), players_b: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), season: Type.Optional(Type.String()) }, { additionalProperties: false });
-const capScenarioSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), moves: Type.Array(Type.Object({ kind: Type.String(), label: Type.Optional(Type.String()), amount: Type.Optional(Type.Number()), player: Type.Optional(Type.String()), exercise: Type.Optional(Type.Boolean()), stretch: Type.Optional(Type.Boolean()), season: Type.Optional(Type.String()) }, { additionalProperties: false }), { minItems: 1, maxItems: 40 }) }, { additionalProperties: false });
+const capScenarioSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), moves: Type.Array(Type.Object({ kind: Type.String(), label: Type.Optional(Type.String()), amount: Type.Optional(Type.Number()), player: Type.Optional(Type.String()), exercise: Type.Optional(Type.Boolean()), stretch: Type.Optional(Type.Boolean()), season: Type.Optional(Type.String()) }, { additionalProperties: false }), { minItems: 1, maxItems: 40 }) }, { additionalProperties: false });
 const partnersSchema = Type.Object({ player: Type.Optional(Type.String()), season: Type.Optional(Type.String()), teams: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), max_packages: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }, { additionalProperties: false });
 const watchSchema = Type.Object({ entity_type: Type.String(), entity_id: Type.String(), season: Type.Optional(Type.String()) });
 const boardSeason = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}$" }));
@@ -274,7 +274,7 @@ export function createProductServer(options: {
     });
     route("POST", /^\/api\/cap\/scenario$/, async ({ req, res }) => {
         const input = parseBody(capScenarioSchema, await body(req));
-        const result = await data.call("product_cap_scenario_eval", { payload: { team: input.team ?? "", season: input.season ?? "2026-27", moves: input.moves } });
+        const result = await data.call("product_cap_scenario_eval", { payload: { team: input.team ?? "", season: input.season ?? "2026-27", waiver_date: input.waiver_date ?? "", moves: input.moves } });
         json(res, result, result.ok === false ? 422 : 200);
     });
     route("GET", /^\/api\/trade\/assets$/, async ({ res, url }) => {

@@ -57,12 +57,32 @@ export type ScenarioMove = {
 
 export type ScenarioResponse = {
   ok: boolean;
-  steps: { step: number; kind: string; detail: string; delta: number; payroll: number }[];
+  steps: {
+    step: number;
+    kind: string;
+    detail: string;
+    delta: number;
+    payroll: number;
+    player?: string;
+    dead_cap?: number;
+    guaranteed?: number;
+    stretch_years?: number;
+    stretched_amount?: number;
+    stretched_dead_cap?: number;
+    waiver_window?: "pre_sep1" | "post_sep1";
+    waiver_date?: string | null;
+    waiver_date_defaulted?: boolean;
+    estimate_basis?: string;
+  }[];
   pay_after: number;
   state: { over_tax: boolean; over_apron1: boolean; over_apron2: boolean; room_under_apron2?: number };
   restrictions: { threshold: string; status: string; rule: string }[];
   roster_issues: string[];
   errors: (string | { move: string; error: string })[];
+  meta?: {
+    waiver_basis?: string;
+    waiver_timing?: { window: "pre_sep1" | "post_sep1"; date: string | null; defaulted: boolean };
+  };
 };
 
 const SEASONS = ["2026-27", "2027-28", "2028-29", "2029-30", "2030-31", "2031-32"];

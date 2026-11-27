@@ -372,23 +372,35 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                 </p>
               ) : (
                 <div className="mt-2 space-y-1.5">
-                  {moves.map((move, i) => (
-                    <div key={i} className="flex items-baseline justify-between gap-2 text-[12px]">
-                      <span className="text-ink-2">
-                        {move.kind === "signing" && `sign ${move.label} (${money(move.amount)})`}
-                        {move.kind === "option_decision" && `${move.exercise ? "exercise" : "decline"} ${move.player} ${shortSeason(move.season ?? "")} option`}
-                        {move.kind === "waive" && `waive ${move.player}${move.stretch ? " (stretch)" : ""}`}
-                        {move.kind === "trade_out" && `trade out ${move.player}`}
-                        {move.kind === "trade_in" && `trade in ${move.player}`}
-                      </span>
-                      <button
-                        className="font-mono text-[10px] text-ink-3 underline-offset-2 hover:underline"
-                        onClick={() => setMoves((current) => current.filter((_, j) => j !== i))}
-                      >
-                        remove
-                      </button>
-                    </div>
-                  ))}
+                  {moves.map((move, i) => {
+                    const waiverStep = move.kind === "waive"
+                      ? scenario?.steps.find((step) => step.kind === "waive" && step.player === move.player)
+                      : undefined;
+                    return (
+                      <div key={i} className="flex items-baseline justify-between gap-2 text-[12px]">
+                        <div className="min-w-0">
+                          <span className="text-ink-2">
+                            {move.kind === "signing" && `sign ${move.label} (${money(move.amount)})`}
+                            {move.kind === "option_decision" && `${move.exercise ? "exercise" : "decline"} ${move.player} ${shortSeason(move.season ?? "")} option`}
+                            {move.kind === "waive" && `waive ${move.player}${move.stretch ? " (stretch)" : ""}`}
+                            {move.kind === "trade_out" && `trade out ${move.player}`}
+                            {move.kind === "trade_in" && `trade in ${move.player}`}
+                          </span>
+                          {waiverStep?.estimate_basis && (
+                            <span className="mt-0.5 block font-mono text-[9.5px] leading-[1.45] text-ink-3">
+                              {waiverStep.estimate_basis}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          className="shrink-0 font-mono text-[10px] text-ink-3 underline-offset-2 hover:underline"
+                          onClick={() => setMoves((current) => current.filter((_, j) => j !== i))}
+                        >
+                          remove
+                        </button>
+                      </div>
+                    );
+                  })}
                   {evaluating && <p className="text-[11.5px] text-ink-3">evaluating…</p>}
                   {scenarioError && <p className="text-[11.5px] text-red">{scenarioError}</p>}
                   {scenario && (

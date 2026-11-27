@@ -19,7 +19,7 @@ from .cba_cap import (
     _payroll_source,
     _salary_date,
 )
-from .waivers import WAIVER_BASIS, waiver_move
+from .waivers import WAIVER_BASIS, resolve_waiver_timing, waiver_move
 
 
 
@@ -136,6 +136,10 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "team needed"}
     if not isinstance(moves_in, list) or not moves_in:
         return {"ok": False, "error": "moves must be a non-empty list"}
+    waiver_timing, waiver_timing_error = resolve_waiver_timing(
+        payload.get("waiver_date"), season)
+    if waiver_timing_error:
+        return {"ok": False, "error": waiver_timing_error}
     lines, lines_projected = cap_lines_for_season(con, season)
     try:
         pay_before, roster = _payroll(team, con, season)
@@ -211,7 +215,8 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 continue
             hit = next((p for p in roster if p["player"] == matched[0]), None)
             amount = int((hit or {}).get("salary") or 0)
-            moves.append(waiver_move(con, team, matched[0], amount, season, stretch))
+            moves.append(waiver_move(con, team, matched[0], amount, season, stretch,
+                                     timing=waiver_timing))
             roster_delta -= 1
         elif kind == "option_decision":
             player = str(raw.get("player") or "").strip()
@@ -277,5 +282,6 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "hard_cap": hard_cap, "issues": issues, "errors": errors,
             "matching": matching,
             "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con),
-                     **({"waiver_basis": WAIVER_BASIS}
+                     **({"waiver_basis": WAIVER_BASIS,
+                         "waiver_timing": waiver_timing}
                         if any(move.get("kind") == "waive" for move in moves) else {})}}

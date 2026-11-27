@@ -157,7 +157,12 @@ def test_scenario_trace_signs_and_order():
 
 def test_scenario_trace_waive_subtracts_relief():
     trace = scenario_trace(50, [
-        {"kind": "waive", "detail": "waive X stretch", "amount": 5},
+        {"kind": "waive", "detail": "waive X stretch", "amount": 5,
+         "dead_cap": 10, "guaranteed": 20, "estimate_basis": "pin"},
         {"kind": "option_decline", "detail": "decline Y", "amount": 0},
     ])
     assert trace["pay_after"] == 45
+    waive = trace["steps"][1]
+    assert waive["dead_cap"] == 10
+    assert waive["guaranteed"] == 20
+    assert waive["estimate_basis"] == "pin"

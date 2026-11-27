@@ -142,12 +142,14 @@ def register() -> dict[str, Any]:
     def get_cap_scenario(team: str = "", signings: str = "",
                          in_players: str = "", trade_out_players: str = "",
                          waive_players: str = "", season: str | None = None,
-                         stretch: bool = False, out_players: str = "") -> dict:
+                         stretch: bool = False, waiver_date: str = "",
+                         out_players: str = "") -> dict:
         res = call_sync(_orig_get_cap_scenario, "get_cap_scenario", {
             "team": team, "signings": signings, "in_players": in_players,
             "trade_out_players": trade_out_players,
             "waive_players": waive_players, "season": season,
-            "stretch": stretch, "out_players": out_players,
+            "stretch": stretch, "waiver_date": waiver_date,
+            "out_players": out_players,
         })
         default_cols = ["step", "kind", "detail", "delta", "payroll"]
         rows = [r for r in res.get("rows") or [] if isinstance(r, dict)] if res.get("ok") else []

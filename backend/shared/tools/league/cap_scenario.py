@@ -25,7 +25,7 @@ from ..cap_rules import (
 )
 from .._core import coerce_team_id, team_error_message
 from .trade_value import _trade_guard_vintage_error, _trade_unknown_message
-from .waivers import WAIVER_BASIS, player_contract_tail, waiver_move
+from .waivers import WAIVER_BASIS, player_contract_tail, resolve_waiver_timing, waiver_move
 
 _AMOUNT_RE = _re.compile(r"^\$?([\d,]+(?:\.\d+)?)\s*([mMkK])?$")
 _SPLIT_RE = _re.compile(r"(?<!\d),(?!\d)|(?<=\d),(?=\s*\D)")
@@ -63,8 +63,13 @@ def _parse_signings(text: str) -> tuple[list[tuple[str, int]], list[str]]:
     '"in_players" adds real contracts by name (league-wide lookup). '
     '"trade_out_players" removes roster salary only when those players are '
     'actually traded away. "waive_players" waives roster players; guaranteed '
-    'money remains as estimated dead cap, and "stretch" applies the pre-Sep-1 '
-    'two-times-years-plus-one estimate. The retired "out_players" input is '
+    'money remains as estimated dead cap. "stretch" uses the CBA '
+    'two-times-years-plus-one estimate; player-option years count and '
+    'team-option years do not. Optional "waiver_date" (YYYY-MM-DD inside the '
+    'scenario league year) selects the timing branch; blank uses the July 1-Aug '
+    '31 pre-Sep-1 branch and discloses that default. In the Sep 1-Jun 30 '
+    'branch the current-season allocation is unchanged and only future-season '
+    'salary is stretched. The retired "out_players" input is '
     'rejected because it hid that distinction. Guarantee data is a '
     'remaining-contract pool, not per-year allocations. Returns the arithmetic '
     'trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA '
@@ -78,7 +83,8 @@ def _parse_signings(text: str) -> tuple[list[tuple[str, int]], list[str]]:
 def get_cap_scenario(team: str = "", signings: str = "",
                      in_players: str = "", trade_out_players: str = "",
                      waive_players: str = "", season: str | None = None,
-                     stretch: bool = False, out_players: str = "") -> dict[str, Any]:
+                     stretch: bool = False, waiver_date: str = "",
+                     out_players: str = "") -> dict[str, Any]:
     team = str(team or "").strip()
     trade_out_players = str(trade_out_players or "").strip()
     waive_players = str(waive_players or "").strip()
@@ -130,6 +136,10 @@ def get_cap_scenario(team: str = "", signings: str = "",
             if guard_error:
                 return {"tool": "get_cap_scenario", "ok": False,
                         "error": guard_error}
+        waiver_timing, waiver_timing_error = resolve_waiver_timing(waiver_date, season)
+        if waiver_timing_error:
+            return {"tool": "get_cap_scenario", "ok": False,
+                    "error": waiver_timing_error}
         try:
             pay_before, roster = _payroll(team, con, season)
         except SalaryColumnError as exc:
@@ -177,7 +187,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
             row = next((p for p in roster if p["player"] == name), None)
             amount = int((row or {}).get("salary") or 0)
             moves.append(waiver_move(con, team, name, amount, season, stretch,
-                                     waiver_tails.get(name)))
+                                     waiver_tails.get(name), waiver_timing))
         for name, amount in sign_rows:
             moves.append({"kind": "signing", "detail": f"sign {name}",
                           "amount": amount})
@@ -256,6 +266,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
     }
     if waive_names:
         res["meta"]["waiver_basis"] = WAIVER_BASIS
+        res["meta"]["waiver_timing"] = waiver_timing
     if matching is not None:
         res["matching"] = matching
     return res
