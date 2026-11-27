@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { describeScenarioMove } from "@/lib/capsheet-fixture";
-import type { SharedObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation } from "@/lib/shared";
+import type { SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
 import type { ScenarioResponse } from "@/lib/capsheet-fixture";
 
 function money(value: number | null | undefined): string {
@@ -364,6 +364,66 @@ export function SharedTradeView({
             </p>
           </section>
         </aside>
+      </div>
+    </SharedFrame>
+  );
+}
+function evidenceLine(table: TranscriptEntry["tables"][number]): string {
+  const meta = table.meta ?? {};
+  const parts = [
+    table.tool ?? "source",
+    meta.source ? `source ${meta.source}` : "",
+    meta.season ? `season ${meta.season}` : "",
+    meta.fetched_at ? `fetched ${String(meta.fetched_at).slice(0, 10)}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+export function SharedThreadView({
+  object,
+  transcript,
+}: {
+  object: SharedThreadObject;
+  transcript: TranscriptEntry[];
+}) {
+  const ordered = [...transcript].reverse();
+  return (
+    <SharedFrame label="shared analysis thread">
+      <div className="mt-6">
+        <h1 className="text-[22px] font-semibold tracking-tight text-ink">{object.title}</h1>
+        <p className="mt-1 text-[12.5px] text-ink-3">
+          {ordered.length} {ordered.length === 1 ? "analysis" : "analyses"} · shared {sharedDate(object.updated_at)}
+        </p>
+      </div>
+
+      <div className="mt-6 space-y-4">
+        {ordered.length === 0 && (
+          <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+            <p className="text-[12.5px] leading-[1.6] text-ink-2">
+              This thread had no analyses to show at the time it was shared.
+            </p>
+          </section>
+        )}
+        {ordered.map((entry, i) => (
+          <section key={i} className="rounded-[10px] bg-surface p-4 shadow-hairline">
+            <h2 className="text-[13.5px] font-semibold leading-[1.45] text-ink">{entry.question}</h2>
+            <p className="mt-2 whitespace-pre-wrap text-[12.5px] leading-[1.65] text-ink-2">{entry.answer}</p>
+            {entry.tables.length > 0 && (
+              <div className="mt-3 border-t border-line pt-2">
+                {entry.tables.map((table, j) => (
+                  <p key={j} className="font-mono text-[10.5px] leading-[1.6] text-ink-3">{evidenceLine(table)}</p>
+                ))}
+              </div>
+            )}
+          </section>
+        ))}
+
+        <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+          <h2 className="text-[13px] font-semibold text-ink">About this link</h2>
+          <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
+            This is a snapshot of the thread as it existed when the owner shared it — anything added to the conversation afterwards is not visible here. This is a read-only view; the thread can't be continued or edited here.
+          </p>
+        </section>
       </div>
     </SharedFrame>
   );

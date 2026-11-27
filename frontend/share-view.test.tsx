@@ -252,3 +252,62 @@ test("loadSharedScenario treats malformed trade payloads as unavailable", async 
   const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(malformed));
   assert.equal(result.status, "unavailable");
 });
+const threadShared = {
+  kind: "thread_grant",
+  title: "shared analysis",
+  payload: { thread: true },
+  transcript: [
+    { question: "Who won the MVP race?", answer: "The case for the frontrunner rests on\nefficiency and team success.", tables: [{ tool: "get_awards", meta: { source: "warehouse", season: "2025-26" } }], created_at: "2026-11-27T10:00:00.000Z" },
+    { question: "Compare their shooting", answer: "Shot profiles diverge at the rim.", tables: [], created_at: "2026-11-27T10:05:00.000Z" },
+  ],
+  schema_version: 1,
+  updated_at: "2026-11-27T12:00:00.000Z",
+  archived: false,
+};
+
+test("shared thread renders transcript read-only with evidence attribution", async () => {
+  const { SharedThreadView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedThreadView object={threadShared} transcript={threadShared.transcript} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /shared analysis/);
+    assert.match(text, /Who won the MVP race\?/);
+    assert.match(text, /efficiency and team success/);
+    assert.match(text, /Compare their shooting/);
+    assert.match(text, /get_awards/);
+    assert.match(text, /snapshot of the thread/);
+    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("shared thread with empty transcript renders honest empty state", async () => {
+  const { SharedThreadView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedThreadView object={threadShared} transcript={[]} />);
+  try {
+    assert.match(mounted.host.textContent!, /no analyses to show/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("loadSharedScenario dispatches thread_grant to the transcript shape", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(threadShared));
+  assert.equal(result.status, "ok-thread");
+  if (result.status === "ok-thread") {
+    assert.equal(result.transcript.length, 2);
+    assert.equal(result.object.title, "shared analysis");
+  }
+});
+
+test("loadSharedScenario filters malformed transcript entries", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const malformed = { ...threadShared, transcript: [...threadShared.transcript, { question: 42 }] };
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(malformed));
+  assert.equal(result.status, "ok-thread");
+  if (result.status === "ok-thread") assert.equal(result.transcript.length, 2);
+});
