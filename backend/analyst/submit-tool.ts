@@ -269,6 +269,16 @@ export function artifactRejectionReason(artifact: Record<string, unknown>): stri
     }
 }
 
+export function stripToolCallMarkup(text: string): string {
+    return text
+        .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, "")
+        .replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/g, "")
+        .replace(/<invoke\b[^>]*\/?>/g, "")
+        .replace(/<\/?function_calls>/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
 export function validateAnswerSubmission(
     input: unknown,
     getSource: (ref: string) => SourceRecord | undefined,
@@ -278,12 +288,16 @@ export function validateAnswerSubmission(
     if (!Value.Check(submitAnswerSchema, input)) {
         throw new Error("Invalid answer submission schema: blocks with non-empty text required");
     }
-    const blocks = input.blocks.map(block => {
+    const blocks = input.blocks.flatMap(block => {
         const anchors = block.anchors ?? [];
         for (const anchor of anchors)
             validateAnchor(anchor, getSource, availableRefs);
-        return { text: block.text, anchors };
+        const text = stripToolCallMarkup(block.text);
+        return text ? [{ text, anchors }] : [];
     });
+    if (blocks.length === 0) {
+        throw new Error("Invalid answer submission: blocks held only tool-call markup, no answer prose");
+    }
     const submitted = input.artifacts ? structuredClone(input.artifacts) : [];
     if (!submitted.some(artifact => objectValue(artifact)?.kind === "table"))
         for (const block of blocks)
