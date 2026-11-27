@@ -5512,6 +5512,31 @@
         "title": "product_cap_scenario_eval",
         "type": "object"
       }
+    },
+    "product_trade_legs": {
+      "name": "product_trade_legs",
+      "description": "Evaluate a multi-team trade construction through the CBA legality engine.",
+      "args_schema": {
+        "description": "Evaluate a multi-team trade construction through the CBA legality engine.",
+        "properties": {
+          "legs": {
+            "description": "JSON array of trade legs: [{'from','to','players','picks'}], players as comma-separated names or array, picks as [{'year','round','swap','protection'}].",
+            "title": "Legs",
+            "type": "string"
+          },
+          "season": {
+            "default": "2026-27",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2026-27'.",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "legs"
+        ],
+        "title": "product_trade_legs",
+        "type": "object"
+      }
     }
   },
   "shared": {

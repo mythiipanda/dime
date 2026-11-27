@@ -100,6 +100,26 @@ def product_trade(team_a: str, players_a: str, team_b: str, players_b: str, seas
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
 
+@tool(description='Evaluate a multi-team trade construction through the CBA legality engine.')
+def product_trade_legs(legs: str, season: str = '2026-27') -> dict:
+    import json as _json
+    from shared.tools import get_trade_legality
+    if not legs:
+        return {'ok': False, 'error': 'pass a legs JSON array'}
+    try:
+        parsed = _json.loads(legs) if isinstance(legs, str) else legs
+    except Exception:
+        return {'ok': False, 'error': 'legs must be valid JSON'}
+    if not isinstance(parsed, list) or not parsed:
+        return {'ok': False, 'error': 'legs must be a non-empty array'}
+    for leg in parsed:
+        if not isinstance(leg, dict) or not leg.get('from') or not leg.get('to'):
+            return {'ok': False, 'error': 'each leg needs from/to teams'}
+    try:
+        return get_trade_legality.invoke({'legs': _json.dumps(parsed), 'season': season})
+    except ValueError as error:
+        return {'ok': False, 'error': str(error)}
+
 @tool(description='Find salary-matching packages for a player via the existing domain implementation.')
 def product_trade_partners(player: str, season: str = '2026-27', teams: str = '', max_packages: int = 3) -> dict:
     from shared.tools import get_trade_partners
@@ -921,7 +941,7 @@ def internal_catalogue():
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
         product_compare, product_draft, product_matchups, product_awards, product_scout_dossier,
-        product_cap_sheet, product_cap_scenario_eval)
+        product_cap_sheet, product_cap_scenario_eval, product_trade_legs)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description
