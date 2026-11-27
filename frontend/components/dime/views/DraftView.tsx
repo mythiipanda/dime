@@ -63,7 +63,7 @@ function BlockError({ block, empty }: { block: { ok?: boolean; error?: string };
   return <p className="py-2 text-[12px] text-ink-3">{block.error ?? empty}</p>;
 }
 
-export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: string) => void; initialTeam?: string }) {
+export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void; initialTeam?: string }) {
   const [team, setTeam] = useState(initialTeam ?? "NYK");
   const [data, setData] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -204,7 +204,7 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
         </div>
         {data && (
           <div className="flex flex-wrap items-center gap-2">
-            {onAsk && <Button size="sm" variant="secondary" onClick={() => onAsk(askText())}>Ask Dime</Button>}
+            {onAsk && <Button size="sm" variant="secondary" onClick={() => onAsk(askText(), { kind: "draft_scout", summary: `${teamName} draft + free agency`, entities: { team: teamName } })}>Ask Dime</Button>}
             <Button size="sm" variant="secondary" disabled={exporting} onClick={() => exportReport(false)}>Report (.md)</Button>
             <Button size="sm" variant="secondary" disabled={exporting} onClick={() => exportReport(true)}>Report (PDF)</Button>
           </div>
