@@ -38,15 +38,18 @@ export function SharedFrame({ children, label }: { children: ReactNode; label?: 
   );
 }
 
-export function SharedScenarioNotice({ tone }: { tone: "archived" | "not_found" | "invalid" | "unsupported" | "unavailable" }) {
+const kindNoun: Record<string, string> = { cap_scenario: "scenario", trade_scenario: "trade construction", thread_grant: "analysis thread", board: "board" };
+
+export function SharedScenarioNotice({ tone, kind }: { tone: "archived" | "not_found" | "invalid" | "unsupported" | "unavailable"; kind?: string }) {
+  const noun = kindNoun[kind ?? ""] ?? "object";
   const copy: Record<typeof tone, { title: string; body: string }> = {
     archived: {
-      title: "This scenario was taken down",
-      body: "The owner archived this shared scenario. The link still resolves so you know what happened to it, but the contents are no longer shared.",
+      title: `This ${noun} was taken down`,
+      body: `The owner archived this shared ${noun}. The link still resolves so you know what happened to it, but the contents are no longer shared.`,
     },
     not_found: {
-      title: "This shared scenario no longer exists",
-      body: "The link may have been rotated by its owner — rotating a share link retires the old one — or the scenario was never shared at this address.",
+      title: `This shared ${noun} no longer exists`,
+      body: `The link may have been rotated by its owner — rotating a share link retires the old one — or the ${noun} was never shared at this address.`,
     },
     invalid: {
       title: "This link is invalid",
@@ -57,13 +60,13 @@ export function SharedScenarioNotice({ tone }: { tone: "archived" | "not_found" 
       body: "The link resolves, but this kind of shared object isn't supported by this version of the workbench.",
     },
     unavailable: {
-      title: "This scenario can't be loaded right now",
+      title: `This ${noun} can't be loaded right now`,
       body: "The workbench backend isn't reachable. This is usually temporary — try again in a moment.",
     },
   };
   const { title, body } = copy[tone];
   return (
-    <SharedFrame>
+    <SharedFrame label={`shared ${noun}`}>
       <section className="mt-8 rounded-[10px] bg-surface p-6 shadow-hairline">
         <h1 className="text-[17px] font-semibold text-ink">{title}</h1>
         <p className="mt-2 max-w-[520px] text-[13px] leading-[1.6] text-ink-2">{body}</p>

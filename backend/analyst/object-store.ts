@@ -3,7 +3,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { openProductDatabase } from "./product-store.js";
 
-export const OBJECT_KINDS = ["cap_scenario", "trade_scenario", "thread_grant"] as const;
+export const OBJECT_KINDS = ["cap_scenario", "trade_scenario", "thread_grant", "board"] as const;
 export type ObjectKind = (typeof OBJECT_KINDS)[number];
 
 export const capScenarioPayloadSchema = Type.Object({
@@ -37,10 +37,22 @@ export const threadGrantPayloadSchema = Type.Object({
     granted_before: Type.String({ minLength: 10, maxLength: 40 })
 }, { additionalProperties: false });
 
-const payloadValidators: Record<ObjectKind, typeof capScenarioPayloadSchema | typeof tradeScenarioPayloadSchema | typeof threadGrantPayloadSchema> = {
+export const boardPayloadSchema = Type.Object({
+    season: Type.String({ minLength: 1, maxLength: 12 }),
+    rows: Type.Array(Type.Object({
+        player_id: Type.Integer({ minimum: 1 })
+    }, { additionalProperties: false }), { minItems: 1, maxItems: 50 }),
+    columns: Type.Array(Type.Object({
+        metric_id: Type.String({ minLength: 1, maxLength: 64 })
+    }, { additionalProperties: false }), { minItems: 1, maxItems: 30 }),
+    template_id: Type.Optional(Type.String({ maxLength: 64 }))
+}, { additionalProperties: false });
+
+const payloadValidators: Record<ObjectKind, typeof capScenarioPayloadSchema | typeof tradeScenarioPayloadSchema | typeof threadGrantPayloadSchema | typeof boardPayloadSchema> = {
     cap_scenario: capScenarioPayloadSchema,
     trade_scenario: tradeScenarioPayloadSchema,
-    thread_grant: threadGrantPayloadSchema
+    thread_grant: threadGrantPayloadSchema,
+    board: boardPayloadSchema
 };
 
 export function validateObjectPayload(kind: string, payload: unknown): string | null {

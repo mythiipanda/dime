@@ -1,5 +1,6 @@
 import { cache } from "react";
 import type { ScenarioMove, ScenarioResponse } from "./capsheet-fixture";
+import type { Board, BoardMetric, BoardFill } from "./boards";
 
 export type SharedObject = {
   kind: string;
@@ -54,10 +55,45 @@ export type TradeLegsEvaluation = {
   error?: string;
 };
 
+export type SharedBoardObject = {
+  kind: string;
+  title: string;
+  payload: {
+    season: string;
+    rows: { player_id: number }[];
+    columns: { metric_id: string }[];
+    template_id?: string;
+  };
+  schema_version: number;
+  updated_at: string;
+  archived: boolean;
+};
+
+function isBoardObject(value: { payload: Record<string, unknown> }): value is SharedBoardObject {
+  const payload = value.payload;
+  return (
+    typeof payload.season === "string"
+    && Array.isArray(payload.rows) && payload.rows.length > 0
+    && payload.rows.every((row) => row && typeof row === "object" && typeof (row as Record<string, unknown>).player_id === "number")
+    && Array.isArray(payload.columns) && payload.columns.length > 0
+    && payload.columns.every((column) => column && typeof column === "object" && typeof (column as Record<string, unknown>).metric_id === "string")
+  );
+}
+
+function isBoardFill(value: unknown): value is BoardFill {
+  return !!value && typeof value === "object" && (value as Record<string, unknown>).ok === true
+    && !!(value as Record<string, unknown>).cells && !!(value as Record<string, unknown>).players;
+}
+
+function isMetricList(value: unknown): value is { ok: true; metrics: BoardMetric[] } {
+  return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).metrics);
+}
+
 export type SharedScenarioState =
   | { status: "ok"; object: SharedObject; evaluation: ScenarioResponse | null }
   | { status: "ok-trade"; object: SharedTradeObject; evaluation: TradeLegsEvaluation | null }
   | { status: "ok-thread"; object: SharedThreadObject; transcript: TranscriptEntry[] }
+  | { status: "ok-board"; object: SharedBoardObject; board: Board | null; metrics: BoardMetric[] }
   | { status: "archived"; object: { kind: string; title: string } }
   | { status: "not_found" }
   | { status: "invalid" }
@@ -179,6 +215,51 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
       archived: envelope.archived,
     };
     return { status: "ok-thread", object, transcript };
+  }
+
+  if (envelope.kind === "board") {
+    if (!isBoardObject(envelope)) return { status: "unavailable" };
+    const object = envelope;
+    let board: Board | null = null;
+    let metrics: BoardMetric[] = [];
+    try {
+      const [fillResponse, metricsResponse] = await Promise.all([
+        fetchImpl(`${backend}/api/boards/fill`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            season: object.payload.season,
+            player_ids: object.payload.rows.map((row) => row.player_id),
+            metric_ids: object.payload.columns.map((column) => column.metric_id),
+          }),
+          cache: "no-store",
+        }),
+        fetchImpl(`${backend}/api/boards/metrics`, { cache: "no-store" }),
+      ]);
+      const fillBody: unknown = await fillResponse.json().catch(() => null);
+      const metricsBody: unknown = await metricsResponse.json().catch(() => null);
+      if (isMetricList(metricsBody)) metrics = metricsBody.metrics;
+      if (isBoardFill(fillBody)) {
+        board = {
+          id: "shared",
+          title: object.title,
+          season: object.payload.season,
+          rows: object.payload.rows.map((row) => ({
+            player_id: row.player_id,
+            name: fillBody.players[String(row.player_id)]?.name || `Player ${row.player_id}`,
+            team: fillBody.players[String(row.player_id)]?.team || "",
+          })),
+          columns: object.payload.columns.map((column) => ({ metric_id: column.metric_id })),
+          cells: fillBody.cells,
+          created_at: object.updated_at,
+          updated_at: object.updated_at,
+          ...(object.payload.template_id ? { template_id: object.payload.template_id } : {}),
+        };
+      }
+    } catch {
+      board = null;
+    }
+    return { status: "ok-board", object, board, metrics };
   }
 
   if (envelope.kind !== "cap_scenario") return { status: "unsupported", kind: envelope.kind };

@@ -156,8 +156,13 @@ test("loadSharedScenario maps backend responses into the view states", async () 
     "archived",
   );
   assert.equal(
-    (await withFetch(async () => Response.json({ ...sharedObject, kind: "board" }))).status,
+    (await withFetch(async () => Response.json({ ...sharedObject, kind: "widget" }))).status,
     "unsupported",
+  );
+  assert.equal(
+    (await withFetch(async () => Response.json({ ...sharedObject, kind: "board" }))).status,
+    "unavailable",
+    "a board-kind envelope carrying a non-board payload is a integrity failure, not unsupported",
   );
   const evalFailed = await withFetch(async (url) => {
     if (url.includes("/api/cap/scenario")) return new Response("x", { status: 422 });
