@@ -7,8 +7,9 @@ description: Scout an opponent's next game — lineup and rotation analysis, on/
 
 Guidance for reasoning about an upcoming game, an opponent's rotation, or
 how a team actually functions — not a fixed procedure. Use whichever tools
-answer the question. Every number is warehouse-sourced (never a live
-endpoint at question time) and tools cite their own sources.
+answer the question. Provenance varies by tool, and some can use live
+data at question time — disclose the provenance a tool response exposes,
+and say when it exposes none.
 
 ## 1. Tools and when they matter
 
@@ -16,43 +17,43 @@ endpoint at question time) and tools cite their own sources.
 |---|---|---|
 | `get_matchup_preview` / `get_matchup_brief` / `get_opponent_scout` | Assembled head-to-head prep for a game, or a warehouse dossier on the opponent (form, four factors, shot profile, top lineups, injuries, season head-to-head). | Starting point for any "scouting report for X vs Y" ask — then drill into whatever claims it makes. |
 | `get_team_daily_brief` | One team's dated brief: injuries, news, transactions, last result, standing, upcoming schedule. | The "what changed lately" pass on a team — cheaper than assembling injuries + news + results separately. |
-| `get_lineups` / `get_lineup_stats` | Which five-man units play, how many minutes, and their results. | "What's their closing unit", "what do they start", rotation-structure questions. Filter by `season_type` for playoff prep. |
-| `get_lineup_leaders` | Best/worst units league-wide or per team by minutes and net rating. | "Their best five" and unit-quality claims. Respect `min_minutes` — the default floor already prunes noise. |
-| `get_on_off` / `get_wowy` | Possession-level impact of one player, or of a pair together vs apart. | "How much does X actually matter", "does the A+B pairing work". On/off is the sharpest signal for rotation value. |
+| `get_lineups` / `get_lineup_stats` | Which five-man units play, how many minutes, and their results. | Five-man unit quality and rotation-structure questions. `get_lineups` filters by `season_type` for playoff prep. |
+| `get_lineup_leaders` | League-wide best/worst units, sortable by minutes or net rating. | "Their best five" and unit-quality claims. Respect `min_minutes` — the default floor already prunes noise. |
+| `get_on_off` / `get_wowy` | `get_on_off` gives possession-level impact of one player; `get_wowy` compares a pair together vs apart. | "How much does X actually matter", "does the A+B pairing work". On/off is the sharpest signal for rotation value. |
 | `get_availability_impact` | Game-level played-vs-missed record, win pct, and margin; `teammate` splits a player's own games by a partner's presence. | "Their record when X sits", "how does Y's scoring change when Z is out" — game grain, complements possession-grain on/off. |
-| `get_on_off_leaders` | Stint-level on/off splits: league or team board by on-minus-off net gap, single-player split, or `pair` 2x2. | "Are they better with X on the floor", "on-off leaders", rotation-impact asks — stint grain, use for anything `get_on_off`/`get_wowy` cannot compute. |
+| `get_on_off_leaders` | Stint-level on/off splits: league board by on-minus-off net gap, team board by on-court possessions, single-player split, or `pair` 2x2. | "Are they better with X on the floor", "on-off leaders", rotation-impact asks — stint grain, use for anything `get_on_off`/`get_wowy` cannot compute. |
 | `get_rotation_check` / `get_stint_timeline` | Rotation patterns and stint structure. | "How does the coach stagger the stars", substitution-pattern questions. |
-| `get_shot_zones` / `get_team_shot_zones` / `get_shot_compare` | Where shots come from and where they're efficient, player or team. | Scheme-relevant prep: where the opponent generates offense, where they can be pushed. |
+| `get_shot_zones` / `get_team_shot_zones` / `get_shot_compare` | Where shots come from and where they're efficient, player or team (`get_team_shot_zones` covers completed seasons). | Scheme-relevant prep: where the opponent generates offense, where they can be pushed. |
 | `get_team_four_factors` / `get_four_factors` | eFG/TOV/OREB/FTr team or on-off level — the mechanical drivers of results. | Explaining *why* a team or unit wins: e.g. a great net rating carried by offensive rebounding tells you the game plan lever. |
-| `get_injuries` / `get_injury_impact` | Current injury report and its measured cost. | Every prep answer — availability changes everything downstream. Check first; a "weak bench" analysis that ignores three rotation players out is wrong, not just incomplete. |
+| `get_injuries` / `get_injury_impact` | Current injury report and team-level heuristic impact. | Every prep answer — availability changes everything downstream. Check first; a "weak bench" analysis that ignores three rotation players out is wrong, not just incomplete. |
 | `get_news_feed` | Recent headlines per team/player. | Late-breaking context the numbers miss — trades, role changes, coach comments about rotations. |
-| `get_head_to_head` / `get_season_series` / `get_matchup_splits` | Prior meetings and player-level splits vs this opponent. | "How did it go last time" and matchup-specific player performance. |
-| `get_game_prediction` / `get_win_prob` | Pre-game Monte Carlo win probability and projected score; in-game win probability. | "Who wins tonight" and game-state questions — model estimates with stated methodology, not vibes. |
+| `get_head_to_head` / `get_season_series` / `get_matchup_splits` | Prior meetings and player-level matchup or situational splits. | "How did it go last time" and matchup-specific player performance. |
+| `get_game_prediction` / `get_win_prob` | Pre-game Monte Carlo win probability and projected score; Elo win probability. | "Who wins tonight" — model estimates with stated methodology, not vibes. |
 | `get_rest_advantage` / `get_streaks` | Schedule rest differentials and active/longest streaks league-wide. | Spot flags — a team on a b2b or riding a 9-game streak changes the read. |
-| `get_elo_standings` / `get_standings_deep` / `get_competitive_ratings` / `get_team_trajectory` | Elo-implied standings, deep standings with tiebreaks, power ratings, and a team's direction over time. | "How good are they really" context and trajectory claims — beyond raw W-L. |
-| `get_playoff_sim` / `get_briefing` / `get_morning_briefing` / `get_recap` | Playoff odds simulation, league/team briefings, and game recaps. | Postseason-probability asks and dated narrative context. |
-| `get_possession_log` / `get_games_on_date` / `get_watchlist` / `get_finder` | Possession-level play-by-play, schedule lookups, watchlists, and entity search. | Possession-grain checks and "which game/player" lookups the aggregate tools don't cover. |
+| `get_elo_standings` / `get_standings_deep` / `get_competitive_ratings` / `get_team_trajectory` | Elo-implied standings, deep standings cuts, power ratings, and a team's direction over time. | "How good are they really" context and trajectory claims — beyond raw W-L. |
+| `get_playoff_sim` / `get_briefing` / `get_morning_briefing` / `get_recap` | Playoff odds simulation, league briefings, and game recaps. | Postseason-probability asks and dated narrative context. |
+| `get_possession_log` / `get_games_on_date` / `get_watchlist` / `get_finder` | Possession-level play-by-play, schedule lookups, watchlists, and historical finder queries. | Possession-grain checks and schedule/history lookups the aggregate tools don't cover. |
 
 ## 2. Building a prep answer
 
 A useful prep read has three layers; lead with whichever changes the game.
 
 **Availability first.** `get_injuries` on both teams, then
-`get_injury_impact` for what each absence is worth, then `get_news_feed`
+`get_injury_impact` for the team-level heuristic impact, then `get_news_feed`
 for anything the injury report hasn't caught up to. Re-derive everything
 else under the available roster — the opponent's best five with a starter
 out is a different unit than the season aggregate.
 
 **How they play.** `get_team_shot_zones` + `get_team_four_factors` sketch
-the offensive/defensive identity: rim-heavy vs perimeter, glass vs
-transition, pace. `get_head_to_head`/`get_season_series` add the specific
-opponent history. `get_matchup_preview` ties it together if you started
-with individual tools instead.
+the offensive/defensive identity: rim-heavy vs perimeter, rebounding,
+turnovers, and free-throw pressure. `get_head_to_head`/`get_season_series`
+add the specific opponent history. `get_matchup_preview` ties it together
+if you started with individual tools instead.
 
-**Who plays.** `get_lineups`/`get_lineup_leaders` name the real units —
-starters, the closing five, the bench mob — with minutes and net rating.
-`get_on_off`/`get_wowy` say who drives it: a unit's strong net rating that
-fully overlaps one player's on/off is a player story, not a lineup story.
+**Who plays.** `get_lineups`/`get_lineup_leaders` list five-man units with
+minutes and net rating. `get_on_off`/`get_wowy` say who drives it: a
+unit's strong net rating that fully overlaps one player's on/off is a
+player story, not a lineup story.
 
 ## 3. Reading lineups and on/off correctly
 
@@ -78,8 +79,12 @@ The in-progress 2026-27 season is the standing case study: tools now
 return early-season rows with real provenance, but the sample is small.
 
 - **Always attach the sample.** Every early-season number gets its
-  qualifier: games played, minutes for lineups/on-off, attempts for shot
-  zones. "Top-5 defense" in November is ~15 games, not a season.
+  qualifier: games played, minutes for lineups, possessions for on/off,
+  attempts for shot zones. Cached `get_on_off` rows can omit the volume
+  row; when volume matters, take it from `get_on_off_leaders`
+  (stint-derived) or a `get_wowy` result whose rows report possessions, or
+  explicitly label the `get_on_off` volume unavailable. "Top-5 defense" in
+  November is ~15 games, not a season.
 - **Thresholds exist for a reason.** `get_lineup_leaders`' `min_minutes`
   floor and `get_shot_zones`' `min_attempts` floor are the sample guards —
   don't lower them to manufacture coverage; if a player's zone profile is
@@ -98,9 +103,10 @@ return early-season rows with real provenance, but the sample is small.
 
 *"Prep for BOS @ NYK."*
 `get_injuries` both teams → available rosters; `get_news_feed("NYK")` →
-late changes; `get_team_shot_zones` + `get_team_four_factors` both → NYK
-eFG/OREB profile vs BOS's rim-frequency allowed; `get_lineups` NYK →
-starting and closing units with minutes; `get_on_off` their two stars →
+late changes; `get_team_shot_zones` (prior-season, labeled) +
+`get_team_four_factors` both → NYK eFG/OREB profile vs BOS's defensive
+four factors; `get_lineups` NYK →
+five-man units with minutes; `get_on_off` their two stars →
 who the offense actually runs through; `get_season_series` → prior
 meetings. Report names the units, the players, and the mechanism — with
 each early-season number's game/minute count attached.
@@ -115,7 +121,7 @@ producing the margin. Small-sample labels go on every number.
 *"Who should we actually scheme to stop?"*
 `get_on_off` across the opponent's core → which player's absence moves
 the rating most; `get_lineup_leaders` → the units he anchors;
-`get_matchup_splits` → who produces specifically vs your team. The
+`get_head_to_head` → who produces specifically vs your team. The
 scouting answer is a name plus the on/off and lineup evidence, not a
 points-per-game list.
 
@@ -125,6 +131,7 @@ points-per-game list.
   (four factors / shot zones), then availability caveats.
 - Every early-season stat carries its sample (games, minutes, attempts);
   label volatile conclusions once instead of repeating caveats.
-- Cite each tool's `meta.sources`/per-row source; disclose that on/off
-  and lineup figures are per-100-possessions and which season_type they
-  cover.
+- Cite `meta.source` when present; otherwise cite section/row `_source`
+  fields or table/coverage metadata. If neither exists, say that the tool
+  exposes no machine-readable provenance. Disclose that on/off and lineup
+  figures are per-100-possessions and which season_type they cover.
