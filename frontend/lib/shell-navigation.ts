@@ -9,6 +9,7 @@ export const shellNavigation = [
   { id: "trades", label: "Trades", group: "Tools" },
   { id: "compare", label: "Compare", group: "Tools" },
   { id: "draft", label: "Draft", group: "Tools" },
+  { id: "cap", label: "Cap", group: "Tools" },
   { id: "matchups", label: "Matchups", group: "Tools" },
   { id: "scout", label: "Scout", group: "Tools" },
   { id: "awards", label: "Awards", group: "Tools" },
