@@ -294,3 +294,15 @@ test("scatter labels every point at low density and stays hover-only beyond it",
   assert.ok(source.includes("points.length <= 8"), "static labels for all points when density is 8 or fewer");
   assert.ok(source.includes("<title>"), "hover titles carry identity beyond that density");
 });
+
+test("currency-shorthand units compose inline with the number, not as a detached caption", () => {
+  const format = readFileSync(new URL("./lib/metric-format.ts", import.meta.url), "utf8");
+  assert.ok(format.includes('unit.startsWith("$")'), "shorthand currency units compose inline ($172M not 172 + $M beneath)");
+  const card = readFileSync(new URL("./components/dime/ArtifactTeamCard.tsx", import.meta.url), "utf8");
+  assert.ok(card.includes('metric.unit.startsWith("$")'), "the detached caption drops when the unit already rides inline");
+});
+
+test("an empty verification verdict compresses to one quiet line", () => {
+  const source = readFileSync(new URL("./components/site/harness/AnswerView.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("emptyCase"), "no-verified-claims renders as one quiet line, not a heavy card");
+});
