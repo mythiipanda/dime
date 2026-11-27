@@ -102,6 +102,41 @@ def test_get_impact_estimate_uses_normalized_cross_feed_name(raptor_name_warehou
     assert out["measured"]["total_per_100"] == 4.8
 
 
+def test_get_impact_estimate_wording_does_not_claim_missing_rapm_bpm(raptor_name_warehouse, monkeypatch):
+    con = duckdb.connect(str(raptor_name_warehouse))
+    try:
+        con.execute(
+            "CREATE TABLE silver_team_ratings (TEAM_ID BIGINT, NET_RATING DOUBLE)"
+        )
+        con.execute("INSERT INTO silver_team_ratings VALUES (1, 1.0)")
+        con.execute(
+            "CREATE TABLE silver_advanced ("
+            "PLAYER_NAME VARCHAR, TEAM_ABBREVIATION VARCHAR, TEAM_ID BIGINT, GP BIGINT, MIN DOUBLE, "
+            "POSS DOUBLE, NET_RATING DOUBLE, USG_PCT DOUBLE, TS_PCT DOUBLE, AST_PCT DOUBLE, "
+            "REB_PCT DOUBLE, TM_TOV_PCT DOUBLE, PLAYER_ID BIGINT, _season VARCHAR)"
+        )
+        con.execute(
+            "INSERT INTO silver_advanced VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                "Fallback Player", "TST", 1, 10, 12.0, 100.0, 2.0,
+                20.0, 0.55, 10.0, 10.0, 10.0, 990000002, SEASON,
+            ],
+        )
+    finally:
+        con.close()
+
+    import shared.tools.player as player_tools
+
+    monkeypatch.setattr(player_tools, "coerce_player_id", lambda _value: 990000002)
+    out = player_tools.get_impact_estimate.invoke({"player": "Fallback Player", "season": SEASON})
+    assert out["ok"] is True
+    notes = out["confidence"]["notes"]
+    assert any("No measured RAPTOR row" in note and "frozen" in note for note in notes)
+    assert any("does not read silver_rapm or silver_impact" in note for note in notes)
+    assert not any("No RAPTOR, RAPM, or BPM coverage" in note for note in notes)
+    assert "have no RAPTOR/RAPM/BPM" not in player_tools.get_impact_estimate.description
+
+
 def test_raptor_history_normalizes_cross_feed_input_and_team_lookup(raptor_name_warehouse):
     from shared.tools.player import get_raptor_history
 
