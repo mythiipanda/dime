@@ -5,6 +5,7 @@ import { Button } from "@/components/ds/Button";
 import { StatusPill } from "@/components/ds/StatusPill";
 import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { CardSection, CardSectionSources } from "@/components/dime/ArtifactCardSections";
+import { formatHeadlineMetric } from "@/lib/metric-format";
 import type { TeamCardArtifactPayload } from "@/lib/dime-stream";
 
 export default function ArtifactTeamCard({ artifact }: { artifact: TeamCardArtifactPayload }) {
@@ -16,7 +17,7 @@ export default function ArtifactTeamCard({ artifact }: { artifact: TeamCardArtif
     <dl className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3">
       {artifact.metrics.map((metric, i) => <div key={`${metric.column}-${i}`} className="min-w-0">
         <dt className="break-words text-xs text-ink-2">{metric.label}</dt>
-        <dd className="mt-1 break-words text-2xl font-medium tabular-nums tracking-tight text-ink">{metric.value === null ? <span aria-label="Not available">—</span> : String(metric.value)}</dd>
+        <dd className="mt-1 break-words text-2xl font-medium tabular-nums tracking-tight text-ink">{metric.value === null ? <span aria-label="Not available">—</span> : formatHeadlineMetric(metric.value, metric.unit)}</dd>
         <dd className="mt-1 break-words text-xs text-ink-3">{metric.unit || "Unit not declared"}</dd>
       </div>)}
     </dl>

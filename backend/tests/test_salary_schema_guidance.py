@@ -96,3 +96,46 @@ def test_reconciliation_skill_documents_honest_manual_normalized_join_pattern():
     assert "shared.contracts.normalize_name" in text
     assert "Aurelio Testín" in text
     assert "P.J. Example" in text
+
+
+def test_dollar_column_semantics_cover_cap_tables():
+    from shared.tools.league.sql_schema import _column_semantics
+
+    cases = [
+        ("silver_cap_room", "COMMITTED_SALARY"),
+        ("silver_cap_room", "PROJECTED_APRON2"),
+        ("silver_cap_room", "PROJECTED_ROOM"),
+        ("silver_cap_room", "FA_HOLDS_EST"),
+        ("silver_cap_players", "salary"),
+        ("silver_contracts", "SALARY"),
+        ("silver_hist_salaries", "SALARY"),
+        ("silver_free_agents", "PRIOR_SALARY"),
+        ("silver_free_agents", "CAP_HOLD_EST"),
+        ("silver_cap_history", "salary_cap"),
+        ("silver_cap_history", "apron_1"),
+        ("silver_cap_history", "apron_2"),
+    ]
+    for table, column in cases:
+        unit, note = _column_semantics(table, column)
+        assert unit == "usd_dollars", f"{table}.{column} unit={unit!r}"
+        assert note, f"{table}.{column} missing note"
+
+
+def test_sql_exec_result_carries_declared_units_on_direct_projection():
+    import asyncio
+
+    from shared.tools.league.sql_schema import _clear_warehouse_schema_cache
+    from shared.tools.sql_exec import sql_exec
+
+    _clear_warehouse_schema_cache()
+
+    async def run():
+        return await sql_exec.ainvoke({
+            "sql": "SELECT TEAM, COMMITTED_SALARY, PROJECTED_APRON2 FROM silver_cap_room WHERE TEAM = 'LAL'"
+        })
+
+    result = asyncio.run(run())
+    assert result.get("ok"), result.get("error")
+    declared = result.get("declared_column_semantics") or {}
+    assert declared.get("COMMITTED_SALARY", {}).get("unit") == "usd_dollars"
+    assert declared.get("PROJECTED_APRON2", {}).get("unit") == "usd_dollars"
