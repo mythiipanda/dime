@@ -165,6 +165,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     return pp && ps ? { player: pp, season: ps } : null;
   });
   const [pinZ, setPinZ] = useState<Record<string, number> | null>(null);
+  const [pinId, setPinId] = useState<number | null>(null);
   const [winStart, setWinStart] = useState<string>(() => initialParams?.get("window")?.split("..")[0] ?? "");
   const [winEnd, setWinEnd] = useState<string>(() => initialParams?.get("window")?.split("..")[1] ?? "");
   const [leaderSeason, setLeaderSeason] = useState("1996-97");
@@ -347,6 +348,8 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
       .then((value) => {
         if (cancelled) return;
         setPinZ(value?.player?.z ?? null);
+        const pid = (value?.player as { id?: number } | undefined)?.id;
+        setPinId(typeof pid === "number" ? pid : null);
       })
       .catch(() => {
         if (!cancelled) setPinZ(null);
@@ -506,6 +509,27 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
             ) : (
               <span className="ml-auto flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] text-ink-2">
                 pinned: {pin.player} {pin.season}
+                {pinId != null && pinDiffers && (comps?.player as { id?: number } | undefined)?.id != null && (
+                  <button
+                    type="button"
+                    data-testid="compare-pair"
+                    className="text-accent underline-offset-2 hover:underline"
+                    title="open this pair in the compare surface"
+                    onClick={() => {
+                      const targetId = (comps?.player as { id?: number } | undefined)?.id;
+                      if (targetId == null || pinId == null || !pin) return;
+                      try {
+                        window.localStorage.setItem("dime_compare_v1", JSON.stringify([
+                          { id: targetId, name: player, season: selectedSeason },
+                          { id: pinId, name: pin.player, season: pin.season },
+                        ]));
+                      } catch {}
+                      window.dispatchEvent(new CustomEvent("dime:navigate", { detail: { tab: "compare" } }));
+                    }}
+                  >
+                    compare →
+                  </button>
+                )}
                 <button
                   type="button"
                   data-testid="unpin"
@@ -565,6 +589,40 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                 return <ShapeChart target={tz} comp={active.z} features={features} labels={labels} compName={`${active.PLAYER} ${active.season}`} />;
               })()}
               <p className="mt-2 font-mono text-[10px] text-ink-3">driver values: target season vs comp · click a comp to overlay its shape</p>
+              {onAsk && (
+                <div className="mt-1.5">
+                  <button
+                    type="button"
+                    data-testid="ask-match"
+                    className="font-mono text-[10.5px] text-accent underline-offset-2 hover:underline"
+                    onClick={() => {
+                      const active = comps.rows?.[Math.min(selectedComp, (comps.rows?.length ?? 1) - 1)];
+                      if (!active) return;
+                      const pair = pin && pinDiffers
+                        ? { comp: `${pin.player} ${pin.season}`, compPlayer: pin.player, compSeason: pin.season }
+                        : { comp: `${active.PLAYER} ${active.season}`, compPlayer: active.PLAYER, compSeason: active.season };
+                      onAsk(
+                        `Why do ${player} ${selectedSeason} and ${pair.comp} match statistically — break down the shared shape, which features drive the similarity, and where they diverge.`,
+                        {
+                          kind: "era_comps",
+                          summary: `era match: ${player} ${selectedSeason} vs ${pair.comp}`,
+                          entities: {
+                            player,
+                            season: selectedSeason,
+                            comp: pair.comp,
+                            compPlayer: pair.compPlayer,
+                            compSeason: pair.compSeason,
+                            similarity: active.similarity,
+                            drivers: (active.drivers ?? []).map((d) => ({ stat: d.stat, target: d.target, comp: d.comp })),
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    ask why they match
+                  </button>
+                </div>
+              )}
               {comps.rows.length === 0 && (
                 <p className="mt-1.5 text-[12.5px] text-ink-2">no era neighbors found within the pool window — widen the window or pick another season.</p>
               )}
