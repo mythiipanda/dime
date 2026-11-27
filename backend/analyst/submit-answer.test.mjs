@@ -18,12 +18,12 @@ import { createAnalyst } from "./dist/analyst.js";
 import { priorSourceTool } from "./dist/pi-context.js";
 import { sourceResult } from "./dist/python-tools.js";
 
-function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
-  const result = error !== undefined ? { rows, error } : { rows };
+function makeSourceRecord(ref, { rows = [], isError = false, error, tool = "sql_exec", meta } = {}) {
+  const result = error !== undefined ? { rows, error } : meta !== undefined ? { rows, meta } : { rows };
   return {
     ref,
     callId: "call-" + ref,
-    tool: "sql_exec",
+    tool,
     response: {
       content: [{ type: "text", text: JSON.stringify(result) }],
       structuredContent: result,
@@ -2218,4 +2218,218 @@ test("nondelivery interception counter is independent of turn_end_steer and give
   const giveUps = events.filter((e) => e.type === "tool_call" && e.name === "give_up_correction_steer");
   assert.equal(giveUps.length, 1, "give_up_correction_steer still fires its own shot after interceptions");
   await rm(cwd, { recursive: true, force: true });
+});
+
+test("artifact sources: single-tool selector attaches capability provenance", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ player: "Luka", pts: 33.9 }], meta: { source: "silver_player_stats", season: "2025-26" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "Luka leads scoring." }],
+    artifacts: [{
+      kind: "table",
+      title: "Scoring leaders",
+      columns: [{ key: "player", label: "Player" }, { key: "pts", label: "PTS" }],
+      rows: [["Luka", 33.9]],
+      sources: [{ ref: "src-1", rows: [0], columns: ["player", "pts"] }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  const artifact = validated.artifacts[0];
+  assert.equal(artifact.provenance.capability, "sql_exec");
+  assert.equal(artifact.provenance.dataset, "silver_player_stats");
+  assert.equal(artifact.provenance.season, "2025-26");
+  assert.deepEqual(artifact.sources, [{ ref: "src-1", rows: [0], columns: ["player", "pts"] }]);
+});
+
+test("artifact sources: multi-tool merge omits capability but keeps uniform fields", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }], tool: "sql_exec", meta: { season: "2025-26" } })],
+    ["src-2", makeSourceRecord("src-2", { rows: [{ b: 2 }], tool: "get_standings", meta: { season: "2025-26" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "Combined." }],
+    artifacts: [{
+      kind: "table",
+      title: "Combined",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "src-1" }, { ref: "src-2" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  const artifact = validated.artifacts[0];
+  assert.equal(artifact.provenance.capability, undefined);
+  assert.equal(artifact.provenance.season, "2025-26");
+});
+
+test("artifact sources: divergent seasons drop the merged field", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }], meta: { season: "2025-26" } })],
+    ["src-2", makeSourceRecord("src-2", { rows: [{ b: 2 }], meta: { season: "2024-25" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "Two eras." }],
+    artifacts: [{
+      kind: "table",
+      title: "Eras",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "src-1" }, { ref: "src-2" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance.season, undefined);
+  assert.equal(validated.artifacts[0].provenance.capability, "sql_exec");
+});
+
+test("artifact sources: unknown ref rejected", () => {
+  const sources = new Map();
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "table",
+      title: "t",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "missing" }],
+    }],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Unknown artifact source ref: missing/
+  );
+});
+
+test("artifact sources: out-of-bounds row and missing column rejected", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }] })],
+  ]);
+  const base = {
+    kind: "table",
+    title: "t",
+    columns: [{ key: "a", label: "A" }],
+    rows: [[1]],
+  };
+  assert.throws(
+    () => validateAnswerSubmission({ blocks: [{ text: "x" }], artifacts: [{ ...base, sources: [{ ref: "src-1", rows: [5] }] }] }, ref => sources.get(ref)),
+    /out of bounds/
+  );
+  assert.throws(
+    () => validateAnswerSubmission({ blocks: [{ text: "x" }], artifacts: [{ ...base, sources: [{ ref: "src-1", rows: [0], columns: ["nope"] }] }] }, ref => sources.get(ref)),
+    /does not exist on row 0/
+  );
+  assert.throws(
+    () => validateAnswerSubmission({ blocks: [{ text: "x" }], artifacts: [{ ...base, sources: [{ ref: "src-1", columns: ["nope"] }] }] }, ref => sources.get(ref)),
+    /does not exist on row 0/
+  );
+});
+
+test("artifact sources: ref-level selector without rows validates", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }] })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "compare",
+      title: "t",
+      aName: "A",
+      bName: "B",
+      rows: [{ label: "pts", a: 1, b: 2 }],
+      sources: [{ ref: "src-1" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance.capability, "sql_exec");
+});
+
+test("artifact sources: malformed selector shape rejected at wire level for typed kinds", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }] })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "table",
+      title: "t",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "src-1", rows: "not-an-array" }],
+    }],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Invalid table artifact/
+  );
+});
+
+test("artifact sources: malformed selector shape rejected semantically for memo", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }] })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "memo",
+      title: "m",
+      sections: [{ heading: "h", body: "b" }],
+      sources: [{ rows: [0] }],
+    }],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Invalid artifact sources/
+  );
+});
+
+test("artifact sources: memo carries merged provenance", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }], meta: { source: "silver_x" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "memo",
+      title: "m",
+      sections: [{ heading: "h", body: "b" }],
+      sources: [{ ref: "src-1" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance.capability, "sql_exec");
+  assert.equal(validated.artifacts[0].provenance.dataset, "silver_x");
+});
+
+test("artifact sources: single record keeps sql in provenance", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }], meta: { sql: "select 1" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "table",
+      title: "t",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "src-1" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance.sql, "select 1");
+});
+
+test("artifacts without sources carry no provenance", () => {
+  const sources = new Map();
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "table",
+      title: "t",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance, undefined);
 });
