@@ -100,17 +100,18 @@ function fmtDriver(stat: string, value: number | null): string {
 }
 
 
-function ShapeChart({ target, comp, features, labels, compName }: {
+function ShapeChart({ target, comp, features, labels, compName, mode }: {
   target: Record<string, number>;
   comp: Record<string, number>;
   features: string[];
   labels: Record<string, string>;
   compName: string;
+  mode?: string;
 }) {
   const CLAMP = 3;
   const width = (z: number) => `${Math.min(Math.abs(z), CLAMP) / CLAMP * 50}%`;
   return (
-    <div data-testid="shape-chart" className="rounded-[8px] bg-field p-3">
+    <div data-testid="shape-chart" data-mode={mode ?? "comp"} className="rounded-[8px] bg-field p-3">
       <p className="font-mono text-[10px] text-ink-3">{`shape profile vs ${compName} — within-season z-scores from center zero; overlap is the match, clamped at ±3`}</p>
       <div className="mt-2 space-y-1">
         {features.map((feat) => {
@@ -158,6 +159,12 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
   const [compsError, setCompsError] = useState<string | null>(null);
   const [compsLoading, setCompsLoading] = useState(false);
   const [selectedComp, setSelectedComp] = useState(0);
+  const [pin, setPin] = useState<{ player: string; season: string } | null>(() => {
+    const pp = initialParams?.get("pin_player");
+    const ps = initialParams?.get("pin_season");
+    return pp && ps ? { player: pp, season: ps } : null;
+  });
+  const [pinZ, setPinZ] = useState<Record<string, number> | null>(null);
   const [leaderSeason, setLeaderSeason] = useState("1996-97");
   const [category, setCategory] = useState<string>("pts");
   const [leaders, setLeaders] = useState<LeadersResponse | null>(null);
@@ -270,9 +277,16 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     params.set("player", player);
     if (selectedSeason) params.set("season", selectedSeason);
     else params.delete("season");
+    if (pin) {
+      params.set("pin_player", pin.player);
+      params.set("pin_season", pin.season);
+    } else {
+      params.delete("pin_player");
+      params.delete("pin_season");
+    }
     const url = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState(null, "", url);
-  }, [player, selectedSeason]);
+  }, [player, selectedSeason, pin]);
 
   const walkTo = (name: string, season: string) => {
     if (typeof window !== "undefined") {
@@ -292,6 +306,9 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
       const params = new URLSearchParams(window.location.search);
       const urlPlayer = params.get("player");
       const urlSeason = params.get("season");
+      const pp = params.get("pin_player");
+      const ps = params.get("pin_season");
+      setPin(pp && ps ? { player: pp, season: ps } : null);
       if (urlPlayer && urlPlayer !== player) {
         setQuery(urlPlayer);
         setPendingSeason(urlSeason);
@@ -304,6 +321,32 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [player, selectedSeason]);
+
+  const pinDiffers = pin != null && (pin.player !== player || pin.season !== selectedSeason);
+
+  useEffect(() => {
+    if (!pin || !pinDiffers) {
+      setPinZ(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(pin.player)}&season=${encodeURIComponent(pin.season)}&k=1`)}`)
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok) return null;
+        return body as CompsResponse;
+      })
+      .then((value) => {
+        if (cancelled) return;
+        setPinZ(value?.player?.z ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setPinZ(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pin, pinDiffers]);
 
   const arc = career?.rows ?? [];
   const chartSeasons = arc.map((s) => s.season);
@@ -438,9 +481,35 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
 
       {selectedSeason && (
         <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
-          <h3 className="text-[13px] font-semibold text-ink">
-            Era-relative neighbors — {player} {selectedSeason}
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[13px] font-semibold text-ink">
+              Era-relative neighbors — {player} {selectedSeason}
+            </h3>
+            {pin == null ? (
+              <button
+                type="button"
+                data-testid="pin-season"
+                className="ml-auto font-mono text-[10.5px] text-accent underline-offset-2 hover:underline"
+                onClick={() => setPin({ player, season: selectedSeason })}
+                title="pin this player-season as the shape anchor while walking"
+              >
+                pin
+              </button>
+            ) : (
+              <span className="ml-auto flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] text-ink-2">
+                pinned: {pin.player} {pin.season}
+                <button
+                  type="button"
+                  data-testid="unpin"
+                  aria-label="unpin"
+                  className="text-ink-3 hover:text-ink"
+                  onClick={() => setPin(null)}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </div>
           {compsLoading && (
             <div className="mt-2 space-y-2" aria-label="loading era comps">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[52px] rounded-[8px]" />)}
@@ -480,7 +549,11 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                 const labels = comps.meta?.feature_labels ?? {};
                 const tz = comps.player?.z;
                 const active = comps.rows[Math.min(selectedComp, comps.rows.length - 1)];
-                if (!tz || !active?.z || features.length === 0) return null;
+                if (!tz || features.length === 0) return null;
+                if (pin && pinDiffers && pinZ) {
+                  return <ShapeChart target={tz} comp={pinZ} features={features} labels={labels} compName={`pinned ${pin.player} ${pin.season}`} mode="pin" />;
+                }
+                if (!active?.z) return null;
                 return <ShapeChart target={tz} comp={active.z} features={features} labels={labels} compName={`${active.PLAYER} ${active.season}`} />;
               })()}
               <p className="mt-2 font-mono text-[10px] text-ink-3">driver values: target season vs comp · click a comp to overlay its shape</p>
