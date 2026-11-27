@@ -9,32 +9,6 @@ from typing import Any, Iterable
 from shared.tools.league import _SQL_TABLES as _AGENT_SQL_TABLES
 from .lineup_variants import DEFAULT_FILTER
 
-UNAVAILABLE_METRICS = ("EPM", "LEBRON", "DARKO", "DRIP", "PER", "BPM",
-                       "WS", "VORP")
-
-AVAILABLE_METRICS = {
-    "RAPM": {"label": "RAPM-lite", "table": "silver_rapm",
-             "note": "ridge on stint differentials; estimate"},
-    "ONOFF": {"label": "on-off net", "table": "silver_on_off",
-              "note": "lineup splits, noisy"},
-    "PIE": {"label": "PIE", "table": "silver_advanced",
-            "note": "box-score share"},
-    "TRUESHOOTING": {"label": "true shooting", "table": "silver_advanced",
-                     "note": "scoring efficiency"},
-    "RAPTOR": {"label": "RAPTOR", "table": "silver_raptor_player",
-               "note": "box plus on-off; historical vintage, estimate"},
-    "WAR": {"label": "WAR", "table": "silver_raptor_player",
-            "note": "wins above replacement; historical vintage, estimate"},
-}
-
-_ALIASES = {
-    "RAPMLITE": "RAPM",
-    "TS": "TRUESHOOTING",
-    "TSPCT": "TRUESHOOTING",
-    "ONOFFNET": "ONOFF",
-    "WARTOTAL": "WAR",
-}
-
 DEFAULT_TABLE = "silver_boxscores"
 
 LEADERS_TABLES = (
@@ -46,9 +20,6 @@ LEADERS_TABLES = (
     "silver_leaders_dreb",
     "silver_leaders_fg_pct",
 )
-
-METRIC_COVERAGE_TABLES = tuple(sorted(
-    {DEFAULT_TABLE} | {entry["table"] for entry in AVAILABLE_METRICS.values()}))
 
 CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
     "standings": ("silver_standings", "silver_hist_standings"),
@@ -108,7 +79,6 @@ CAPABILITY_TABLES: dict[str, tuple[str, ...]] = {
         "silver_on_off",
         "silver_advanced",
     ),
-    "metric_coverage": METRIC_COVERAGE_TABLES,
     "shots": ("silver_shots",),
     "shooting_efficiency": ("silver_advanced",),
     "on_off": ("silver_on_off", "silver_hist_possessions"),
@@ -190,27 +160,6 @@ _season_caches: dict[tuple[Path, str], tuple[tuple[int, int, int, int, str],
 _table_caches: dict[Path, tuple[tuple[int, int, int, int, str],
                                 frozenset[str]]] = {}
 
-def table_for_metric(metric: str) -> str:
-    key = _ALIASES.get(_key(metric), _key(metric))
-    known = AVAILABLE_METRICS.get(key)
-    if known:
-        return known["table"]
-    return DEFAULT_TABLE
-
-def _key(metric: str) -> str:
-    return re.sub(r"[^A-Z0-9]", "", (metric or "").upper())
-
-def _positively_supported(metric: str) -> bool:
-    key = _ALIASES.get(_key(metric), _key(metric))
-    if key in AVAILABLE_METRICS:
-        return True
-    try:
-        from shared.tools._core import clamp_stat
-        clamp_stat(str(metric or ""))
-    except Exception:
-        return False
-    return True
-
 def _leaders_table_for_stat(stat: object) -> str | None:
     try:
         from shared.tools._core import clamp_stat
@@ -246,13 +195,6 @@ def _arguments_dict(arguments: object) -> dict[str, Any]:
         except Exception:
             return {}
     return {}
-
-def _requirement_arguments(requirement: object, capability: str) -> dict[str, Any]:
-    sets = getattr(requirement, "capability_argument_sets", None) or []
-    for item in sets:
-        if getattr(item, "capability_id", None) == capability:
-            return _arguments_dict(getattr(item, "arguments", None))
-    return _arguments_dict(getattr(requirement, "capability_arguments", None))
 
 def _sql_tables_for_arguments(arguments: object) -> tuple[str, ...] | None:
     values = _arguments_dict(arguments)
@@ -303,50 +245,6 @@ def absent_tables_for_capability(
         for table in declared_tables_for_capability(capability, arguments)
         if table not in on_hand)
 
-
-def task_coverage_groups_labeled(
-    task: object,
-) -> list[tuple[str | None, frozenset[str]]]:
-    labeled: list[tuple[str | None, frozenset[str]]] = []
-    evidence = [str(item) for item in
-                getattr(task, "required_evidence", None) or []]
-    for metric in getattr(task, "metric_ids", None) or []:
-        table = table_for_metric(str(metric))
-        if evidence and table == DEFAULT_TABLE:
-            continue
-        labeled.append((None, frozenset({table})))
-    requirements = list(getattr(task, "requirements", None) or [])
-    if not evidence:
-        return labeled
-    for capability in dict.fromkeys(evidence):
-        tables: set[str] = set()
-        matched = False
-        for requirement in requirements:
-            options = list(
-                getattr(requirement, "capability_options", None) or [])
-            if capability not in [str(option) for option in options]:
-                continue
-            matched = True
-            arguments = _requirement_arguments(requirement, capability)
-            tables.update(declared_tables_for_capability(capability, arguments))
-        if not matched:
-            tables.update(declared_tables_for_capability(capability, {}))
-        if tables:
-            labeled.append((capability, frozenset(tables)))
-    return labeled
-
-def _classify(metric: str) -> dict[str, str]:
-    key = _ALIASES.get(_key(metric), _key(metric))
-    for prop in UNAVAILABLE_METRICS:
-        if key == _key(prop):
-            return {"metric": prop, "status": "unavailable",
-                    "note": "not in warehouse, never estimated"}
-    known = AVAILABLE_METRICS.get(key)
-    if known:
-        return {"metric": known["label"], "status": "available",
-                "note": f"{known['note']} ({known['table']})"}
-    return {"metric": metric, "status": "unknown",
-            "note": "not in the coverage registry"}
 
 def warehouse_path() -> Path:
     try:
@@ -597,7 +495,7 @@ def _available_sorted(seasons: frozenset[str]) -> list[str]:
 def coverage_check(
     metric: str, season: str, table: str | None = None,
 ) -> dict[str, Any]:
-    resolved = table or table_for_metric(metric)
+    resolved = table or DEFAULT_TABLE
     seasons = table_seasons(resolved)
     requested = str(season)
     covered = requested in seasons and not season_beyond_upper_bound(
@@ -626,57 +524,3 @@ def coverage_check(
         "available_seasons": available,
         "message": message,
     }
-
-def metric_coverage(
-    metrics: str | list[str],
-    player: str = "",
-    season: str | None = None,
-) -> dict[str, Any]:
-    if isinstance(metrics, str):
-        metrics = [m.strip() for m in re.split(r"[,;&]|\band\b", metrics)
-                 if m.strip()]
-    rows = []
-    for raw in metrics:
-        row = _classify(raw)
-        if player:
-            row["player"] = player
-        if (season is not None and row["status"] != "unavailable"
-                and _positively_supported(raw)):
-            verdict = coverage_check(raw, season)
-            row["covered"] = verdict["covered"]
-            row["available_seasons"] = verdict["available_seasons"]
-        rows.append(row)
-    unavailable = [r["metric"] for r in rows if r["status"] == "unavailable"]
-    subject = f" for {player}" if player else ""
-    warnings: list[str] = []
-    if unavailable:
-        joined = " and ".join(unavailable)
-        verb = "are" if len(unavailable) > 1 else "is"
-        warnings.append(
-            f"{joined} {verb} not available in the warehouse{subject}; "
-            "Dime never estimates missing proprietary metrics. Available "
-            "current impact context includes RAPM-lite, on-off net, PIE, "
-            "and true shooting.")
-    unknown = [r["metric"] for r in rows if r["status"] == "unknown"]
-    for name in unknown:
-        warnings.append(f"{name} is not a recognized metric{subject}.")
-    available = [r["metric"] for r in rows if r["status"] == "available"]
-    parts = []
-    if unavailable:
-        parts.append(warnings[0])
-    if available:
-        parts.append(f"Available in the warehouse{subject}: "
-                     + ", ".join(available) + ".")
-    if not parts:
-        parts.append(f"No recognized metrics requested{subject}.")
-    meta: dict[str, Any] = {
-        "source": "warehouse coverage",
-        "coverage": "per-table season sets read from the warehouse; "
-                    "unavailable metrics are constants, available metrics "
-                    "name their silver table",
-        "deterministic_answer": " ".join(parts),
-        "warnings": warnings,
-    }
-    if season:
-        meta["season"] = str(season)
-    return {"tool": "metric_coverage", "ok": True, "rows": rows, "meta": meta}
