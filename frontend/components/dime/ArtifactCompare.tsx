@@ -50,7 +50,7 @@ export default function ArtifactCompare({
           );
         })}
       </div>
-      <div className="flex items-center gap-1.5 py-2.5 text-[11px] text-ink-3">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 py-2.5 text-[11px] text-ink-3">
         <span className="inline-block size-2 rounded-[2px] bg-ink" /> {aName}
         <span className="ml-2 inline-block size-2 rounded-[2px] bg-ink-3" /> {bName}
         <span className="ml-1">bars share one baseline — the protruding tip is the gap</span>

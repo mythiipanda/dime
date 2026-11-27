@@ -306,3 +306,13 @@ test("an empty verification verdict compresses to one quiet line", () => {
   const source = readFileSync(new URL("./components/site/harness/AnswerView.tsx", import.meta.url), "utf8");
   assert.ok(source.includes("emptyCase"), "no-verified-claims renders as one quiet line, not a heavy card");
 });
+
+test("compressed empty verdict does not duplicate the zero-claims fact", () => {
+  const source = readFileSync(new URL("./components/site/harness/AnswerView.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("replace(/^0 verified claims?"), "the detail's duplicate claim-count prefix strips in the compressed line");
+});
+
+test("table artifact rows type admits null, matching the renderer and real data", () => {
+  const source = readFileSync(new URL("./lib/stream/types.ts", import.meta.url), "utf8");
+  assert.ok(source.includes("rows: (string | number | null)[][]"), "the row type widened to reality");
+});
