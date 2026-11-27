@@ -17,14 +17,16 @@ from .cba_cap import (
     _salary_date,
     _used_expanded_matching,
 )
+from ..cap_rules import (
+    cba_restrictions as _scenario_restrictions,
+    roster_issues as _roster_issues,
+    scenario_trace,
+)
 from .._core import coerce_team_id, team_error_message
 from .trade_value import _trade_guard_vintage_error, _trade_unknown_message
 
 _AMOUNT_RE = _re.compile(r"^\$?([\d,]+(?:\.\d+)?)\s*([mMkK])?$")
 _SPLIT_RE = _re.compile(r"(?<!\d),(?!\d)|(?<=\d),(?=\s*\D)")
-
-_FROZEN_PICK_OFFSET = 7
-
 
 def _parse_amount(text: str) -> int | None:
     m = _AMOUNT_RE.fullmatch(str(text).strip())
@@ -52,68 +54,6 @@ def _parse_signings(text: str) -> tuple[list[tuple[str, int]], list[str]]:
             signings.append((str(name).strip()
                              or f"${amount / 1_000_000:g}M signing", amount))
     return signings, bad
-
-
-def _frozen_pick_year(season: str) -> int | None:
-    m = _re.match(r"(\d{4})", str(season or ""))
-    return int(m.group(1)) + _FROZEN_PICK_OFFSET + 1 if m else None
-
-
-def _scenario_restrictions(state: dict[str, Any], season: str) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    if state["over_apron2"]:
-        out.append({"threshold": "second apron", "status": "active",
-                    "rule": "trade take-back limited to 100% of outgoing salary"})
-        out.append({"threshold": "second apron", "status": "active",
-                    "rule": "cannot aggregate player salaries in a trade"})
-        out.append({"threshold": "second apron", "status": "active",
-                    "rule": "cannot send cash in a trade"})
-        out.append({"threshold": "second apron", "status": "active",
-                    "rule": "cannot use a traded player exception"})
-        out.append({"threshold": "second apron", "status": "active",
-                    "rule": "no mid-level or bi-annual exception; veteran minimums only"})
-        out.append({"threshold": "second apron", "status": "active",
-                    "rule": "cannot sign a player waived during the season whose "
-                            "pre-waiver salary exceeded the non-taxpayer mid-level"})
-        pick = _frozen_pick_year(season)
-        if pick:
-            out.append({"threshold": "second apron", "status": "active",
-                        "rule": f"{pick} first-round pick is frozen and cannot be traded"})
-    elif state["over_apron1"]:
-        out.append({"threshold": "first apron", "status": "active",
-                    "rule": "trade take-back limited to 100% of outgoing salary"})
-        out.append({"threshold": "first apron", "status": "active",
-                    "rule": "cannot sign a player waived during the season whose "
-                            "pre-waiver salary exceeded the non-taxpayer mid-level"})
-    if state["over_tax"]:
-        out.append({"threshold": "tax", "status": "active",
-                    "rule": "luxury tax payer; taxpayer mid-level only "
-                            "(no non-taxpayer MLE, no bi-annual)"})
-    if not state["over_apron2"]:
-        out.append({"threshold": "second apron", "status": "trigger",
-                    "rule": "aggregating salaries, sending cash, or using a "
-                            "sign-and-trade generated exception in a deal "
-                            "hard-caps the team at the second apron"})
-    if not state["over_apron1"]:
-        out.append({"threshold": "first apron", "status": "trigger",
-                    "rule": "acquiring a sign-and-traded player, using expanded "
-                            "salary matching, or using the non-taxpayer mid-level "
-                            "or bi-annual exception hard-caps the team at the "
-                            "first apron"})
-    if state["cap_room"] > 0:
-        out.append({"threshold": "cap", "status": "active",
-                    "rule": "operating with cap room; exceptions unavailable "
-                            "until room is used"})
-    return out
-
-
-def _roster_issues(roster_after: int) -> list[str]:
-    if roster_after > 15:
-        return [f"roster would be {roster_after} players - must trim to 15"]
-    if roster_after < 14:
-        return [f"roster would be {roster_after} players - must be at 14 "
-                "within two weeks"]
-    return []
 
 
 @tool(description='Cap-scenario arithmetic for one team. "signings" takes '
@@ -200,32 +140,24 @@ def get_cap_scenario(team: str = "", signings: str = "",
         salary_date = _salary_date(con)
         source = _payroll_source(con)
     room_before = max(0, CAP["cap"] - pay_before)
-    pay = pay_before
-    rows = [{"step": 0, "kind": "payroll",
-             "detail": f"{team.upper()} committed payroll", "delta": 0,
-             "payroll": pay_before}]
-    step = 1
+    moves: list[dict[str, Any]] = []
     for name in out_names:
         row = next((p for p in roster if p["player"] == name), None)
         amount = int((row or {}).get("salary") or 0)
-        pay -= amount
-        rows.append({"step": step, "kind": "trade_out",
-                     "detail": f"out {name}", "delta": -amount,
-                     "payroll": pay})
-        step += 1
+        moves.append({"kind": "trade_out", "detail": f"out {name}",
+                      "amount": amount})
     for name, amount in sign_rows:
-        pay += amount
-        rows.append({"step": step, "kind": "signing",
-                     "detail": f"sign {name}", "delta": amount,
-                     "payroll": pay})
-        step += 1
+        moves.append({"kind": "signing", "detail": f"sign {name}",
+                      "amount": amount})
     for side in in_sides:
-        pay += int(side["salary"] or 0)
-        rows.append({"step": step, "kind": "trade_in",
-                     "detail": f"in {side['player']} (from {side['from']})",
-                     "delta": int(side["salary"] or 0), "payroll": pay})
-        step += 1
-    pay_after = pay
+        moves.append({"kind": "trade_in",
+                      "detail": f"in {side['player']} (from {side['from']})",
+                      "amount": int(side["salary"] or 0)})
+    trace = scenario_trace(pay_before, moves,
+                           f"{team.upper()} committed payroll")
+    rows = trace["steps"]
+    step = trace["next_step"]
+    pay_after = trace["pay_after"]
     state_after = _apron_state(pay_after)
     issues: list[str] = []
     matching: dict[str, Any] | None = None
