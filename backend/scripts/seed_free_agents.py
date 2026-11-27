@@ -20,8 +20,9 @@ CAP_2026_27 = {"cap": 164_961_000, "tax": 200_428_000,
 CAP_GROWTH = 1.10
 EXCEPTIONS_2026_27 = {"ntmle": 15_044_000, "tmle": 6_064_000,
                       "room": 9_366_000, "bae": 5_477_000}
-MIN_SALARY = 1_272_870
-ROSTER_SPOTS = 15
+ROOKIE_MINIMUM_2026_27 = 1_357_763
+MIN_SALARY = round(ROOKIE_MINIMUM_2026_27 * CAP_GROWTH)
+ROSTER_SPOTS = 12
 
 FA_COLS = ["PLAYER_NAME", "TEAM", "BREF_SLUG", "FA_YEAR", "FA_TYPE",
            "PRIOR_SALARY", "CAP_HOLD_EST"]
@@ -93,12 +94,10 @@ def build_frames(frame: pl.DataFrame, fa_season_key: str,
         team = str(row.get("TEAM") or "")
         entry = room.setdefault(team, {
             "committed": 0, "option_salary": 0, "holds": 0,
-            "under_contract": 0, "options": 0, "spots_used": 0})
+            "under_contract": 0, "options": 0, "hold_count": 0})
         prior = _salary(row, fa_season_key)
         nxt = _salary(row, cap_season_key)
         opt = _option(row, cap_season_key)
-        if prior is not None or nxt is not None:
-            entry["spots_used"] += 1
         if nxt is not None:
             if opt:
                 entry["option_salary"] += nxt
@@ -122,10 +121,12 @@ def build_frames(frame: pl.DataFrame, fa_season_key: str,
                 "FA_TYPE": fa_type, "PRIOR_SALARY": prior,
                 "CAP_HOLD_EST": hold})
             entry["holds"] += hold
+            entry["hold_count"] += 1
     room_rows = []
     cap = int(CAP_2026_27["cap"] * CAP_GROWTH)
     for team, e in sorted(room.items()):
-        open_exercised = max(0, ROSTER_SPOTS - e["under_contract"])
+        open_exercised = max(0, ROSTER_SPOTS - e["under_contract"]
+                             - e["hold_count"])
         open_declined = max(0, ROSTER_SPOTS
                           - (e["under_contract"] - e["options"]))
         roster_charges = open_exercised * MIN_SALARY
