@@ -27,6 +27,8 @@ type MatchupGame = {
   time: string;
   network: string;
   date: string;
+  home_score?: number | null;
+  away_score?: number | null;
 };
 
 type MatchupsResponse = {
@@ -35,6 +37,8 @@ type MatchupsResponse = {
   season?: string;
   games?: MatchupGame[];
   error?: string;
+  live?: boolean;
+  fetched_at?: string;
 };
 
 type StatRow = {
@@ -160,6 +164,11 @@ function MatchupDetail({ game }: { game: MatchupGame }) {
           <span className="mx-1.5 text-[12px] font-normal text-ink-3">@</span>
           {game.home.name}{" "}
           <span className="font-mono text-[12px] font-normal tabular-nums text-ink-3">{game.home.record}</span>
+          {game.away_score != null && game.home_score != null && (
+            <span className="ml-2 font-mono text-[13px] tabular-nums text-ink">
+              {game.away_score}–{game.home_score}
+            </span>
+          )}
         </div>
         <div className="shrink-0 text-[12px] text-ink-3">
           {game.time}{game.network ? ` · ${game.network}` : ""}
@@ -276,7 +285,13 @@ export default function MatchupsView() {
       {!loading && !error && active && (
         <>
           {data?.date && (
-            <p className="mt-1 text-[12px] text-ink-3">Slate date {data.date} · ratings and form from the warehouse, injuries from the latest report.</p>
+            <p className="mt-1 text-[12px] text-ink-3">
+              Slate date {data.date}
+              {data?.live && data.fetched_at
+                ? ` · live as of ${new Date(data.fetched_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET`
+                : " · schedule from the nightly warehouse refresh"}
+              {" · ratings and form from the warehouse, injuries from the latest report."}
+            </p>
           )}
           <div className="mt-4 grid grid-cols-2 gap-2">
             {games.map((m) => {
