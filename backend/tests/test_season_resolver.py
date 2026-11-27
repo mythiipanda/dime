@@ -81,3 +81,50 @@ def test_an_absent_season_is_unspecified_but_an_empty_string_is_garbage() -> Non
     assert clamp_season(None)
     with pytest.raises(InvalidSeasonError):
         clamp_season("")
+
+
+def test_clamp_accepts_the_in_progress_season_when_data_exists() -> None:
+    from shared import store
+    from shared.tools._core import (
+        calendar_last_completed_season, clamp_season, warehouse_max_season)
+
+    data_max = warehouse_max_season()
+    if data_max is None:
+        pytest.skip("no warehouse seasons")
+    cal = calendar_last_completed_season()
+    assert clamp_season(data_max) == data_max
+    if cal is not None and data_max > cal:
+        assert clamp_season(data_max) == data_max
+
+
+def test_clamp_rejects_seasons_beyond_the_warehouse() -> None:
+    from shared.tools._core import InvalidSeasonError, clamp_season, warehouse_max_season
+
+    data_max = warehouse_max_season()
+    if data_max is None:
+        pytest.skip("no warehouse seasons")
+    start = int(data_max[:4]) + 1
+    future = f"{start}-{(start + 1) % 100:02d}"
+    with pytest.raises(InvalidSeasonError):
+        clamp_season(future)
+
+
+def test_default_resolution_never_errors() -> None:
+    from shared.tools._core import clamp_season, resolve_season
+
+    resolved = resolve_season(None, "silver_scoreboard")
+    assert clamp_season(resolved) == resolved
+
+
+def test_coverage_error_message_matches_data_presence() -> None:
+    from shared import store
+    from shared.tools._core import season_error_message, warehouse_max_season
+
+    data_max = warehouse_max_season()
+    if data_max is None:
+        pytest.skip("no warehouse seasons")
+    start = int(data_max[:4]) + 1
+    future = f"{start}-{(start + 1) % 100:02d}"
+    message = season_error_message(future, nearest=data_max)
+    assert data_max in message
+    assert "through" in message
