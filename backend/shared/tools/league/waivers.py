@@ -23,12 +23,12 @@ def salary_year_columns(con) -> list[tuple[str, str]]:
 
 
 def _parse_waiver_date(text: str) -> _date | None:
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y"):
-        try:
-            return _dt.strptime(text, fmt).date()
-        except ValueError:
-            pass
-    return None
+    if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return None
+    try:
+        return _dt.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def resolve_waiver_timing(raw: object, season: str) -> tuple[dict[str, Any] | None, str | None]:

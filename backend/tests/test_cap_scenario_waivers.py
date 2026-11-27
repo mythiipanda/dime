@@ -173,6 +173,23 @@ def test_waiver_timing_window_boundaries():
     assert "YYYY-MM-DD" in invalid_error
 
 
+@pytest.mark.parametrize("raw", ["11/15/2026", "2026-11-5", "2026-9-1", "2026-02-30"])
+def test_waiver_date_rejects_non_iso_and_impossible_dates(raw):
+    from shared.tools.league.waivers import resolve_waiver_timing
+
+    parsed, error = resolve_waiver_timing(raw, "2026-27")
+    assert parsed is None
+    assert error == "waiver_date must be YYYY-MM-DD"
+
+
+def test_waiver_date_accepts_exact_zero_padded_iso_date():
+    from shared.tools.league.waivers import resolve_waiver_timing
+
+    parsed, error = resolve_waiver_timing("2026-11-15", "2026-27")
+    assert error is None
+    assert parsed == {"window": "post_sep1", "date": "2026-11-15", "defaulted": False}
+
+
 def test_retired_out_players_input_fails_closed(waiver_seed):
     waiver_seed(15_000_000)
     out = _cap_scenario({
