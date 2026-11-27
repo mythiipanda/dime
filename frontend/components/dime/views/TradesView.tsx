@@ -377,28 +377,41 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
     return check.rows.find(row => row.team === teams[side]) ?? null;
   };
 
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
   const renderPackage = (side: number) => {
     const pkg = pkgs[side] ?? emptyPackage();
     const abbr = teams[side];
     const roster = assets[abbr];
     return (
       <div
-        className="min-h-[52px] rounded-[8px] border border-dashed border-line px-2 py-1.5"
-        onDragOver={event => event.preventDefault()}
-        onDrop={event => onPackageDrop(side, event)}
+        className={`min-h-[52px] rounded-[8px] border border-dashed px-2 py-1.5 transition-colors ${
+          dragOver === side ? "border-accent bg-field" : "border-line"
+        }`}
+        onDragOver={event => {
+          event.preventDefault();
+          if (dragOver !== side) setDragOver(side);
+        }}
+        onDragLeave={event => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragOver(null);
+        }}
+        onDrop={event => {
+          setDragOver(null);
+          onPackageDrop(side, event);
+        }}
         aria-label={`${abbr} outgoing package`}
       >
         {pkg.players.length === 0 && pkg.picks.length === 0
           ? <span className="px-1 text-[11px] text-ink-2">drag players or picks here, or click to add</span>
           : <div className="flex flex-wrap gap-1">
               {pkg.players.map(name => (
-                <button key={name} className={chipButton} onClick={() => removeItem(side, "player", name)} title="Remove">
+                <button key={name} className={chipButton} style={{ animation: "fade-up 150ms var(--ease-out-strong) both" }} onClick={() => removeItem(side, "player", name)} title="Remove">
                   {name}
                   {roster?.state === "ready" ? ` ${money(roster.players.find(player => player.name === name)?.salary ?? 0)}` : ""} ×
                 </button>
               ))}
               {pkg.picks.map(id => (
-                <button key={id} className={chipButton} onClick={() => removeItem(side, "pick", id)} title="Remove">{id} ×</button>
+                <button key={id} className={chipButton} style={{ animation: "fade-up 150ms var(--ease-out-strong) both" }} onClick={() => removeItem(side, "pick", id)} title="Remove">{id} ×</button>
               ))}
             </div>}
       </div>
