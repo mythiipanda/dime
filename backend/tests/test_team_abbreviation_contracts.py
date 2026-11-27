@@ -1,3 +1,5 @@
+import json
+
 import duckdb
 import polars as pl
 import pytest
@@ -367,5 +369,80 @@ def test_product_trade_assets_canonicalizes_pick_holders(monkeypatch):
         assert canonical['ok'] is True
         assert len(canonical['picks']) == 1
         assert canonical['picks'][0]['summary'] == 'incoming pick'
+    finally:
+        con.close()
+
+
+def test_product_trade_assets_canonicalizes_whitespace_multi_holders(monkeypatch):
+    from analyst.direct_data import product_trade_assets
+
+    con = duckdb.connect(':memory:')
+    try:
+        _seed_partner_salaries(con)
+        con.execute('CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, ROUND INTEGER, ORIG_TEAM VARCHAR, PROTECTION VARCHAR, CONDITIONAL BOOLEAN, SUMMARY VARCHAR, HELD_BY VARCHAR)')
+        con.execute("INSERT INTO silver_future_picks VALUES (2028, 1, 'BRK', NULL, false, 'multi-holder pick', ' BRK ; BOS ')")
+        _install_in_memory_warehouse(monkeypatch, con)
+        canonical = product_trade_assets.invoke({'team': 'BKN', 'season': '2026-27'})
+        raw = product_trade_assets.invoke({'team': 'BRK', 'season': '2026-27'})
+        assert canonical == raw
+        assert canonical['ok'] is True
+        assert len(canonical['picks']) == 1
+        assert canonical['picks'][0]['summary'] == 'multi-holder pick'
+    finally:
+        con.close()
+
+
+def _seed_legality_alias_warehouse(con, status='own', held_by='BRK'):
+    con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2026_27 BIGINT, _season VARCHAR, _fetched_at VARCHAR)')
+    con.executemany('INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?)', [
+        ('Alpha Example', 'BRK', 30_000_000, '2026-27', '2026-10-01'),
+        ('Beta Example', 'BOS', 30_000_000, '2026-27', '2026-10-01'),
+    ])
+    con.execute('CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, HELD_BY VARCHAR)')
+    rows = []
+    for year in range(2027, 2034):
+        rows.append((year, 1, 'BRK', status, held_by))
+        rows.append((year, 1, 'BOS', 'own', 'BOS'))
+    con.executemany('INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?)', rows)
+
+
+def _legality_alias_results(monkeypatch, con):
+    from shared.tools import get_trade_legality
+
+    _install_in_memory_warehouse(monkeypatch, con)
+    results = []
+    for team in ('BRK', 'BKN'):
+        legs = json.dumps([
+            {'from': team, 'to': 'BOS', 'players': 'Alpha Example'},
+            {'from': 'BOS', 'to': team, 'players': 'Beta Example'},
+        ])
+        results.append(get_trade_legality.invoke({'legs': legs, 'season': '2026-27'}))
+    return results
+
+
+def test_trade_legality_raw_alias_picks_match_for_either_input_spelling(monkeypatch):
+    con = duckdb.connect(':memory:')
+    try:
+        _seed_legality_alias_warehouse(con)
+        raw, canonical = _legality_alias_results(monkeypatch, con)
+        assert raw['ok'] is True
+        assert canonical['ok'] is True
+        assert raw['legal'] is True
+        assert canonical['legal'] is True
+        assert raw == canonical
+    finally:
+        con.close()
+
+
+def test_trade_legality_canonicalizes_semicolon_multi_holder_picks(monkeypatch):
+    con = duckdb.connect(':memory:')
+    try:
+        _seed_legality_alias_warehouse(con, status='traded', held_by=' BRK ; BOS ')
+        raw, canonical = _legality_alias_results(monkeypatch, con)
+        assert raw['ok'] is True
+        assert canonical['ok'] is True
+        assert raw['legal'] is True
+        assert canonical['legal'] is True
+        assert raw == canonical
     finally:
         con.close()

@@ -5,6 +5,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from ...contracts import canonical_team_abbr
 from ._helpers import _owned_connection, _pkg
 from .cba_cap import (
     CAP,
@@ -53,7 +54,7 @@ def _parse_json_arg(text: str, label: str) -> tuple[Any, str | None]:
 
 def _leg_team(value: Any) -> str:
     abbr = _resolve_team_abbr(str(value or ""))
-    return (abbr or str(value or "").strip()).upper()
+    return canonical_team_abbr(abbr or value)
 
 
 def _leg_players(leg: dict) -> list[str]:
@@ -175,14 +176,15 @@ def _seasonize_tpes(rows: list[dict[str, Any]],
                     season_start: int) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for raw in rows:
+        team = canonical_team_abbr(raw["team"])
         origin = (raw["origin_year"] if raw["origin_year"] is not None
                   else season_start)
-        item = {"team": raw["team"], "amount": raw["amount"],
+        item = {"team": team, "amount": raw["amount"],
                 "kind": raw["kind"], "origin_year": origin,
                 "origin_season": _season_label(origin),
                 "status": _tpe_status(origin, season_start),
                 "legacy_defaults": not raw["typed"]}
-        grouped.setdefault(raw["team"], []).append(item)
+        grouped.setdefault(team, []).append(item)
     return grouped
 
 
@@ -280,10 +282,14 @@ def _pick_inventory(con, season_start: int) -> dict[str, set[int]] | None:
             continue
         owners: set[str] = set()
         status = str(status or "")
-        if status in ("own", "swap"):
-            owners.add(str(orig).upper())
+        orig_code = canonical_team_abbr(orig)
+        if status in ("own", "swap") and orig_code:
+            owners.add(orig_code)
         if status == "traded":
-            owners.update(h.upper() for h in str(held_by or "").split(";") if h)
+            for holder in str(held_by or "").split(";"):
+                holder_code = canonical_team_abbr(holder)
+                if holder_code:
+                    owners.add(holder_code)
         for team in owners:
             held.setdefault(team, set()).add(y)
     return held
@@ -352,7 +358,7 @@ def _snt_receiver(snt: dict[str, Any] | None,
                   moves: list[dict[str, Any]]) -> str | None:
     if not snt:
         return None
-    return next((move["to"] for move in moves
+    return next((canonical_team_abbr(move["to"]) for move in moves
                  if any(player.lower() == snt["player"].lower()
                         for player in move["players"])), None)
 
@@ -392,8 +398,9 @@ def _incoming_rows(team: str, moves: list[dict[str, Any]], con: Any,
     rows: list[dict[str, Any]] = []
     names: list[str] = []
     total = 0
+    team_code = canonical_team_abbr(team)
     for move in moves:
-        if move["to"] != team:
+        if canonical_team_abbr(move["to"]) != team_code:
             continue
         for player in move["players"]:
             row, err = _incoming_player_row(team, player, con, season, snt)
@@ -408,22 +415,24 @@ def _incoming_rows(team: str, moves: list[dict[str, Any]], con: Any,
 def _team_side(team: str, moves: list[dict[str, Any]], con: Any,
                season: str, snt: dict[str, Any] | None
                ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    plist = ",".join(player for move in moves if move["from"] == team
+    team_code = canonical_team_abbr(team)
+    plist = ",".join(player for move in moves
+                     if canonical_team_abbr(move["from"]) == team_code
                      for player in move["players"])
     try:
         out_total, out_names, out_unk = _match_trade_players(
-            team, plist, con, season)
+            team_code, plist, con, season)
     except SalaryColumnError as exc:
         return None, _trade_error(str(exc), exc.reason)
     if out_unk:
         return None, _trade_error(
-            f"{team}: unknown outgoing players {'; '.join(out_unk)}")
+            f"{team_code}: unknown outgoing players {'; '.join(out_unk)}")
     try:
-        pay_before, _payroll_rows = _payroll(team, con, season)
+        pay_before, _payroll_rows = _payroll(team_code, con, season)
     except SalaryColumnError as exc:
         return None, _trade_error(str(exc), exc.reason)
     in_rows, in_names, in_total, err = _incoming_rows(
-        team, moves, con, season, snt)
+        team_code, moves, con, season, snt)
     if err:
         return None, _trade_error(err)
     return {"out_names": out_names, "out_total": out_total,
@@ -439,8 +448,8 @@ def _load_trade_state(con: Any, moves: list[dict[str, Any]], season: str | None,
     guard_error = _trade_guard_vintage_error(con, resolved_season)
     if guard_error:
         return None, _trade_error(guard_error)
-    teams = sorted({move["from"] for move in moves} |
-                   {move["to"] for move in moves})
+    teams = sorted({canonical_team_abbr(move["from"]) for move in moves} |
+                   {canonical_team_abbr(move["to"]) for move in moves})
     side: dict[str, dict[str, Any]] = {}
     for team in teams:
         row, err = _team_side(team, moves, con, resolved_season, snt)
@@ -611,6 +620,7 @@ def _evaluate_team(team: str, side: dict[str, Any],
                    snt_salary_prior: int,
                    season_start: int | None
                    ) -> tuple[dict[str, Any], list[str]]:
+    team = canonical_team_abbr(team)
     out_eff, byc_note = _byc_adjustment(side, snt, snt_salary_prior)
     pay_after = side["pay_before"] - side["out_total"] + side["in_total"]
     state_after = _apron_state(pay_after)
@@ -626,14 +636,16 @@ def _evaluate_team(team: str, side: dict[str, Any],
         incoming_salaries, [allow] + usage["capacities"], required_tpe_bins)
     aggregates = len(side["out_names"]) > 1
     cash_out = sum(cash["amount"] for cash in cash_moves
-                   if cash["from"] == team)
+                   if canonical_team_abbr(cash["from"]) == team)
     cash_in = sum(cash["amount"] for cash in cash_moves
-                  if cash["to"] == team)
-    picks_out = [pick for move in moves if move["from"] == team
+                  if canonical_team_abbr(cash["to"]) == team)
+    picks_out = [pick for move in moves
+                 if canonical_team_abbr(move["from"]) == team
                  for pick in move["picks"]]
-    picks_in = [pick for move in moves if move["to"] == team
+    picks_in = [pick for move in moves
+                if canonical_team_abbr(move["to"]) == team
                 for pick in move["picks"]]
-    is_snt_receiver = team == snt_receiver
+    is_snt_receiver = team == canonical_team_abbr(snt_receiver)
     expanded_matching = _expanded_matching_use(
         incoming_salaries, side["in_total"], out_eff, room_before,
         usage["capacities"], required_tpe_bins)
@@ -696,14 +708,20 @@ def _snt_result(snt: dict[str, Any] | None,
 
 def _owned_after_trade(team: str, moves: list[dict[str, Any]],
                        pick_held: dict[str, set[int]]) -> set[int]:
-    owned = set(pick_held.get(team, set()))
+    team_code = canonical_team_abbr(team)
+    owned: set[int] = set()
+    for held_team, years in pick_held.items():
+        if canonical_team_abbr(held_team) == team_code:
+            owned.update(years)
     for move in moves:
+        move_from = canonical_team_abbr(move["from"])
+        move_to = canonical_team_abbr(move["to"])
         for pick in move["picks"]:
             if pick["round"] != 1:
                 continue
-            if move["from"] == team and not pick["swap"]:
+            if move_from == team_code and not pick["swap"]:
                 owned.discard(pick["year"])
-            if move["to"] == team and not pick["swap"]:
+            if move_to == team_code and not pick["swap"]:
                 owned.add(pick["year"])
     return owned
 
@@ -719,8 +737,9 @@ def _stepien_result(teams: list[str], moves: list[dict[str, Any]],
                             "ownership not verified"}
     issues: list[str] = []
     for team in teams:
-        owned = _owned_after_trade(team, moves, pick_held)
-        issues.extend(_stepien_issues(team, owned, season_start))
+        team_code = canonical_team_abbr(team)
+        owned = _owned_after_trade(team_code, moves, pick_held)
+        issues.extend(_stepien_issues(team_code, owned, season_start))
     return issues, {"rule": "Stepien consecutive firsts + 7-year limit",
                     "checked": True,
                     "note": "verified against silver_future_picks"}
