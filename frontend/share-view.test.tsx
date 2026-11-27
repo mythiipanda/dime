@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
-import { capScenarioFixture, type ScenarioMove, type ScenarioResponse } from "./lib/capsheet-fixture";
+import type { ScenarioMove } from "./lib/capsheet-fixture";
+import type { ProjectionResponse } from "./lib/planner";
 
 const sharedObject = {
   kind: "cap_scenario",
@@ -21,10 +22,36 @@ const sharedObject = {
   archived: false,
 };
 
-const evaluation: ScenarioResponse = {
-  ...capScenarioFixture,
-  pay_after: 187400000,
-  state: { over_tax: false, over_apron1: false, over_apron2: true, room_under_apron2: -1200000 },
+const evaluation: ProjectionResponse = {
+  ok: true,
+  team: "BOS",
+  base_season: "2026-27",
+  seasons: [
+    {
+      season: "2026-27",
+      pay_before: 190000000,
+      pay_after: 187400000,
+      cap_room: -22439000,
+      players: [],
+      roster_before: 15,
+      roster_after: 15,
+      roster_issues: [],
+      hard_cap: "",
+      hard_cap_violation: "",
+      exception_usage: [],
+      effects: [
+        { move: 0, kind: "waive", detail: "waive Player One", delta: -4900000, exactness: "exact" },
+        { move: 1, kind: "signing", detail: "sign minimum signing", delta: 2300000, exactness: "exact" },
+      ],
+      moves_in_season: 2,
+      ordering_notes: [],
+      lines: { cap: 164961000, tax: 200428000, apron1: 209015000, apron2: 221686000 },
+      lines_projected: false,
+    },
+  ],
+  errors: [],
+  warnings: [],
+  disclosures: [],
 };
 
 async function mountView(element: React.ReactNode) {
@@ -63,8 +90,9 @@ test("shared cap scenario renders title, moves, evaluation and provenance read-o
     assert.match(text, /stretch/);
     assert.match(text, /sign minimum signing \(\$2\.3M\)/);
     assert.match(text, /187\.4/);
-    const deltaCells = [...mounted.host.querySelectorAll("li")].map((li) => li.textContent ?? "");
-    assert.ok(deltaCells.some((cell) => cell.includes("waive Player One") && /−\$|\+\$/.test(cell)), `expected a signed delta on the waive row, got: ${deltaCells.join(" | ")}`);
+    const effectCells = [...mounted.host.querySelectorAll("li")].map((li) => li.textContent ?? "");
+    assert.ok(effectCells.some((cell) => cell.includes("waive Player One")), `expected the waive move, got: ${effectCells.join(" | ")}`);
+    assert.ok(effectCells.some((cell) => cell.includes("waive Player One") && /\$4\.9M/.test(cell)), `expected the waive effect delta, got: ${effectCells.join(" | ")}`);
     assert.match(text, /second apron/);
     assert.match(text, /evaluated live/i);
     assert.match(text, /read-only/i);
@@ -103,11 +131,10 @@ test("restricted states render honest notice blocks without controls", async () 
 
 test("evaluation failure renders the stored moves with an honest evaluation notice", async () => {
   const { SharedScenarioView } = await import("./components/dime/views/SharedScenarioView");
-  const failed: ScenarioResponse = {
+  const failed: ProjectionResponse = {
     ...evaluation,
     ok: false,
     errors: [{ move: "0", error: "Player One is not on the BOS roster" }],
-    steps: [],
   };
   const mounted = await mountView(<SharedScenarioView object={sharedObject} evaluation={failed} />);
   try {
@@ -125,19 +152,19 @@ test("loadSharedScenario maps backend responses into the view states", async () 
     loadSharedScenario("http://backend", "tok", impl as typeof fetch);
 
   const okResult = await withFetch(async (url) => {
-    if (url.includes("/api/cap/scenario")) return Response.json(evaluation);
+    if (url.includes("/api/cap/projection")) return Response.json(evaluation);
     return Response.json(sharedObject);
   });
   assert.equal(okResult.status, "ok");
   if (okResult.status === "ok") {
     assert.equal(okResult.object.title, "Waiver wire plan");
-    assert.equal(okResult.evaluation?.pay_after, 187400000);
+    assert.equal(okResult.evaluation?.seasons[0]?.pay_after, 187400000);
   }
 
   const evalOrder: string[] = [];
   await withFetch(async (url, init) => {
     evalOrder.push(url);
-    if (url.includes("/api/cap/scenario")) {
+    if (url.includes("/api/cap/projection")) {
       const body = JSON.parse(String(init?.body));
       assert.equal(body.team, "BOS");
       assert.equal(body.season, "2026-27");
@@ -165,7 +192,7 @@ test("loadSharedScenario maps backend responses into the view states", async () 
     "a board-kind envelope carrying a non-board payload is a integrity failure, not unsupported",
   );
   const evalFailed = await withFetch(async (url) => {
-    if (url.includes("/api/cap/scenario")) return new Response("x", { status: 422 });
+    if (url.includes("/api/cap/projection")) return new Response("x", { status: 422 });
     return Response.json(sharedObject);
   });
   assert.equal(evalFailed.status, "ok");
@@ -478,7 +505,7 @@ test("loadSharedScenario board dispatch parses pins and evaluates cap and trade 
   };
   const responses = new Map<string, unknown>([
     ["/s/", envelope],
-    ["/api/cap/scenario", { errors: [], summary: {} }],
+    ["/api/cap/projection", { ok: true, seasons: [], errors: [], warnings: [], disclosures: [] }],
     ["/api/trade/legs", { rows: [{ team: "BOS", matching_ok: true }] }],
     ["/api/boards/fill", null],
     ["/api/boards/metrics", null],

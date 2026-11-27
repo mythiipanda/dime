@@ -3,7 +3,7 @@ import { describeScenarioMove } from "@/lib/capsheet-fixture";
 import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
 import { ArtifactBody } from "@/components/site/harness/ArtifactsView";
 import { asResolvedArtifacts } from "@/lib/stream/artifacts";
-import type { ScenarioResponse } from "@/lib/capsheet-fixture";
+import type { ProjectionResponse } from "@/lib/planner";
 
 function money(value: number | null | undefined): string {
   if (value == null) return "–";
@@ -82,13 +82,13 @@ export function SharedScenarioView({
   evaluation,
 }: {
   object: SharedObject;
-  evaluation: ScenarioResponse | null;
+  evaluation: ProjectionResponse | null;
 }) {
   const moves = object.payload.moves;
-  const steps = evaluation?.steps ?? [];
-  const stepForMove = (index: number) => steps.find((step) => step.step === index + 1 && step.kind !== "payroll" && step.kind !== "post_move");
   const errors = (evaluation?.errors ?? []).filter(Boolean);
   const evaluationFailed = evaluation !== null && (evaluation.ok === false || errors.length > 0);
+  const seasons = evaluation?.seasons ?? [];
+  const baseSeason = seasons[0];
 
   return (
     <SharedFrame>
@@ -104,35 +104,18 @@ export function SharedScenarioView({
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">Moves</h2>
             <ol className="mt-2 space-y-2">
-              {moves.map((move, i) => {
-                const step = stepForMove(i);
-                return (
-                  <li key={i} className="flex items-baseline justify-between gap-3 text-[12.5px]">
-                    <span className="min-w-0 text-ink-2">
-                      <span className="mr-1.5 font-mono text-[10.5px] text-ink-3">{i + 1}.</span>
-                      {describeScenarioMove(move)}
-                      {step?.estimate_basis && (
-                        <span className="mt-0.5 block pl-5 text-[11px] leading-[1.45] text-ink-3">{step.estimate_basis}</span>
-                      )}
-                    </span>
-                    {step && (
-                      <span className={`shrink-0 font-mono text-[11px] tabular-nums ${step.delta !== 0 ? "text-ink-2" : "text-ink-3"}`}>
-                        {step.delta > 0 ? "+" : ""}{money(step.delta)}
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
+              {moves.map((move, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-3 text-[12.5px]">
+                  <span className="min-w-0 text-ink-2">
+                    <span className="mr-1.5 font-mono text-[10.5px] text-ink-3">{i + 1}.</span>
+                    {describeScenarioMove(move)}
+                  </span>
+                </li>
+              ))}
             </ol>
             {evaluation === null && (
               <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.55] text-ink-3">
                 This scenario could not be evaluated live — the stored moves are shown as shared, without computed cap impact.
-              </p>
-            )}
-            {evaluation !== null && !evaluationFailed && (
-              <p className="mt-3 border-t border-line pt-2 font-mono text-[12px] tabular-nums text-ink">
-                payroll after: {money(evaluation.pay_after)}
-                <span className="ml-2 font-sans text-[11px] text-ink-3">in {evaluation.season}</span>
               </p>
             )}
             {evaluationFailed && (
@@ -147,46 +130,87 @@ export function SharedScenarioView({
             )}
           </section>
 
-          {evaluation?.restrictions?.length ? (
-            <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h2 className="text-[13px] font-semibold text-ink">CBA restrictions in play</h2>
-              <div className="mt-2 space-y-2.5">
-                {evaluation.restrictions.map((r, i) => (
-                  <div key={i}>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className={`rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide ${r.status === "active" ? "border-red text-red" : "border-line text-ink-3"}`}>
-                        {r.status}
-                      </span>
-                      <span className="text-[11px] text-ink-3">{r.threshold}</span>
-                    </div>
-                    <p className="mt-0.5 text-[12px] leading-[1.55] text-ink-2">{r.rule}</p>
+          {seasons.map((season) => (
+            <section key={season.season} className="rounded-[10px] bg-surface p-4 shadow-hairline">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-[13px] font-semibold text-ink">{season.season}</h2>
+                <span className="font-mono text-[12px] tabular-nums text-ink">
+                  payroll {money(season.pay_after)}
+                </span>
+              </div>
+              <div className="mt-2 space-y-1 font-mono text-[11px] tabular-nums text-ink-3">
+                <div className="flex justify-between"><span>cap room</span><span className={season.cap_room < 0 ? "text-red" : ""}>{money(season.cap_room)}</span></div>
+                <div className="flex justify-between"><span>cap</span><span>{money(season.lines.cap)}</span></div>
+                <div className="flex justify-between"><span>tax line</span><span>{money(season.lines.tax)}</span></div>
+                <div className="flex justify-between"><span>first apron</span><span>{money(season.lines.apron1)}</span></div>
+                <div className="flex justify-between"><span>second apron</span><span>{money(season.lines.apron2)}</span></div>
+                {(season.cap_holds ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span>cap holds{season.cap_holds_exactness ? ` (${season.cap_holds_exactness})` : ""}</span>
+                    <span>{money(season.cap_holds)}</span>
                   </div>
-                ))}
+                )}
               </div>
+              {season.effects.length > 0 && (
+                <ol className="mt-2 space-y-1 border-t border-line pt-2">
+                  {season.effects.map((effect, i) => (
+                    <li key={i} className="flex items-baseline justify-between gap-3 text-[12px]">
+                      <span className="min-w-0 text-ink-2">
+                        {effect.detail}
+                        {effect.exactness !== "exact" && (
+                          <span className="ml-1.5 rounded-full border border-line px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-ink-3">{effect.exactness}</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-3">
+                        {effect.delta > 0 ? "+" : ""}{money(effect.delta)}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {(season.exceptions ?? []).length > 0 && (
+                <div className="mt-2 space-y-1 border-t border-line pt-2">
+                  {(season.exceptions ?? []).map((ex) => (
+                    <div key={ex.exception} className="flex items-baseline justify-between gap-3 text-[11.5px]">
+                      <span className="text-ink-2">
+                        {ex.exception.toUpperCase()}
+                        {ex.hard_caps && <span className="ml-1.5 rounded-full border border-red px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-red">hard-caps</span>}
+                        {ex.unavailable && <span className="ml-1.5 font-mono text-[9.5px] uppercase tracking-wide text-ink-3">unavailable</span>}
+                      </span>
+                      <span className="font-mono text-[10.5px] tabular-nums text-ink-3">
+                        {ex.used > 0 ? `${money(ex.used)} used · ` : ""}{money(ex.remaining)} left
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {season.roster_issues.length > 0 && (
+                <div className="mt-2 border-t border-line pt-2">
+                  {season.roster_issues.map((issue, i) => (
+                    <p key={i} className="text-[11.5px] leading-[1.5] text-ink-3">{issue}</p>
+                  ))}
+                </div>
+              )}
+              {season.ordering_notes.length > 0 && (
+                <div className="mt-2 border-t border-line pt-2">
+                  {season.ordering_notes.map((note, i) => (
+                    <p key={i} className="text-[11.5px] leading-[1.5] text-ink-3">{note}</p>
+                  ))}
+                </div>
+              )}
             </section>
-          ) : null}
-
-          {evaluation?.roster_issues?.length ? (
-            <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h2 className="text-[13px] font-semibold text-ink">Roster issues</h2>
-              <div className="mt-2 space-y-1">
-                {evaluation.roster_issues.map((issue, i) => (
-                  <p key={i} className="text-[12px] leading-[1.55] text-ink-2">{issue}</p>
-                ))}
-              </div>
-            </section>
-          ) : null}
+          ))}
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          {evaluation !== null && !evaluationFailed && (
+          {baseSeason && !evaluationFailed && (
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
               <h2 className="text-[13px] font-semibold text-ink">Apron state after moves</h2>
               <div className="mt-2 space-y-1.5 text-[12px]">
                 {([
-                  ["tax", evaluation.state.over_tax],
-                  ["first apron", evaluation.state.over_apron1],
-                  ["second apron", evaluation.state.over_apron2],
+                  ["tax", baseSeason.pay_after > baseSeason.lines.tax],
+                  ["first apron", baseSeason.pay_after > baseSeason.lines.apron1],
+                  ["second apron", baseSeason.pay_after > baseSeason.lines.apron2],
                 ] as const).map(([label, over]) => (
                   <div key={label} className="flex items-baseline justify-between">
                     <span className="text-ink-2">{label}</span>
@@ -194,6 +218,16 @@ export function SharedScenarioView({
                       {over ? "over" : "under"}
                     </span>
                   </div>
+                ))}
+              </div>
+            </section>
+          )}
+          {(evaluation?.disclosures?.length ?? 0) > 0 && (
+            <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+              <h2 className="text-[13px] font-semibold text-ink">Method disclosures</h2>
+              <div className="mt-2 space-y-1.5">
+                {(evaluation?.disclosures ?? []).map((disclosure, i) => (
+                  <p key={i} className="text-[11.5px] leading-[1.55] text-ink-3">{disclosure}</p>
                 ))}
               </div>
             </section>
