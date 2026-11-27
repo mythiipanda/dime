@@ -225,11 +225,11 @@ def _game_row(g: TeamGame) -> dict[str, Any]:
 def get_rest_advantage(team: str = "league", season: str | None = None,
                        season_type: str = "all", date: str = "",
                        opponent: str = "") -> dict[str, Any]:
-    season = resolve_season(season, "silver_scoreboard")
-    season = clamp_season(season)
     args, err = _rest_args(team, season_type, date, opponent)
     if err is not None:
         return {"tool": "get_rest_advantage", "ok": False, "error": err}
+    season = resolve_season(season, "silver_scoreboard")
+    season = clamp_season(season, table="silver_scoreboard")
     want_all, st, date_str, opp_raw, day, abbr, opp_abbr = args
     try:
         rows, dropped, error = _load_scoreboard(season)

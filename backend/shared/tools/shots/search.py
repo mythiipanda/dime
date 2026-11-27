@@ -53,7 +53,8 @@ def search_shots(
     include_ot: str = "auto",
 ) -> dict[str, Any]:
     pkg = _pkg()
-    season = pkg.clamp_season(pkg.resolve_season(season, "silver_shots"))
+    season = pkg.clamp_season(
+        pkg.resolve_season(season, "silver_shots"), table="silver_shots")
     _shot_seasons = pkg._shots_seasons()
     if season not in _shot_seasons:
         if _shot_seasons:
