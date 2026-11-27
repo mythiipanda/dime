@@ -86,6 +86,32 @@ export type ScenarioResponse = {
   };
 };
 
+export function shortSeason(season: string): string {
+  return `\u2019${season.slice(5)}`;
+}
+
+export function moneyMillions(value: number | null | undefined): string {
+  if (value == null) return "\u2013";
+  return `$${(value / 1e6).toFixed(1)}`;
+}
+
+export function describeScenarioMove(move: ScenarioMove): string {
+  switch (move.kind) {
+    case "signing":
+      return `sign ${move.label} (${moneyMillions(move.amount)})`;
+    case "option_decision":
+      return `${move.exercise ? "exercise" : "decline"} ${move.player} ${shortSeason(move.season ?? "")} option`;
+    case "waive":
+      return `waive ${move.player}${move.stretch ? " (stretch)" : ""}`;
+    case "trade_out":
+      return `trade out ${move.player}`;
+    case "trade_in":
+      return `trade in ${move.player}`;
+    default:
+      return `${move.kind} ${move.player ?? move.label ?? ""}`.trim();
+  }
+}
+
 const SEASONS = ["2026-27", "2027-28", "2028-29", "2029-30", "2030-31", "2031-32"];
 
 function linesFor(index: number): CapLines {
