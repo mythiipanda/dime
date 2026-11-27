@@ -29,7 +29,7 @@ export default async function SharedScenarioPage({ params }: Params) {
     case "ok-thread":
       return <SharedThreadView object={state.object} transcript={state.transcript} />;
     case "ok-board":
-      return <SharedBoardView object={state.object} board={state.board} metrics={state.metrics} />;
+      return <SharedBoardView object={state.object} board={state.board} metrics={state.metrics} pins={state.pins} />;
     case "ok-artifact":
       return <SharedArtifactView object={state.object} artifact={state.artifact} evidence={state.evidence} capturedAt={state.captured_at} unavailable={state.unavailable} />;
     case "archived":
