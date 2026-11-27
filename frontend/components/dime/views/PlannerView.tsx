@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadCapDraft, syncCapDraft } from "@/lib/cap-draft";
+import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
+import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { fetchProjection, formatMoney, type ProjectionResponse, type ProjectionSeason } from "@/lib/planner";
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
 
@@ -76,6 +78,7 @@ export default function PlannerView() {
   const [extendAmount, setExtendAmount] = useState("");
   const [extendYears, setExtendYears] = useState("1");
   const [syncFailed, setSyncFailed] = useState(false);
+  const [share, setShare] = useState<{ phase: "idle" } | { phase: "minting" } | { phase: "minted"; link: string; copied: boolean; moves: ScenarioMove[] } | { phase: "error" }>({ phase: "idle" });
 
   const project = useCallback(async (teamCode: string, scenarioMoves: ScenarioMove[]) => {
     const result = await fetchProjection(teamCode, BASE_SEASON, scenarioMoves);
@@ -113,6 +116,18 @@ export default function PlannerView() {
   const removeMove = useCallback((index: number) => {
     applyMoves(moves.filter((_, i) => i !== index));
   }, [moves, applyMoves]);
+
+  function mintShare() {
+    if (moves.length === 0 || share.phase === "minting") return;
+    setShare({ phase: "minting" });
+    mintObject("cap_scenario", `${team} planner scenario · ${BASE_SEASON}`, { team, season: BASE_SEASON, moves })
+      .then((created) => setShare({ phase: "minted", link: objectShareLink(created.read_token), copied: false, moves }))
+      .catch(() => setShare({ phase: "error" }));
+  }
+
+  function copyShare(link: string) {
+    copyToClipboard(link, () => setShare((current) => current.phase === "minted" ? { ...current, copied: true } : current));
+  }
 
   const grid = useMemo(() => {
     if (!projection) return null;
@@ -358,6 +373,38 @@ export default function PlannerView() {
                 ))}
               </ul>
               <p className="mt-2 text-[11px] leading-[1.5] text-ink-3">Order matters — a signing that fits after a trade may be flagged before it. Moves write through to the shared cap-sheet draft.</p>
+              {editing && (share.phase !== "minted" || JSON.stringify(moves) !== JSON.stringify(share.moves)) && (
+                <button
+                  type="button"
+                  className="mt-3 h-7 rounded-[7px] border border-line px-2 text-[11.5px] text-ink-2 hover:bg-field disabled:opacity-50"
+                  onClick={mintShare}
+                  disabled={share.phase === "minting"}
+                >
+                  {share.phase === "minting" ? "Sharing…" : share.phase === "minted" ? "Share updated" : "Share scenario"}
+                </button>
+              )}
+              {share.phase === "minted" && (
+                <div className="mt-3">
+                  <MintedLink
+                    link={share.link}
+                    copied={share.copied}
+                    onCopy={copyShare}
+                    note={
+                      <>
+                        Snapshot link minted — recipients see those moves evaluated live.
+                        {JSON.stringify(moves) !== JSON.stringify(share.moves)
+                          ? " The scenario has changed since this link was minted — the link still holds the earlier moves; use Share updated for a new link."
+                          : " Editing the scenario here won't change it; share again for a new link."}
+                      </>
+                    }
+                  />
+                </div>
+              )}
+              {share.phase === "error" && (
+                <p className="mt-2 text-[11px] leading-[1.45] text-red">
+                  The scenario couldn&apos;t be shared — the backend didn&apos;t accept the mint. Your moves are untouched; try again.
+                </p>
+              )}
             </div>
           )}
 
