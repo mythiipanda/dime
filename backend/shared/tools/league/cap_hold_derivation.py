@@ -23,6 +23,7 @@ CAP_HOLD_CONTRACT = {
     "cap_hold_est": "compatibility alias for the same effective estimate as cap_hold; null when unknown",
     "legacy_cap_hold_est": "unvalidated silver_free_agents.CAP_HOLD_EST seed retained for comparison",
     "legacy_fallback": "when derivation inputs are unavailable, the effective estimate is the labeled legacy seed rather than a calculator-derived value",
+    "scenario_arithmetic": "projected_room is null while unknown-amount holds remain retained; projected_room_upper_bound excludes those amounts, and cap-hold sums are labeled known-dollar partial sums when unknowns are present",
 }
 _CAP_2026_27 = 164_961_000
 _EAPS_2026_27 = 15_163_000

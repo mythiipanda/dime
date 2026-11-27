@@ -48,34 +48,95 @@ def _scenario_values(room: dict, retained_holds: int,
     return projected - retained_holds + base_charge - charge, charge
 
 
+def _sum_semantics(unknown_count: int) -> str:
+    return "known_amounts_partial_sum" if unknown_count else "exact"
+
+
+def _scenario_warning(retained_unknown: int,
+                      renounced_unknown: int) -> str | None:
+    parts = []
+    if retained_unknown:
+        parts.append(
+            f"projected_room is null because {retained_unknown} retained "
+            "cap-hold amount(s) are unknown; projected_room_upper_bound "
+            "excludes those amounts")
+    if renounced_unknown:
+        parts.append(
+            f"cap_holds_renounced is a known-dollar partial sum because "
+            f"{renounced_unknown} renounced cap-hold amount(s) are unknown")
+    return " ".join(parts) if parts else None
+
+
 def _scenario_row(room: dict, scenario: str, player: str | None,
                   retained_holds: int, retained_hold_count: int,
-                  total_holds: int) -> dict:
-    projected, charge = _scenario_values(room, retained_holds,
-                                         retained_hold_count)
+                  total_holds: int, retained_unknown: int,
+                  renounced_unknown: int,
+                  player_unknown: bool | None) -> dict:
+    bound, charge = _scenario_values(room, retained_holds,
+                                     retained_hold_count)
+    exact = retained_unknown == 0
+    if exact:
+        path = "under_cap" if bound > 0 else "over_cap"
+    else:
+        path = "unknown" if bound > 0 else "over_cap"
     return {"scenario": scenario, "player": player,
-            "projected_room": projected,
+            "projected_room": bound if exact else None,
+            "projected_room_upper_bound": bound,
+            "arithmetic_status": "exact" if exact else "partial_unknown_holds",
             "cap_holds_retained": retained_holds,
+            "cap_holds_retained_semantics": _sum_semantics(retained_unknown),
             "cap_holds_renounced": total_holds - retained_holds,
+            "cap_holds_renounced_semantics": _sum_semantics(renounced_unknown),
+            "unknown_holds_retained_count": retained_unknown,
+            "unknown_holds_renounced_count": renounced_unknown,
+            "hold_unknown": player_unknown,
+            "warning": _scenario_warning(retained_unknown, renounced_unknown),
             "roster_charges": charge,
-            "path": "under_cap" if projected > 0 else "over_cap"}
+            "path": path}
+
+
+def _scenario_hold_amount(row: dict) -> int | None:
+    value = row.get("cap_hold")
+    if value is None and "cap_hold" not in row:
+        value = row.get("CAP_HOLD_EST")
+    return int(value) if value is not None else None
+
+
+def _hold_slot(amount: int | None) -> int:
+    return 1 if amount is None or amount > 0 else 0
 
 
 def _scenarios(room: dict, fa: list[dict]) -> list[dict]:
-    holds = [(str(f.get("PLAYER_NAME") or ""), hold_amount(f))
+    holds = [{"name": str(f.get("PLAYER_NAME") or ""),
+              "amount": _scenario_hold_amount(f)}
              for f in fa if f.get("active_in_baseline", True)]
-    total_holds = sum(hold for _, hold in holds)
-    total_count = sum(1 for _, hold in holds if hold > 0)
+    total_holds = sum(hold["amount"] or 0 for hold in holds)
+    total_count = sum(_hold_slot(hold["amount"]) for hold in holds)
+    total_unknown = sum(1 for hold in holds if hold["amount"] is None)
     out = [_scenario_row(room, "keep_all", None, total_holds, total_count,
-                         total_holds),
-           _scenario_row(room, "renounce_all", None, 0, 0, total_holds)]
-    for name, hold in holds:
-        held_count = 1 if hold > 0 else 0
-        out.append(_scenario_row(room, "renounce", name, total_holds - hold,
-                                 total_count - held_count, total_holds))
-        out.append(_scenario_row(room, "keep_only", name, hold, held_count,
-                                 total_holds))
+                         total_holds, total_unknown, 0, None),
+           _scenario_row(room, "renounce_all", None, 0, 0, total_holds,
+                         0, total_unknown, None)]
+    for hold in holds:
+        name = hold["name"]
+        amount = hold["amount"]
+        unknown = amount is None
+        slot = _hold_slot(amount)
+        out.append(_scenario_row(
+            room, "renounce", name, total_holds - (amount or 0),
+            total_count - slot, total_holds,
+            total_unknown - (1 if unknown else 0), 1 if unknown else 0,
+            unknown))
+        out.append(_scenario_row(
+            room, "keep_only", name, amount or 0, slot, total_holds,
+            1 if unknown else 0, total_unknown - (1 if unknown else 0),
+            unknown))
     return out
+
+
+def _active_unknown_hold_count(fa: list[dict]) -> int:
+    active = [f for f in fa if f.get("active_in_baseline", True)]
+    return sum(1 for f in active if _scenario_hold_amount(f) is None)
 
 
 def _fa_plan_row(f: dict[str, Any], cap: int) -> dict[str, Any]:
@@ -114,8 +175,10 @@ def _fa_plan_row(f: dict[str, Any], cap: int) -> dict[str, Any]:
     "eligibility) plus a deterministic scenario table - keep all holds vs "
     "renounce all vs per-player renounce/keep-only - against the team's "
     "projected cap room and exceptions. Holds are CBA-formula estimates "
-    "with per-input exactness/provenance and disclosed inference. "
-    "Warehouse only; refresh with seed_free_agents.py. "
+    "with per-input exactness/provenance and disclosed inference. Scenario "
+    "rows expose retained/renounced unknown-hold counts, label known-dollar "
+    "partial sums, and null exact projected room while unknown-amount "
+    "holds remain retained. Warehouse only; refresh with seed_free_agents.py. "
     "REACH FOR THIS for any forward-looking free-agency or cap-space "
     "decision ask: 'can the Lakers keep Reaves and still sign a wing?', "
     "'what is Boston's cap room if they renounce X?', 'walk me the Knicks' "
@@ -181,7 +244,8 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
     scenarios = _scenarios(room, fa) if room else []
     active_holds = sum(hold_amount(f) for f in fa if f.get("active_in_baseline", True))
     potential_holds = sum(hold_amount(f) for f in fa)
-    unknown_holds = sum(1 for f in fa if f.get("cap_hold") is None)
+    unknown_holds = sum(1 for f in fa if _scenario_hold_amount(f) is None)
+    active_unknown_holds = _active_unknown_hold_count(fa)
     if not room:
         checks.append({"rule": "cap room", "checked": False,
                        "note": "silver_cap_room row absent for team - "
@@ -190,8 +254,10 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
         {"rule": "cap holds", "checked": True,
          "note": "holds use the CBA calculator when supporting warehouse inputs "
                  "are present; rights, rookie-scale status and service time are "
-                 "disclosed inferences rather than facts, unknown rows are "
-                 "excluded from totals, and legacy fallback rows are labeled"},
+                 "disclosed inferences rather than facts, unknown amounts stay "
+                 "null and are excluded from known-dollar totals, scenario rows "
+                 "disclose retained/renounced unknown counts, and legacy "
+                 "fallback rows are labeled"},
         {"rule": "pending options", "checked": True,
          "note": "option-year salary stays exercised in these scenarios; "
                  "player/team-option rows are shown as option-dependent "
@@ -201,9 +267,10 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
          "note": "scenario charges fill offseason rosters to 12 at the "
                  "target-season rookie minimum salary used for "
                  "incomplete-roster charges stored in silver_cap_room "
-                 "and count each retained positive cap hold as one "
-                 "occupied roster spot; legacy rows without that column "
-                 "use the 1,493,539 projection as an approximation"},
+                 "and count each retained active cap hold, including an "
+                 "unknown-amount hold, as one occupied roster spot; legacy "
+                 "rows without that column use the 1,493,539 projection "
+                 "as an approximation"},
         {"rule": "rights not modeled", "checked": True,
          "note": "RFA offer-sheet matching, extension deadlines, BYC and "
                  "sign-and-trade mechanics out of scope; "
@@ -227,8 +294,12 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                    room.get("PENDING_OPTION_SALARY") if room else None,
                "fa_holds_est": room.get("FA_HOLDS_EST") if room else None,
                "fa_holds_derived": potential_holds,
+               "fa_holds_derived_semantics": _sum_semantics(unknown_holds),
                "fa_holds_active_derived": active_holds,
+               "fa_holds_active_derived_semantics":
+                   _sum_semantics(active_unknown_holds),
                "fa_holds_unknown_count": unknown_holds,
+               "fa_holds_active_unknown_count": active_unknown_holds,
                "fa_holds_unit": "usd_dollars",
                "roster_charges":
                    room.get("INCOMPLETE_ROSTER_CHARGES")
@@ -255,14 +326,18 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                     "tables": {"free_agents": "silver_free_agents",
                                "cap_room": "silver_cap_room"},
                     "formula": "scenario room = PROJECTED_ROOM - retained "
-                               "active cap holds + stored base roster charges "
-                               "- scenario roster charges; PROJECTED_ROOM "
-                               "already excludes free-agent holds; pending "
-                               "options stay exercised; option-dependent "
-                               "potential holds are excluded from active "
-                               "scenarios until a decline is explicit; "
-                               "retained positive active holds count as "
-                               "occupied roster spots",
+                               "known active cap holds + stored base roster "
+                               "charges - scenario roster charges; "
+                               "PROJECTED_ROOM already excludes free-agent "
+                               "holds; pending options stay exercised; "
+                               "option-dependent potential holds are excluded "
+                               "from active scenarios until a decline is "
+                               "explicit; retained active holds, including "
+                               "unknown-amount holds, count as occupied "
+                               "roster spots; projected_room is null when "
+                               "unknown-amount holds remain retained and "
+                               "projected_room_upper_bound is the labeled "
+                               "ceiling excluding those unknown amounts",
                     "cap_hold_derivation": hold_payload.get("meta") or {},
                     "disclaimer": "Planning-grade estimates - hold, room "
                     "and exception figures are CBA-formula estimates, not "
