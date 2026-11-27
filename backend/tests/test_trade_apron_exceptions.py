@@ -467,6 +467,37 @@ def test_below_cap_absorption_elects_cap_room_before_standard(
     assert scenario_matching["allowed_incoming"] == 35_211_000
 
 
+@pytest.mark.parametrize("incoming", [1, 250_000, 250_001])
+def test_trade_legality_zero_outgoing_without_room_rejects_small_incoming(
+        monkeypatch, tmp_path, incoming):
+    from shared.tools import get_trade_legality
+
+    rows = [("Tiny One", "MIA", incoming)]
+    rows += [(f"BOS Filler {index}", "BOS", 20_000_000)
+             for index in range(10)]
+    rows += [(f"MIA Filler {index}", "MIA", 15_000_000)
+             for index in range(10)]
+    _seed(monkeypatch, tmp_path, rows)
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"MIA","to":"BOS","players":"Tiny One"},'
+                '{"from":"BOS","to":"MIA",'
+                '"picks":[{"year":2028,"round":2}]}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is False
+    row = _team_rows(out)["BOS"]
+    case = f"incoming={incoming!r} row={row!r} issues={out['issues']!r}"
+    assert row["payroll_before"] == 200_000_000, case
+    assert row["outgoing"] == 0, case
+    assert row["incoming"] == incoming, case
+    assert row["allowed_incoming"] == 0, case
+    assert row["matching_ok"] is False, case
+    assert row["matching_structure"] == "no_available_structure", case
+    assert any(" vs $0 allowed under " in issue
+               for issue in out["issues"]), case
+
+
 def test_cap_scenario_standard_match_rule_describes_selected_mechanism(
         monkeypatch, tmp_path):
     from shared.tools import get_cap_scenario

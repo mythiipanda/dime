@@ -37,6 +37,8 @@ _TRIGGER_LABELS = {
     "the prior-year traded player exception": "the prior-year traded player exception",
     "expanded salary matching": "the Expanded Traded Player Exception",
 }
+_NO_AVAILABLE_MATCH_RULE = ("no available salary-matching structure "
+                            "(no outgoing player salary)")
 
 
 def payroll_proxy_meta() -> dict[str, Any]:
@@ -61,6 +63,8 @@ def apron_state(payroll: int, lines: dict | None = None) -> dict[str, object]:
 
 def allowed_incoming(outgoing: int, over_apron1: bool,
                      cap_room: int = 0) -> tuple[int, str]:
+    if outgoing <= 0 and cap_room <= 0:
+        return 0, _NO_AVAILABLE_MATCH_RULE
     if over_apron1:
         return outgoing, "100% (above the first apron)"
     low = outgoing * 2 + 250_000
@@ -171,8 +175,7 @@ def operative_match_rule(rule: str, election: dict[str, Any]) -> str:
     if selected == "no_salary_matching":
         return "no salary matching required (no incoming player salary)"
     if selected == "no_available_structure":
-        return ("no available salary-matching structure "
-                "(no outgoing player salary)")
+        return _NO_AVAILABLE_MATCH_RULE
     return rule
 
 
