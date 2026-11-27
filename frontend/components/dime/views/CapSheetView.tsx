@@ -330,13 +330,13 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                             key={season}
                             className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${
                               !year.guaranteed ? "text-ink-3" : "text-ink-2"
-                            } ${declined ? "line-through opacity-40" : ""} ${clickable ? "cursor-pointer hover:bg-field" : ""}`}
+                            } ${declined ? "line-through opacity-40" : ""} ${clickable ? "cursor-pointer transition-colors hover:bg-field" : ""}`}
                             title={clickable ? `${year.option} option — click to mark ${declined ? "exercised" : "declined"} in the scenario` : undefined}
                             onClick={clickable ? () => optionToggled(player, year.season) : undefined}
                           >
                             {money(year.salary)}
                             {year.option && year.salary != null && (
-                              <span className="ml-1 rounded-sm border border-line px-0.5 text-[8.5px] uppercase">{year.option[0]}</span>
+                              <span className={`ml-1 rounded-sm border px-0.5 text-[8.5px] uppercase ${clickable ? "border-accent/50 text-accent" : "border-line"}`}>{year.option[0]}</span>
                             )}
                           </td>
                         );
