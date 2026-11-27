@@ -615,7 +615,8 @@ async def get_rotation_check(
             on, off, diff, cached = pkg._fetch_rotation_onoff(season, pid)
             enriched.append({
                 "PLAYER": name, "PLAYER_ID": pid, "GP": gp_f, "MIN": min_f,
-                "MPG": round(mpg, 1), "PTS": pts_f, "ON": on, "OFF": off,
+                "MPG": round(mpg, 1), "PPG": round(ppg, 1), "PTS": pts_f,
+                "ON": on, "OFF": off,
                 "DIFF": diff, "CACHED": cached,
             })
         except Exception:
