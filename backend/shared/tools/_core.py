@@ -58,9 +58,10 @@ def warehouse_max_season() -> str | None:
         seasons = store.completed_seasons_across_tables()
     except Exception:
         return None
-    if not seasons:
+    valid = [s for s in seasons if _canonical_parts(s) is not None]
+    if not valid:
         return None
-    value = seasons[-1]
+    value = valid[-1]
     _DATA_SEASON_KEY = key
     _DATA_SEASON_VALUE = value
     return value
