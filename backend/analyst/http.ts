@@ -7,6 +7,7 @@ import { Value } from "typebox/value";
 import { validationDetails, validationDetail } from "./http-validation.js";
 import { createAnalyst, analystRequestSchema, backendRoot, newRunId, encodeEvent, runTimeoutMs } from "./analyst.js";
 import { ProjectStore, WorkspaceStore } from "./catalog-stores.js";
+import { ObjectStore, validateObjectPayload, type ObjectKind } from "./object-store.js";
 import { providerPolicy } from "./providers.js";
 import { objectValue } from "./python-tools.js";
 import type { DirectData } from "./direct-data.js";
@@ -106,6 +107,7 @@ export function createProductServer(options: {
     const { env, data, analyst } = options, policy = providerPolicy(env);
     const projects = new ProjectStore(env.DIME_PROJECT_STORE ?? join(backendRoot, "data/v2-projects.sqlite3"));
     const workspaces = new WorkspaceStore(env.DIME_WORKSPACE_STORE ?? join(backendRoot, "data/workspaces.sqlite3"));
+    const objects = new ObjectStore(env.DIME_OBJECT_STORE ?? join(backendRoot, "data/v2-objects.sqlite3"));
     const chatRate = new RateWindow(), sqlRate = new RateWindow();
     const requireProjects = () => {
         if (!enabled(env))
@@ -253,6 +255,90 @@ export function createProductServer(options: {
         }
     });
     route("DELETE", /^\/api\/workspaces\/([^/]+)$/, async ({ req, res, params }) => { authorizedWorkspace(req, params[0]); workspaces.delete(params[0]); json(res, { ok: true, id: params[0] }); });
+    const objectCreate = Type.Object({ kind: Type.String({ minLength: 1, maxLength: 40 }), title: Type.String({ minLength: 1, maxLength: 256 }), payload: Type.Unknown() }, { additionalProperties: false });
+    const objectPatch = Type.Object({ title: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })), payload: Type.Optional(Type.Unknown()), archived: Type.Optional(Type.Boolean()) }, { additionalProperties: false });
+    const objectIdShape = /^obj-[a-f0-9]{32}$/;
+    const readTokenShape = /^[A-Za-z0-9_-]{32,64}$/;
+    const objectOwner = (req: IncomingMessage) => {
+        const owner = req.headers["x-dime-owner"];
+        if (typeof owner !== "string" || !owner.trim())
+            throw new HttpError(401, "owner identity required");
+        return owner.trim().slice(0, 80);
+    };
+    const ownerToken = (req: IncomingMessage) => {
+        const token = req.headers["x-owner-token"];
+        if (typeof token !== "string" || !token)
+            throw new HttpError(401, "owner token required");
+        return token;
+    };
+    const objectRate = new RateWindow();
+    const objectWriteRate = (req: IncomingMessage) => {
+        const wait = objectRate.take(req.socket.remoteAddress ?? "unknown", positive(env.DIME_OBJECT_WRITE_RATE_LIMIT, 60), 60);
+        if (wait)
+            throw new HttpError(429, "Too Many Requests", { "Retry-After": String(wait) });
+    };
+    const publicObject = (value: { kind: string; title: string; payload: unknown; schema_version: number; updated_at: string; archived: boolean }) => ({ kind: value.kind, title: value.title, payload: value.payload, schema_version: value.schema_version, updated_at: value.updated_at, archived: value.archived });
+    const ownedObject = (value: { object_id: string; kind: string; title: string; payload: unknown; schema_version: number; created_at: string; updated_at: string; archived: boolean; read_token: string }) => ({ object_id: value.object_id, kind: value.kind, title: value.title, payload: value.payload, schema_version: value.schema_version, created_at: value.created_at, updated_at: value.updated_at, archived: value.archived, read_token: value.read_token });
+    const authorizedObject = (req: IncomingMessage, id: string) => {
+        if (!objectIdShape.test(id))
+            throw new HttpError(422, [validationDetail("object_id_format", ["params", "object_id"], "Invalid object id", id)]);
+        const token = ownerToken(req);
+        const value = objects.get(id);
+        if (!value)
+            throw new HttpError(404, "object not found");
+        if (!objects.verify(value, token))
+            throw new HttpError(403, "owner token rejected");
+        return value;
+    };
+    route("POST", /^\/api\/objects$/, async ({ req, res }) => {
+        objectWriteRate(req);
+        const owner = objectOwner(req);
+        const input = parseBody(objectCreate, await body(req));
+        const invalid = validateObjectPayload(input.kind, input.payload);
+        if (invalid)
+            throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], invalid, null)]);
+        const created = objects.create({ kind: input.kind as ObjectKind, owner, title: input.title, payload: input.payload });
+        const value = objects.get(created.object_id);
+        if (!value)
+            throw new Error("object create lost");
+        json(res, { ...ownedObject(value), owner_token: created.owner_token }, 201);
+    });
+    route("GET", /^\/api\/objects$/, async ({ req, res, url }) => {
+        const owner = objectOwner(req);
+        const kind = url.searchParams.get("kind") ?? undefined;
+        json(res, { objects: objects.list(owner, kind) });
+    });
+    route("GET", /^\/api\/objects\/([^/]+)$/, async ({ req, res, params }) => {
+        json(res, ownedObject(authorizedObject(req, params[0])));
+    });
+    route("PATCH", /^\/api\/objects\/([^/]+)$/, async ({ req, res, params }) => {
+        objectWriteRate(req);
+        const value = authorizedObject(req, params[0]);
+        const input = parseBody(objectPatch, await body(req));
+        if (input.payload !== undefined) {
+            const invalid = validateObjectPayload(value.kind, input.payload);
+            if (invalid)
+                throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], invalid, null)]);
+        }
+        objects.update(value, input);
+        const updated = objects.get(value.object_id);
+        if (!updated)
+            throw new Error("object update lost");
+        json(res, ownedObject(updated));
+    });
+    route("POST", /^\/api\/objects\/([^/]+)\/rotate-share$/, async ({ req, res, params }) => {
+        objectWriteRate(req);
+        const value = authorizedObject(req, params[0]);
+        json(res, { object_id: value.object_id, read_token: objects.rotateShare(value) });
+    });
+    route("GET", /^\/s\/([^/]+)$/, async ({ res, params }) => {
+        if (!readTokenShape.test(params[0]))
+            throw new HttpError(422, [validationDetail("read_token_format", ["params", "read_token"], "Invalid share token", params[0])]);
+        const value = objects.getByReadToken(params[0]);
+        if (!value)
+            throw new HttpError(404, "not found");
+        json(res, publicObject(value));
+    });
     route("POST", /^\/api\/sql\/rerun$/, async ({ req, res }) => {
         const input = parseBody(Type.Object({ sql: Type.Optional(Type.String()) }, { additionalProperties: false }), await body(req));
         const wait = sqlRate.take(req.socket.remoteAddress ?? "unknown", positive(env.DIME_SQL_RERUN_RATE_LIMIT, 30), positive(env.DIME_SQL_RERUN_RATE_WINDOW_S, 60));
