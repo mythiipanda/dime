@@ -65,7 +65,8 @@ cap room, payrolls, active current-year/prior-year TPE rows, cash-out presence,
 outgoing-player aggregation, and the first/second-apron lines encoded in `CAP`.
 Generated integration inputs satisfy the internal `_evaluate_team` shape produced
 by `_team_side`: incoming totals equal the sum of incoming row salaries, outgoing
-totals are nonnegative, and no sign-and-trade/BYC input is present.
+totals are nonnegative, zero-outgoing sides have no outgoing player names, and no
+sign-and-trade/BYC input is present.
 
 The exhaustive core checks all 23,360 combinations of up to three salaries in
 `{0,1,2}`, one to three bins with capacities in `{0,1,2,3}`, and every
@@ -75,8 +76,10 @@ direct expanded-matching detection, exact 2026-27 matching-band arithmetic and
 rule identity at the $8,846,000 and $35,384,000 scaled-band boundaries, a fixed
 least-restrictive matching-election vector matrix, matching inverse/monotonicity
 cases, all 64 hard-cap trigger boolean combinations at six apron-boundary
-payrolls, deterministic propagated `match_rule` vectors, and 600 seeded
-`_evaluate_team` team-side cases.
+payrolls, deterministic propagated `match_rule` vectors, fixed first-apron
+exact/$1-over expanded-matching cushion vectors, and 600 seeded `_evaluate_team`
+team-side cases including zero-outgoing cap-room, declared-TPE, and
+no-available-structure paths.
 
 ## Read a failure
 

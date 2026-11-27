@@ -1,5 +1,6 @@
 import os
 import random
+from collections import Counter
 from itertools import product
 
 from shared.tools.cap_rules import (
@@ -336,8 +337,9 @@ def _generated_tpe(rng, index):
 
 
 def _integration_input(rng):
-    outgoing_count = rng.choice((1, 1, 2, 3))
-    outgoing = rng.randint(5_000_000, 60_000_000)
+    outgoing_count = rng.choice((0, 1, 1, 2, 3))
+    outgoing = (rng.randint(5_000_000, 60_000_000)
+                if outgoing_count else 0)
     incoming_count = rng.randint(0, 4)
     incoming_salaries = [rng.randint(1_000_000, 38_000_000)
                          for _ in range(incoming_count)]
@@ -356,6 +358,12 @@ def _integration_input(rng):
     cash_moves = ([{"from": "BOS", "to": "MIA", "amount": cash_out}]
                   if cash_out else [])
     return side, incoming_salaries, team_tpes, cash_moves, cash_out
+
+
+def _oracle_first_capacity(outgoing, allow, room_before):
+    if outgoing <= 0 and room_before <= 0:
+        return 0
+    return allow
 
 
 def _expected_expanded_matching(salaries, in_total, outgoing, room_before,
@@ -425,6 +433,7 @@ def test_expanded_matching_standard_cushion_exact_boundaries():
 
 def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
     rng = random.Random(SEED + 3)
+    distribution = Counter()
     for _ in range(CASES):
         side, salaries, team_tpes, cash_moves, cash_out = _integration_input(rng)
         row, issues = _evaluate_team(
@@ -440,10 +449,22 @@ def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
         required_bins = sum(
             1 << (index + 1) for index in range(len(expected_capacities)))
         room_before = max(0, CAP["cap"] - side["pay_before"])
+        if side["out_total"]:
+            distribution["positive_outgoing"] += 1
+        elif side["in_total"] <= 0:
+            distribution["zero_outgoing_no_incoming"] += 1
+        elif room_before > 0:
+            distribution["zero_outgoing_cap_room"] += 1
+        elif team_tpes:
+            distribution["zero_outgoing_declared_tpe"] += 1
+        else:
+            distribution["zero_outgoing_no_available_structure"] += 1
         expected_allow, expected_band_rule = _expected_allowed_incoming(
             side["out_total"], expected_over_apron1, room_before)
+        first_capacity = _oracle_first_capacity(
+            side["out_total"], expected_allow, room_before)
         expected_fit = _assignment_oracle(
-            salaries, [expected_allow] + expected_capacities, required_bins)
+            salaries, [first_capacity] + expected_capacities, required_bins)
         cushion = 0 if expected_over_apron1 else MATCHING_CUSHION
         expected_expanded = _expected_expanded_matching(
             salaries, side["in_total"], side["out_total"], room_before,
@@ -490,6 +511,10 @@ def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
         assert (("would exceed the second apron" in joined_issues
                  and "transaction is prohibited" in joined_issues)
                 == second_violation), case
+    assert distribution["positive_outgoing"] > 0, dict(distribution)
+    assert distribution["zero_outgoing_declared_tpe"] > 0, dict(distribution)
+    assert distribution["zero_outgoing_no_available_structure"] > 0, (
+        dict(distribution))
 
 
 def _vector_side(pay_before, outgoing, incoming_salaries, outgoing_count=1):
@@ -540,6 +565,41 @@ def test_evaluate_team_propagates_least_restrictive_rule_identity_vectors():
         assert row["expanded_required"] is expanded, case
         assert row["hard_cap"] == hard_cap, case
         assert row["hard_cap_violations"] == violations, case
+
+
+def test_evaluate_team_first_apron_cushion_uses_strict_boundary_vectors():
+    outgoing = 20_000_000
+    cases = (
+        (CAP["apron1"], MATCHING_CUSHION,
+         "standard_simultaneous", False, "", []),
+        (CAP["apron1"] + 1, MATCHING_CUSHION,
+         "expanded", True, "first apron", ["first apron"]),
+        (CAP["apron1"], MATCHING_CUSHION + 1,
+         "expanded", True, "first apron", []),
+        (CAP["apron1"] + 1, MATCHING_CUSHION + 1,
+         "expanded", True, "first apron", ["first apron"]),
+    )
+    for (payroll_after, surplus, structure, expanded, hard_cap,
+         violations) in cases:
+        incoming = outgoing + surplus
+        pay_before = payroll_after + outgoing - incoming
+        row, issues = _evaluate_vector(pay_before, outgoing, [incoming])
+        expected_over = payroll_after > CAP["apron1"]
+        expected_cushion = 0 if expected_over else MATCHING_CUSHION
+        expected_expanded = incoming > outgoing + expected_cushion
+        case = (f"payroll_after={payroll_after!r} outgoing={outgoing!r} "
+                f"incoming={incoming!r} row={row!r} issues={issues!r}")
+        assert expected_expanded is expanded, case
+        assert row["payroll_after"] == payroll_after, case
+        assert row["over_apron1"] is expected_over, case
+        assert row["matching_structure"] == structure, case
+        assert row["matching_mechanisms"] == [structure], case
+        assert row["expanded_required"] is expected_expanded, case
+        assert row["hard_cap"] == hard_cap, case
+        assert row["hard_cap_violations"] == violations, case
+        assert any("Expanded Traded Player Exception" in issue
+                   and "transaction is prohibited" in issue
+                   for issue in issues) == bool(violations), case
 
 
 def test_evaluate_team_aggregated_standard_is_only_second_apron_trigger():
