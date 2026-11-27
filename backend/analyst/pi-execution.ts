@@ -7,7 +7,7 @@ import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
 import { artifactRejectionReason, createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
-import { auditAnswerNumbers, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
+import { auditAnswerNumbers, auditLimitationClaims, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, limitationChallengeAdvisory, loadWarehouseInventory, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
@@ -542,6 +542,66 @@ function buildBreakerRecord(
     return { record, payload };
 }
 
+export type CompositionGate = {
+    readonly directiveFired: boolean;
+    readonly lifted: boolean;
+    readonly evidenceSeen: boolean;
+    noteEvidence(): void;
+    fireDirective(): boolean;
+    recordDataCall(): "allow" | "block";
+    recordSubmitAttempt(): void;
+};
+
+export const COMPOSITION_GATE_CALLS_AFTER_DIRECTIVE = 3;
+
+export function createCompositionGate(): CompositionGate {
+    let directiveFired = false;
+    let lifted = false;
+    let evidenceSeen = false;
+    let dataCallsAfterDirective = 0;
+    return {
+        get directiveFired() { return directiveFired; },
+        get lifted() { return lifted; },
+        get evidenceSeen() { return evidenceSeen; },
+        noteEvidence() { evidenceSeen = true; },
+        fireDirective() {
+            if (directiveFired || lifted || !evidenceSeen)
+                return false;
+            directiveFired = true;
+            return true;
+        },
+        recordDataCall() {
+            if (!directiveFired || lifted)
+                return "allow";
+            dataCallsAfterDirective += 1;
+            return dataCallsAfterDirective > COMPOSITION_GATE_CALLS_AFTER_DIRECTIVE ? "block" : "allow";
+        },
+        recordSubmitAttempt() { lifted = true; },
+    };
+}
+
+function buildCompositionGateRecord(toolName: string, callId: string) {
+    const error = "composition gate: call submit_answer with your current verified partial draft before any further data calls — submission is not final: it banks the partial answer, and you may keep querying and resubmit after it.";
+    const payload = {
+        ok: false,
+        composition_gate: true,
+        error,
+        summary: "Data tools are paused until you submit the verified partial work already in hand. submit_answer does not end the run — resubmission after revision is unlimited.",
+        next_actions: ["Call submit_answer with the verified partial draft now", "Resume data calls freely once any submission attempt is made"]
+    };
+    const record: SourceRecord = {
+        ref: `composition_gate_${toolName.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+        callId,
+        tool: toolName as SourceRecord["tool"],
+        response: {
+            isError: true,
+            structuredContent: payload,
+            content: [{ type: "text", text: JSON.stringify(payload) }]
+        }
+    };
+    return { record, payload };
+}
+
 const LOOP_STOP_AFTER_INJECTIONS = 3;
 const SUBMIT_AUDIT_MAX_REJECTIONS = 3;
 
@@ -642,8 +702,20 @@ function buildCallCeilingStopRecord(toolName: string, callId: string, count: num
     return { record, payload };
 }
 
+function normalizeSqlIdentity(sql: string): string {
+    return sql
+        .replace(/--[^\n]*/g, " ")
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/[\s;]+$/, "")
+        .toLowerCase();
+}
+
 function loopArgsKey(toolName: string, rawArgs: unknown): string {
-    const plain = rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? rawArgs : {};
+    const plain = rawArgs !== null && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? { ...(rawArgs as Record<string, unknown>) } : {};
+    if (toolName === "sql_exec" && typeof plain.sql === "string")
+        plain.sql = normalizeSqlIdentity(plain.sql);
     return `${toolName}:${canonicalArgsKey(normalizeLoopArgs(plain))}`;
 }
 
@@ -761,10 +833,13 @@ function wrapBridgeTools(
     emit: (event: AnalystEvent) => void,
     tracker: RunStatusTracker,
     stopRun: (reason: string) => void,
-    question?: string
+    question?: string,
+    compositionGate?: CompositionGate
 ) {
     const traceResults = Boolean(process.env.DIME_TRACE_TOOL_RESULTS);
-    const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number }>();
+    const callCounts = new Map<string, { count: number; lastRef?: string; lastSuccessRef?: string; lastError?: string; blocked?: number; intercepted?: number }>();
+    let sqlInterceptions = 0;
+    let stormFired = false;
     const toolTotals = new Map<string, number>();
     let dataPulls = 0;
     const repeatedToolSteered = new Set<string>();
@@ -817,6 +892,13 @@ function wrapBridgeTools(
             tracker.toolCalls += 1;
             emit({ type: "tool_call", name: tool.name, args: args[1] });
             const callId = typeof args[0] === "string" && args[0] ? args[0] : `call_${tracker.toolCalls}`;
+            if (compositionGate && compositionGate.recordDataCall() === "block") {
+                const { record, payload } = buildCompositionGateRecord(tool.name, callId);
+                results.set(record.ref, record);
+                emit({ type: "source", record });
+                emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                return sourceResult(record);
+            }
             const ceiling = callCeilingLimits();
             if (tracker.toolCalls >= ceiling.stop) {
                 const { record, payload } = buildCallCeilingStopRecord(tool.name, callId, tracker.toolCalls);
@@ -848,8 +930,58 @@ function wrapBridgeTools(
                 if (entry.lastSuccessRef) {
                     const prior = results.get(entry.lastSuccessRef);
                     if (prior) {
-                        emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef} — this identical call already ran and the data is unchanged; do not send it again: reuse ref ${entry.lastSuccessRef}, change the arguments, switch tools, or call submit_answer.` });
-                        return sourceResult(prior);
+                        entry.intercepted = (entry.intercepted ?? 0) + 1;
+                        let stormNotice = "";
+                        if (tool.name === "sql_exec") {
+                            sqlInterceptions += 1;
+                            if (!stormFired && sqlInterceptions >= 6) {
+                                stormFired = true;
+                                stormNotice = " You have re-issued already-answered queries repeatedly this run — the data you need is already in the refs in context; analysis goes in run_python, delivery goes in submit_answer. Further duplicate queries will be rejected.";
+                                emit({ type: "tool_call", name: "dupe_storm_steer", args: { interceptions: sqlInterceptions } });
+                                emit({ type: "tool_result", name: "dupe_storm_steer", status: "ok" });
+                            }
+                        }
+                        if (entry.intercepted === 1) {
+                            emit({ type: "tool_result", name: tool.name, status: "ok", result: `reused result of ${entry.lastSuccessRef} — this identical call already ran and the data is unchanged; do not send it again: reuse ref ${entry.lastSuccessRef}, change the arguments, switch tools, or call submit_answer.${stormNotice}` });
+                            return sourceResult(prior);
+                        }
+                        entry.blocked = (entry.blocked ?? 0) + 1;
+                        if (entry.blocked > LOOP_STOP_AFTER_INJECTIONS) {
+                            const { record, payload } = buildLoopStopRecord(tool.name, callId, entry.count);
+                            results.set(record.ref, record);
+                            emit({ type: "source", record });
+                            emit({ type: "tool_result", name: tool.name, status: "fail", error: payload.error, ...(traceResults ? tracedResult(payload) : {}) });
+                            stopRun(payload.error);
+                            return sourceResult(record);
+                        }
+                        const error = `STOP re-issuing this query. The data is already in your context as ${entry.lastSuccessRef}. Your next action must be one of: run_python analysis over the fetched rows, a DIFFERENT sql_exec query, or submit_answer.${stormNotice}`;
+                        const parsedArgs = objectValue(args[1]);
+                        const payload = {
+                            ok: false,
+                            loop_detected: true,
+                            repeat_interception: true,
+                            reused_ref: entry.lastSuccessRef,
+                            error,
+                            summary: error,
+                            args: parsedArgs ? JSON.parse(canonicalArgsKey(parsedArgs)) : {},
+                            recovery_hint: `The rows you need are already in context as ${entry.lastSuccessRef}. Analyze them with run_python or deliver with submit_answer.`,
+                            next_actions: ["run_python over the fetched rows", "a different sql_exec query", "submit_answer"]
+                        };
+                        const record: SourceRecord = {
+                            ref: `dupe_${entry.count}_${tool.name.replace(/[^a-zA-Z0-9_]/g, "_")}`,
+                            callId,
+                            tool: tool.name as SourceRecord["tool"],
+                            ...(parsedArgs ? { args: parsedArgs } : {}),
+                            response: {
+                                isError: true,
+                                structuredContent: payload,
+                                content: [{ type: "text", text: JSON.stringify(payload) }]
+                            }
+                        };
+                        results.set(record.ref, record);
+                        emit({ type: "source", record });
+                        emit({ type: "tool_result", name: tool.name, status: "fail", error, ...(traceResults ? tracedResult(payload) : {}) });
+                        return sourceResult(record);
                     }
                 }
                 entry.blocked = (entry.blocked ?? 0) + 1;
@@ -881,8 +1013,11 @@ function wrapBridgeTools(
                     domain.budget_remaining_ms = Math.max(0, Math.round(tracker.budgetMs - (Date.now() - tracker.startedAt)));
                 const failed = result.structuredContent.isError;
                 const error = domain?.error;
-                if (!failed)
+                if (!failed) {
                     entry.lastSuccessRef = record.ref;
+                    if (compositionGate && !(Array.isArray(domain?.rows) && (domain.rows as unknown[]).length === 0))
+                        compositionGate.noteEvidence();
+                }
                 else if (typeof error === "string")
                     entry.lastError = error;
                 if (failed) {
@@ -1027,6 +1162,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 let bridgePid: number | undefined;
                 let modelApiKey: string | undefined;
                 let budgetNudge: ReturnType<typeof setTimeout> | undefined;
+                let compositionDirective: ReturnType<typeof setTimeout> | undefined;
                 let narrationSalvage: ReturnType<typeof setTimeout> | undefined;
                 let emittedFromNarration = false;
                 let narrationSubmissionRef: unknown;
@@ -1054,6 +1190,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         sourceCount: () => (start.sources?.length ?? 0) + connected.results.size,
                         submitted: false,
                     };
+                    const compositionGate = createCompositionGate();
                     let submitAuditRejections = 0;
                     let zeroEvidenceRepromptUsed = false;
                     const consultedTables = new Set<string>();
@@ -1062,6 +1199,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     const submitTool = createSubmitAnswerTool(
                         () => [...(start.sources ?? []), ...connected.results.values()],
                         (submission) => {
+                            compositionGate.recordSubmitAttempt();
                             tracker.submitted = true;
                             const rejected = lastRejectedSubmission;
                             if (rejected) {
@@ -1081,6 +1219,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 emit({ type: "custom_data", artifacts: submission.artifacts });
                         },
                         (submission) => {
+                            compositionGate.recordSubmitAttempt();
                             if (submitAuditRejections >= SUBMIT_AUDIT_MAX_REJECTIONS)
                                 return null;
                             const audit = auditAnswerNumbers(
@@ -1139,6 +1278,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 gaps.missing_entities = missingEntities;
                             if (zeroEvidenceOnSubmit)
                                 gaps.no_evidence_on_data_ask = [ZERO_EVIDENCE_DATA_ASK_FLAG];
+                            const limitationAdvisories = auditLimitationClaims(submission, loadWarehouseInventory())
+                                .map(challenge => limitationChallengeAdvisory(challenge))
+                                .filter(flag => !flagAcknowledgedByOmissions(flag, omitted));
+                            if (limitationAdvisories.length > 0)
+                                gaps.limitation_challenges = limitationAdvisories;
 
                             lastRejectedSubmission = submission;
                             emit({ type: "tool_call", name: "submit_answer_audit" });
@@ -1165,7 +1309,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             }, tracker, (reason: string) => {
                                 emit({ type: "failure", kind: "loop_stop", message: reason });
                                 controller.abort();
-                            }, start.q),
+                            }, start.q, compositionGate),
                             countToolCall(priorSourceTool(start.sources ?? []), tracker),
                             verifyTool,
                             countToolCall(submitTool, tracker),
@@ -1265,6 +1409,21 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         const runTimeoutMs = start.runTimeoutMs;
                         const nudgeAtMs = budgetNudgeDelayMs ?? Math.max(5000, Math.min(runTimeoutMs * 0.85, runTimeoutMs - 30000));
                         const agent = session.agent;
+                        const directiveAtMs = Math.max(5000, runTimeoutMs * 0.5);
+                        compositionDirective = setTimeout(() => {
+                            if (acceptedSubmission)
+                                return;
+                            if (!compositionGate.fireDirective())
+                                return;
+                            emit({ type: "tool_call", name: "composition_directive" });
+                            emit({ type: "tool_result", name: "composition_directive", status: "ok" });
+                            agent.steer({
+                                role: "user",
+                                content: "Half the run budget is gone and you hold verified data. Call submit_answer NOW with a partial draft of what you have verified — submission is not final: it banks the partial answer, and you may keep querying and resubmit after it. A banked partial answer plus revision beats a perfect answer that never submits. Data tools pause if several more calls pass with no submission. Skip this only if submit_answer already ran.",
+                                timestamp: Date.now()
+                            });
+                        }, directiveAtMs);
+                        compositionDirective.unref();
                         budgetNudge = setTimeout(() => {
                             if (acceptedSubmission)
                                 return;
@@ -1296,7 +1455,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         narrationSalvage.unref();
                     }
                     kind = "model";
+                    const turnStartMessageCount = session.messages.length;
                     await session.prompt(start.q);
+                    let nondeliverySteersUsed = 0;
                     let submitSteerUsed = false;
                     let giveUpSteerUsed = false;
                     let emptyRetryUsed = false;
@@ -1329,6 +1490,23 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 emit({ type: "tool_result", name: "tool_not_found_correction", status: "ok" });
                                 await session.prompt(`Correction: the tools ARE available and working in this session — the error you saw means only the invocation form was wrong, not that any tool is missing. The failing call used a malformed name (${notFoundMatch[1]}). Call every tool by its bare registered name with no tools. prefix and no other prefix or suffix — the prefixed form does not exist and always errors. Available right now: ${available}. Retry what you were doing with the exact bare name now.`);
                                 continue;
+                            }
+                        }
+                        if (!acceptedSubmission && nondeliverySteersUsed < 2) {
+                            const turnText = session.messages.slice(turnStartMessageCount).filter(m => m.role === "assistant").flatMap(m => m.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+                            const turnHasToolResults = session.messages.slice(turnStartMessageCount).some(m => m.role === "toolResult");
+                            const endsInQuestion = /\?\s*$/.test(text.trim());
+                            if (turnHasToolResults && turnText.trim().length >= TURN_END_STEER_MIN_CHARS && !endsInQuestion) {
+                                const remainingMs = start.runTimeoutMs !== undefined
+                                    ? Math.max(0, start.runTimeoutMs - (Date.now() - startedAt))
+                                    : undefined;
+                                if (remainingMs === undefined || remainingMs > 45_000) {
+                                    nondeliverySteersUsed++;
+                                    emit({ type: "tool_call", name: "nondelivery_interception" });
+                                    emit({ type: "tool_result", name: "nondelivery_interception", status: "ok" });
+                                    await session.prompt("Your analysis exists only as narration — the reader receives nothing until it is submitted. Call submit_answer now with the text you already wrote moved verbatim into blocks; do not rewrite or extend it.");
+                                    continue;
+                                }
                             }
                         }
                         if (acceptedSubmission || text.trim().length < TURN_END_STEER_MIN_CHARS)
@@ -1441,6 +1619,8 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 finally {
                     if (budgetNudge)
                         clearTimeout(budgetNudge);
+                    if (compositionDirective)
+                        clearTimeout(compositionDirective);
                     if (narrationSalvage)
                         clearTimeout(narrationSalvage);
                     try {

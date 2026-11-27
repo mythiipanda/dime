@@ -594,9 +594,10 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
     assert.equal(toolResults.length, 3);
     assert.equal(toolResults[0].status, "ok");
     assert.equal(toolResults[1].status, "ok");
-    assert.equal(toolResults[2].status, "ok");
+    assert.equal(toolResults[2].status, "fail");
     assert.match(toolResults[1].result, /reused result of src-exec-1/);
-    assert.match(toolResults[2].result, /reused result of src-exec-1/);
+    assert.match(toolResults[2].error, /STOP re-issuing this query/);
+    assert.match(toolResults[2].error, /src-exec-1/);
 
     const loopSource = events.find(
       (e) => e.type === "source" && /^loop_\d+_sql_exec$/.test(e.record.ref)
@@ -610,6 +611,114 @@ test("canonicalArgsKey normalizes nested key order and wrapBridgeTools short-cir
       events.find((e) => e.type === "answer")?.text,
       "Recovered after loop warning."
     );
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("sql_exec cosmetic rewrites share one loop key and six interceptions fire the storm steer", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "dime-dupe-storm-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+
+  let execCount = 0;
+  let turn = 0;
+  const runtime = await makeFixtureRuntime(agentDir, (model) => {
+    turn++;
+    if (turn === 1) {
+      const pairs = [
+        ["SELECT 1", "  select   1 ;\n"],
+        ["SELECT 2", "SELECT  2-- trailing\n"],
+        ["SELECT 3", "\n\nselect 3  "],
+        ["SELECT 4", "SELECT 4;"],
+        ["SELECT 5", "select      5"],
+        ["SELECT 6", "SELECT 6 /* c */"],
+      ];
+      const calls = pairs
+        .flatMap((pair, i) => pair.map((sql, j) => `await tools.sql_exec({ sql: ${JSON.stringify(sql)} })`))
+        .join(";\n");
+      const code = `${calls}; return { done: true };`;
+      const msg = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        content: [{ type: "toolCall", id: "call-storm", name: "codemode", arguments: { code } }],
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheWrite: 0, total: 0 } },
+      };
+      const stream = createAssistantMessageEventStream();
+      stream.push({ type: "done", reason: "toolUse", message: msg });
+      stream.end();
+      return stream;
+    }
+    const msg = {
+      role: "assistant",
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      content: [{ type: "text", text: "done" }],
+      stopReason: "stop",
+      timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheWrite: 0, total: 0 } },
+    };
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "done", reason: "stop", message: msg });
+    stream.end();
+    return stream;
+  });
+
+  const resultsMap = new Map();
+  const mockBridge = {
+    tools: [
+      {
+        name: "sql_exec",
+        label: "sql_exec",
+        description: "Run SQL",
+        parameters: Type.Object({ sql: Type.String() }),
+        async execute(callId) {
+          execCount++;
+          const ref = `src-exec-${execCount}`;
+          const payload = { rows: [{ val: 1 }] };
+          const record = {
+            ref,
+            callId,
+            tool: "sql_exec",
+            response: { content: [{ type: "text", text: JSON.stringify(payload) }], structuredContent: payload, isError: false },
+          };
+          resultsMap.set(ref, record);
+          return { content: [], details: undefined, structuredContent: { ref, tool: "sql_exec", result: payload, isError: false }, isError: false };
+        },
+      },
+    ],
+    results: resultsMap,
+    pid: 1003,
+    close: async () => {},
+  };
+
+  const pi = createPiExecution({
+    resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+    connectTools: async () => mockBridge,
+  });
+
+  try {
+    const events = [];
+    for await (const event of pi.stream({
+      q: "storm test",
+      history: [],
+      model: "fixture:fixture",
+      cwd,
+      agentDir,
+      bridge: { python: "fake", cwd, env: {} },
+    })) {
+      events.push(event);
+    }
+    assert.equal(execCount, 6, "cosmetic rewrites must not execute — only the first of each pair runs");
+    const storm = events.find((e) => e.type === "tool_result" && e.name === "dupe_storm_steer");
+    assert.ok(storm, "dupe_storm_steer emitted once the run crosses six interceptions");
+    const stormCalls = events.filter((e) => e.type === "tool_call" && e.name === "dupe_storm_steer");
+    assert.equal(stormCalls.length, 1, "storm steer is one-shot");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -2938,4 +3047,56 @@ test("generated tool manifest stays in sync with tools/manifest.json", async () 
     manifest.tools.filter((tool) => tool.guidelines).map((tool) => [tool.name, tool.guidelines])
   );
   assert.deepEqual(TOOL_PROMPT_GUIDELINES, manifestGuidelines);
+});
+
+test("composition gate: procrastinator shape — directive fires, 3 data calls pass, 4th blocked, submit lifts permanently", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  gate.noteEvidence();
+  assert.equal(gate.fireDirective(), true);
+  assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.recordDataCall(), "block");
+  assert.equal(gate.recordDataCall(), "block");
+  gate.recordSubmitAttempt();
+  assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.lifted, true);
+});
+
+test("composition gate: control shape — early submit attempt means the gate never blocks late data work", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  gate.noteEvidence();
+  gate.recordSubmitAttempt();
+  assert.equal(gate.fireDirective(), false);
+  for (let i = 0; i < 12; i++)
+    assert.equal(gate.recordDataCall(), "allow");
+});
+
+test("composition gate: median path — submission before the directive window keeps data tools open throughout", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  gate.noteEvidence();
+  assert.equal(gate.recordDataCall(), "allow");
+  gate.recordSubmitAttempt();
+  assert.equal(gate.fireDirective(), false);
+  assert.equal(gate.recordDataCall(), "allow");
+});
+
+test("composition gate: zero-evidence dormancy — no row-bearing result means the directive never fires", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  assert.equal(gate.fireDirective(), false);
+  for (let i = 0; i < 10; i++)
+    assert.equal(gate.recordDataCall(), "allow");
+  assert.equal(gate.directiveFired, false);
+});
+
+test("composition gate: directive is one-shot even if ignored", async () => {
+  const { createCompositionGate } = await import("../dist/pi-execution.js");
+  const gate = createCompositionGate();
+  gate.noteEvidence();
+  assert.equal(gate.fireDirective(), true);
+  assert.equal(gate.fireDirective(), false);
 });

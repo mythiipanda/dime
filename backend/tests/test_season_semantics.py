@@ -585,3 +585,26 @@ def test_direct_alias_requires_declared_source(sql):
         "meta": {"tables": ["rates"]},
     }, {"tables": {"rates": {"PTS": {"unit": "points_per_game", "note": "source"}}}})
     assert result["declared_column_semantics"] == {}
+
+
+def test_canonical_label_annotation_states_warehouse_wide_uniformity():
+    from shared.tools.season_semantics import CANONICAL_LABEL, _ENCODINGS
+    note = _ENCODINGS[CANONICAL_LABEL]["note"]
+    assert "nearly every silver table" in note
+    assert "works warehouse-wide" in note
+
+
+def test_end_year_numeric_annotation_names_season_label_duplicate():
+    from shared.tools.season_semantics import END_YEAR_NUMERIC, _ENCODINGS
+    note = _ENCODINGS[END_YEAR_NUMERIC]["note"]
+    assert "_season" in note
+    assert "YYYY-YY" in note
+    assert "2025 means the 2024-25 season" in note
+
+
+def test_unknown_encoded_season_column_points_at_season_label_on_same_table():
+    from shared.tools.season_semantics import _annotation
+    sem = _annotation("silver_unmapped_table", "season")
+    assert sem is not None
+    assert sem.get("ambiguous") is True
+    assert "`_season` on the same table carries the season" in sem["note"]

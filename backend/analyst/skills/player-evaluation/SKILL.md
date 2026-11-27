@@ -7,14 +7,14 @@ description: Evaluate NBA players and contracts — multi-season trends, impact 
 
 This playbook is guidance for reasoning about player evaluation and
 contract value, not a fixed procedure. Use whichever tools answer the
-question; skip the rest. Every number is warehouse-sourced — never a live
-endpoint at question time — and each tool reports its own sources, so
-cite them.
+question; skip the rest. Numbers are warehouse-backed where available, though
+some tools use a live endpoint at question time; cite the source fields the
+payload returns.
 
 
 ## Single-pass aging curves and season-spanning screens
 
-An aging curve or multi-season player screen is ONE grouped query over `silver_hist_player_seasons` — never a season-by-season loop. The table carries per-game rate columns (`pts`, `min`, `gp`, `age`, `ts_pct`, `usg_pct`) plus `_season`, so ten seasons aggregate in a single pass:
+An aging curve or multi-season player screen is ONE grouped query over `silver_hist_player_seasons` — never a season-by-season loop. The table carries per-game rate columns (`pts`, `min`) plus `gp`, `age`, `ts_pct`, `usg_pct` and `_season`, so ten seasons aggregate in a single pass:
 
 ```sql
 SELECT age, COUNT(DISTINCT player_id) AS players, ROUND(AVG(pts), 1) AS avg_ppg
@@ -30,18 +30,18 @@ GROUP BY age ORDER BY age
 | Tool | Answers | Reach for it when |
 |---|---|---|
 | `get_career_arc` | A player's season-by-season trajectory — production, efficiency, minutes across all seasons. | Any "is he getting better/worse", "prime year", or trajectory question. The backbone of multi-season claims. |
-| `get_impact_rank` | Where a player ranks by WS, VORP, BPM for a season. | Calibrating "is he actually a star" and comparing players to each other or to replacement level. |
+| `get_impact_rank` | Where a player ranks by BPM, rapm-lite, or RAPTOR for a season. | Calibrating "is he actually a star" and comparing players to each other or to replacement level. |
 | `get_raptor_history` | Multi-season RAPM-family impact ratings. | A trend view on impact that `get_impact_rank` gives for one season — use it to see the slope, not just the level. |
 | `get_shot_zones` / `get_shot_compare` / `search_shots` | Where shots come from, eFG by zone, player-vs-player or player-vs-league shot diets. | Skill-profile and "is the shooting real" questions; splits like wins/losses, home/away are also reachable via `sql_exec` on `silver_hist_shots`. |
 | `get_splits` / `get_situational_splits` | A player's stats split by context (clutch, opponent, situation). | "How does he perform when it matters" or matchup-dependent claims. |
 | `get_contract_value` | Production-vs-salary surplus per player — who outperforms or underperforms their contract. | Any value/contract question; also the fastest way to rank a team's books. |
-| `get_comps` | Similar players by profile. | Reasonable-projections and aging arguments — comps show what typically happens to this profile. |
+| `get_comps` | Similar players by profile. | Reasonable-projections and aging arguments — comps identify similar same-season profiles whose arcs need a separate check. |
 | `get_regression_check` / `get_last_x` | Is a hot/cold stretch sustainable vs the season base rate? | "Career year?" or small-sample jumps — separates a breakout from a heater. |
-| `get_scouting_report` / `get_scout_pack` | Assembled single-player profile. | A broad "tell me about X" before drilling into a specific claim. |
-| `get_rapm` / `get_rapm_prior` / `get_ratings` / `get_player_ratings` | RAPM-family impact and composite player ratings for a season. | Single-season impact claims — `get_impact_rank` ranks across WS/VORP/BPM; these give the model-based level. |
+| `get_scouting_report` / `get_scout_pack` | Assembled team dossier and next-opponent brief. | A broad "tell me about X" before drilling into a specific claim. |
+| `get_rapm` / `get_rapm_prior` / `get_ratings` / `get_player_ratings` | Player RAPM/on-court ratings and team ratings for a season. | Single-season impact claims — `get_impact_rank` ranks across BPM/rapm-lite/RAPTOR; these give the model-based level. |
 | `get_era_comps` | Cross-era comparisons with pace/era adjustment. | "How does he compare to players from the 90s" — raw comps mislead across eras. |
 | `get_rookie_leaders` / `get_young_player_usage` / `get_player_risers` / `get_risers` | Rookie leaderboards, young-player usage/development reads, and league risers. | "Which rookies/young players are breaking out" — the named answer, not a hand-built SQL list. |
-| `get_historical_leaders` / `get_leaderboard_deltas` | All-time/career leaderboards and week-over-week leaderboard movement. | "Most X ever" and "who's climbing the leaderboard" asks. |
+| `get_historical_leaders` / `get_leaderboard_deltas` | Per-season and best-single-season leaderboards (end-years 2015–2026), plus week-over-week leaderboard movement. | Season-leader and "who's climbing the leaderboard" asks. |
 | `sql_exec` | Ad-hoc warehouse queries. | Anything the named tools don't cover — e.g. custom splits, age curves across `silver_impact`, year-over-year deltas. |
 
 ## 2. Multi-season evaluation
@@ -82,8 +82,8 @@ A single-season number is a snapshot; the trend is usually the claim.
   `get_contract_value` grade against `get_career_arc`'s slope. A mildly
   negative grade on a steepening decline curve projects worse than the
   same grade on a flat one — the forward-looking read matters for
-  extension and trade questions, and comps (`get_comps`) give the
-  empirical shape of how this profile ages.
+  extension and trade questions, and comps (`get_comps`) identify similar
+  same-season profiles whose aging arcs need a separate check.
 - For aging specifically, an `sql_exec` pass over `silver_impact` by age
   bucket is a grounded way to state league aging curves instead of
   asserting them.
@@ -129,7 +129,7 @@ columns already cover the same computation without a second table.
 
 Grain facts that trip these queries:
 
-- `season` is the int start year (2025 = '2024-25'); `_season` carries the
+- `season` is the int end year (2025 = '2024-25'); `_season` carries the
   'YYYY-YY' string. `min` and the counting stats (`pts`, `reb`, `ast`,
   `stl`, `blk`, `tov`) are per-game already — do not divide by `gp`.
   There is no `season_type` on the player table; that column lives on
@@ -150,8 +150,10 @@ Grain facts that trip these queries:
 
 ## 6. Current vs historical — always stated
 
-Contract, roster and trade tools default to the current 2026-27 season;
-stat/leaderboard tools fall back to the latest season with data. While
+When `season` is omitted, `get_cap_scenario` and `get_trade_legality`
+choose the furthest contract year represented by explicit `SALARY_YYYY_YY`
+columns; `get_roster_fit` and stat/leaderboard tools fall back to the
+latest completed season with warehouse coverage. While
 2026-27 is early and partial, an unspecified season-long total or
 leaderboard ask ("who leads the league in corner threes") wants the latest
 completed season — query `_season = '2025-26'` rows and label that season
@@ -176,7 +178,8 @@ modes to avoid:
 `get_career_arc` → trajectory and prime season; `get_impact_rank` for
 the last three seasons → whether he's top-15 by impact or lower;
 `get_contract_value` → current surplus (rookie/max context stated);
-`get_comps` → what his profile typically does after the extension starts;
+`get_comps` → similar same-season profiles whose later arcs need a
+separate check;
 `get_regression_check` if the case rests on a breakout season. Verdict
 states value per season with the trend direction, not a single number.
 
@@ -190,9 +193,9 @@ the better player, the better contract, and when those differ, why.
 `get_career_arc` → is the slope real or a minutes/role artifact;
 `get_impact_rank` latest season vs prior → rank movement, not just raw
 stats; `get_shot_zones` or a shots-split query → whether the scoring dip
-is diet-driven (fixable) or across-the-board; `get_comps` → how the
-profile historically ages. Answer says which evidence supports decline
-and which doesn't, with seasons labeled.
+is diet-driven (fixable) or across-the-board; `get_comps` → similar
+profiles whose aging arcs need a separate check. Answer says which
+evidence supports decline and which doesn't, with seasons labeled.
 
 ## 7. Reporting
 
@@ -201,7 +204,8 @@ and which doesn't, with seasons labeled.
   question.
 - Name the season on every stat; keep current-season and historical
   claims in separate sentences or rows.
-- Cite each tool's `meta.sources`/per-row sources; disclose the tools'
-  own approximations (estimated values, partial seasons) in one line.
+- Cite the payload's source metadata (`meta.source`, `meta.sources`, or
+  per-row `source`) where present; disclose the tools' own approximations
+  (estimated values, partial seasons) in one line.
 - Where evidence conflicts (strong impact rank, weak contract value),
   report both — that tension is usually the answer.

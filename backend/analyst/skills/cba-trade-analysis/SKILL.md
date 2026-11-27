@@ -12,7 +12,7 @@ This playbook outlines the structural trade rules, luxury tax apron thresholds, 
 Every legality question starts with one branch — pick the mechanism before any math:
 
 1. **Tier each side first.** Compute each team's payroll from `silver_salaries` (`SUM(SALARY)` per `TEAM` for the relevant `_season` — `SALARY` is the row's `_season` cap hit; the `SALARY_20XX_YY` columns are contract-year values, so for a "20XX-YY payroll" use `SALARY` or `SALARY_20XX_YY`, never a different year's column) and place it in the tier ladder (Under Cap / Over Cap Non-Tax / Taxpayer / First Apron / Second Apron) using the thresholds stated in the question. Evaluate **both** sides of a proposed trade independently — a deal legal for one side can be illegal for the other.
-2. **Under-cap teams absorb into cap space, not matching bands.** If the team finishes the trade at or under the salary cap, it may take back more salary than it sends out — the ceiling is `outgoing + cap_room` (room = cap − payroll). Do not apply the percentage bands to a team with room; conversely do not claim "cap space" for an over-cap team — it uses the matching rules instead. Absorption trades (sending a player to a team with open room for minimal salary back) are legal whenever the receiving side stays under the cap after.
+2. **Under-cap teams can absorb into cap space.** An under-cap team may use the greater of its cap-space allowance and the ordinary matching-band ceiling; the cap-space allowance is `outgoing + cap_room + $250,000` (room = cap − payroll before the trade). Conversely do not claim "cap space" for an over-cap team — it uses the matching rules instead. Absorption trades (sending a player to a team with open room for minimal salary back) are legal within the cap-space allowance.
 3. **Apron and taxpayer teams use salary matching, never cap room.** First Apron teams may take back at most 100% of outgoing; Second Apron teams additionally cannot aggregate multiple salaries for one larger contract. The bands below apply to non-apron over-cap teams.
 
 ## 1. Cap & Apron Structure
@@ -21,8 +21,8 @@ The 2023 CBA establishes progressive financial thresholds that impose both monet
 
 - **Salary Cap**: Baseline team payroll threshold.
 - **Luxury Tax Level**: Approximately 121.5% of the Salary Cap.
-- **First Apron**: Approximately $7M above the Luxury Tax Level.
-- **Second Apron**: Approximately $17.5M above the Luxury Tax Level.
+- **First Apron**: Approximately $8.6M above the Luxury Tax Level.
+- **Second Apron**: Approximately $21.3M above the Luxury Tax Level.
 
 ### Hard Cap Triggers
 A team becomes hard-capped at the **First Apron** if it:
@@ -40,7 +40,7 @@ A team becomes hard-capped at the **Second Apron** if it:
 
 When teams are above the salary cap, outgoing salary dictates the maximum allowable incoming salary:
 
-### Non-Taxpayer Teams
+### Over-Cap Non-Apron Teams
 For the 2026-27 cap year:
 - **Outgoing $\le \$8.846\text{M}$**: Allowed incoming is $200\% \text{ of outgoing} + \$250,000$.
 - **Outgoing $\$8.846\text{M} - \$35.384\text{M}$**: Allowed incoming is $\text{outgoing} + \$9,096,000$.
@@ -71,7 +71,7 @@ When a question asks for the *smallest* outgoing package that legalizes a target
 - **Mid band ($8.846M–$35.384M)**: `outgoing ≥ incoming − $9,096,000`. Valid only if the solution lands inside the band.
 - **Low band (≤ $8.846M)**: `outgoing ≥ (incoming − $250,000) / 2`. Valid only if the solution lands at or under $8.846M.
 
-Compute the floor under each band that can contain the answer, then take the smallest valid one — plus the cap-space route: if outgoing can be zero and `incoming ≤ cap_room`, no matching is needed at all. When comparing rule vintages (e.g. historical vs current matching), state which rule set you applied and why the question's stipulated year controls it.
+Compute the floor under each band that can contain the answer, then take the smallest valid one — plus the cap-space route: if outgoing can be zero and `incoming ≤ cap_room + $250k`, no matching is needed at all. When comparing rule vintages (e.g. historical vs current matching), state which rule set you applied and why the question's stipulated year controls it.
 
 Worked example: to take back $35M as a non-apron over-cap team — high-band floor is $(35.0 − 0.25)/1.25 = $27.8M`, which is *below* $35.384M so the high band doesn't apply; mid-band floor is $35.0 − 9.096 = $25.904M`, valid inside the band → minimum outgoing is **$25.904M**.
 

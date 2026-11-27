@@ -18,7 +18,8 @@ _ENCODINGS: dict[str, dict[str, str]] = {
         "unit": "season_label",
         "format": "YYYY-YY",
         "anchor": "start_year",
-        "note": "canonical warehouse season label; the leading year is the start year",
+        "note": "canonical warehouse season label; the leading year is the start year; "
+                "present on nearly every silver table — the one season filter key that works warehouse-wide",
         "source": "shared/store.py save_frame writes FetchMeta.season; "
                   "scripts/seed_history.py season_label(end_year)",
     },
@@ -26,7 +27,8 @@ _ENCODINGS: dict[str, dict[str, str]] = {
         "unit": "season_end_year",
         "format": "4-digit end year",
         "anchor": "end_year",
-        "note": "numeric end year; 2025 means the 2024-25 season",
+        "note": "numeric end year; 2025 means the 2024-25 season; "
+                "duplicates `_season`, which carries the same season as a 'YYYY-YY' label",
         "source": "scripts/seed_historical_playoffs.py reads numeric season "
                   "from silver_hist_gamelogs; shared/tools/history.py season_label",
     },
@@ -170,6 +172,7 @@ def _annotation(table: str, column: str) -> dict[str, Any] | None:
     if encoding == UNKNOWN:
         entry["ambiguous"] = True
         entry["requires_label_evidence"] = True
+        entry["note"] += "; `_season` on the same table carries the season as a canonical 'YYYY-YY' label"
     return entry
 
 

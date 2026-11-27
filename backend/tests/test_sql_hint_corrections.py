@@ -96,3 +96,12 @@ def test_nonempty_result_returns_none_for_empty_hint():
     res = {"tool": "sql_exec", "ok": True, "rows": [{"a": 1}], "row_count": 1}
     assert sql_hints.schema_hint_for_sql_empty(
         "select * from silver_hist_shots", res) is None
+
+
+def test_silver_lineups_constants_document_measure_multiplex_and_group_columns():
+    consts = sql_hints._TABLE_CONSTANTS["silver_lineups"]
+    assert "MEASURE" in consts
+    assert "advanced" in consts["MEASURE"]
+    assert "GROUP_ID" in consts
+    assert "no lineup_id" in consts["GROUP_ID"]
+    assert "multiplexed" in consts["shape"]

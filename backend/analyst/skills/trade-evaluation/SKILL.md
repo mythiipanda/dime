@@ -40,7 +40,7 @@ Anchor: 26,382,060 → 35,478,060 because outgoing $26,382,060 is in the middle 
 | `get_trade_partners` | Which teams can legally match salary for one player, and with what packages? | The question is open-ended ("who could trade for X", "what's the market for X"). Produces candidate packages to then grade. |
 | `get_trade_value` | Rough production-vs-salary grade per side, plus pick valuation. | Any "who wins" question. Runs after legality is established (it layers on `get_trade_check`). |
 | `get_draft_capital` | What picks does a team own/owe, with protections and swaps, and what are slots worth? | Any deal involving picks, or a "can they even afford X" question — a team with no movable firsts can't offer the standard package. |
-| `get_impact_rank` | Where does a player rank by WS, VORP, BPM for a season? | Calibrating whether the player at the center is actually a star, and comparing the pieces on each side. |
+| `get_impact_rank` | Where does a player rank by BPM, rapm-lite, or RAPTOR for a season? | Calibrating whether the player at the center is actually a star, and comparing the pieces on each side. |
 | `get_roster_fit` | Where is a team's roster thin (spacing, creation, rim, defense, depth) vs league and contender baselines? | "Does this trade fix their problem" or "what should they target" questions — it names the gap the player would fill. |
 | `get_expectations` | How is a team doing vs its preseason projections (wins, net rating)? | Framing motivation: an underperforming "contender" buys differently than an overperforming rebuilder. |
 | `get_free_agents` | Upcoming free-agent class by team or league-wide, cap holds, projected cap room and exceptions (estimates). | Offseason/team-building questions and "can they afford to keep/sign X" — cap room constrains what a team can actually do after a trade. |
@@ -59,9 +59,9 @@ assume it away.
 **Value.** `get_trade_value` grades each side's production-per-dollar and
 prices picks off `silver_draft_value_curve`. Sanity-check it against
 `get_impact_rank`: if the tool grades a player B+ but he ranks outside the
-top 150 by WS/VORP, the contract is doing the work in the grade — that is a
-salary-dump profile, not a star acquisition, and the pick return should be
-priced accordingly (see §3).
+top 150 on the available impact metrics, the contract is doing the work in
+the grade — that is a salary-dump profile, not a star acquisition, and the
+pick return should be priced accordingly (see §3).
 
 **Context.** `get_roster_fit` and `get_expectations` tell you whether the
 move makes sense for each team. A contender filling its biggest measured

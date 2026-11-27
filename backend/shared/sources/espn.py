@@ -84,10 +84,24 @@ def player_gamelog(athlete_id: int, season: str) -> FetchResult:
 
     return safe(SOURCE, season, run)
 
+def serialize_object_columns(frame: pl.DataFrame) -> pl.DataFrame:
+    import json as _json
+
+    for name, dtype in zip(frame.columns, frame.dtypes):
+        if dtype == pl.Object:
+            frame = frame.with_columns(
+                pl.col(name).map_elements(
+                    lambda v: _json.dumps(v) if isinstance(v, (list, dict)) else v,
+                    return_dtype=pl.Utf8,
+                ).alias(name)
+            )
+    return frame
+
+
 def injuries(season: str) -> FetchResult:
     from sportsdataverse.nba import espn_nba_injuries
 
     def run() -> pl.DataFrame:
-        return _pl(espn_nba_injuries())
+        return serialize_object_columns(_pl(espn_nba_injuries()))
 
     return safe(SOURCE, season, run)

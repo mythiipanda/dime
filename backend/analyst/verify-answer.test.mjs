@@ -351,3 +351,149 @@ test("missing_in_artifacts does not flag rank ordinals derivable from artifact r
   const flagged = (audit.missing_in_artifacts ?? []).filter(c => String(c.raw).includes("3"));
   assert.equal(flagged.length, 0);
 });
+
+test("unsupported_claims carries machine-actionable deficit and fix fields", () => {
+  const sources = [makeSourceRecord("src-1", { rows: [{ pts: 30.5 }] })];
+  const audit = auditAnswerNumbers(
+    { blocks: [{ text: "efficiency dropped 45.3% in the second half" }] },
+    sources
+  );
+  assert.equal(audit.unsupported_claims.length, 1);
+  const flag = audit.unsupported_claims[0];
+  assert.ok(flag.includes("deficit:not-in-tool-results"), flag);
+  assert.ok(flag.includes("fix:drop-claim"), flag);
+  assert.ok(flag.includes("45.3%"), flag);
+});
+
+test("wrong-value candidate fires only under the three-condition guard", () => {
+  const sources = [makeSourceRecord("src-1", { rows: [{ rating: 100.0 }] })];
+  const audit = auditAnswerNumbers(
+    { blocks: [{ text: "the lineup posted a 115.0 offensive rating" }] },
+    sources
+  );
+  assert.equal(audit.unsupported_claims.length, 1);
+  const flag = audit.unsupported_claims[0];
+  assert.ok(flag.includes("deficit:wrong-value-candidate"), flag);
+  assert.ok(flag.includes("fix:recompute-in-sql"), flag);
+  assert.ok(flag.includes("100"), flag);
+  assert.ok(flag.includes("unverified candidate"), flag);
+});
+
+test("wrong-value degrades to drop-claim when two candidates share the band", () => {
+  const sources = [makeSourceRecord("src-1", { rows: [{ rating: 100.0, other_rating: 103.0 }] })];
+  const audit = auditAnswerNumbers(
+    { blocks: [{ text: "the lineup posted a 115.0 offensive rating" }] },
+    sources
+  );
+  const flag = audit.unsupported_claims[0] ?? "";
+  assert.ok(flag.includes("deficit:not-in-tool-results"), flag);
+  assert.ok(!flag.includes("wrong-value-candidate"), flag);
+});
+
+test("repeated magnitudes dedupe into one flag", () => {
+  const sources = [makeSourceRecord("src-1", { rows: [{ pts: 30.5 }] })];
+  const audit = auditAnswerNumbers(
+    {
+      blocks: [
+        { text: "efficiency fell 45.3% in the first half. Later, efficiency fell 45.3% in the second half too." },
+      ],
+    },
+    sources
+  );
+  const matching = audit.unsupported_claims.filter(flag => flag.includes("45.3%"));
+  assert.equal(matching.length, 1);
+});
+
+test("limitation challenge fires on a false surrender with table+season contradiction", async () => {
+  const { auditLimitationClaims } = await import("./dist/verify-answer.js");
+  const inventory = {
+    tables: {
+      silver_hist_shots: { seasons: { "2022-23": 231293, "2024-25": 233904 } },
+      silver_shots: { seasons: { "2025-26": 39056 } },
+    },
+  };
+  const submission = {
+    blocks: [{
+      text: "The analysis cannot be executed because MIA 2022-23 regular season shot-level data does not exist in the warehouse.",
+    }],
+  };
+  const challenges = auditLimitationClaims(submission, inventory);
+  assert.equal(challenges.length, 1);
+  assert.equal(challenges[0].table, "silver_hist_shots");
+  assert.equal(challenges[0].season, "2022-23");
+  assert.equal(challenges[0].kind, "absence");
+  assert.ok(challenges[0].rows > 0);
+});
+
+test("limitation challenge stays silent when the gap is genuine", async () => {
+  const { auditLimitationClaims } = await import("./dist/verify-answer.js");
+  const inventory = {
+    tables: {
+      silver_hist_shots: { seasons: { "2022-23": 231293 } },
+    },
+  };
+  const submission = {
+    blocks: [{
+      text: "Shot-level data for the 2005-06 season is not available in the warehouse, so the analysis cannot be completed from warehouse data.",
+    }],
+  };
+  assert.equal(auditLimitationClaims(submission, inventory).length, 0);
+});
+
+test("limitation challenge stays silent on sufficiency hedges and proxy-delivered caveats", async () => {
+  const { auditLimitationClaims } = await import("./dist/verify-answer.js");
+  const inventory = {
+    tables: {
+      silver_hist_shots: { seasons: { "2024-25": 233904 } },
+    },
+  };
+  const hedge = {
+    blocks: [{
+      text: "The 2024-25 sample is a small sample so shot-level confidence is limited.",
+    }],
+  };
+  assert.equal(auditLimitationClaims(hedge, inventory).length, 0);
+  const proxy = {
+    blocks: [{
+      text: "Tracking data is not available in the warehouse for 2024-25; using shot-level data as a proxy instead.",
+    }],
+  };
+  assert.equal(auditLimitationClaims(proxy, inventory).length, 0);
+});
+
+test("limitation challenge fires on narrow-coverage claims contradicted by other seasons", async () => {
+  const { auditLimitationClaims } = await import("./dist/verify-answer.js");
+  const inventory = {
+    tables: {
+      silver_hist_gamelogs: { seasons: { "2021-22": 2634, "2023-24": 2624, "2025-26": 900 } },
+    },
+  };
+  const submission = {
+    blocks: [{
+      text: "The warehouse source silver_hist_gamelogs contains game-level data for the 2025-26 season only.",
+    }],
+  };
+  const challenges = auditLimitationClaims(submission, inventory);
+  assert.equal(challenges.length, 1);
+  assert.equal(challenges[0].kind, "coverage");
+  assert.equal(challenges[0].table, "silver_hist_gamelogs");
+});
+
+test("limitation challenge returns nothing without an inventory snapshot", async () => {
+  const { auditLimitationClaims } = await import("./dist/verify-answer.js");
+  const submission = {
+    blocks: [{
+      text: "Shot-level data for 2024-25 does not exist in the warehouse.",
+    }],
+  };
+  assert.equal(auditLimitationClaims(submission, null).length, 0);
+});
+
+test("limitation challenge advisory names the table, season, rowcount and _season encoding", async () => {
+  const { limitationChallengeAdvisory } = await import("./dist/verify-answer.js");
+  const text = limitationChallengeAdvisory({ claim: "x", table: "silver_hist_shots", season: "2024-25", rows: 233904, kind: "absence" });
+  assert.ok(text.includes("silver_hist_shots"));
+  assert.ok(text.includes("2024-25"));
+  assert.ok(text.includes("233,904"));
+  assert.ok(text.includes("_season"));
+});

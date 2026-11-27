@@ -2041,3 +2041,181 @@ test("createPiExecution corrects a tool-not-found error with bare registered nam
 
   await rm(cwd, { recursive: true, force: true });
 });
+
+function makeNondeliveryFixture(script) {
+  return async (cwd, agentDir) => {
+    const runtime = await ModelRuntime.create({
+      authPath: join(agentDir, "auth.json"),
+      modelsPath: null,
+      allowModelNetwork: false,
+      refreshOnCreate: false,
+    });
+    let execRequests = 0;
+    runtime.registerProvider("fixture", {
+      api: "openai-completions",
+      apiKey: "synthetic",
+      baseUrl: "http://invalid.test",
+      models: [
+        {
+          id: "fixture",
+          name: "Fixture",
+          input: ["text"],
+          reasoning: false,
+          contextWindow: 100000,
+          maxTokens: 4000,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+      ],
+      streamSimple(model) {
+        execRequests++;
+        const step = script[Math.min(execRequests - 1, script.length - 1)];
+        const msg = {
+          role: "assistant",
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          content: step.content,
+          stopReason: step.stopReason,
+          timestamp: Date.now(),
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        };
+        const stream = createAssistantMessageEventStream();
+        stream.push({ type: "done", reason: step.stopReason === "toolUse" ? "toolUse" : "stop", message: msg });
+        stream.end();
+        return stream;
+      },
+    });
+    const mockBridge = { tools: [], results: new Map(), pid: 12345, close: async () => {} };
+    const pi = createPiExecution({
+      resolveRuntime: async () => ({ runtime, model: runtime.getModel("fixture", "fixture") }),
+      connectTools: async () => mockBridge,
+    });
+    return { pi, runtime };
+  };
+}
+
+const narrationChunk = "Kentucky leads with three first-round picks in the studied window, followed by Duke with two, while North Carolina at seventeen total selections anchors the second tier and Kansas at thirteen plus Arizona and UCLA at eleven each form the third tier of programs.";
+const shortCloser = "The analysis is complete.";
+
+test("nondelivery interception fires on multi-message narration with a short closer", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-nondeliv-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+  const script = [
+    { stopReason: "toolUse", content: [{ type: "text", text: narrationChunk }, { type: "toolCall", id: "c1", name: "codemode", arguments: { code: "return { x: 1 };" } }] },
+    { stopReason: "stop", content: [{ type: "text", text: " " + narrationChunk }] },
+    { stopReason: "stop", content: [{ type: "text", text: shortCloser }] },
+    { stopReason: "toolUse", content: [{ type: "toolCall", id: "c2", name: "codemode", arguments: { code: 'await tools.submit_answer({ blocks: [{ text: "Kentucky leads with three first-round picks.", anchors: [] }] }); return { done: true };' } }] },
+    { stopReason: "stop", content: [{ type: "text", text: "Submitted." }] },
+  ];
+  const fixture = makeNondeliveryFixture(script);
+  const { pi } = await fixture(cwd, agentDir);
+  const events = [];
+  for await (const event of pi.stream({
+    q: "Which programs produced the most first-round picks?",
+    history: [],
+    model: "fixture:fixture",
+    sources: [],
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+  const interceptions = events.filter((e) => e.type === "tool_call" && e.name === "nondelivery_interception");
+  assert.ok(interceptions.length >= 1, "interception fires on spread narration with short closer");
+  await rm(cwd, { recursive: true, force: true });
+});
+
+test("nondelivery interception does not fire on clarifying-question endings", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-nondeliv-q-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+  const script = [
+    { stopReason: "toolUse", content: [{ type: "text", text: narrationChunk }, { type: "toolCall", id: "c1", name: "codemode", arguments: { code: "return { x: 1 };" } }] },
+    { stopReason: "stop", content: [{ type: "text", text: "Which season window did you want for this analysis?" }] },
+    { stopReason: "stop", content: [{ type: "text", text: "standing by" }] },
+  ];
+  const fixture = makeNondeliveryFixture(script);
+  const { pi } = await fixture(cwd, agentDir);
+  const events = [];
+  for await (const event of pi.stream({
+    q: "Which programs produced the most first-round picks?",
+    history: [],
+    model: "fixture:fixture",
+    sources: [],
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+  const interceptions = events.filter((e) => e.type === "tool_call" && e.name === "nondelivery_interception");
+  assert.equal(interceptions.length, 0, "no interception when the ending is a user-directed question");
+  await rm(cwd, { recursive: true, force: true });
+});
+
+test("nondelivery interception skips to salvage when under 45s remain", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-nondeliv-budget-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+  const script = [
+    { stopReason: "toolUse", content: [{ type: "text", text: narrationChunk }, { type: "toolCall", id: "c1", name: "codemode", arguments: { code: "return { x: 1 };" } }] },
+    { stopReason: "stop", content: [{ type: "text", text: " " + narrationChunk }] },
+    { stopReason: "stop", content: [{ type: "text", text: shortCloser }] },
+    { stopReason: "stop", content: [{ type: "text", text: shortCloser }] },
+  ];
+  const fixture = makeNondeliveryFixture(script);
+  const { pi } = await fixture(cwd, agentDir);
+  const events = [];
+  for await (const event of pi.stream({
+    q: "Which programs produced the most first-round picks?",
+    history: [],
+    model: "fixture:fixture",
+    sources: [],
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+    runTimeoutMs: 40000,
+  })) {
+    events.push(event);
+  }
+  const interceptions = events.filter((e) => e.type === "tool_call" && e.name === "nondelivery_interception");
+  assert.equal(interceptions.length, 0, "no interception when under 45s of budget remain");
+  await rm(cwd, { recursive: true, force: true });
+});
+
+test("nondelivery interception counter is independent of turn_end_steer and give-up shots", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "pi-nondeliv-counters-"));
+  const agentDir = join(cwd, "agent");
+  await mkdir(agentDir, { recursive: true });
+  const script = [
+    { stopReason: "toolUse", content: [{ type: "text", text: narrationChunk }, { type: "toolCall", id: "c1", name: "codemode", arguments: { code: "return { x: 1 };" } }] },
+    { stopReason: "stop", content: [{ type: "text", text: narrationChunk }] },
+    { stopReason: "stop", content: [{ type: "text", text: narrationChunk }] },
+    { stopReason: "stop", content: [{ type: "text", text: narrationChunk }] },
+    { stopReason: "stop", content: [{ type: "text", text: narrationChunk }] },
+    { stopReason: "stop", content: [{ type: "text", text: narrationChunk }] },
+  ];
+  const fixture = makeNondeliveryFixture(script);
+  const { pi } = await fixture(cwd, agentDir);
+  const events = [];
+  for await (const event of pi.stream({
+    q: "Which programs produced the most first-round picks?",
+    history: [],
+    model: "fixture:fixture",
+    sources: [],
+    cwd,
+    agentDir,
+    bridge: { python: "fake", cwd, env: {} },
+  })) {
+    events.push(event);
+  }
+  const interceptions = events.filter((e) => e.type === "tool_call" && e.name === "nondelivery_interception");
+  assert.equal(interceptions.length, 2, "interception caps at exactly 2 per run");
+  const steers = events.filter((e) => e.type === "tool_call" && e.name === "turn_end_steer");
+  assert.equal(steers.length, 1, "turn_end_steer still fires its own shot after interceptions");
+  const giveUps = events.filter((e) => e.type === "tool_call" && e.name === "give_up_correction_steer");
+  assert.equal(giveUps.length, 1, "give_up_correction_steer still fires its own shot after interceptions");
+  await rm(cwd, { recursive: true, force: true });
+});
