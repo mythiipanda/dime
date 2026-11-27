@@ -55,6 +55,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const liveId = useRef(0);
+  const liveQuestion = useRef("");
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -108,6 +109,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     liveId.current += 1;
     const id = liveId.current;
     const startedAt = Date.now();
+    liveQuestion.current = q;
     appendMessage(tabId, { role: "user", text: q });
     setDraft("");
     setLive({
@@ -271,7 +273,14 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     stop: () => {
       abortRef.current?.abort();
       liveId.current += 1;
-      if (live) appendMessage(thread ?? activeTab, assistantMessageFromSnapshot({ ...live, done: true }, "", true));
+      if (live) {
+        const snap = { ...live, done: true, halted: true };
+        appendMessage(thread ?? activeTab, assistantMessageFromSnapshot(snap, "", true));
+        if (thread && !options?.replay) {
+          cacheChatRun(thread, liveQuestion.current, snap);
+          options?.onRunDone?.(liveQuestion.current);
+        }
+      }
       setLive(null);
     },
     tabs,
