@@ -409,6 +409,45 @@ export default function PlannerView() {
             </div>
           )}
 
+          <div className="mt-6 rounded-[10px] bg-surface p-4 shadow-hairline">
+            <h2 className="text-[13px] font-semibold text-ink">Exceptions</h2>
+            <p className="mt-1 text-[11px] leading-[1.5] text-ink-3">Usage reflects scenario moves only — league-wide exception consumption isn&apos;t derivable from seeded transactions. MLE/BAE usage hard-caps at the first apron.</p>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full border-collapse text-[12.5px]">
+                <thead>
+                  <tr className="border-b border-line text-left">
+                    <th className="py-1.5 pr-3 text-[11px] font-medium uppercase tracking-wide text-ink-3">Exception</th>
+                    {projection.seasons.map(block => (
+                      <th key={block.season} className="px-3 py-1.5 text-right text-[11px] font-medium uppercase tracking-wide text-ink-3">{block.season}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {["mle", "bae", "room"].map(name => (
+                    <tr key={name} className="border-b border-line/60 last:border-0">
+                      <td className="py-2 pr-3 font-medium text-ink">{name === "mle" ? "Non-taxpayer MLE" : name === "bae" ? "Bi-annual" : "Room"}</td>
+                      {projection.seasons.map(block => {
+                        const row = (block.exceptions ?? []).find(e => e.exception === name);
+                        if (!row) return <td key={block.season} className="px-3 py-2 text-right text-ink-3">—</td>;
+                        return (
+                          <td key={block.season} className="px-3 py-2 text-right">
+                            <span className={`tabular-nums ${row.used > 0 ? "text-ink" : "text-ink-2"}`}>
+                              {row.used > 0 ? `${formatMoney(row.remaining)} left` : formatMoney(row.amount)}
+                            </span>
+                            {row.used > 0 && <span className="ml-1 text-[10px] text-ink-3">of {formatMoney(row.amount)}</span>}
+                            {row.hard_caps && <span className="ml-1 rounded bg-[var(--accent)]/10 px-1 py-0.5 text-[10px] font-medium text-[var(--accent)]">hard-caps</span>}
+                            {row.exceeds != null && <span className="ml-1 rounded bg-red/10 px-1 py-0.5 text-[10px] font-medium text-red">exceeds exception</span>}
+                            {row.unavailable && <span className="ml-1 rounded bg-red/10 px-1 py-0.5 text-[10px] font-medium text-red">over-apron</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {editing && projection.seasons.some(block => (block.cap_hold_details ?? []).length > 0) && (
             <div className="mt-4 rounded-[10px] bg-surface p-4 shadow-hairline">
               <h2 className="text-[13px] font-semibold text-ink">Cap holds</h2>

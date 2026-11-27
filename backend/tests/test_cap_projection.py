@@ -385,3 +385,56 @@ def test_double_renounce_errors():
     finally:
         con.close()
     assert any("already renounced" in e["error"] for e in out["errors"])
+
+
+def test_exceptions_block_tracks_usage_and_remaining():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 10_000_000, "exception": "mle"}])
+    finally:
+        con.close()
+    rows = {r["exception"]: r for r in block(out, "2026-27")["exceptions"]}
+    assert rows["mle"]["amount"] == 15_044_000
+    assert rows["mle"]["used"] == 10_000_000
+    assert rows["mle"]["remaining"] == 5_044_000
+    assert rows["mle"]["hard_caps"] is True
+    assert rows["bae"]["used"] == 0
+    assert rows["bae"]["hard_caps"] is False
+    assert any("scenario moves only" in d for d in out["disclosures"])
+
+
+def test_signing_above_exception_amount_is_flagged_not_spilled():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 20_000_000, "exception": "mle"}])
+    finally:
+        con.close()
+    rows = {r["exception"]: r for r in block(out, "2026-27")["exceptions"]}
+    assert rows["mle"]["exceeds"] == 20_000_000
+    assert rows["mle"]["remaining"] == 0
+
+
+def test_exceptions_scale_with_forward_cap_growth():
+    con = memory_con()
+    try:
+        out = project(con, [])
+    finally:
+        con.close()
+    base_rows = {r["exception"]: r for r in block(out, "2026-27")["exceptions"]}
+    forward_rows = {r["exception"]: r for r in block(out, "2027-28")["exceptions"]}
+    base = block(out, "2026-27")
+    forward = block(out, "2027-28")
+    ratio = forward["lines"]["cap"] / base["lines"]["cap"]
+    assert abs(forward_rows["mle"]["amount"] - round(base_rows["mle"]["amount"] * ratio, -3)) <= 1000
+
+
+def test_over_apron_marks_ntmle_unavailable():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 220_000_000, "exception": "bird"}])
+    finally:
+        con.close()
+    rows = {r["exception"]: r for r in block(out, "2026-27")["exceptions"]}
+    assert rows["mle"]["unavailable"] is True
+    assert rows["bae"]["unavailable"] is True
+    assert rows["room"]["unavailable"] is False
