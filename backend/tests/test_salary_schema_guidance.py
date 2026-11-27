@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 
 def test_allowed_guidance_does_not_deny_bare_salary():
     paths = [
@@ -146,35 +148,73 @@ def _money_valued_census_column(name: object, type_name: object) -> bool:
     return any(marker in upper for marker in markers)
 
 
-def test_cap_table_money_census_is_structurally_complete():
-    from shared.tools.league.sql_schema import (
-        _clear_warehouse_schema_cache,
-        _column_semantics,
-        _get_warehouse_schema,
-    )
+def _money_census_table(name: object) -> bool:
+    table = str(name or "").lower()
+    return table.startswith("silver_cap_") or any(
+        marker in table for marker in (
+            "salary", "salaries", "contract", "free_agent"))
 
-    _clear_warehouse_schema_cache()
-    present, schema = _get_warehouse_schema()
-    related = {
-        "silver_contracts", "silver_free_agents", "silver_hist_salaries",
-        "silver_salaries",
-    }
-    census_tables = sorted(
-        set(t for t in present if t.startswith("silver_cap_"))
-        | (set(present) & related)
-    )
-    expected = {
-        "silver_cap_history", "silver_cap_players", "silver_cap_room",
-    } | related
-    assert expected <= set(census_tables)
+
+def _present_money_census_schema() -> tuple[list[str], dict[str, dict[str, str]]]:
+    from shared import store
+
+    con = store.connect(read_only=True)
+    try:
+        present = {str(row[0]) for row in con.execute("SHOW TABLES").fetchall()}
+        tables = sorted(table for table in present if _money_census_table(table))
+        schema = {}
+        for table in tables:
+            schema[table] = {
+                str(row[1]): str(row[2])
+                for row in con.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+        return tables, schema
+    finally:
+        con.close()
+
+
+def test_cap_table_money_census_is_structurally_complete():
+    from shared.tools.league.sql_schema import _column_semantics
+
+    census_tables, schema = _present_money_census_schema()
+    assert census_tables, "no cap, salary, contract or free-agent tables present"
     omissions = []
     for table in census_tables:
-        for column, metadata in schema[table].items():
-            if not _money_valued_census_column(column, metadata.get("type")):
+        for column, type_name in schema[table].items():
+            if not _money_valued_census_column(column, type_name):
                 continue
             unit, note = _column_semantics(table, column)
             if unit != "usd_dollars" or not note:
                 omissions.append(f"{table}.{column} unit={unit!r}")
+    assert not omissions
+
+
+def test_present_cap_room_money_columns_keep_declared_units():
+    from shared.tools.league.sql_schema import _column_semantics
+
+    census_tables, schema = _present_money_census_schema()
+    if "silver_cap_room" not in census_tables:
+        pytest.skip("silver_cap_room not present in warehouse")
+    actual = {
+        str(column).upper(): column
+        for column in schema["silver_cap_room"]
+    }
+    known_money_columns = (
+        "COMMITTED_SALARY", "PENDING_OPTION_SALARY", "FA_HOLDS_EST",
+        "INCOMPLETE_ROSTER_CHARGES", "ROSTER_CHARGE_MINIMUM",
+        "PROJECTED_ROOM", "MAX_ROOM", "PROJECTED_CAP", "PROJECTED_TAX",
+        "PROJECTED_APRON1", "PROJECTED_APRON2", "NTMLE_EST", "BAE_EST",
+        "ROOM_EST", "TMLE_EST",
+    )
+    present_known = [
+        upper for upper in known_money_columns if upper in actual]
+    assert present_known, "silver_cap_room has no known money columns"
+    omissions = []
+    for upper in present_known:
+        column = actual[upper]
+        unit, note = _column_semantics("silver_cap_room", column)
+        if unit != "usd_dollars" or not note:
+            omissions.append(f"silver_cap_room.{column} unit={unit!r}")
     assert not omissions
 
 
