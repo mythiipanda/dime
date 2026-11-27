@@ -15,6 +15,7 @@ _SQL_TABLES = [
     "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
     "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
     "silver_leaders_dreb", "silver_leaders_fg_pct",
+    "silver_leaders_fta", "silver_leaders_ft_pct",
     "silver_lineups", "silver_shots", "silver_hustle_player",
     "silver_hustle_team", "silver_injuries", "silver_injury_entries",
     "silver_hist_gamelogs",
