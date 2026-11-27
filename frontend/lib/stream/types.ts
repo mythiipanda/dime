@@ -84,7 +84,7 @@ export interface TableArtifactPayload {
   source?: string;
   provenance?: DimeProvenance;
   columns: { key: string; label: string; numeric?: boolean }[];
-  rows: (string | number)[][];
+  rows: (string | number | null)[][];
   footnote?: string;
 }
 

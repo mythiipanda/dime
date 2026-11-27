@@ -313,3 +313,13 @@ test("section metrics use the headline formatter and inline units never double a
   const format = readFileSync(new URL("./lib/metric-format.ts", import.meta.url), "utf8");
   assert.ok(format.includes('unit === "usd_dollars"'), "the canonical currency token counts as inline-embedded — no machine-token caption");
 });
+
+test("compressed empty verdict does not duplicate the zero-claims fact", () => {
+  const source = readFileSync(new URL("./components/site/harness/AnswerView.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("replace(/^0 verified claims?"), "the detail's duplicate claim-count prefix strips in the compressed line");
+});
+
+test("table artifact rows type admits null, matching the renderer and real data", () => {
+  const source = readFileSync(new URL("./lib/stream/types.ts", import.meta.url), "utf8");
+  assert.ok(source.includes("rows: (string | number | null)[][]"), "the row type widened to reality");
+});
