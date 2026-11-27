@@ -468,19 +468,21 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
             <div className="border-t border-line px-3 py-2">
               <div className="pb-1 text-[11.5px] font-medium text-ink-2">Draft picks (no salary value)</div>
               <div className="flex flex-wrap gap-1">
-                {roster.picks.map(pick => {
+                {[...roster.picks].sort((a, b) => a.year - b.year || a.round - b.round).map(pick => {
                   const id = pickKey(pick);
                   const picked = pkg.picks.includes(id);
                   return (
                     <button
                       key={id}
-                      className={`${chipButton} ${picked ? "bg-hover text-ink-3" : ""}`}
+                      className={`${chipButton} inline-flex items-baseline gap-1 ${picked ? "bg-hover text-ink-3" : ""}`}
                       draggable
                       onDragStart={event => onAssetDrag(event, `pick:${id}`)}
                       onClick={() => (picked ? removeItem(side, "pick", id) : addPick(side, id))}
                       title={pick.summary || pickLabel(pick)}
                     >
-                      {id}
+                      <span className={picked ? "" : "text-ink"}>{pick.year}</span>
+                      <span className="text-ink-3">R{pick.round}</span>
+                      {pick.orig ? <span className="text-[10px] text-ink-3">{pick.orig}</span> : null}
                     </button>
                   );
                 })}
