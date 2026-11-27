@@ -1266,7 +1266,7 @@
     },
     "get_cap_scenario": {
       "name": "get_cap_scenario",
-      "description": "Cap-scenario arithmetic for one team. \"signings\" takes comma-separated amounts or name=amount pairs like \"Player=12M, 3000000\". \"in_players\" adds real contracts by name (league-wide lookup), \"out_players\" removes roster salaries. Returns the arithmetic trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA restrictions that trigger, and the matching verdict when a trade portion is present. REACH FOR THIS for any \"can X afford/sign Y\" or \"what if they waive/trade for Z\" ask: \"can the Warriors sign Player for $12M?\", \"what happens to Phoenix payroll if they waive Beal?\", \"does taking back $30M push DEN over the second apron?\" It computes post-move apron status and CBA restrictions directly - do not rebuild that arithmetic from get_cap_ledger rows.",
+      "description": "Cap-scenario arithmetic for one team. \"signings\" takes comma-separated amounts or name=amount pairs like \"Player=12M, 3000000\". \"in_players\" adds real contracts by name (league-wide lookup). \"trade_out_players\" removes roster salary only when those players are actually traded away. \"waive_players\" waives roster players; guaranteed money remains as estimated dead cap. \"stretch\" uses the CBA two-times-years-plus-one estimate; player-option years count and team-option years do not. Optional \"waiver_date\" (YYYY-MM-DD inside the scenario league year) selects the timing branch; blank uses the July 1-Aug 31 pre-Sep-1 branch and discloses that default. In the Sep 1-Jun 30 branch the current-season allocation is unchanged and only future-season salary is stretched. The retired \"out_players\" input is rejected because it hid that distinction. Guarantee data is a remaining-contract pool, not per-year allocations. Returns the arithmetic trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA restrictions that trigger, and the matching verdict when a trade portion is present. REACH FOR THIS for any \"can X afford/sign Y\" or \"what if they waive/trade for Z\" ask: \"can the Warriors sign Player for $12M?\", \"what happens to Phoenix payroll if they waive Beal?\", \"does taking back $30M push DEN over the second apron?\" It computes post-move apron status and CBA restrictions directly - do not rebuild that arithmetic from get_cap_ledger rows.",
       "args_schema": {
         "description": "Cap-scenario arithmetic: post-move payroll vs cap/tax/aprons plus the 2023 CBA restrictions that trigger, for hypothetical signings and player moves on one team.",
         "properties": {
@@ -1288,10 +1288,16 @@
             "title": "In Players",
             "type": "string"
           },
-          "out_players": {
+          "trade_out_players": {
             "default": "",
-            "description": "Comma-separated roster players whose salary leaves. Default: ''.",
-            "title": "Out Players",
+            "description": "Comma-separated roster players actually traded away; their full salary leaves. Default: ''.",
+            "title": "Trade Out Players",
+            "type": "string"
+          },
+          "waive_players": {
+            "default": "",
+            "description": "Comma-separated roster players to waive; guaranteed money remains as estimated dead cap. Default: ''.",
+            "title": "Waive Players",
             "type": "string"
           },
           "season": {
@@ -1306,6 +1312,24 @@
             "default": null,
             "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
+          },
+          "stretch": {
+            "default": false,
+            "description": "true applies the timing-aware two-times-years-plus-one stretch estimate to waived players. Default: False.",
+            "title": "Stretch",
+            "type": "boolean"
+          },
+          "waiver_date": {
+            "default": "",
+            "description": "Optional waiver date ISO YYYY-MM-DD inside the scenario league year; blank uses the July 1-Aug 31 pre-Sep-1 branch. Dates from Sep 1 through Jun 30 leave the current-season allocation unchanged and stretch only future seasons. Default: ''.",
+            "title": "Waiver Date",
+            "type": "string"
+          },
+          "out_players": {
+            "default": "",
+            "description": "Retired ambiguous input; do not use. Use trade_out_players or waive_players. Default: ''.",
+            "title": "Out Players",
+            "type": "string"
           }
         },
         "title": "get_cap_scenario",
@@ -1756,7 +1780,7 @@
     },
     "get_trade_legality": {
       "name": "get_trade_legality",
-      "description": "Trade legality verdict across 2+ teams. \"legs\" is a JSON array: [{\"from\":\"BOS\",\"to\":\"DEN\",\"players\":\"Jayson Tatum, Sam Hauser\",\"picks\":[{\"year\":2028,\"round\":1,\"protection\":\"top-4\"},{\"year\":2030,\"round\":1,\"swap\":true}]}]. Optional \"sign_and_trade\" = {\"player\":\"...\",\"new_salary\":15000000,\"years\":3} (positive salary, 3-4 season term, BYC handled; first-season full guarantee required by 2023 CBA Art. VII sec. 8(e)(1) is not validated; prior-team and preseason eligibility not modeled; years is treated as total declared seasons; non-option seasons cannot be distinguished, so option-year treatment is unsupported), \"cash\" = [{\"from\",\"to\",\"amount\"}] with positive integer amounts between trade parties, \"tpe\" = [{\"team\",\"amount\",\"kind\":\"ordinary|sign_and_trade\",\"origin_season\":\"YYYY-YY\"}]; rows are declared uses, not inventory. TPE kind is optional: ordinary accepts the standard alias, and sign_and_trade accepts sign_and_trade_generated, snt and snt_generated. Use origin_season in consecutive-year YYYY-YY form or origin_year as the season-start year; they must agree if both are present. Present keys must be non-null, and amount/origin_year must be JSON integers, so bool/float values are rejected. Amount-only legacy rows default to ordinary current-season uses and return legacy_defaults. Season-grain expiry keeps current and prior season origins active; older entries expire and future entries are unavailable. Each active row is a separate amount+$250k capacity bin, with the cushion reduced to $0 over the first apron. TPEs cannot combine with player salary or each other for one acquisition. Outgoing first-round picks are duplicate-checked and validated at year grain against silver_future_picks when seeded; protection/swap reconciliation and pooled/conditional picks are not modeled; same-year multiple firsts are validated only at year grain because the leg input does not identify the original team of a same-year first. Checks 2023 CBA salary matching tiers, apron aggregation bans, post-trade hard caps, typed TPE restrictions, cash bans, the frozen second-apron pick, and Stepien consecutive-first rules. REACH FOR THIS for any trade-legality ask beyond a trivial two-team player swap: sign-and-trade, multi-team, picks/Stepien, apron aggregation, TPE or cash involved. For a simple two-team salary match get_trade_check is enough.",
+      "description": "Trade legality verdict across 2+ teams. \"legs\" is a JSON array: [{\"from\":\"BOS\",\"to\":\"DEN\",\"players\":\"Jayson Tatum, Sam Hauser\",\"picks\":[{\"year\":2028,\"round\":1,\"protection\":\"top-4\"},{\"year\":2030,\"round\":1,\"swap\":true}]}]. Optional \"sign_and_trade\" = {\"player\":\"...\",\"new_salary\":15000000,\"years\":3} (positive salary, 3-4 season term, BYC handled; first-season full guarantee required by 2023 CBA Art. VII sec. 8(e)(1) is not validated; prior-team and preseason eligibility not modeled; years is treated as total declared seasons; non-option seasons cannot be distinguished, so option-year treatment is unsupported), \"cash\" = [{\"from\",\"to\",\"amount\"}] with positive integer amounts between trade parties, \"tpe\" = [{\"team\",\"amount\",\"kind\":\"ordinary|sign_and_trade\",\"origin_season\":\"YYYY-YY\",\"origin_date\":\"YYYY-MM-DD\",\"expiry_date\":\"YYYY-MM-DD\"}]; rows are declared uses, not inventory. TPE kind is optional: ordinary accepts the standard alias, and sign_and_trade accepts sign_and_trade_generated, snt and snt_generated. Use origin_season in consecutive-year YYYY-YY form or origin_year as the season-start year; they must agree if both are present. Optional origin_date and expiry_date use YYYY-MM-DD exact dates; origin_date uses the July-June league-year calendar, must agree with origin_year/origin_season when both are supplied, and derives a one-year expiry when expiry_date is omitted. Explicit expiry_date must be after origin_date. Present keys must be non-null, and amount/origin_year must be JSON integers, so bool/float values are rejected. Amount-only legacy rows default to ordinary current-season uses and return legacy_defaults. Optional evaluation_date is YYYY-MM-DD and defaults to the league date in America/New_York. Exact expiry deadlines remain usable through their dates and expire only afterward; weekend and federal-holiday deadlines roll to the following business day. Season-only rows keep conservative legacy season bins and are explicitly approximate. At season grain, current and prior season origins are active, older entries expire, and future entries are unavailable. Each active row is a separate amount+$250k capacity bin, with the cushion reduced to $0 over the first apron. TPEs cannot combine with player salary or each other for one acquisition. Outgoing first-round picks are duplicate-checked and validated at year grain against silver_future_picks when seeded; protection/swap reconciliation and pooled/conditional picks are not modeled; same-year multiple firsts are validated only at year grain because the leg input does not identify the original team of a same-year first. Checks 2023 CBA salary matching tiers, apron aggregation bans, post-trade hard caps, typed TPE restrictions, cash bans, the frozen second-apron pick, and Stepien consecutive-first rules. REACH FOR THIS for any trade-legality ask beyond a trivial two-team player swap: sign-and-trade, multi-team, picks/Stepien, apron aggregation, TPE or cash involved. For a simple two-team salary match get_trade_check is enough.",
       "args_schema": {
         "description": "Full CBA trade legality verdict for a proposed multi-team deal: salary matching tiers, apron aggregation bans, post-trade hard caps, typed TPE use restrictions, cash bans, sign-and-trade term validation, year-grain pick ownership, and Stepien pick rules. Pick ownership limitations: protection/swap reconciliation and pooled/conditional picks are not modeled; same-year multiple firsts are validated only at year grain because the leg input does not identify the original team of a same-year first. Sign-and-trade first-season full guarantee required by 2023 CBA Art. VII sec. 8(e)(1) is not validated; prior-team/preseason eligibility is not modeled; option-year treatment is unsupported.",
         "properties": {
@@ -1780,7 +1804,7 @@
           },
           "tpe": {
             "default": "",
-            "description": "JSON array of declared traded-player-exception uses: [{'team','amount','kind','origin_season'|'origin_year'}]. kind is optional: ordinary accepts the standard alias, and sign_and_trade accepts sign_and_trade_generated, snt and snt_generated. Use origin_season in consecutive-year YYYY-YY form or origin_year as the season-start year; they must agree if both are present. Present keys must be non-null; amount/origin_year are strict JSON integers (bool/float rejected). Amount-only legacy rows default to ordinary current-season uses and return legacy_defaults. Current/prior season origins are active at season grain, older expire and future entries are unavailable; each active row is a separate amount+$250k capacity bin (cushion $0 over first apron) and cannot combine with salary or another TPE for one acquisition. Default: ''.",
+            "description": "JSON array of declared traded-player-exception uses: [{'team','amount','kind','origin_season'|'origin_year','origin_date','expiry_date'}]. kind is optional: ordinary accepts the standard alias, and sign_and_trade accepts sign_and_trade_generated, snt and snt_generated. Use origin_season in consecutive-year YYYY-YY form or origin_year as the season-start year; they must agree if both are present. Optional origin_date/expiry_date are YYYY-MM-DD exact dates. origin_date uses the July-June league year, must agree with origin season/year when both are supplied, and derives a one-year expiry when expiry_date is omitted; expiry_date must be after origin_date. Present keys must be non-null; amount/origin_year are strict JSON integers (bool/float rejected). Amount-only legacy rows default to ordinary current-season uses and return legacy_defaults. Exact expiry deadlines remain usable through their dates and expire only afterward; weekend and federal-holiday deadlines roll to the following business day; season-only rows use approximate legacy season bins where current/prior origins are active, older expire and future entries are unavailable; each active row is a separate amount+$250k capacity bin (cushion $0 over first apron) and cannot combine with salary or another TPE for one acquisition. Default: ''.",
             "title": "Tpe",
             "type": "string"
           },
@@ -1796,6 +1820,12 @@
             "default": null,
             "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
             "title": "Season"
+          },
+          "evaluation_date": {
+            "default": "",
+            "description": "Exact evaluation date ISO YYYY-MM-DD; blank uses the league date in America/New_York. Default: ''.",
+            "title": "Evaluation Date",
+            "type": "string"
           }
         },
         "title": "get_trade_legality",

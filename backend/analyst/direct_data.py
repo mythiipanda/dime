@@ -598,7 +598,7 @@ def product_matchups(season: str = '') -> dict:
                 if isinstance(parsed, list):
                     for item in parsed:
                         if isinstance(item, dict) and item.get('status', '').lower() in ('out', 'doubtful'):
-                            short = str(item.get('shortComment') or '')[:110]
+                            short = str(item.get('shortComment') or '')
                             if short:
                                 entries.append(short)
                 injuries_by_team[str(display)] = entries[:3]

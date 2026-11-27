@@ -25,6 +25,7 @@ from ..cap_rules import (
 )
 from .._core import coerce_team_id, team_error_message
 from .trade_value import _trade_guard_vintage_error, _trade_unknown_message
+from .waivers import WAIVER_BASIS, player_contract_tail, resolve_waiver_timing, waiver_move
 
 _AMOUNT_RE = _re.compile(r"^\$?([\d,]+(?:\.\d+)?)\s*([mMkK])?$")
 _SPLIT_RE = _re.compile(r"(?<!\d),(?!\d)|(?<=\d),(?=\s*\D)")
@@ -59,9 +60,19 @@ def _parse_signings(text: str) -> tuple[list[tuple[str, int]], list[str]]:
 
 @tool(description='Cap-scenario arithmetic for one team. "signings" takes '
     'comma-separated amounts or name=amount pairs like "Player=12M, 3000000". '
-    '"in_players" adds real contracts by name (league-wide lookup), '
-    '"out_players" removes roster salaries. Returns the arithmetic trace, '
-    'post-move payroll vs cap/tax/first/second apron, the 2023 CBA '
+    '"in_players" adds real contracts by name (league-wide lookup). '
+    '"trade_out_players" removes roster salary only when those players are '
+    'actually traded away. "waive_players" waives roster players; guaranteed '
+    'money remains as estimated dead cap. "stretch" uses the CBA '
+    'two-times-years-plus-one estimate; player-option years count and '
+    'team-option years do not. Optional "waiver_date" (YYYY-MM-DD inside the '
+    'scenario league year) selects the timing branch; blank uses the July 1-Aug '
+    '31 pre-Sep-1 branch and discloses that default. In the Sep 1-Jun 30 '
+    'branch the current-season allocation is unchanged and only future-season '
+    'salary is stretched. The retired "out_players" input is '
+    'rejected because it hid that distinction. Guarantee data is a '
+    'remaining-contract pool, not per-year allocations. Returns the arithmetic '
+    'trace, post-move payroll vs cap/tax/first/second apron, the 2023 CBA '
     'restrictions that trigger, and the matching verdict when a trade '
     'portion is present. REACH FOR THIS for any "can X afford/sign Y" or '
     '"what if they waive/trade for Z" ask: "can the Warriors sign Player '
@@ -70,14 +81,28 @@ def _parse_signings(text: str) -> tuple[list[tuple[str, int]], list[str]]:
     'post-move apron status and CBA restrictions directly - do not rebuild '
     'that arithmetic from get_cap_ledger rows.')
 def get_cap_scenario(team: str = "", signings: str = "",
-                     in_players: str = "", out_players: str = "",
-                     season: str | None = None) -> dict[str, Any]:
+                     in_players: str = "", trade_out_players: str = "",
+                     waive_players: str = "", season: str | None = None,
+                     stretch: bool = False, waiver_date: str = "",
+                     out_players: str = "") -> dict[str, Any]:
     team = str(team or "").strip()
+    trade_out_players = str(trade_out_players or "").strip()
+    waive_players = str(waive_players or "").strip()
+    out_players = str(out_players or "").strip()
     if not team:
         return {"tool": "get_cap_scenario", "ok": False, "error": "team needed"}
-    if not (signings or in_players or out_players):
+    if out_players:
         return {"tool": "get_cap_scenario", "ok": False,
-                "error": "no moves given - pass signings, in_players or out_players"}
+                "error": "out_players is retired because it mixed trades and waivers; "
+                         "use trade_out_players for salary actually traded away or "
+                         "waive_players for a waiver"}
+    if not (signings or in_players or trade_out_players or waive_players):
+        return {"tool": "get_cap_scenario", "ok": False,
+                "error": "no moves given - pass signings, in_players, "
+                         "trade_out_players or waive_players"}
+    if stretch and not waive_players:
+        return {"tool": "get_cap_scenario", "ok": False,
+                "error": "stretch requires waive_players"}
     from nba_api.stats.static import teams as _teams
     try:
         team_id = coerce_team_id(team)
@@ -111,13 +136,24 @@ def get_cap_scenario(team: str = "", signings: str = "",
             if guard_error:
                 return {"tool": "get_cap_scenario", "ok": False,
                         "error": guard_error}
+        waiver_timing, waiver_timing_error = resolve_waiver_timing(waiver_date, season)
+        if waiver_timing_error:
+            return {"tool": "get_cap_scenario", "ok": False,
+                    "error": waiver_timing_error}
         try:
             pay_before, roster = _payroll(team, con, season)
         except SalaryColumnError as exc:
             return {"tool": "get_cap_scenario", "ok": False,
                     "reason": exc.reason, "error": str(exc)}
-        out_total, out_names, out_unknown = _match_trade_players(
-            team, out_players, con, season)
+        trade_total, trade_names, trade_unknown = _match_trade_players(
+            team, trade_out_players, con, season)
+        _waive_total, waive_names, waive_unknown = _match_trade_players(
+            team, waive_players, con, season)
+        overlap = sorted(set(trade_names) & set(waive_names))
+        if overlap:
+            return {"tool": "get_cap_scenario", "ok": False,
+                    "error": "players cannot be both traded out and waived: "
+                             + ", ".join(overlap)}
         in_names: list[str] = []
         in_unknown: list[str] = []
         in_total = 0
@@ -134,26 +170,34 @@ def get_cap_scenario(team: str = "", signings: str = "",
             in_names.append(cname)
             in_total += int(csal or 0)
             in_sides.append({"player": cname, "from": cteam, "salary": csal})
-        if out_unknown or in_unknown:
+        outgoing_unknown = trade_unknown + waive_unknown
+        if outgoing_unknown or in_unknown:
             return {"tool": "get_cap_scenario", "ok": False,
                     "error": _trade_unknown_message(
-                        team, out_unknown, team, in_unknown, con)}
+                        team, outgoing_unknown, team, in_unknown, con)}
+        waiver_tails = {name: player_contract_tail(con, name, team, season)
+                        for name in waive_names}
+        moves: list[dict[str, Any]] = []
+        for name in trade_names:
+            row = next((p for p in roster if p["player"] == name), None)
+            amount = int((row or {}).get("salary") or 0)
+            moves.append({"kind": "trade_out", "detail": f"out {name}",
+                          "amount": amount})
+        for name in waive_names:
+            row = next((p for p in roster if p["player"] == name), None)
+            amount = int((row or {}).get("salary") or 0)
+            moves.append(waiver_move(con, team, name, amount, season, stretch,
+                                     waiver_tails.get(name), waiver_timing))
+        for name, amount in sign_rows:
+            moves.append({"kind": "signing", "detail": f"sign {name}",
+                          "amount": amount})
+        for side in in_sides:
+            moves.append({"kind": "trade_in",
+                          "detail": f"in {side['player']} (from {side['from']})",
+                          "amount": int(side["salary"] or 0)})
         salary_date = _salary_date(con)
         source = _payroll_source(con)
     room_before = max(0, CAP["cap"] - pay_before)
-    moves: list[dict[str, Any]] = []
-    for name in out_names:
-        row = next((p for p in roster if p["player"] == name), None)
-        amount = int((row or {}).get("salary") or 0)
-        moves.append({"kind": "trade_out", "detail": f"out {name}",
-                      "amount": amount})
-    for name, amount in sign_rows:
-        moves.append({"kind": "signing", "detail": f"sign {name}",
-                      "amount": amount})
-    for side in in_sides:
-        moves.append({"kind": "trade_in",
-                      "detail": f"in {side['player']} (from {side['from']})",
-                      "amount": int(side["salary"] or 0)})
     trace = scenario_trace(pay_before, moves,
                            f"{team.upper()} committed payroll")
     rows = trace["steps"]
@@ -163,10 +207,10 @@ def get_cap_scenario(team: str = "", signings: str = "",
     issues: list[str] = []
     matching: dict[str, Any] | None = None
     hard_cap = ""
-    if out_names and in_names:
-        aggregates = len(out_names) > 1
+    if trade_names and in_names:
+        aggregates = len(trade_names) > 1
         expanded_matching = _used_expanded_matching(
-            in_total, out_total, room_before)
+            in_total, trade_total, room_before)
         consequence = _hard_cap_consequences(
             team.upper(), pay_after, aggregates=aggregates,
             expanded_matching=expanded_matching)
@@ -174,13 +218,13 @@ def get_cap_scenario(team: str = "", signings: str = "",
         issues.extend(consequence["issues"])
         if state_after["over_apron2"] and aggregates:
             issues.append("cannot aggregate salaries above the second apron")
-            matching = {"incoming": in_total, "outgoing": out_total,
+            matching = {"incoming": in_total, "outgoing": trade_total,
                         "legal": False, "match_rule": "no aggregation (above the second apron)",
                         "allowed_incoming": 0}
         else:
             allow, rule = _allowed_incoming(
-                out_total, bool(state_after["over_apron1"]), room_before)
-            matching = {"incoming": in_total, "outgoing": out_total,
+                trade_total, bool(state_after["over_apron1"]), room_before)
+            matching = {"incoming": in_total, "outgoing": trade_total,
                         "allowed_incoming": allow, "match_rule": rule,
                         "legal": in_total <= allow}
             if not matching["legal"]:
@@ -188,7 +232,8 @@ def get_cap_scenario(team: str = "", signings: str = "",
                     f"{team.upper()} takes back too much "
                     f"(${in_total:,} vs {allow:,} allowed under {rule})")
     roster_before = len(roster)
-    roster_after = roster_before - len(out_names) + len(in_names) + len(sign_rows)
+    roster_after = (roster_before - len(trade_names) - len(waive_names)
+                    + len(in_names) + len(sign_rows))
     issues.extend(_roster_issues(roster_after))
     rows.append({"step": step, "kind": "post_move",
                  "detail": "post-move payroll", "delta": 0,
@@ -219,6 +264,9 @@ def get_cap_scenario(team: str = "", signings: str = "",
                                 "roster table",
                  **{k: v for k, v in CAP.items()}},
     }
+    if waive_names:
+        res["meta"]["waiver_basis"] = WAIVER_BASIS
+        res["meta"]["waiver_timing"] = waiver_timing
     if matching is not None:
         res["matching"] = matching
     return res

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam, NBA_TEAM_ABBRS } from "@/lib/open-in-view";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -388,7 +389,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
         aria-label={`${abbr} outgoing package`}
       >
         {pkg.players.length === 0 && pkg.picks.length === 0
-          ? <span className="px-1 font-mono text-[10px] text-ink-3">drag players or picks here, or click to add</span>
+          ? <span className="px-1 text-[11px] text-ink-2">drag players or picks here, or click to add</span>
           : <div className="flex flex-wrap gap-1">
               {pkg.players.map(name => (
                 <button key={name} className={chipButton} onClick={() => removeItem(side, "player", name)} title="Remove">
@@ -436,7 +437,11 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
             {abbr} roster {roster?.state === "ready" ? `· ${roster.season}` : ""}
           </div>
           <div className="max-h-[max(18rem,52vh)] overflow-y-auto divide-y divide-line border-t border-line">
-            {roster?.state === "loading" && <div className="px-3 py-2 text-xs text-ink-3">Loading roster…</div>}
+            {roster?.state === "loading" && (
+              <div className="space-y-2 px-3 py-2" aria-label="loading roster">
+                {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-[20px]" />)}
+              </div>
+            )}
             {roster?.state === "error" && (
               <div className="px-3 py-2 text-xs text-red">
                 {roster.error} <button className="underline" onClick={() => loadAssets(abbr)}>retry</button>
@@ -495,7 +500,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
               {payroll.apron1 && <span className="text-orange">over apron 1</span>}
               {payroll.apron2 && <span className="text-red">over apron 2</span>}
             </div>
-            <div className="mt-0.5 font-mono text-[10px] text-ink-3">{payroll.rule}</div>
+            <div className="mt-0.5 text-[11px] text-ink-2">{payroll.rule}</div>
           </div>
         )}
         {leg && (
@@ -511,7 +516,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
               {leg.over_apron2 && <span className="text-red">over apron 2</span>}
               {leg.hard_cap && <span className="text-red">hard-capped at {leg.hard_cap}</span>}
             </div>
-            {leg.match_rule && <div className="mt-0.5 font-mono text-[10px] text-ink-3">{leg.match_rule}</div>}
+            {leg.match_rule && <div className="mt-0.5 text-[11px] text-ink-2">{leg.match_rule}</div>}
           </div>
         )}
       </div>
@@ -520,7 +525,8 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
 
   const renderFillers = (side: number) => {
     if (multi || side > 1) return null;
-    const needs = check.state === "ok" ? (side === 0 ? check.rows.team_a : check.rows.team_b).outgoing_needed : 0;
+    const sideRows = check.state === "ok" ? (side === 0 ? check.rows.team_a : check.rows.team_b) : null;
+    const needs = sideRows ? Math.max(0, sideRows.outgoing_needed - sideRows.out) : 0;
     const active = fillers.state !== "idle" && fillers.side === side;
     if (needs <= 0) return null;
     return (
@@ -559,7 +565,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="text-sm font-semibold text-ink">Trade builder</div>
-          <div className="font-mono text-[10px] text-ink-3">
+          <div className="text-[11px] text-ink-2">
             {TRADE_SEASON} · salaries via salary_records · checks via {multi ? "get_trade_legality" : "get_trade_check"}
             {multi ? " · rotational construction: each team's outgoing goes to the next team" : ""}
           </div>
@@ -597,7 +603,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
         </div>
       </div>
 
-      {loadNote && <div className="font-mono text-[10px] text-ink-3">{loadNote}</div>}
+      {loadNote && <div className="text-[11px] text-ink-2">{loadNote}</div>}
 
       <div className="flex flex-col gap-3 md:flex-row">
         {teams.map((_, index) => renderColumn(index))}
@@ -613,8 +619,8 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
               {check.rows.legal ? "Legal trade" : "Not legal"}
             </div>
             {check.rows.issues.map((issue, index) => <div key={index} className="text-ink-2">{issue}</div>)}
-            <div className="font-mono text-[10px] text-ink-3">{check.rows.disclaimer}</div>
-            {check.rows.salary_date && <div className="font-mono text-[10px] text-ink-3">salaries as of {check.rows.salary_date}</div>}
+            <div className="mt-1 text-[11px] text-ink-2">{check.rows.disclaimer}</div>
+            {check.rows.salary_date && <div className="text-[11px] text-ink-2">salaries as of {check.rows.salary_date}</div>}
           </div>
         )}
         {check.state === "ok-legs" && (
@@ -623,8 +629,8 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
               {check.legal ? "Matching passes for every team" : "Matching fails for at least one team"}
             </div>
             {check.issues.map((issue, index) => <div key={index} className="text-ink-2">{issue}</div>)}
-            {check.disclaimer && <div className="font-mono text-[10px] text-ink-3">{check.disclaimer}</div>}
-            {check.salary_date && <div className="font-mono text-[10px] text-ink-3">salaries as of {check.salary_date}</div>}
+            {check.disclaimer && <div className="mt-1 text-[11px] text-ink-2">{check.disclaimer}</div>}
+            {check.salary_date && <div className="text-[11px] text-ink-2">salaries as of {check.salary_date}</div>}
           </div>
         )}
         {verdictDrift && snapshot && (

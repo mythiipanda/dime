@@ -270,7 +270,7 @@ def test_cap_scenario_expanded_matching_surfaces_first_apron_hard_cap(
           _roster("BOS", 190_000_000, [("Alpha One", 20_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 28_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One",
+        "team": "BOS", "trade_out_players": "Alpha One",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -287,7 +287,7 @@ def test_cap_scenario_expanded_matching_cannot_finish_above_first_apron(
           _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One",
+        "team": "BOS", "trade_out_players": "Alpha One",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -327,7 +327,7 @@ def test_cap_scenario_aggregation_without_expanded_matching_surfaces_hard_cap(
                   [("Alpha One", 15_000_000), ("Beta Two", 15_000_000)])
           + _roster("MIA", 145_000_000, [("Gamma Three", 25_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One, Beta Two",
+        "team": "BOS", "trade_out_players": "Alpha One, Beta Two",
         "in_players": "Gamma Three", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -774,6 +774,170 @@ def test_legacy_amount_only_tpe_defaults_to_current_ordinary(
     assert detail["origin_year"] == 2026
     assert detail["status"] == "current_year"
     assert detail["legacy_defaults"] is True
+    assert detail["timing_basis"] == "season_approximate"
+    assert detail["expiry_date"] is None
+    note = next(row["note"] for row in out["checks"]
+                if row["rule"] == "traded player exceptions")
+    assert "approximate legacy season bins" in note
+
+
+def _dated_tpe_out(monkeypatch, tmp_path, row,
+                   evaluation_date="2026-10-01"):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 170_000_000, [])
+          + _roster("MIA", 150_000_000, [("Alpha One", 8_000_000)]))
+    return get_trade_legality.invoke({
+        "legs": '[{"from":"MIA","to":"BOS","players":"Alpha One"}]',
+        "tpe": json.dumps([row]),
+        "evaluation_date": evaluation_date,
+        "season": "2026-27",
+    })
+
+
+def test_exact_date_prior_year_tpe_active_before_expiry(
+        monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-12-15", "expiry_date": "2026-12-15",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "prior_year"
+    assert detail["timing_basis"] == "exact_date"
+    assert detail["as_of_date"] == "2026-10-01"
+    assert detail["origin_year"] == 2025
+    assert detail["origin_season"] == "2025-26"
+    assert detail["expiry_date"] == "2026-12-15"
+    assert detail["expiry_date_derived"] is False
+
+
+def test_exact_expiry_date_remains_usable_on_as_of_date(
+        monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_season": "2025-26", "expiry_date": "2026-10-01",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "prior_year"
+    assert detail["timing_basis"] == "exact_date"
+    assert detail["as_of_date"] == "2026-10-01"
+    assert detail["expiry_date"] == "2026-10-01"
+    assert detail["effective_expiry_date"] == "2026-10-01"
+
+
+def test_origin_date_derives_exact_one_year_expiry(monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-09-15",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is False
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "expired"
+    assert detail["expiry_date"] == "2026-09-15"
+    assert detail["effective_expiry_date"] == "2026-09-15"
+    assert detail["expiry_date_derived"] is True
+
+
+def test_derived_anniversary_date_remains_usable(monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-10-01",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "prior_year"
+    assert detail["as_of_date"] == "2026-10-01"
+    assert detail["expiry_date"] == "2026-10-01"
+    assert detail["effective_expiry_date"] == "2026-10-01"
+    assert detail["expiry_date_derived"] is True
+
+
+def test_day_after_derived_anniversary_expires(monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-10-01",
+    }, evaluation_date="2026-10-02")
+    assert out["ok"] is True
+    assert out["legal"] is False
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "expired"
+    assert detail["as_of_date"] == "2026-10-02"
+    assert any("effective expiry date 2026-10-01 passed before" in issue
+               for issue in out["issues"])
+
+
+def test_weekend_anniversary_rolls_to_next_business_day(
+        monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-10-04",
+    }, evaluation_date="2026-10-05")
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["expiry_date"] == "2026-10-04"
+    assert detail["effective_expiry_date"] == "2026-10-05"
+    assert detail["status"] == "prior_year"
+
+
+def test_day_after_weekend_anniversary_rollover_expires(
+        monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-10-04",
+    }, evaluation_date="2026-10-06")
+    assert out["ok"] is True
+    assert out["legal"] is False
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "expired"
+    assert detail["effective_expiry_date"] == "2026-10-05"
+
+
+def test_federal_holiday_anniversary_rolls_to_next_business_day(
+        monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-12-25",
+    }, evaluation_date="2026-12-28")
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["expiry_date"] == "2026-12-25"
+    assert detail["effective_expiry_date"] == "2026-12-28"
+    assert detail["status"] == "prior_year"
+
+
+def test_day_after_holiday_anniversary_rollover_expires(
+        monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-12-25",
+    }, evaluation_date="2026-12-29")
+    assert out["ok"] is True
+    assert out["legal"] is False
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "expired"
+    assert detail["effective_expiry_date"] == "2026-12-28"
+
+
+def test_future_origin_date_makes_tpe_unavailable(monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2026-12-01",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is False
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "future"
+    assert detail["timing_basis"] == "exact_date"
+    assert any("not yet available" in issue for issue in out["issues"])
 
 
 def test_tpe_rejects_unknown_kind():
@@ -797,6 +961,19 @@ def _tpe_validation_out(row):
         "tpe": json.dumps([row]),
         "season": "2026-27",
     })
+
+
+@pytest.mark.parametrize("value", ["10/01/2026", "2026-02-30"])
+def test_trade_legality_rejects_malformed_evaluation_date(value):
+    from shared.tools import get_trade_legality
+
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"MIA","to":"BOS","players":"Alpha One"}]',
+        "evaluation_date": value,
+        "season": "2026-27",
+    })
+    assert out["ok"] is False
+    assert "evaluation_date must be YYYY-MM-DD" in out["error"]
 
 
 @pytest.mark.parametrize("origin_season", ["2026-99", "2026 garbage"])
@@ -824,7 +1001,8 @@ def test_tpe_rejects_non_integer_numeric_values(row):
 
 
 @pytest.mark.parametrize("key", [
-    "amount", "kind", "origin_year", "origin_season",
+    "amount", "kind", "origin_year", "origin_season", "origin_date",
+    "expiry_date",
 ])
 def test_tpe_rejects_explicit_null_typed_keys(key):
     row = {"team": "BOS", "amount": 8_000_000, "kind": "ordinary",
@@ -832,6 +1010,38 @@ def test_tpe_rejects_explicit_null_typed_keys(key):
     out = _tpe_validation_out(row)
     assert out["ok"] is False
     assert "explicit null" in out["error"]
+
+
+@pytest.mark.parametrize("key,value", [
+    ("origin_date", "12/15/2025"),
+    ("origin_date", "2025-02-30"),
+    ("expiry_date", "2026-02-30"),
+    ("expiry_date", 20261215),
+])
+def test_tpe_rejects_malformed_exact_dates(key, value):
+    row = {"team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+           "origin_season": "2025-26", key: value}
+    out = _tpe_validation_out(row)
+    assert out["ok"] is False
+    assert f"{key} must be YYYY-MM-DD" in out["error"]
+
+
+def test_tpe_rejects_expiry_before_origin():
+    out = _tpe_validation_out({
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-12-15", "expiry_date": "2025-12-15",
+    })
+    assert out["ok"] is False
+    assert "expiry_date must be after origin_date" in out["error"]
+
+
+def test_tpe_rejects_origin_date_mismatched_with_origin_season():
+    out = _tpe_validation_out({
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_season": "2026-27", "origin_date": "2025-12-15",
+    })
+    assert out["ok"] is False
+    assert "origin_date does not match origin_year/origin_season" in out["error"]
 
 
 def test_cap_scenario_crossing_first_apron_uses_post_move_strict_matching(
@@ -842,7 +1052,7 @@ def test_cap_scenario_crossing_first_apron_uses_post_move_strict_matching(
           _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One",
+        "team": "BOS", "trade_out_players": "Alpha One",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -862,7 +1072,7 @@ def test_cap_scenario_dropping_below_first_apron_uses_post_move_band(
           _roster("BOS", 212_000_000, [("Alpha One", 30_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 25_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One",
+        "team": "BOS", "trade_out_players": "Alpha One",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -887,7 +1097,7 @@ def test_cap_scenario_second_apron_receiver_multiple_incoming_is_not_aggregation
                     [("Beta Two", 15_000_000),
                      ("Gamma Three", 15_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "PHX", "out_players": "Alpha One",
+        "team": "PHX", "trade_out_players": "Alpha One",
         "in_players": "Beta Two, Gamma Three", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -912,7 +1122,7 @@ def test_cap_scenario_multiple_outgoing_players_remain_conservative(
                    ("Anchor Six", 1_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 25_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "PHX", "out_players": "Alpha One, Delta Four",
+        "team": "PHX", "trade_out_players": "Alpha One, Delta Four",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -934,7 +1144,7 @@ def test_cap_scenario_dropping_below_second_apron_clears_aggregation_ban(
                   [("Alpha One", 15_000_000), ("Beta Two", 15_000_000)])
           + _roster("MIA", 150_000_000, [("Gamma Three", 25_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One, Beta Two",
+        "team": "BOS", "trade_out_players": "Alpha One, Beta Two",
         "in_players": "Gamma Three", "season": "2026-27",
     })
     assert out["ok"] is True

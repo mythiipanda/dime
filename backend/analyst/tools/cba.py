@@ -140,11 +140,16 @@ def register() -> dict[str, Any]:
 
     @tool("get_cap_scenario", description=_orig_get_cap_scenario.description)
     def get_cap_scenario(team: str = "", signings: str = "",
-                         in_players: str = "", out_players: str = "",
-                         season: str | None = None) -> dict:
+                         in_players: str = "", trade_out_players: str = "",
+                         waive_players: str = "", season: str | None = None,
+                         stretch: bool = False, waiver_date: str = "",
+                         out_players: str = "") -> dict:
         res = call_sync(_orig_get_cap_scenario, "get_cap_scenario", {
             "team": team, "signings": signings, "in_players": in_players,
-            "out_players": out_players, "season": season,
+            "trade_out_players": trade_out_players,
+            "waive_players": waive_players, "season": season,
+            "stretch": stretch, "waiver_date": waiver_date,
+            "out_players": out_players,
         })
         default_cols = ["step", "kind", "detail", "delta", "payroll"]
         rows = [r for r in res.get("rows") or [] if isinstance(r, dict)] if res.get("ok") else []
@@ -179,10 +184,12 @@ def register() -> dict[str, Any]:
     @tool("get_trade_legality", description=_orig_get_trade_legality.description)
     def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                            cash: str = "", tpe: str = "",
-                           season: str | None = None) -> dict:
+                           season: str | None = None,
+                           evaluation_date: str = "") -> dict:
         res = call_sync(_orig_get_trade_legality, "get_trade_legality", {
             "legs": legs, "sign_and_trade": sign_and_trade,
-            "cash": cash, "tpe": tpe, "season": season,
+            "cash": cash, "tpe": tpe,
+            "evaluation_date": evaluation_date, "season": season,
         })
         default_cols = ["team", "payroll_before", "payroll_after", "outgoing",
                         "incoming", "allowed_incoming", "match_rule",

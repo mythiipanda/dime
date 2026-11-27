@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { apiPath } from "@/lib/api";
+import { DataState } from "@/components/ds/DataState";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { BACKEND } from "@/lib/chat";
 
 const TEAMS = [
@@ -29,7 +31,7 @@ type H2HGame = { date: string; matchup: string; wl: string; pts: number | null; 
 
 function Source({ name }: { name?: string }) {
   if (!name) return null;
-  return <span className="font-mono text-[10px] text-ink-3">{name}</span>;
+  return <span className="text-[11px] text-ink-2">{name}</span>;
 }
 
 function SectionShell({ title, source, error, children }: { title: string; source?: string; error?: string | null; children: React.ReactNode }) {
@@ -40,7 +42,7 @@ function SectionShell({ title, source, error, children }: { title: string; sourc
         <Source name={source} />
       </div>
       {error ? (
-        <p className="mt-3 text-[12.5px] text-ink-3">{error} — this section is unavailable; no substitute data is shown.</p>
+        <DataState tone="error" label={error} detail="This section is unavailable — no substitute data is shown." className="mt-3" />
       ) : (
         <div className="mt-3">{children}</div>
       )}
@@ -154,14 +156,18 @@ export default function ScoutView() {
       )}
 
       {loading && team !== opponent && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Assembling the dossier…
+        <div className="mt-4 grid items-start gap-3 xl:grid-cols-2" aria-label="assembling the dossier">
+          <Skeleton className="h-[86px] rounded-[10px] xl:col-span-2" />
+          <Skeleton className="h-[300px] rounded-[10px]" />
+          <Skeleton className="h-[180px] rounded-[10px]" />
+          <Skeleton className="h-[240px] rounded-[10px]" />
+          <Skeleton className="h-[200px] rounded-[10px]" />
         </div>
       )}
 
       {!loading && error && team !== opponent && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 

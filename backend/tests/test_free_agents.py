@@ -73,6 +73,7 @@ def test_build_frames():
     assert row["PENDING_OPTIONS"] == 1
     assert row["PROJECTED_CAP"] == 181_457_100
     assert row["INCOMPLETE_ROSTER_CHARGES"] == 11_948_312
+    assert row["ROSTER_CHARGE_MINIMUM"] == 1_493_539
     assert row["PROJECTED_ROOM"] == 132_508_788
     assert row["MAX_ROOM"] == 144_028_171
     assert row["PROJECTED_ROOM"] < row["MAX_ROOM"]
@@ -106,6 +107,23 @@ def test_roster_charges_count_retained_holds_to_twelve():
     assert by_team["MIA"]["INCOMPLETE_ROSTER_CHARGES"] == 2 * sf.MIN_SALARY
 
 
+@pytest.mark.parametrize("prior", [0, -1])
+def test_nonpositive_holds_do_not_count_as_roster_fillers(prior):
+    rows = [{
+        "PLAYER_NAME": f"BOS signed {i}", "TEAM": "BOS",
+        "BREF_SLUG": f"boss{i}",
+        "SALARY_2026_27": 1_000_000,
+        "SALARY_2027_28": 1_000_000,
+    } for i in range(11)]
+    rows.append({
+        "PLAYER_NAME": "BOS free", "TEAM": "BOS", "BREF_SLUG": "bosf",
+        "SALARY_2026_27": prior, "SALARY_2027_28": None,
+    })
+    _, room = sf.build_frames(pl.DataFrame(rows), "2026_27", "2027_28")
+    row = room.to_dicts()[0]
+    assert row["INCOMPLETE_ROSTER_CHARGES"] == sf.MIN_SALARY
+
+
 def test_implausible_room_flag():
     frame = pl.DataFrame({
         "PLAYER_NAME": [f"P{i}" for i in range(5)] + [f"O{i}" for i in range(5)],
@@ -130,6 +148,7 @@ def test_tool_on_scratch(scratch):
     assert res["ok"]
     assert len(res["free_agents"]) == 2
     assert res["cap_room"][0]["TEAM"] == "BOS"
+    assert res["cap_room"][0]["ROSTER_CHARGE_MINIMUM"] == 1_493_539
     assert res["cap_room"][0]["TMLE_EST"] == 6_670_400
     assert res["meta"]["estimated"] is True
     league = get_free_agents.func(team="")

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
+import { DataState } from "@/components/ds/DataState";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -85,18 +87,21 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
                   <span className="text-ink-3"> · </span>
                   <span className={!aLead ? "font-semibold text-ink" : "text-ink-3"}>{r.fmt(r.home)}</span>
                   <span className="ml-1 text-[10px] uppercase text-ink-3">{bName}</span>
+                  {Math.abs(r.away - r.home) > 0 && (
+                    <span className="ml-1.5 text-[10px] font-medium text-accent">Δ {r.fmt(Math.abs(r.away - r.home))}</span>
+                  )}
                 </span>
               </div>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5" aria-hidden>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line-strong"}`}
+                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.away) / max) * 100)}%` }}
                   />
                 </div>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line-strong"}`}
+                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.home) / max) * 100)}%` }}
                   />
                 </div>
@@ -104,11 +109,6 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
             </div>
           );
         })}
-      </div>
-      <div className="flex items-center gap-1.5 py-2.5 text-[11px] text-ink-3">
-        <span className="inline-block size-2 rounded-[2px] bg-ink" /> {aName}
-        <span className="ml-2 inline-block size-2 rounded-[2px] bg-line-strong" /> {bName}
-        <span className="ml-1">solid marks the leader</span>
       </div>
     </div>
   );
@@ -182,7 +182,7 @@ function MatchupDetail({ game }: { game: MatchupGame }) {
           <MatchupBars rows={rows} aName={game.away.abbr} bName={game.home.abbr} />
         </div>
       ) : (
-        <div className="mt-3 text-[12.5px] text-ink-3">Team ratings are unavailable for this matchup.</div>
+        <DataState tone="absent" label="Team ratings are unavailable for this matchup." className="mt-3" />
       )}
 
       <div className="mt-1 space-y-2 border-t border-line pt-3">
@@ -267,14 +267,17 @@ export default function MatchupsView() {
       </div>
 
       {loading && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Loading tonight&rsquo;s slate…
+        <div className="mt-4 grid items-start gap-3 xl:grid-cols-[280px_1fr]" aria-label="loading tonight's slate">
+          <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[54px] rounded-[10px]" />)}
+          </div>
+          <Skeleton className="h-[420px] rounded-[10px]" />
         </div>
       )}
 
       {!loading && error && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 

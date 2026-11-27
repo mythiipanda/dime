@@ -13,6 +13,86 @@ def con():
     conn.close()
 
 
+def memory_salary_con():
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GUARANTEED BIGINT, "
+        "SALARY_2026_27 BIGINT, SALARY_2027_28 BIGINT, SALARY_2028_29 BIGINT, "
+        "OPTION_2026_27 VARCHAR, OPTION_2027_28 VARCHAR, OPTION_2028_29 VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [("Option Player", "TST", 1, 50_000_000,
+          10_000_000, 15_000_000, 20_000_000, None, None, "team"),
+         ("Steady Player", "TST", 2, 90_000_000,
+          30_000_000, 30_000_000, 30_000_000, None, None, None)])
+    return con
+
+
+def test_future_option_decision_uses_option_year_salary_and_baseline():
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = memory_salary_con()
+    try:
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [{"kind": "option_decision", "player": "Option Player",
+                       "season": "2028-29", "exercise": False}]})
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert out["season"] == "2028-29"
+    assert out["pay_before"] == 50_000_000
+    assert out["pay_after"] == 30_000_000
+    option_steps = [s for s in out["steps"] if "option" in s["detail"]]
+    assert option_steps and option_steps[0]["delta"] == -20_000_000
+    assert out["lines"]["cap"] > 164_961_000
+    assert out["errors"] == []
+
+
+def test_mixed_scenario_rejects_cross_season_option_without_wrong_subtraction():
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = memory_salary_con()
+    try:
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [{"kind": "signing", "label": "X", "amount": 5_000_000},
+                      {"kind": "option_decision", "player": "Option Player",
+                       "season": "2028-29", "exercise": False}]})
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert out["season"] == "2026-27"
+    assert out["pay_before"] == 40_000_000
+    assert out["pay_after"] == 45_000_000
+    assert any("2028-29" in e["error"] and "one season" in e["error"]
+               for e in out["errors"])
+
+
+def test_option_decision_rejects_missing_per_year_option_data():
+    import duckdb
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries ("
+            "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GUARANTEED BIGINT, "
+            "SALARY_2026_27 BIGINT, SALARY_2028_29 BIGINT)")
+        con.execute(
+            "INSERT INTO silver_salaries VALUES "
+            "('Option Player', 'TST', 1, 30000000, 10000000, 20000000)")
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [{"kind": "option_decision", "player": "Option Player",
+                       "season": "2028-29", "exercise": False}]})
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert out["pay_after"] == out["pay_before"]
+    assert any("per-year option data unavailable" in e["error"]
+               for e in out["errors"])
+
+
 def test_sheet_shape_boston(con):
     from shared.tools.league.cap_sheet import cap_sheet_rows
     out = cap_sheet_rows(con, "BOS", "2026-27")
@@ -111,12 +191,12 @@ def test_scenario_waive_relief_bounded(con):
         "team": "BOS", "season": "2026-27",
         "moves": [{"kind": "waive", "player": "Payton Pritchard"}]})
     assert out["ok"] is True
-    deltas = [s["delta"] for s in out["steps"] if s["kind"] == "trade_out"]
+    deltas = [s["delta"] for s in out["steps"] if s["kind"] == "waive"]
     assert deltas and deltas[0] <= 0
     stretched = evaluate_cap_scenario(con, {
         "team": "BOS", "season": "2026-27",
         "moves": [{"kind": "waive", "player": "Payton Pritchard", "stretch": True}]})
-    stretch_deltas = [s["delta"] for s in stretched["steps"] if s["kind"] == "trade_out"]
+    stretch_deltas = [s["delta"] for s in stretched["steps"] if s["kind"] == "waive"]
     assert stretch_deltas and stretch_deltas[0] <= 0
 
 
