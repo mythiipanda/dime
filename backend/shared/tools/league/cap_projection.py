@@ -362,6 +362,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "state": state,
             "lines": lines,
             "lines_projected": lines_projected,
+            "players": base["players"],
             "roster_before": int(base["roster_count"]),
             "roster_after": roster_after,
             "roster_issues": roster_issue_list,
