@@ -104,6 +104,21 @@ export type DirectOperations = {
         legs: string;
         season: string;
     };
+    product_history_career: {
+        player: string;
+    };
+    product_history_era_comps: {
+        player_id: number;
+        season: string;
+        k: number;
+        start_season: string;
+        end_season: string;
+        player: string;
+    };
+    product_history_leaders: {
+        season: string;
+        category: string;
+    };
     product_briefing: {
         season: string;
     };

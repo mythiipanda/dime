@@ -5537,6 +5537,99 @@
         "title": "product_trade_legs",
         "type": "object"
       }
+    },
+    "product_history_career": {
+      "name": "product_history_career",
+      "description": "Career arc for one player across all warehouse seasons.",
+      "args_schema": {
+        "description": "Career arc for one player across all warehouse seasons.",
+        "properties": {
+          "player": {
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id).",
+            "title": "Player",
+            "type": "string"
+          }
+        },
+        "required": [
+          "player"
+        ],
+        "title": "product_history_career",
+        "type": "object"
+      }
+    },
+    "product_history_era_comps": {
+      "name": "product_history_era_comps",
+      "description": "Era-relative statistical neighbors for one player-season.",
+      "args_schema": {
+        "description": "Era-relative statistical neighbors for one player-season.",
+        "properties": {
+          "player_id": {
+            "description": "nba_api numeric player id, e.g. 203081 (not the name).",
+            "title": "Player Id",
+            "type": "integer"
+          },
+          "season": {
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: PydanticUndefined.",
+            "title": "Season",
+            "type": "string"
+          },
+          "k": {
+            "default": 8,
+            "description": "Number of neighbors returned. Default: 8.",
+            "title": "K",
+            "type": "integer"
+          },
+          "start_season": {
+            "default": "",
+            "description": "First season year, e.g. 2015. Default: ''.",
+            "title": "Start Season",
+            "type": "string"
+          },
+          "end_season": {
+            "default": "",
+            "description": "Last season year, e.g. 2026. Default: ''.",
+            "title": "End Season",
+            "type": "string"
+          },
+          "player": {
+            "default": "",
+            "description": "Full player name, e.g. 'Jayson Tatum' (not a numeric id). Default: ''.",
+            "title": "Player",
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_id",
+          "season"
+        ],
+        "title": "product_history_era_comps",
+        "type": "object"
+      }
+    },
+    "product_history_leaders": {
+      "name": "product_history_leaders",
+      "description": "Era-adjusted leaderboard for one season: within-season z-scores over the qualified pool.",
+      "args_schema": {
+        "description": "Era-adjusted leaderboard for one season: within-season z-scores over the qualified pool.",
+        "properties": {
+          "season": {
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: PydanticUndefined.",
+            "title": "Season",
+            "type": "string"
+          },
+          "category": {
+            "default": "pts",
+            "description": "Leaderboard category, e.g. 'pts', 'ast', 'reb'. Default: 'pts'.",
+            "title": "Category",
+            "type": "string"
+          }
+        },
+        "required": [
+          "season"
+        ],
+        "title": "product_history_leaders",
+        "type": "object"
+      }
     }
   },
   "shared": {

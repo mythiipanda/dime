@@ -100,6 +100,75 @@ def product_trade(team_a: str, players_a: str, team_b: str, players_b: str, seas
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
 
+@tool(description='Career arc for one player across all warehouse seasons.')
+def product_history_career(player: str) -> dict:
+    from shared.tools import get_career_arc
+    if not player:
+        return {'ok': False, 'error': 'pass a player name'}
+    try:
+        return get_career_arc.invoke({'player': player})
+    except ValueError as error:
+        return {'ok': False, 'error': str(error)}
+
+@tool(description='Era-relative statistical neighbors for one player-season.')
+def product_history_era_comps(player_id: int, season: str, k: int = 8, start_season: str = '', end_season: str = '', player: str = '') -> dict:
+    from shared.tools.player.comps import get_era_comps
+    if not player_id and player:
+        try:
+            from shared import store
+            con = store.connect(read_only=True)
+            hit = con.execute(
+                'SELECT DISTINCT player_id FROM silver_hist_player_seasons WHERE lower(player_name) = lower(?) LIMIT 1',
+                [player]).fetchone()
+            if not hit:
+                hit = con.execute(
+                    'SELECT DISTINCT player_id FROM silver_hist_player_seasons WHERE lower(player_name) LIKE lower(?) LIMIT 1',
+                    [f'%{player}%']).fetchone()
+            if hit:
+                player_id = int(hit[0])
+        except Exception:
+            pass
+    try:
+        return get_era_comps.invoke({'player_id': player_id, 'season': season, 'k': k,
+                                     'start_season': start_season or None, 'end_season': end_season or None})
+    except ValueError as error:
+        return {'ok': False, 'error': str(error)}
+
+@tool(description='Era-adjusted leaderboard for one season: within-season z-scores over the qualified pool.')
+def product_history_leaders(season: str, category: str = 'pts') -> dict:
+    if not season:
+        return {'ok': False, 'error': 'pass a season'}
+    allowed = {'pts', 'reb', 'ast', 'stl', 'blk', 'min', 'ts_pct', 'fg3_pct'}
+    if category not in allowed:
+        return {'ok': False, 'error': f'category must be one of {sorted(allowed)}'}
+    try:
+        from shared import store
+        con = store.connect(read_only=True)
+        table = 'silver_hist_player_seasons'
+        cols = {row[1].lower(): row[1] for row in con.execute(f'PRAGMA table_info({table})').fetchall()}
+        cat_col = cols.get(category)
+        if not cat_col:
+            return {'ok': False, 'error': f'no column for {category}'}
+        name_col = cols.get('player_name') or cols.get('player')
+        pid_col = cols.get('player_id')
+        season_col = cols.get('_season') or cols.get('season')
+        query = f'SELECT "{pid_col}" AS player_id, "{name_col}" AS player, "{cat_col}" AS value FROM {table} WHERE "{season_col}" = ? AND "{cat_col}" IS NOT NULL'
+        rows = con.execute(query, [season]).fetchall()
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)[:200]}
+    if not rows:
+        return {'ok': False, 'error': f'no rows for {season}', 'season': season, 'rows': []}
+    import statistics
+    values = [float(r[2]) for r in rows]
+    mean = statistics.fmean(values)
+    stdev = statistics.pstdev(values) or 1.0
+    ranked = sorted(rows, key=lambda r: float(r[2]), reverse=True)[:15]
+    board = [{'rank': i + 1, 'player_id': r[0], 'player': r[1], 'value': round(float(r[2]), 2),
+              'z': round((float(r[2]) - mean) / stdev, 2)} for i, r in enumerate(ranked)]
+    return {'ok': True, 'season': season, 'category': category, 'rows': board,
+            'meta': {'source': 'silver_hist_player_seasons', 'pool': len(values),
+                     'normalization': 'z = (value - pool mean) / pool stdev within the season'}}
+
 @tool(description='Evaluate a multi-team trade construction through the CBA legality engine.')
 def product_trade_legs(legs: str, season: str = '2026-27') -> dict:
     import json as _json
@@ -941,7 +1010,7 @@ def internal_catalogue():
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
         product_compare, product_draft, product_matchups, product_awards, product_scout_dossier,
-        product_cap_sheet, product_cap_scenario_eval, product_trade_legs)
+        product_cap_sheet, product_cap_scenario_eval, product_trade_legs, product_history_career, product_history_era_comps, product_history_leaders)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description

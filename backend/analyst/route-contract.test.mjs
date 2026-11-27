@@ -27,6 +27,9 @@ const data={close:async()=>{},async call(name,args){switch(name){
  case "product_awards":return {ok:true,season:"2025-26",awards:[]};
  case "product_scout_dossier":return {ok:true,season:"2025-26",team:{abbrev:"BOS"},opponent:{abbrev:"NYK"},edge:null,sections:{}};
  case "product_trade_legs":return {ok:true,rows:[],meta:{}};
+ case "product_history_career":return {ok:true,rows:[]};
+ case "product_history_era_comps":return {ok:true,rows:[]};
+ case "product_history_leaders":return {ok:true,season:"1996-97",category:"pts",rows:[]};
  case "product_watchlist":return output("watchlist",args);
  case "product_watchlist_add":return output("watchlist_add",args);
  case "product_watchlist_remove":return output("watchlist_remove",args);
