@@ -114,7 +114,7 @@ export default function PlannerView() {
     if (liveGroups !== groups) setGroups(liveGroups);
     void syncCapDraft(team, BASE_SEASON, next, liveGroups).then(ok => setSyncFailed(!ok));
     void project(team, next);
-  }, [team, project]);
+  }, [team, project, groups]);
 
   const addMove = useCallback((move: ScenarioMove) => {
     applyMoves([...moves, move]);
