@@ -6,7 +6,7 @@ import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
-import { artifactRejectionReason, createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
+import { artifactRejectionReason, createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission, stripToolCallMarkup } from "./submit-tool.js";
 import { auditAnswerNumbers, auditLimitationClaims, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, limitationChallengeAdvisory, loadWarehouseInventory, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
@@ -110,7 +110,7 @@ function salvageDraftSubmission(snapshot: Record<string, unknown>): AnswerSubmis
         const total = items.reduce((n, item) => n + (item.text as string).trim().length, 0);
         if (total >= 200 && total > bestLen) {
             bestLen = total;
-            best = items.map(item => ({ text: (item.text as string).trim(), anchors: [] }));
+            best = items.map(item => ({ text: stripToolCallMarkup((item.text as string).trim()), anchors: [] as [] })).filter(block => block.text.length > 0);
         }
     }
     if (!best)
@@ -164,8 +164,9 @@ function salvageNarrationSubmission(messages: ReadonlyArray<{ role: string; cont
             .map(block => block.text as string)
             .join("")
             .trim();
-        if (text.length >= 200)
-            return { blocks: [{ text, anchors: [] }], omitted: ["submission salvaged from the final narration — the run ended before submit_answer completed"] };
+        const cleaned = stripToolCallMarkup(text);
+        if (cleaned.length >= 200)
+            return { blocks: [{ text: cleaned, anchors: [] }], omitted: ["submission salvaged from the final narration — the run ended before submit_answer completed"] };
     }
     return undefined;
 }

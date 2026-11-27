@@ -2433,3 +2433,37 @@ test("artifacts without sources carry no provenance", () => {
   const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
   assert.equal(validated.artifacts[0].provenance, undefined);
 });
+
+test("validateAnswerSubmission strips leaked function-call markup from block text", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ player: "Luka Doncic", pts: 33.9 }] })],
+  ]);
+  const leaked = {
+    blocks: [
+      {
+        text: 'Luka Doncic led the league in scoring at 33.9 points per game.\n<function_calls>\n<invoke name="submit_answer">\n<parameter name="blocks">[{"text":"..."}]</parameter>\n</invoke>\n</function_calls>',
+        anchors: [{ ref: "src-1", row: 0, columns: ["player", "pts"] }],
+      },
+      {
+        text: '<invoke name="submit_answer"><parameter name="x">1</parameter></invoke>\nDallas played fast.',
+      },
+    ],
+  };
+  const validated = validateAnswerSubmission(leaked, ref => sources.get(ref));
+  assert.equal(validated.blocks.length, 2);
+  assert.equal(validated.blocks[0].text, "Luka Doncic led the league in scoring at 33.9 points per game.");
+  assert.equal(validated.blocks[1].text, "Dallas played fast.");
+  for (const block of validated.blocks) {
+    assert.ok(!block.text.includes("function_calls"), "no tool-call envelope survives");
+    assert.ok(!block.text.includes("<invoke"), "no invoke markup survives");
+  }
+  assert.equal(validated.blocks[0].anchors[0].ref, "src-1", "anchors survive the strip");
+});
+
+test("validateAnswerSubmission keeps legitimate prose mentioning tools intact", () => {
+  const submission = {
+    blocks: [{ text: "The submission salvaged from the final narration covers the partial answer." }],
+  };
+  const validated = validateAnswerSubmission(submission, () => undefined);
+  assert.equal(validated.blocks[0].text, submission.blocks[0].text, "ordinary prose is never touched");
+});
