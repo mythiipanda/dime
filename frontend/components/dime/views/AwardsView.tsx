@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -150,8 +151,18 @@ export default function AwardsView() {
 
       {loading && (
         <div className="px-4 pt-4">
-          <div className="rounded-card bg-surface px-5 py-8 text-center text-[13px] text-ink-3 shadow-hairline">
-            Loading award projections…
+  <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-hairline" aria-label="loading award projections">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-3.5 w-5" />
+                  <Skeleton className="h-3.5 w-44" />
+                  <Skeleton className="ml-auto h-3.5 w-8" />
+                </div>
+                <Skeleton className="ml-8 mt-2 h-3 w-64" />
+                <Skeleton className="ml-8 mt-1.5 h-3 w-52" />
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -184,7 +195,7 @@ export default function AwardsView() {
 
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-4 pb-8">
             {active && (
-              <div key={active.award} style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <div key={active.award} style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
                 <Board board={active} />
               </div>
             )}

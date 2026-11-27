@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
 import { apiPath } from "@/lib/api";
@@ -157,7 +158,7 @@ function MatchupDetail({ game }: { game: MatchupGame }) {
   return (
     <div
       className="rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5"
-      style={{ animation: "fade-up 200ms cubic-bezier(0.23,1,0.32,1) both" }}
+      style={{ animation: "fade-up 200ms var(--ease-out-strong) both" }}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="text-[14px] font-medium text-ink">
@@ -267,8 +268,11 @@ export default function MatchupsView() {
       </div>
 
       {loading && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Loading tonight&rsquo;s slate…
+        <div className="mt-4 grid items-start gap-3 xl:grid-cols-[280px_1fr]" aria-label="loading tonight's slate">
+          <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[54px] rounded-[10px]" />)}
+          </div>
+          <Skeleton className="h-[420px] rounded-[10px]" />
         </div>
       )}
 

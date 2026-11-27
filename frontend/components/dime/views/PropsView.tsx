@@ -9,7 +9,7 @@ function Chevron({ dir }: { dir: 1 | -1 }) {
   return (
     <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden
-      style={{ transform: dir === 1 ? "rotate(180deg)" : "none", transition: "transform 150ms cubic-bezier(0.16,1,0.3,1)" }}>
+      style={{ transform: dir === 1 ? "rotate(180deg)" : "none", transition: "transform 150ms var(--ease-link)" }}>
       <path d="M6 9l6 6 6-6" />
     </svg>
   );

@@ -1,4 +1,5 @@
 import duckdb
+import pytest
 
 
 def _seed(monkeypatch, tmp_path, salaries, picks=None):
@@ -143,21 +144,116 @@ def test_trade_legality_three_team(monkeypatch, tmp_path):
     assert out["legal"] is True, out["issues"]
 
 
-def test_trade_legality_snt_minimum_years(monkeypatch, tmp_path):
+def _snt_legality(monkeypatch, tmp_path, years):
     from shared.tools import get_trade_legality
     _seed(monkeypatch, tmp_path,
           _roster("BOS", 140_000_000, [("Alpha One", 10_000_000)])
           + _roster("MIA", 140_000_000, [("Beta Two", 15_000_000)]))
-    out = get_trade_legality.invoke({
+    return get_trade_legality.invoke({
         "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
                 '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
         "sign_and_trade": '{"player":"Alpha One","new_salary":15000000,'
-                          '"years":2}',
+                          f'"years":{years}}}',
         "season": "2026-27",
     })
+
+
+def test_trade_legality_snt_minimum_years(monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 2)
     assert out["ok"] is True
     assert out["legal"] is False
     assert any("3 seasons" in i for i in out["issues"])
+
+
+def test_trade_legality_snt_maximum_years(monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 5)
+    assert out["ok"] is True
+    assert out["legal"] is False
+    assert any("cannot exceed 4 seasons" in i for i in out["issues"])
+
+
+def test_trade_legality_snt_four_years_remain_valid(monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 4)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+
+
+def test_trade_legality_snt_discloses_unvalidated_first_year_guarantee(
+        monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 3)
+    disclosure = ("first-season full guarantee required by 2023 CBA Art. VII "
+                  "sec. 8(e)(1) is not validated")
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    snt_check = next(check for check in out["checks"]
+                     if check["rule"] == "sign-and-trade")
+    assert disclosure in snt_check["note"]
+    assert disclosure in out["meta"]["disclaimer"]
+
+
+@pytest.mark.parametrize(("payload", "message"), [
+    ('[]', "JSON object"),
+    ('{"player":"Alpha One","years":3}', "missing new_salary"),
+    ('{"player":"Alpha One","new_salary":0,"years":3}', "positive integer"),
+    ('{"player":"Alpha One","new_salary":-1,"years":3}', "positive integer"),
+    ('{"player":"Alpha One","new_salary":15000000.5,"years":3}',
+     "positive integer"),
+    ('{"player":"Alpha One","new_salary":15000000,"years":0}',
+     "positive integer"),
+])
+def test_trade_legality_snt_input_validation(payload, message):
+    from shared.tools import get_trade_legality
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "sign_and_trade": payload,
+        "season": "2026-27",
+    })
+    assert out["ok"] is False
+    assert message in out["error"]
+
+
+def _cash_legality(monkeypatch, tmp_path, cash):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
+    return get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "cash": cash,
+        "season": "2026-27",
+    })
+
+
+def test_trade_legality_valid_cash_between_parties(monkeypatch, tmp_path):
+    out = _cash_legality(
+        monkeypatch, tmp_path,
+        '[{"from":"BOS","to":"MIA","amount":1000000}]')
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    rows = {row["team"]: row for row in out["rows"]}
+    assert rows["BOS"]["cash_out"] == 1_000_000
+    assert rows["MIA"]["cash_in"] == 1_000_000
+
+
+@pytest.mark.parametrize("amount", [-1_000_000, 0])
+def test_trade_legality_rejects_nonpositive_cash(
+        monkeypatch, tmp_path, amount):
+    out = _cash_legality(
+        monkeypatch, tmp_path,
+        f'[{{"from":"BOS","to":"MIA","amount":{amount}}}]')
+    assert out["ok"] is False
+    assert "positive integer" in out["error"]
+
+
+def test_trade_legality_rejects_cash_outside_trade_parties(
+        monkeypatch, tmp_path):
+    out = _cash_legality(
+        monkeypatch, tmp_path,
+        '[{"from":"LAL","to":"BOS","amount":1000000}]')
+    assert out["ok"] is False
+    assert "not a trade party" in out["error"]
 
 
 def test_trade_legality_same_team_leg_rejected():

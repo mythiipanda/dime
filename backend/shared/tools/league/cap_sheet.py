@@ -11,7 +11,7 @@ from ..cap_rules import (
     scenario_trace,
     used_expanded_matching,
 )
-from ..cap_sheet import unroll_team_sheet
+from ..cap_sheet import option_column, season_column, unroll_team_sheet
 from .cba_cap import (
     _locate_player_team,
     _match_trade_players,
@@ -20,6 +20,105 @@ from .cba_cap import (
     _salary_date,
 )
 from .waivers import WAIVER_BASIS, resolve_waiver_timing, waiver_move
+
+_SEASON_LABEL_RE = _re.compile(r"\d{4}-\d{2}")
+
+
+def _valid_season_label(season: str) -> bool:
+    return bool(_SEASON_LABEL_RE.fullmatch(str(season or "")))
+
+
+def _option_only_moves(moves_in: list[Any]) -> bool:
+    return all(isinstance(raw, dict) and str(raw.get("kind") or "") == "option_decision"
+               for raw in moves_in)
+
+
+def _scenario_season(requested: str, moves_in: list[Any]) -> tuple[str, dict[int, str]]:
+    entries: list[tuple[int, str]] = []
+    rejected: dict[int, str] = {}
+    implicit_requested = False
+    for i, raw in enumerate(moves_in):
+        if not isinstance(raw, dict) or str(raw.get("kind") or "") != "option_decision":
+            continue
+        move_season = str(raw.get("season") or "").strip()
+        if not move_season:
+            implicit_requested = True
+            continue
+        if not _valid_season_label(move_season):
+            rejected[i] = (f"option decision season '{move_season}' is invalid; "
+                           "use YYYY-YY")
+            continue
+        entries.append((i, move_season))
+    distinct = sorted({season for _, season in entries})
+    if implicit_requested:
+        for i, move_season in entries:
+            if move_season != requested:
+                rejected[i] = (f"option decision for {move_season} cannot be combined "
+                               f"with moves evaluated in {requested}; evaluate one season "
+                               "at a time")
+        return requested, rejected
+    if len(distinct) == 1:
+        target = distinct[0]
+        if target == requested:
+            return requested, rejected
+        if _option_only_moves(moves_in):
+            return target, rejected
+        for i, move_season in entries:
+            rejected[i] = (f"option decision for {move_season} cannot be combined "
+                           f"with moves evaluated in {requested}; evaluate one season "
+                           "at a time")
+        return requested, rejected
+    if len(distinct) > 1:
+        for i, move_season in entries:
+            if move_season != requested or requested not in distinct:
+                rejected[i] = (f"option decision for {move_season} is outside scenario "
+                               f"season {requested}; evaluate one season at a time")
+    return requested, rejected
+
+
+def _player_option_year(con, player: str, team: str, season: str) -> dict[str, Any]:
+    if not _valid_season_label(season):
+        return {"ok": False, "error": f"option season '{season}' is invalid; use YYYY-YY"}
+    tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    if "silver_salaries" not in tables:
+        return {"ok": False, "error": "silver_salaries not in warehouse"}
+    cols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+    salary_col = season_column(season)
+    option_col = option_column(season)
+    missing = [name for name in (salary_col, option_col) if name not in cols]
+    if missing:
+        return {"ok": False,
+                "error": f"per-year option data unavailable for {season}; cannot evaluate without guessing"}
+    try:
+        row = con.execute(
+            f"SELECT {salary_col}, {option_col} FROM silver_salaries "
+            "WHERE UPPER(TEAM) = UPPER(?) AND LOWER(PLAYER_NAME) = LOWER(?) LIMIT 1",
+            [team, player]).fetchone()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+    if not row:
+        return {"ok": False, "error": f"could not match {player} on {team}"}
+    salary, option = row
+    return {"ok": True,
+            "salary": int(salary) if salary is not None else None,
+            "option": str(option).lower() if option else None}
+
+
+def _option_decline_move(con, team: str, season: str, player: str) -> tuple[dict[str, Any] | None, str | None]:
+    _total, matched, unknown = _match_trade_players(team, player, con, season)
+    if unknown or not matched:
+        return None, f"could not match {player} on {team}"
+    year = _player_option_year(con, matched[0], team, season)
+    if not year.get("ok"):
+        return None, str(year.get("error") or "option year unavailable")
+    if year.get("option") not in ("player", "team"):
+        return None, f"{matched[0]} has no player or team option scheduled for {season}"
+    amount = year.get("salary")
+    if not isinstance(amount, int) or amount <= 0:
+        return None, f"{matched[0]} has no salary scheduled for {season}"
+    detail = f"decline {matched[0]} {year['option']} option ({season})"
+    return {"kind": "trade_out", "detail": detail, "amount": amount}, None
+
 
 
 
@@ -130,12 +229,13 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
 
 def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     team = str(payload.get("team") or "").strip().upper()
-    season = str(payload.get("season") or "").strip() or "2026-27"
+    requested_season = str(payload.get("season") or "").strip() or "2026-27"
     moves_in = payload.get("moves")
     if not team:
         return {"ok": False, "error": "team needed"}
     if not isinstance(moves_in, list) or not moves_in:
         return {"ok": False, "error": "moves must be a non-empty list"}
+    season, rejected_options = _scenario_season(requested_season, moves_in)
     waiver_timing, waiver_timing_error = resolve_waiver_timing(
         payload.get("waiver_date"), season)
     if waiver_timing_error:
@@ -145,7 +245,9 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         pay_before, roster = _payroll(team, con, season)
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:200]}
-    errors: list[dict[str, str]] = []
+    errors: list[dict[str, str]] = [
+        {"move": str(i), "error": error}
+        for i, error in sorted(rejected_options.items())]
     moves: list[dict[str, Any]] = []
     in_names: list[str] = []
     out_names: list[str] = []
@@ -221,17 +323,20 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         elif kind == "option_decision":
             player = str(raw.get("player") or "").strip()
             exercise = bool(raw.get("exercise", True))
+            move_season = str(raw.get("season") or season).strip() or season
+            if i in rejected_options:
+                continue
+            if move_season != season:
+                errors.append({"move": str(i),
+                               "error": f"option decision for {move_season} is outside scenario season {season}; evaluate one season at a time"})
+                continue
             if exercise:
                 continue
-            total, matched, unknown = _match_trade_players(team, player, con, season)
-            if unknown or not matched:
-                errors.append({"move": str(i),
-                               "error": f"could not match {player} on {team}"})
+            move, error = _option_decline_move(con, team, season, player)
+            if error:
+                errors.append({"move": str(i), "error": error})
                 continue
-            hit = next((p for p in roster if p["player"] == matched[0]), None)
-            amount = int((hit or {}).get("salary") or 0)
-            moves.append({"kind": "trade_out",
-                          "detail": f"decline {matched[0]} option", "amount": amount})
+            moves.append(move)
             roster_delta -= 1
         else:
             errors.append({"move": str(i), "error": f"unknown move kind '{kind}'"})
@@ -282,6 +387,7 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "hard_cap": hard_cap, "issues": issues, "errors": errors,
             "matching": matching,
             "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con),
+                     "requested_season": requested_season,
                      **({"waiver_basis": WAIVER_BASIS,
                          "waiver_timing": waiver_timing}
                         if any(move.get("kind") == "waive" for move in moves) else {})}}
