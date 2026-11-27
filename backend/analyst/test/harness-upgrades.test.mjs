@@ -14,6 +14,7 @@ import {
   flagAcknowledgedByOmissions,
   listWorkspaceArtifacts,
   normalizeLoopArgs,
+  notFoundCorrectionCopy,
 } from "../dist/pi-execution.js";
 import {
   createSubmitAnswerTool,
@@ -81,6 +82,30 @@ function makeFixtureRuntime(agentDir, streamHandler, compat) {
     return runtime;
   });
 }
+
+test("notFoundCorrectionCopy teaches bare-global codemode form for discovery primitives", () => {
+  for (const name of ["searchTools", "search_tools", "describeTool", "describeNamespace", "ALL_TOOLS"]) {
+    const correction = notFoundCorrectionCopy(name);
+    assert.equal(correction.kind, "discovery_global");
+    assert.ok(correction.copy.includes("bare global"));
+    assert.ok(correction.copy.includes("no prefix"));
+    assert.ok(!correction.copy.includes("direct tool you invoke"));
+  }
+});
+
+test("notFoundCorrectionCopy appends the real discovery path to the generic copy", () => {
+  const correction = notFoundCorrectionCopy("get_dataset_freshness");
+  assert.equal(correction.kind, "generic");
+  assert.ok(correction.copy.includes("malformed name (get_dataset_freshness)"));
+  assert.ok(correction.copy.includes('await searchTools("capability words")'));
+  assert.ok(correction.copy.includes("bare global, no tools. prefix"));
+});
+
+test("notFoundCorrectionCopy stays silent for the uncertain read_source sub-case", () => {
+  const correction = notFoundCorrectionCopy("read_source");
+  assert.equal(correction.kind, "silent");
+  assert.equal(correction.copy, null);
+});
 
 test("tool contract metadata covers high-risk analyst tools", () => {
   const covered = [
