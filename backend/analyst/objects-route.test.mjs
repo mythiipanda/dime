@@ -30,6 +30,48 @@ function fixture() {
   return { server, root };
 }
 
+test("objects route contract: trade_scenario kind validates legs payload", async () => {
+  const { server, root } = fixture();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const owner = "client-trade-owner";
+  const post = (path, payload, headers = {}) => fetch(url + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(payload) });
+  const trade = {
+    legs: [
+      { from: "DAL", to: "NYK", players: "Player One, Player Two", picks: [{ year: 2027, round: 1 }] },
+      { from: "NYK", to: "DAL", players: "Player Three" },
+    ],
+    season: "2026-27",
+  };
+  try {
+    for (const bad of [
+      { kind: "trade_scenario", title: "t" },
+      { kind: "trade_scenario", title: "t", payload: {} },
+      { kind: "trade_scenario", title: "t", payload: { legs: [], season: "2026-27" } },
+      { kind: "trade_scenario", title: "t", payload: { legs: [{ from: "DAL" }], season: "2026-27" } },
+      { kind: "trade_scenario", title: "t", payload: { ...trade, extra: 1 } },
+      { kind: "trade_scenario", title: "t", payload: { legs: [{ ...trade.legs[0], bogus: 1 }], season: "2026-27" } },
+    ]) {
+      const response = await post("/api/objects", bad, { "x-dime-owner": owner });
+      assert.equal(response.status, 422, JSON.stringify(bad));
+    }
+    const created = await post("/api/objects", { kind: "trade_scenario", title: "DAL/NYK construction", payload: trade }, { "x-dime-owner": owner });
+    assert.equal(created.status, 201);
+    const object = await created.json();
+    assert.ok(object.object_id);
+    const share = await fetch(`${url}/s/${object.read_token}`);
+    assert.equal(share.status, 200);
+    const shared = await share.json();
+    assert.equal(shared.kind, "trade_scenario");
+    assert.equal(shared.payload.legs.length, 2);
+    assert.equal(shared.payload.season, "2026-27");
+  }
+  finally {
+    server.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("objects route contract: create, ownership, update, share rotation, public read", async () => {
   const { server, root } = fixture();
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));

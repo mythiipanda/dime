@@ -3,7 +3,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { openProductDatabase } from "./product-store.js";
 
-export const OBJECT_KINDS = ["cap_scenario"] as const;
+export const OBJECT_KINDS = ["cap_scenario", "trade_scenario"] as const;
 export type ObjectKind = (typeof OBJECT_KINDS)[number];
 
 export const capScenarioPayloadSchema = Type.Object({
@@ -21,8 +21,19 @@ export const capScenarioPayloadSchema = Type.Object({
     }, { additionalProperties: false }), { minItems: 1, maxItems: 40 })
 }, { additionalProperties: false });
 
-const payloadValidators: Record<ObjectKind, typeof capScenarioPayloadSchema> = {
-    cap_scenario: capScenarioPayloadSchema
+export const tradeScenarioPayloadSchema = Type.Object({
+    legs: Type.Array(Type.Object({
+        from: Type.String({ minLength: 2, maxLength: 4 }),
+        to: Type.String({ minLength: 2, maxLength: 4 }),
+        players: Type.Optional(Type.Union([Type.String({ maxLength: 600 }), Type.Array(Type.String({ minLength: 1, maxLength: 120 }), { maxItems: 12 })])),
+        picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 }))
+    }, { additionalProperties: false }), { minItems: 1, maxItems: 8 }),
+    season: Type.String({ minLength: 1, maxLength: 12 })
+}, { additionalProperties: false });
+
+const payloadValidators: Record<ObjectKind, typeof capScenarioPayloadSchema | typeof tradeScenarioPayloadSchema> = {
+    cap_scenario: capScenarioPayloadSchema,
+    trade_scenario: tradeScenarioPayloadSchema
 };
 
 export function validateObjectPayload(kind: string, payload: unknown): string | null {
