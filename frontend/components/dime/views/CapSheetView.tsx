@@ -39,7 +39,7 @@ const DEFAULT_SCENARIO_SEASON = "2026-27";
 
 function scenarioSeasonForMoves(moves: ScenarioMove[]): string | null {
   const optionMoves = moves.filter((move) => move.kind === "option_decision");
-  if (optionMoves.length === 0) return DEFAULT_SCENARIO_SEASON;
+  if (optionMoves.length === 0 || optionMoves.length !== moves.length) return DEFAULT_SCENARIO_SEASON;
   const seasons = new Set(optionMoves.map((move) => move.season || DEFAULT_SCENARIO_SEASON));
   return seasons.size === 1 ? Array.from(seasons)[0] : null;
 }
