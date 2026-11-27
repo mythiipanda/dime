@@ -93,6 +93,7 @@ def _signing_effect(raw: dict[str, Any], index: int, target: str) -> tuple[dict[
         return None, "signing needs a positive amount"
     label = str(raw.get("label") or f"${amount / 1_000_000:g}M signing")
     return {"move": index, "kind": "signing", "detail": f"sign {label}",
+            "player": label,
             "delta": int(amount), "roster_delta": 1, "exactness": "exact",
             "term": "one_year_disclosed", "season": target}, None
 
@@ -326,12 +327,23 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         moves_by_season[target].append((i, raw))
 
     carried: dict[str, list[dict[str, Any]]] = {s: [] for s in seasons}
+    removals: list[tuple[str, str]] = []
+    row_additions: dict[str, list[dict[str, Any]]] = {s: [] for s in seasons}
+    salary_overrides: dict[tuple[str, str], int] = {}
 
     def add_effect(season: str, effect: dict[str, Any]) -> None:
         if season in carried:
             carried[season].append(effect)
 
+    def remove_roster_row(name: str, from_season: str) -> None:
+        removals.append((name.lower(), from_season))
+
+    def add_roster_row(season: str, row: dict[str, Any]) -> None:
+        if season in row_additions:
+            row_additions[season].append(row)
+
     def remove_player_forward(name: str, from_season: str, move_index: int, kind: str) -> None:
+        remove_roster_row(name, from_season)
         schedule = schedules.get(name.lower())
         for season in seasons:
             if season < from_season:
@@ -364,6 +376,10 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(term_years, int) and term_years > 1:
                     effect["term"] = f"{term_years}_year_flat_disclosed"
                 add_effect(target, {k: v for k, v in effect.items() if k != "season"})
+                term_len = term_years if isinstance(term_years, int) and term_years > 1 else 1
+                for season in [target] + [s for s in seasons if s > target][:term_len - 1]:
+                    add_roster_row(season, {"player": str(effect.get("player") or effect["detail"]),
+                                            "salary": int(effect["delta"]), "option": None})
                 if isinstance(term_years, int) and term_years > 1:
                     forward = [s for s in seasons if s > target][:term_years - 1]
                     for year_index, season in enumerate(forward, start=2):
@@ -380,6 +396,9 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 errors.append({"move": str(i), "error": error})
             for effect in effects:
                 season_key = effect.pop("season")
+                player_key = str(effect.get("detail") or "").split(" extension year")[0].strip()
+                if player_key:
+                    salary_overrides[(player_key.lower(), season_key)] = int(effect["delta"])
                 add_effect(season_key, effect)
         elif kind == "trade_out":
             player = str(raw.get("player") or "").strip()
@@ -392,8 +411,15 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             effects, error = _trade_in_effects(con, team, raw, i, target, seasons, schedules)
             if error:
                 errors.append({"move": str(i), "error": error})
+            incoming_name = None
             for effect in effects:
                 season_key = effect.pop("season")
+                detail = str(effect.get("detail") or "")
+                if detail.startswith("in "):
+                    incoming_name = detail[3:].split(" (from ")[0]
+                if incoming_name:
+                    add_roster_row(season_key, {"player": incoming_name,
+                                                "salary": int(effect["delta"]), "option": None})
                 add_effect(season_key, effect)
         elif kind == "waive":
             effects, waived_name, error = _waive_effects(con, team, raw, i, target, seasons, schedules, warnings)
@@ -415,6 +441,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 continue
             salary_x = int(schedule.get("salary_by_season", {}).get(target) or 0)
             if salary_x:
+                remove_roster_row(schedule["player"], target)
                 add_effect(target, {"move": i, "kind": "option_decision",
                                     "detail": f"{schedule['player']} option declined",
                                     "delta": -salary_x, "roster_delta": -1,
@@ -432,6 +459,28 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             add_effect(target, effect)
         else:
             errors.append({"move": str(i), "error": f"unknown move kind '{kind}'"})
+
+    def adjusted_rows(season: str, base_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        removed = {name for name, from_season in removals if season >= from_season}
+        rows = []
+        for row in base_rows:
+            key = str(row.get("player") or "").lower()
+            if key in removed:
+                continue
+            override = salary_overrides.get((key, season))
+            if override is not None:
+                rows.append({**row, "salary": override})
+            else:
+                rows.append(row)
+        present = {str(r.get("player") or "").lower() for r in rows}
+        for (name, override_season), amount in salary_overrides.items():
+            if override_season == season and name not in present and name not in removed:
+                canonical = next((str(r.get("player")) for r in base_rows
+                                  if str(r.get("player") or "").lower() == name), name)
+                rows.append({"player": canonical, "salary": amount, "option": None})
+        rows.extend(row_additions.get(season, []))
+        rows.sort(key=lambda r: -int(r.get("salary") or 0))
+        return rows
 
     season_blocks: list[dict[str, Any]] = []
     for season in seasons:
@@ -472,7 +521,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "state": state,
             "lines": lines,
             "lines_projected": lines_projected,
-            "players": base["players"],
+            "players": adjusted_rows(season, base["players"]),
             "roster_before": int(base["roster_count"]),
             "roster_after": roster_after,
             "roster_issues": roster_issue_list,

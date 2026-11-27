@@ -228,6 +228,25 @@ test("post-mint edits surface Share updated instead of a dead end", async () => 
   }
 });
 
+test("waived players strike through in the waive season and all forward cells", async () => {
+  const mounted = await mountCapSheet([{ kind: "waive", player: "Jayson Tatum" }]);
+  try {
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    const loadSaved = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Load saved");
+    assert.ok(loadSaved, "Load saved button present");
+    await click(loadSaved);
+    const rows = [...mounted.host.querySelectorAll("tbody tr")];
+    const row = rows.find((tr) => (tr.textContent ?? "").includes("Jayson Tatum"));
+    assert.ok(row, "player row renders");
+    const cells = [...row.querySelectorAll("td")].slice(1);
+    assert.ok(cells.length > 1, "year cells render");
+    const struck = cells.filter((cell) => cell.className.includes("line-through"));
+    assert.equal(struck.length, cells.length, `every year cell strikes from the waive season forward, got ${struck.length} of ${cells.length}`);
+  } finally {
+    await mounted.cleanup();
+  }
+});
+
 test("roster rows without player_ids render distinctly — no key collapse for unsigned camp players", async () => {
   const errors: string[] = [];
   const originalError = console.error;
