@@ -156,8 +156,13 @@ test("loadSharedScenario maps backend responses into the view states", async () 
     "archived",
   );
   assert.equal(
-    (await withFetch(async () => Response.json({ ...sharedObject, kind: "board" }))).status,
+    (await withFetch(async () => Response.json({ ...sharedObject, kind: "widget" }))).status,
     "unsupported",
+  );
+  assert.equal(
+    (await withFetch(async () => Response.json({ ...sharedObject, kind: "board" }))).status,
+    "unavailable",
+    "a board-kind envelope carrying a non-board payload is a integrity failure, not unsupported",
   );
   const evalFailed = await withFetch(async (url) => {
     if (url.includes("/api/cap/scenario")) return new Response("x", { status: 422 });
@@ -251,4 +256,121 @@ test("loadSharedScenario treats malformed trade payloads as unavailable", async 
   const malformed = { ...tradeObject, payload: { legs: [{ from: "DAL" }], season: "2026-27" } };
   const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(malformed));
   assert.equal(result.status, "unavailable");
+});
+const threadShared = {
+  kind: "thread_grant",
+  title: "shared analysis",
+  payload: { thread: true },
+  transcript: [
+    { question: "Who won the MVP race?", answer: "The case for the frontrunner rests on\nefficiency and team success.", tables: [{ tool: "get_awards", meta: { source: "warehouse", season: "2025-26" } }], created_at: "2026-11-27T10:00:00.000Z" },
+    { question: "Compare their shooting", answer: "Shot profiles diverge at the rim.", tables: [], created_at: "2026-11-27T10:05:00.000Z" },
+  ],
+  schema_version: 1,
+  updated_at: "2026-11-27T12:00:00.000Z",
+  archived: false,
+};
+
+test("shared thread renders transcript read-only with evidence attribution", async () => {
+  const { SharedThreadView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedThreadView object={threadShared} transcript={threadShared.transcript} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /shared analysis/);
+    assert.match(text, /Who won the MVP race\?/);
+    assert.match(text, /efficiency and team success/);
+    assert.match(text, /Compare their shooting/);
+    assert.match(text, /get_awards/);
+    assert.match(text, /snapshot of the thread/);
+    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("shared thread with empty transcript renders honest empty state", async () => {
+  const { SharedThreadView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedThreadView object={threadShared} transcript={[]} />);
+  try {
+    assert.match(mounted.host.textContent!, /no analyses to show/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("loadSharedScenario dispatches thread_grant to the transcript shape", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(threadShared));
+  assert.equal(result.status, "ok-thread");
+  if (result.status === "ok-thread") {
+    assert.equal(result.transcript.length, 2);
+    assert.equal(result.object.title, "shared analysis");
+  }
+});
+
+test("loadSharedScenario filters malformed transcript entries", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const malformed = { ...threadShared, transcript: [...threadShared.transcript, { question: 42 }] };
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(malformed));
+  assert.equal(result.status, "ok-thread");
+  if (result.status === "ok-thread") assert.equal(result.transcript.length, 2);
+});
+const artifactShared = {
+  kind: "artifact_ref",
+  title: "pinned cap ledger",
+  payload: { artifact_index: 0 },
+  artifact: {
+    kind: "memo",
+    text: "The ledger case rests on capture-time figures.",
+    provenance: { capability: "sql_exec", dataset: "silver_salaries", season: "2026-27" },
+  },
+  evidence: [
+    { ref: "r1", tool: "sql_exec", meta: { source: "warehouse", season: "2026-27", fetched_at: "2026-11-27T10:00:00Z" }, rows: [{ player: "Player One" }] },
+    { ref: "r2", missing: true },
+  ],
+  captured_at: "2026-11-27T10:00:00.000Z",
+  schema_version: 1,
+  updated_at: "2026-11-27T12:00:00.000Z",
+  archived: false,
+};
+
+test("shared artifact renders body, provenance, evidence and capture honesty read-only", async () => {
+  const { SharedArtifactView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedArtifactView object={artifactShared} artifact={artifactShared.artifact} evidence={artifactShared.evidence} capturedAt={artifactShared.captured_at} unavailable={false} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /pinned cap ledger/);
+    assert.match(text, /capture-time figures/);
+    assert.match(text, /sql_exec/);
+    assert.match(text, /silver_salaries/);
+    assert.match(text, /no longer resolvable/);
+    assert.match(text, /capture-time snapshot/);
+    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("shared artifact unavailable state renders honestly", async () => {
+  const { SharedArtifactView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedArtifactView object={artifactShared} artifact={null} evidence={[]} capturedAt={null} unavailable={true} />);
+  try {
+    assert.match(mounted.host.textContent!, /no longer available/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("loadSharedScenario dispatches artifact_ref with evidence and capture time", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(artifactShared));
+  assert.equal(result.status, "ok-artifact");
+  if (result.status === "ok-artifact") {
+    assert.equal(result.evidence.length, 2);
+    assert.equal(result.unavailable, false);
+    assert.equal(result.captured_at, "2026-11-27T10:00:00.000Z");
+  }
 });

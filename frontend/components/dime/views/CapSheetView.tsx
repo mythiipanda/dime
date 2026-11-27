@@ -6,7 +6,9 @@ import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { DataState } from "@/components/ds/DataState";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
-import { getClientId } from "@/lib/api";
+import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
+import { consumeCapHandoff } from "@/lib/cap-handoff";
+import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { BACKEND } from "@/lib/chat";
 import {
   capSheetFixture,
@@ -54,6 +56,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [includePending, setIncludePending] = useState(false);
+  const [handoffNote, setHandoffNote] = useState<string | null>(null);
   const [moves, setMoves] = useState<ScenarioMove[]>([]);
   const [scenario, setScenario] = useState<ScenarioResponse | null>(null);
   const [scenarioError, setScenarioError] = useState<string | null>(null);
@@ -65,6 +68,13 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const fixture = useFixture();
   const scenarioSeason = useMemo(() => scenarioSeasonForMoves(moves), [moves]);
 
+  useEffect(() => {
+    const handoff = consumeCapHandoff();
+    if (!handoff) return;
+    setTeam(handoff.team);
+    setMoves(handoff.moves);
+    setHandoffNote(handoff.source ? `Imported from the trade machine — ${handoff.source}. The trade is a one-way copy: edits here don't affect it.` : null);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -204,39 +214,18 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   function mintShare() {
     if (moves.length === 0 || share.phase === "minting") return;
     setShare({ phase: "minting" });
-    fetch(`${BACKEND}/api/objects`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-dime-owner": getClientId() },
-      body: JSON.stringify({
-        kind: "cap_scenario",
-        title: `${team} scenario · ${scenarioSeason ?? DEFAULT_SCENARIO_SEASON}`,
-        payload: {
-          team,
-          season: scenarioSeason ?? DEFAULT_SCENARIO_SEASON,
-          moves,
-        },
-      }),
+    mintObject("cap_scenario", `${team} scenario · ${scenarioSeason ?? DEFAULT_SCENARIO_SEASON}`, {
+      team,
+      season: scenarioSeason ?? DEFAULT_SCENARIO_SEASON,
+      moves,
     })
-      .then(async (response) => {
-        const body = await response.json().catch(() => null);
-        if (!response.ok || !body?.read_token || !body?.object_id) throw new Error("mint failed");
-        return body as { object_id: string; read_token: string; owner_token: string };
-      })
       .then((created) => {
-        try {
-          window.localStorage.setItem(`dime_object_token:${created.object_id}`, created.owner_token);
-        } catch {}
-        setShare({ phase: "minted", link: `${window.location.origin}/s/${created.read_token}`, copied: false, moves });
+        setShare({ phase: "minted", link: objectShareLink(created.read_token), copied: false, moves });
       })
       .catch(() => setShare({ phase: "error" }));
   }
   function copyShareLink(link: string) {
-    const done = () => setShare((current) => current.phase === "minted" ? { ...current, copied: true } : current);
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(link).then(done, done);
-    } else {
-      done();
-    }
+    copyToClipboard(link, () => setShare((current) => current.phase === "minted" ? { ...current, copied: true } : current));
   }
   function saveToBoard() {
     const boards = listBoards();
@@ -469,6 +458,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                     );
                   })}
                   {evaluating && <p className="text-[11.5px] text-ink-3">evaluating…</p>}
+                  {handoffNote && <p className="text-[11px] leading-[1.45] text-ink-3">{handoffNote}</p>}
                   {scenarioError && <p className="text-[11.5px] text-red">{scenarioError}</p>}
                   {scenario && (
                     <p className="border-t border-line pt-1.5 font-mono text-[11px] tabular-nums text-ink">
@@ -510,29 +500,19 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   </button>
                   {saveState && <span className="w-full text-[11px] text-ink-2">{saveState}</span>}
                   {share.phase === "minted" && (
-                    <div className="w-full rounded-[7px] border border-line bg-field p-2">
-                      <p className="text-[11px] leading-[1.45] text-ink-2">
-                        Snapshot link minted — recipients see those moves evaluated live.
-                        {JSON.stringify(moves) !== JSON.stringify(share.moves)
-                          ? " The scenario has changed since this link was minted — the link still holds the earlier moves; use Share updated for a new link."
-                          : " Editing the scenario here won't change it; share again for a new link."}
-                      </p>
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        <input
-                          readOnly
-                          value={share.link}
-                          aria-label="share link"
-                          onFocus={(e) => e.currentTarget.select()}
-                          className="h-7 w-0 flex-1 rounded-[7px] border border-line bg-surface px-2 font-mono text-[11px] text-ink"
-                        />
-                        <button
-                          className="h-7 shrink-0 rounded-[7px] bg-[var(--accent)] px-2.5 text-[11.5px] font-medium text-white hover:opacity-90"
-                          onClick={() => copyShareLink(share.link)}
-                        >
-                          {share.copied ? "Copied" : "Copy link"}
-                        </button>
-                      </div>
-                    </div>
+                    <MintedLink
+                      link={share.link}
+                      copied={share.copied}
+                      onCopy={copyShareLink}
+                      note={
+                        <>
+                          Snapshot link minted — recipients see those moves evaluated live.
+                          {JSON.stringify(moves) !== JSON.stringify(share.moves)
+                            ? " The scenario has changed since this link was minted — the link still holds the earlier moves; use Share updated for a new link."
+                            : " Editing the scenario here won't change it; share again for a new link."}
+                        </>
+                      }
+                    />
                   )}
                   {share.phase === "error" && (
                     <p className="w-full text-[11px] leading-[1.45] text-red">

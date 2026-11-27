@@ -1,5 +1,6 @@
 import { cache } from "react";
 import type { ScenarioMove, ScenarioResponse } from "./capsheet-fixture";
+import type { Board, BoardMetric, BoardFill } from "./boards";
 
 export type SharedObject = {
   kind: string;
@@ -54,9 +55,46 @@ export type TradeLegsEvaluation = {
   error?: string;
 };
 
+export type SharedBoardObject = {
+  kind: string;
+  title: string;
+  payload: {
+    season: string;
+    rows: { player_id: number }[];
+    columns: { metric_id: string }[];
+    template_id?: string;
+  };
+  schema_version: number;
+  updated_at: string;
+  archived: boolean;
+};
+
+function isBoardObject(value: { payload: Record<string, unknown> }): value is SharedBoardObject {
+  const payload = value.payload;
+  return (
+    typeof payload.season === "string"
+    && Array.isArray(payload.rows) && payload.rows.length > 0
+    && payload.rows.every((row) => row && typeof row === "object" && typeof (row as Record<string, unknown>).player_id === "number")
+    && Array.isArray(payload.columns) && payload.columns.length > 0
+    && payload.columns.every((column) => column && typeof column === "object" && typeof (column as Record<string, unknown>).metric_id === "string")
+  );
+}
+
+function isBoardFill(value: unknown): value is BoardFill {
+  return !!value && typeof value === "object" && (value as Record<string, unknown>).ok === true
+    && !!(value as Record<string, unknown>).cells && !!(value as Record<string, unknown>).players;
+}
+
+function isMetricList(value: unknown): value is { ok: true; metrics: BoardMetric[] } {
+  return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).metrics);
+}
+
 export type SharedScenarioState =
   | { status: "ok"; object: SharedObject; evaluation: ScenarioResponse | null }
   | { status: "ok-trade"; object: SharedTradeObject; evaluation: TradeLegsEvaluation | null }
+  | { status: "ok-thread"; object: SharedThreadObject; transcript: TranscriptEntry[] }
+  | { status: "ok-board"; object: SharedBoardObject; board: Board | null; metrics: BoardMetric[] }
+  | { status: "ok-artifact"; object: SharedArtifactObject; artifact: Record<string, unknown> | null; evidence: SharedArtifactEvidence[]; captured_at: string | null; unavailable: boolean }
   | { status: "archived"; object: { kind: string; title: string } }
   | { status: "not_found" }
   | { status: "invalid" }
@@ -104,6 +142,43 @@ function isTradeEvaluation(value: unknown): value is TradeLegsEvaluation {
   return !!value && typeof value === "object" && (Array.isArray((value as Record<string, unknown>).rows) || typeof (value as Record<string, unknown>).error === "string");
 }
 
+export type SharedArtifactEvidence = {
+  ref: string;
+  tool?: string;
+  meta?: Record<string, unknown> | null;
+  rows?: Record<string, unknown>[];
+  missing?: boolean;
+};
+
+export type SharedArtifactObject = {
+  kind: string;
+  title: string;
+  schema_version: number;
+  updated_at: string;
+  archived: boolean;
+};
+
+export type TranscriptEntry = {
+  question: string;
+  answer: string;
+  tables: { tool?: string; meta?: { source?: string; season?: string; fetched_at?: string } }[];
+  created_at: string;
+};
+
+export type SharedThreadObject = {
+  kind: string;
+  title: string;
+  schema_version: number;
+  updated_at: string;
+  archived: boolean;
+};
+
+function isTranscriptEntry(value: unknown): value is TranscriptEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return typeof entry.question === "string" && typeof entry.answer === "string";
+}
+
 function isScenarioResponse(value: unknown): value is ScenarioResponse {
   return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).errors);
 }
@@ -144,6 +219,85 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
       evaluation = null;
     }
     return { status: "ok-trade", object, evaluation };
+  }
+
+  if (envelope.kind === "thread_grant") {
+    const body2 = envelope as unknown as Record<string, unknown>;
+    const transcript = Array.isArray(body2.transcript) ? body2.transcript.filter(isTranscriptEntry) : [];
+    const object: SharedThreadObject = {
+      kind: envelope.kind,
+      title: envelope.title,
+      schema_version: typeof body2.schema_version === "number" ? body2.schema_version : 1,
+      updated_at: envelope.updated_at,
+      archived: envelope.archived,
+    };
+    return { status: "ok-thread", object, transcript };
+  }
+
+  if (envelope.kind === "board") {
+    if (!isBoardObject(envelope)) return { status: "unavailable" };
+    const object = envelope;
+    let board: Board | null = null;
+    let metrics: BoardMetric[] = [];
+    try {
+      const [fillResponse, metricsResponse] = await Promise.all([
+        fetchImpl(`${backend}/api/boards/fill`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            season: object.payload.season,
+            player_ids: object.payload.rows.map((row) => row.player_id),
+            metric_ids: object.payload.columns.map((column) => column.metric_id),
+          }),
+          cache: "no-store",
+        }),
+        fetchImpl(`${backend}/api/boards/metrics`, { cache: "no-store" }),
+      ]);
+      const fillBody: unknown = await fillResponse.json().catch(() => null);
+      const metricsBody: unknown = await metricsResponse.json().catch(() => null);
+      if (isMetricList(metricsBody)) metrics = metricsBody.metrics;
+      if (isBoardFill(fillBody)) {
+        board = {
+          id: "shared",
+          title: object.title,
+          season: object.payload.season,
+          rows: object.payload.rows.map((row) => ({
+            player_id: row.player_id,
+            name: fillBody.players[String(row.player_id)]?.name || `Player ${row.player_id}`,
+            team: fillBody.players[String(row.player_id)]?.team || "",
+          })),
+          columns: object.payload.columns.map((column) => ({ metric_id: column.metric_id })),
+          cells: fillBody.cells,
+          created_at: object.updated_at,
+          updated_at: object.updated_at,
+          ...(object.payload.template_id ? { template_id: object.payload.template_id } : {}),
+        };
+      }
+    } catch {
+      board = null;
+    }
+    return { status: "ok-board", object, board, metrics };
+  }
+
+  if (envelope.kind === "artifact_ref") {
+    const body3 = envelope as unknown as Record<string, unknown>;
+    const artifact = body3.artifact && typeof body3.artifact === "object" ? body3.artifact as Record<string, unknown> : null;
+    const evidence = Array.isArray(body3.evidence) ? body3.evidence.filter((row): row is SharedArtifactEvidence => !!row && typeof row === "object") : [];
+    const object: SharedArtifactObject = {
+      kind: envelope.kind,
+      title: envelope.title,
+      schema_version: typeof body3.schema_version === "number" ? body3.schema_version : 1,
+      updated_at: envelope.updated_at,
+      archived: envelope.archived,
+    };
+    return {
+      status: "ok-artifact",
+      object,
+      artifact,
+      evidence,
+      captured_at: typeof body3.captured_at === "string" ? body3.captured_at : null,
+      unavailable: body3.unavailable === true || artifact === null,
+    };
   }
 
   if (envelope.kind !== "cap_scenario") return { status: "unsupported", kind: envelope.kind };

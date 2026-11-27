@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { BACKEND } from "@/lib/chat";
 import { loadSharedScenario } from "@/lib/shared";
-import { SharedScenarioNotice, SharedScenarioView, SharedTradeView } from "@/components/dime/views/SharedScenarioView";
+import { SharedArtifactView, SharedScenarioNotice, SharedScenarioView, SharedThreadView, SharedTradeView } from "@/components/dime/views/SharedScenarioView";
+import { SharedBoardView } from "@/components/dime/views/SharedBoardView";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,8 @@ type Params = { params: Promise<{ token: string }> };
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { token } = await params;
   const state = await loadSharedScenario(BACKEND, token);
-  if (state.status === "ok" || state.status === "ok-trade" || state.status === "archived") {
-    const label = state.status === "ok-trade" ? "trade construction" : "cap scenario";
+  if (state.status === "ok" || state.status === "ok-trade" || state.status === "ok-thread" || state.status === "ok-board" || state.status === "ok-artifact" || state.status === "archived") {
+    const label = state.status === "ok-trade" ? "trade construction" : state.status === "ok-thread" ? "analysis thread" : state.status === "ok-board" ? "board" : state.status === "ok-artifact" ? "artifact" : "cap scenario";
     return { title: `${state.object.title} — dime shared ${label}` };
   }
   return { title: "shared object — dime" };
@@ -25,8 +26,14 @@ export default async function SharedScenarioPage({ params }: Params) {
       return <SharedScenarioView object={state.object} evaluation={state.evaluation} />;
     case "ok-trade":
       return <SharedTradeView object={state.object} evaluation={state.evaluation} />;
+    case "ok-thread":
+      return <SharedThreadView object={state.object} transcript={state.transcript} />;
+    case "ok-board":
+      return <SharedBoardView object={state.object} board={state.board} metrics={state.metrics} />;
+    case "ok-artifact":
+      return <SharedArtifactView object={state.object} artifact={state.artifact} evidence={state.evidence} capturedAt={state.captured_at} unavailable={state.unavailable} />;
     case "archived":
-      return <SharedScenarioNotice tone="archived" />;
+      return <SharedScenarioNotice tone="archived" kind={state.object.kind} />;
     case "not_found":
       return <SharedScenarioNotice tone="not_found" />;
     case "invalid":
