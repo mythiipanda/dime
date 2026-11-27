@@ -2,6 +2,9 @@ export function formatHeadlineMetric(value: unknown, unit: string | undefined): 
   if (value === null || value === undefined) return "—";
   const num = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(num)) return String(value);
+  if (unit && unit.startsWith("$") && unit.length <= 3) {
+    return `$${num}${unit.slice(1)}`;
+  }
   if (unit === "usd_dollars") {
     const abs = Math.abs(num);
     const sign = num < 0 ? "-" : "";

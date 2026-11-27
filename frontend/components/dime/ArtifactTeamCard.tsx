@@ -18,7 +18,7 @@ export default function ArtifactTeamCard({ artifact }: { artifact: TeamCardArtif
       {artifact.metrics.map((metric, i) => <div key={`${metric.column}-${i}`} className="min-w-0">
         <dt className="break-words text-xs text-ink-2">{metric.label}</dt>
         <dd className="mt-1 break-words text-2xl font-medium tabular-nums tracking-tight text-ink">{metric.value === null ? <span aria-label="Not available">—</span> : formatHeadlineMetric(metric.value, metric.unit)}</dd>
-        <dd className="mt-1 break-words text-xs text-ink-3">{metric.unit || "Unit not declared"}</dd>
+        {!(metric.unit && metric.unit.startsWith("$")) && <dd className="mt-1 break-words text-xs text-ink-3">{metric.unit || "Unit not declared"}</dd>}
       </div>)}
     </dl>
     {artifact.sections && artifact.sections.length > 0 && (() => {
