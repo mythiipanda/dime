@@ -5419,6 +5419,23 @@
         "title": "product_matchups",
         "type": "object"
       }
+    },
+    "product_awards": {
+      "name": "product_awards",
+      "description": "Read the warehouse-backed award race projections across all tracked awards.",
+      "args_schema": {
+        "description": "Read the warehouse-backed award race projections across all tracked awards.",
+        "properties": {
+          "season": {
+            "default": "",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "product_awards",
+        "type": "object"
+      }
     }
   },
   "shared": {
