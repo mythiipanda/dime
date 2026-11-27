@@ -5543,6 +5543,26 @@
         "type": "object"
       }
     },
+    "product_cap_projection": {
+      "name": "product_cap_projection",
+      "description": "Project a typed cap scenario across multiple seasons with carry-forward move effects.",
+      "args_schema": {
+        "description": "Project a typed cap scenario across multiple seasons with carry-forward move effects.",
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "description": "JSON object carrying the artifact's section data.",
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "payload"
+        ],
+        "title": "product_cap_projection",
+        "type": "object"
+      }
+    },
     "product_trade_legs": {
       "name": "product_trade_legs",
       "description": "Evaluate a multi-team trade construction through the CBA legality engine.",
