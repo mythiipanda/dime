@@ -6,6 +6,7 @@ import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { fetchProjection, formatMoney, type ProjectionResponse, type ProjectionSeason } from "@/lib/planner";
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
+import { pruneGroups, type MoveGroupsMap } from "@/lib/move-groups";
 
 const TEAMS = [
   "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW",
@@ -79,6 +80,7 @@ export default function PlannerView() {
   const [extendAmount, setExtendAmount] = useState("");
   const [extendYears, setExtendYears] = useState("1");
   const [syncFailed, setSyncFailed] = useState(false);
+  const [groups, setGroups] = useState<MoveGroupsMap>({});
   const [share, setShare] = useState<{ phase: "idle" } | { phase: "minting" } | { phase: "minted"; link: string; copied: boolean; moves: ScenarioMove[] } | { phase: "error" }>({ phase: "idle" });
 
   const project = useCallback(async (teamCode: string, scenarioMoves: ScenarioMove[]) => {
@@ -94,7 +96,8 @@ export default function PlannerView() {
     setFailed(false);
     void (async () => {
       const draft = await loadCapDraft(team, BASE_SEASON).catch(() => null);
-      const scenarioMoves = draft ?? [];
+      const scenarioMoves = draft?.moves ?? [];
+      if (draft?.groups) setGroups(draft.groups);
       if (cancelled) return;
       setMoves(scenarioMoves);
       setHydratedTeam(team);
@@ -106,7 +109,9 @@ export default function PlannerView() {
   const applyMoves = useCallback((next: ScenarioMove[]) => {
     setMoves(next);
     setSyncFailed(false);
-    void syncCapDraft(team, BASE_SEASON, next).then(ok => setSyncFailed(!ok));
+    const liveGroups = pruneGroups(next, groups);
+    if (liveGroups !== groups) setGroups(liveGroups);
+    void syncCapDraft(team, BASE_SEASON, next, liveGroups).then(ok => setSyncFailed(!ok));
     void project(team, next);
   }, [team, project]);
 
@@ -121,7 +126,7 @@ export default function PlannerView() {
   function mintShare() {
     if (moves.length === 0 || share.phase === "minting") return;
     setShare({ phase: "minting" });
-    mintObject("cap_scenario", `${team} planner scenario · ${BASE_SEASON}`, { team, season: BASE_SEASON, moves })
+    mintObject("cap_scenario", `${team} planner scenario · ${BASE_SEASON}`, { team, season: BASE_SEASON, moves, groups: pruneGroups(moves, groups) })
       .then((created) => setShare({ phase: "minted", link: objectShareLink(created.read_token), copied: false, moves }))
       .catch(() => setShare({ phase: "error" }));
   }

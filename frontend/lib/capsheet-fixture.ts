@@ -56,6 +56,7 @@ export type ScenarioMove = {
   exception?: "cap_room" | "mle" | "bae" | "minimum" | "bird";
   years?: number;
   first_year_amount?: number;
+  group?: string;
 };
 
 export type ScenarioResponse = {

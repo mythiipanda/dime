@@ -20,8 +20,14 @@ export const capScenarioPayloadSchema = Type.Object({
         season: Type.Optional(Type.String({ maxLength: 12 })),
         exception: Type.Optional(Type.String({ maxLength: 24 })),
         years: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
-        first_year_amount: Type.Optional(Type.Number())
-    }, { additionalProperties: false }), { minItems: 1, maxItems: 40 })
+        first_year_amount: Type.Optional(Type.Number()),
+        group: Type.Optional(Type.String({ maxLength: 48 }))
+    }, { additionalProperties: false }), { minItems: 1, maxItems: 40 }),
+    groups: Type.Optional(Type.Record(Type.String(), Type.Object({
+        partner: Type.Optional(Type.String({ maxLength: 120 })),
+        verdict: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+        evaluated_at: Type.Optional(Type.String({ maxLength: 40 }))
+    }, { additionalProperties: false }), { maxProperties: 20 }))
 }, { additionalProperties: false });
 
 export const tradeScenarioPayloadSchema = Type.Object({

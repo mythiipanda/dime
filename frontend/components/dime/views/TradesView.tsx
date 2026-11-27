@@ -1,4 +1,5 @@
 "use client";
+import { mintGroupId } from "@/lib/move-groups";
 import { writeCapHandoff, navigateToCap } from "@/lib/cap-handoff";
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
 
@@ -387,21 +388,25 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       return roster?.state === "ready" ? roster.players.find((player) => player.name === name)?.salary : undefined;
     };
     const season = TRADE_SEASON;
+    const group = mintGroupId();
+    const partners = teams.filter((_, index) => index !== teamIndex).join(" ↔ ");
     const moves: ScenarioMove[] = [
       ...outgoing.map((name) => {
         const amount = salaryOf(name, teamIndex);
-        return { kind: "trade_out" as const, player: name, ...(amount ? { amount } : {}) };
+        return { kind: "trade_out" as const, player: name, group, ...(amount ? { amount } : {}) };
       }),
       ...incoming.map((name) => {
         const amount = salaryOf(name, incomingIndex);
-        return { kind: "trade_in" as const, player: name, ...(amount ? { amount } : {}) };
+        return { kind: "trade_in" as const, player: name, group, ...(amount ? { amount } : {}) };
       }),
     ];
+    const verdict = check.state === "ok" ? check.rows.legal : check.state === "ok-legs" ? check.legal : null;
     writeCapHandoff({
       team,
       season,
       moves,
       source: `${teams.join(" ↔ ")} · ${pkgs.reduce((total, pkg) => total + pkg.players.length, 0)} players in the trade`,
+      groups: { [group]: { partner: partners, verdict, evaluated_at: new Date().toISOString() } },
     });
     navigateToCap();
   }

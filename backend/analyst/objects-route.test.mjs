@@ -111,6 +111,16 @@ test("objects route contract: create, ownership, update, share rotation, public 
       assert.equal(response.status, 422, JSON.stringify(bad));
     }
 
+    const grouped = {
+      ...scenario,
+      moves: scenario.moves.map((move, index) => ({ ...move, ...(index === 0 ? { group: "trade-abc123" } : {}) })),
+      groups: { "trade-abc123": { partner: "NYK", verdict: true, evaluated_at: "2026-11-27T00:00:00.000Z" } },
+    };
+    const groupedMint = await post("/api/objects", { kind: "cap_scenario", title: "g", payload: grouped }, { "x-dime-owner": owner + "-grouped" });
+    assert.equal(groupedMint.status, 201, "group-tagged moves + groups metadata validate");
+    const groupedObject = await groupedMint.json();
+    assert.deepEqual(groupedObject.payload.groups, grouped.groups, "groups metadata round-trips verbatim");
+
     const created = await post("/api/objects", { kind: "cap_scenario", title: "Waiver wire plan", payload: scenario }, { "x-dime-owner": owner });
     assert.equal(created.status, 201);
     const object = await created.json();
