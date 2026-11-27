@@ -52,8 +52,12 @@ type LeadersResponse = {
   meta?: { source?: string; pool?: number; normalization?: string };
 };
 
+function currentSeasonEndYear(now = new Date()): number {
+  return now.getMonth() >= 9 ? now.getFullYear() + 1 : now.getFullYear();
+}
+
 const SEASONS: string[] = [];
-for (let end = 2025; end >= 1997; end -= 1) {
+for (let end = currentSeasonEndYear(); end >= 1997; end -= 1) {
   SEASONS.push(`${end - 1}-${String(end).slice(2)}`);
 }
 
@@ -183,15 +187,15 @@ export default function HistoryView() {
   const arc = career?.rows ?? [];
   const chartSeasons = arc.map((s) => s.season);
   const series = [
-    { name: "points per game", values: arc.map((s) => s.pts), tone: "accent" as const },
-    { name: "raptor", values: arc.map((s) => s.raptor), tone: "muted" as const },
+    { name: "points per game", values: arc.map((s) => s.pts), tone: "accent" as const, unit: "ppg" },
+    { name: "raptor", values: arc.map((s) => s.raptor), tone: "muted" as const, unit: "raptor" },
   ];
 
   return (
     <div className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-8">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-[15px] font-semibold text-ink">History</h1>
-        <span className="font-mono text-[10px] text-ink-3">1996-97 → 2024-25 · era-relative throughout</span>
+        <span className="font-mono text-[10px] text-ink-3">{`1996-97 → ${SEASONS[0]} · era-relative throughout`}</span>
       </div>
 
       <section className="mt-4 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
@@ -224,7 +228,6 @@ export default function HistoryView() {
             <ArtifactChart
               series={series}
               xLabels={chartSeasons}
-              unit=""
               title={`${player} career trajectory`}
               subtitle="per-game scoring and RAPTOR impact by season — open 'view chart data' for the table"
               height={200}
