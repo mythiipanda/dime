@@ -354,3 +354,4 @@ test("compare handoff: pinned pair writes compare picks and navigates; ask envel
     globalThis.fetch = previousFetch;
   }
 });
+

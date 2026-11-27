@@ -154,7 +154,10 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
   const [careerError, setCareerError] = useState<string | null>(null);
   const [careerLoading, setCareerLoading] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
-  const [pendingSeason, setPendingSeason] = useState<string | null>(initialParams?.get("season") || null);
+  const [pendingSeason, setPendingSeason] = useState<{ player: string; season: string } | null>(() => {
+    const season = initialParams?.get("season");
+    return season ? { player: initialPlayer, season } : null;
+  });
   const [comps, setComps] = useState<CompsResponse | null>(null);
   const [compsError, setCompsError] = useState<string | null>(null);
   const [compsLoading, setCompsLoading] = useState(false);
@@ -192,7 +195,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           setCareer(null);
         } else {
           setCareer(value);
-          setSelectedSeason(pendingSeason);
+          setSelectedSeason(pendingSeason?.player === player ? pendingSeason.season : null);
           setPendingSeason(null);
           setComps(null);
         }
@@ -302,7 +305,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
       window.history.pushState(null, "", `${window.location.pathname}?${params.toString()}`);
     }
     setQuery(name);
-    setPendingSeason(season);
+    setPendingSeason({ player: name, season });
     setPlayer(name);
   };
 
@@ -320,7 +323,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
       setWinEnd(w[1] ?? "");
       if (urlPlayer && urlPlayer !== player) {
         setQuery(urlPlayer);
-        setPendingSeason(urlSeason);
+        setPendingSeason(urlSeason ? { player: urlPlayer, season: urlSeason } : null);
         setPlayer(urlPlayer);
       } else if (urlSeason && urlSeason !== selectedSeason) {
         setSelectedSeason(urlSeason);
