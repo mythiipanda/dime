@@ -888,3 +888,11 @@ test("artifactToCopyText formats scatter points as CSV", () => {
     'Label,TS%,USG%\nNikola Jokic,65,28.5\n"Luka ""Magic"" Doncic",61.2,35.5',
   );
 });
+test("StreamArtifacts renders the share affordance only with a share context", async () => {
+  const { StreamArtifacts } = await import("./components/site/harness/ArtifactsView");
+  const artifact = { kind: "memo", title: "fixture memo", text: "fixture text" } as DimeArtifact;
+  const without = renderToStaticMarkup(<StreamArtifacts artifacts={[artifact]} />);
+  assert.ok(!without.includes("Share artifact"), "no share affordance without run context");
+  const withContext = renderToStaticMarkup(<StreamArtifacts artifacts={[artifact]} shareContext={{ run_id: "run-abc", thread: "thread-1" }} />);
+  assert.ok(withContext.includes("Share artifact"), "share affordance renders with run context");
+});
