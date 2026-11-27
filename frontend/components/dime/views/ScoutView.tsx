@@ -174,10 +174,10 @@ export default function ScoutView() {
       {!loading && !error && data && team !== opponent && (
         <div key={`${team}-${opponent}`} className="mt-4 grid items-start gap-3 xl:grid-cols-2" style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
           {data.edge && (
-            <div className="rounded-[10px] bg-surface p-4 text-[13px] leading-[1.6] text-ink-2 shadow-hairline sm:p-5 xl:col-span-2">
-              <span className="text-[13px] font-semibold text-ink">Edge</span>
-              <p className="mt-1">{data.edge}</p>
-              {data.season && <p className="mt-1 font-mono text-[10.5px] text-ink-3">season {data.season} · warehouse-nightly freshness</p>}
+            <div className="rounded-[10px] bg-surface p-5 shadow-hairline sm:p-6 xl:col-span-2">
+              <span className="text-[14px] font-semibold text-ink">Edge</span>
+              <p className="mt-1.5 max-w-[68ch] text-[14px] leading-[1.65] text-ink">{data.edge}</p>
+              {data.season && <p className="mt-2 text-[11px] text-ink-3">season {data.season} · warehouse-nightly freshness</p>}
             </div>
           )}
 
