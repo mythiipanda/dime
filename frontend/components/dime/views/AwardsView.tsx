@@ -83,7 +83,7 @@ function Board({ board }: { board: AwardBoard }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 px-1 font-mono text-[11px] text-ink-3">
+      <p className="mt-2 px-1 text-[11px] text-ink-2">
         Warehouse z-score projection over the qualified pool — score is the weighted composite, not betting odds.
         {board.caveat ? ` ${board.caveat}.` : ""}
       </p>

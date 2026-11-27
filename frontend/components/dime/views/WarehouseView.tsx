@@ -250,7 +250,7 @@ export default function WarehouseView() {
               {(selected === "silver_shots" || selected === "silver_zone_splits") && <ShotsExplorer key={selected} season={season || (detail.state === "ready" ? detail.seasons[0] : "") || ""} />}
 
               {status && (
-                <p className="mt-6 font-mono text-[11px] text-ink-3">Backend {status}</p>
+                <p className="mt-6 text-[11px] text-ink-2">Backend {status}</p>
               )}
             </>
           )}

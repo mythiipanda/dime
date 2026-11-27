@@ -195,7 +195,7 @@ export default function LineupsView() {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 px-1 font-mono text-[11px] text-ink-3">Ratings per 100 possessions. Click a row for shot mix.</p>
+        <p className="mt-2 px-1 text-[11px] text-ink-2">Ratings per 100 possessions. Click a row for shot mix.</p>
       </div>
     </div>
   );
