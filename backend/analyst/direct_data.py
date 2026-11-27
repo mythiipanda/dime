@@ -927,8 +927,19 @@ def _draft_board(con, tables: set, season: str) -> dict:
         "SELECT CASE WHEN COUNT(*) FILTER (BOARD = 'big_board') > 0 THEN 'big_board' ELSE 'mock_draft' END "
         "FROM silver_draft_boards WHERE _season = ?", [use]).fetchone()[0]
     base_rows = con.execute(
-        'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL FROM silver_draft_boards '
-        'WHERE _season = ? AND BOARD = ? ORDER BY "ORDER" LIMIT 60', [use, board_kind]).fetchall()
+        'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL, PLAYER_SLUG FROM silver_draft_boards '
+        'WHERE _season = ? AND BOARD = ? ORDER BY "ORDER"', [use, board_kind]).fetchall()
+    deduped_rows = []
+    seen_keys = set()
+    for index, row in enumerate(base_rows):
+        slug = str(row[4] or "")
+        key = slug if slug else f"row:{index}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped_rows.append(row[:4])
+        if len(deduped_rows) == 60:
+            break
     stats_by_name: dict = {}
     if "silver_prospect_stats" in tables:
         for s in con.execute(
@@ -942,18 +953,21 @@ def _draft_board(con, tables: set, season: str) -> dict:
         if len(candidates) == 1:
             return candidates[0]
         school_key = str(school or '').lower()
-        for c in candidates:
-            if school_key and str(c[1] or '').lower() == school_key:
-                return c
+        matches = [c for c in candidates if school_key and str(c[1] or '').lower() == school_key]
+        if matches:
+            return max(matches, key=lambda c: float(c[2] or 0))
         return None
     rows = []
-    for r in base_rows:
+    for r in deduped_rows:
         s = _match_stats(r[1], r[3])
-        rows.append(tuple(r) + ((s[2], s[3], s[4], s[5], s[6], (s[7] or 0) / 100.0 if s and s[7] is not None else None) if s else (None,) * 6))
-    board = [{"pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
+        stat_values = (s[2], s[3], s[4], s[5], s[6], s[7]) if s else (None,) * 6
+        rows.append(tuple(r) + stat_values)
+    board = [{"board_order": int(r[0]), "pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
               "gp": r[4], "pts": r[5], "reb": r[6], "ast": r[7], "ts_pct": r[8], "usg": r[9]}
              for r in rows]
-    return {"ok": bool(board), "season": use, "rows": board, "provenance": cite,
+    order_semantics = "rank" if board_kind == "big_board" else "pick"
+    return {"ok": bool(board), "season": use, "board": board_kind, "order_semantics": order_semantics,
+            "rows": board, "provenance": cite,
             **({"error": "no board rows for season"} if not board else {})}
 
 def _draft_free_agents(con, tables: set) -> dict:
