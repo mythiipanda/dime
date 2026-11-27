@@ -184,7 +184,7 @@ export default function AwardsView() {
 
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-4 pb-8">
             {active && (
-              <div key={active.award} style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <div key={active.award} style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
                 <Board board={active} />
               </div>
             )}

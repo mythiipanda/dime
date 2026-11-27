@@ -2,7 +2,8 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from ._helpers import (_cap_season_for_fa_year, _owned_connection, _pkg,
+                       _warehouse_tables)
 from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
 
@@ -17,30 +18,58 @@ _ROOM_COLS = ["TEAM", "COMMITTED_SALARY", "PENDING_OPTION_SALARY",
 
 _EXTENSION_ELIGIBLE = {"ufa", "rfa"}
 _BIRD_HOLD_PCT = 1.5
+_SEED_ROSTER_SPOTS = 15
 
 
 def _rows(con, sql: str, params: list, cols: list[str]) -> list[dict]:
     return [dict(zip(cols, r)) for r in con.execute(sql, params).fetchall()]
 
 
+def _scenario_roster_charge(room: dict, retained_hold_count: int) -> int:
+    players = int(room.get("PLAYERS_UNDER_CONTRACT") or 0)
+    base_open = max(0, _SEED_ROSTER_SPOTS - players)
+    base_charge = int(room.get("INCOMPLETE_ROSTER_CHARGES") or 0)
+    if base_open <= 0 or base_charge <= 0:
+        return 0
+    open_spots = max(0, _SEED_ROSTER_SPOTS - players - retained_hold_count)
+    return int(round(base_charge * open_spots / base_open))
+
+
+def _scenario_values(room: dict, retained_holds: int,
+                     retained_hold_count: int) -> tuple[int, int]:
+    projected = int(room.get("PROJECTED_ROOM") or 0)
+    base_charge = int(room.get("INCOMPLETE_ROSTER_CHARGES") or 0)
+    charge = _scenario_roster_charge(room, retained_hold_count)
+    return projected - retained_holds + base_charge - charge, charge
+
+
+def _scenario_row(room: dict, scenario: str, player: str | None,
+                  retained_holds: int, retained_hold_count: int,
+                  total_holds: int) -> dict:
+    projected, charge = _scenario_values(room, retained_holds,
+                                         retained_hold_count)
+    return {"scenario": scenario, "player": player,
+            "projected_room": projected,
+            "cap_holds_retained": retained_holds,
+            "cap_holds_renounced": total_holds - retained_holds,
+            "roster_charges": charge,
+            "path": "under_cap" if projected > 0 else "over_cap"}
+
+
 def _scenarios(room: dict, fa: list[dict]) -> list[dict]:
-    proj = int(room.get("PROJECTED_ROOM") or 0)
-    maxr = int(room.get("MAX_ROOM") or 0)
-    out = [{"scenario": "keep_all", "player": None,
-            "projected_room": proj,
-            "path": "under_cap" if proj > 0 else "over_cap"},
-           {"scenario": "renounce_all", "player": None,
-            "projected_room": maxr,
-            "path": "under_cap" if maxr > 0 else "over_cap"}]
-    for f in fa:
-        hold = int(f.get("CAP_HOLD_EST") or 0)
-        name = str(f.get("PLAYER_NAME") or "")
-        out.append({"scenario": "renounce", "player": name,
-                    "projected_room": proj + hold,
-                    "path": "under_cap" if proj + hold > 0 else "over_cap"})
-        out.append({"scenario": "keep_only", "player": name,
-                    "projected_room": maxr - hold,
-                    "path": "under_cap" if maxr - hold > 0 else "over_cap"})
+    holds = [(str(f.get("PLAYER_NAME") or ""), int(f.get("CAP_HOLD_EST") or 0))
+             for f in fa]
+    total_holds = sum(hold for _, hold in holds)
+    total_count = sum(1 for _, hold in holds if hold > 0)
+    out = [_scenario_row(room, "keep_all", None, total_holds, total_count,
+                         total_holds),
+           _scenario_row(room, "renounce_all", None, 0, 0, total_holds)]
+    for name, hold in holds:
+        held_count = 1 if hold > 0 else 0
+        out.append(_scenario_row(room, "renounce", name, total_holds - hold,
+                                 total_count - held_count, total_holds))
+        out.append(_scenario_row(room, "keep_only", name, hold, held_count,
+                                 total_holds))
     return out
 
 
@@ -69,6 +98,11 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
         return {"tool": "get_fa_plan", "ok": False,
                 "error": "team needed" if not raw_team
                          else team_error_message(raw_team)}
+    cap_season = _cap_season_for_fa_year(fa_year)
+    if cap_season is None:
+        return {"tool": "get_fa_plan", "ok": False,
+                "error": "fa_year must be a four-digit calendar year "
+                         f"such as 2027; received {fa_year!r}"}
     try:
         with _owned_connection(None, read_only=True) as con:
             tables = _warehouse_tables(con)
@@ -87,18 +121,19 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                 have = {r[1] for r in con.execute(
                     "PRAGMA table_info(silver_cap_room)").fetchall()}
                 pick = [c for c in _ROOM_COLS if c in have]
-                rows = _rows(con,
-                             f"SELECT {', '.join(chr(34) + c + chr(34) for c in pick)}"
-                             " FROM silver_cap_room WHERE TEAM = ?"
-                             + (" AND CAP_SEASON = ?"
-                                if "CAP_SEASON" in have else ""),
-                             [abbr] + (["2027-28"]
-                                       if "CAP_SEASON" in have else []),
-                             pick)
+                rows = []
+                if "CAP_SEASON" in have:
+                    rows = _rows(
+                        con,
+                        f"SELECT {', '.join(chr(34) + c + chr(34) for c in pick)}"
+                        " FROM silver_cap_room"
+                        " WHERE TEAM = ? AND CAP_SEASON = ?",
+                        [abbr, cap_season], pick)
                 room = rows[0] if rows else None
             if not fa and room is None:
                 return {"tool": "get_fa_plan", "ok": False,
-                        "error": "no free-agent data; "
+                        "error": f"no free-agent data for FA year {fa_year} "
+                                 f"or cap season {cap_season}; "
                                  "run seed_free_agents.py"}
     except FileNotFoundError:
         return {"tool": "get_fa_plan", "ok": False,
@@ -126,19 +161,23 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                  "salary - real Bird/early-Bird/non-Bird and rookie-scale "
                  "hold rules not modeled"},
         {"rule": "pending options", "checked": True,
-         "note": "option-year salary counts as committed in keep_all and "
-                 "is shed in renounce_all per seed arithmetic; per-option "
-                 "outcomes not modeled"},
+         "note": "option-year salary remains committed in these hold "
+                 "scenarios per seed arithmetic, including when an option "
+                 "player also carries an estimated hold; MAX_ROOM is a "
+                 "separate all-options-declined upper bound and per-option "
+                 "outcomes are not modeled"},
         {"rule": "roster charges", "checked": True,
-         "note": "per-player scenarios reuse stored roster-charge totals; "
-                 "incomplete-roster charge recomputation approximated"},
+         "note": "scenario charges follow the seeded warehouse's 15-spot "
+                 "incomplete-roster approximation and count each retained "
+                 "positive cap hold as one occupied roster spot"},
         {"rule": "rights not modeled", "checked": True,
          "note": "RFA offer-sheet matching, extension deadlines, BYC and "
                  "sign-and-trade mechanics out of scope; "
                  "extension_eligible flags ufa/rfa only"},
     ]
     out = {"tool": "get_fa_plan", "ok": True, "team": abbr,
-           "fa_year": str(fa_year), "rows": fa_rows,
+           "fa_year": str(fa_year), "cap_season": cap_season,
+           "rows": fa_rows,
            "scenarios": scenarios, "checks": checks,
            "exceptions": {
                "ntmle": room.get("NTMLE_EST") if room else None,
@@ -156,6 +195,7 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                "roster_charges":
                    room.get("INCOMPLETE_ROSTER_CHARGES")
                if room else None,
+               "max_room": room.get("MAX_ROOM") if room else None,
                "players_under_contract":
                    room.get("PLAYERS_UNDER_CONTRACT") if room else None,
                "pending_options": room.get("PENDING_OPTIONS")
@@ -169,9 +209,13 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
            "meta": {"source": "warehouse", "estimated": True,
                     "tables": {"free_agents": "silver_free_agents",
                                "cap_room": "silver_cap_room"},
-                    "formula": "renounce X: projected_room + cap_hold(X); "
-                               "keep_only X: max_room - cap_hold(X); "
-                               "hold = 150% x prior salary",
+                    "formula": "scenario room = PROJECTED_ROOM - retained "
+                               "cap holds + base roster charges - scenario "
+                               "roster charges; pending options stay "
+                               "exercised; scenario charges use the "
+                               "seeder's 15-spot model with retained holds "
+                               "counted as occupied spots; hold = 150% x "
+                               "prior salary",
                     "disclaimer": "Planning-grade estimates - hold, room "
                     "and exception figures are CBA-formula estimates, not "
                     "official numbers."}}

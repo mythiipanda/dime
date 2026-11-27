@@ -427,7 +427,7 @@ def _prior_contribution(row: dict[str, Any], season: str, notes: list[str]) -> t
 
 
 @tool(
-    description="Estimated per-100-possession impact for players lacking direct metrics.\n\nRookies, call-ups, and low-minute players have no RAPTOR/RAPM/BPM in the\nwarehouse, so this synthesizes an estimate from available components.\nALWAYS an estimate (is_estimate=True): never present it as measured.\nMethods: box_prior_shrinkage (marginal on-court lift shrunk toward an\nOLS box-score prior, current season) or raptor_components (empirical\n80/20 box/on-off blend, historical seasons with RAPTOR components)."
+    description="Estimated per-100-possession impact from box-score and on-court components.\n\nWhen measured RAPTOR is unavailable for a player-season, this synthesizes an\nestimate from silver_advanced and silver_team_ratings. It does not read\nsilver_rapm or silver_impact, so the fallback says nothing about RAPM or BPM\ncoverage.\nALWAYS an estimate (is_estimate=True): never present it as measured.\nMethods: box_prior_shrinkage (marginal on-court lift shrunk toward an\nOLS box-score prior, current season) or raptor_components (empirical\n80/20 box/on-off blend, historical seasons with RAPTOR components)."
 )
 def get_impact_estimate(player: str | int, season: str | None = None) -> dict[str, Any]:
     pkg = _pkg()
@@ -453,7 +453,10 @@ def get_impact_estimate(player: str | int, season: str | None = None) -> dict[st
     if not adv:
         return {**base, "ok": False, "error": f"no component data for '{name}' in {season}: no RAPTOR row and no advanced box row"}
     row = adv[0]
-    notes: list[str] = [f"No RAPTOR, RAPM, or BPM coverage for {season} in the warehouse; RAPTOR is frozen at 2021-22."]
+    notes: list[str] = [
+        f"No measured RAPTOR row for '{name}' in {season}; RAPTOR coverage is frozen at 2021-22. "
+        "This estimate uses silver_advanced and silver_team_ratings only; it does not read silver_rapm or silver_impact."
+    ]
     try:
         team_net = {
             r["TEAM_ID"]: r["NET_RATING"]

@@ -2,38 +2,43 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from ._helpers import (_cap_season_for_fa_year, _owned_connection, _pkg,
+                       _warehouse_tables)
 from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
 
 _FA_COLS = ["PLAYER_NAME", "TEAM", "FA_TYPE", "PRIOR_SALARY",
             "CAP_HOLD_EST", "BREF_SLUG", "_fetched_at"]
-_ROOM_COLS = ["TEAM", "COMMITTED_SALARY", "PENDING_OPTION_SALARY",
-              "FA_HOLDS_EST", "INCOMPLETE_ROSTER_CHARGES",
-              "PROJECTED_ROOM", "MAX_ROOM", "PROJECTED_CAP", "PROJECTED_TAX",
-              "PROJECTED_APRON1", "PROJECTED_APRON2", "NTMLE_EST",
-              "BAE_EST", "ROOM_EST", "TMLE_EST", "PLAYERS_UNDER_CONTRACT",
-              "PENDING_OPTIONS", "ESTIMATED"]
+_ROOM_COLS = ["TEAM", "CAP_SEASON", "COMMITTED_SALARY",
+              "PENDING_OPTION_SALARY", "FA_HOLDS_EST",
+              "INCOMPLETE_ROSTER_CHARGES", "PROJECTED_ROOM", "MAX_ROOM",
+              "PROJECTED_CAP", "PROJECTED_TAX", "PROJECTED_APRON1",
+              "PROJECTED_APRON2", "NTMLE_EST", "BAE_EST", "ROOM_EST",
+              "TMLE_EST", "PLAYERS_UNDER_CONTRACT", "PENDING_OPTIONS",
+              "ESTIMATED"]
 
 
 def _rows(con, sql: str, params: list, cols: list[str]) -> list[dict]:
     return [dict(zip(cols, r)) for r in con.execute(sql, params).fetchall()]
 
 
-def _cap_room_rows(con, abbr: str) -> list[dict]:
+def _cap_room_rows(con, abbr: str, cap_season: str) -> list[dict]:
     have = {r[1] for r in con.execute(
         "PRAGMA table_info(silver_cap_room)").fetchall()}
     pick = [c for c in _ROOM_COLS if c in have]
-    if not pick:
+    if not pick or "CAP_SEASON" not in have:
         return []
     cols = ", ".join(chr(34) + c + chr(34) for c in pick)
+    where = ["CAP_SEASON = ?"]
+    params = [cap_season]
     if abbr:
-        return _rows(con,
-                     f"SELECT {cols} FROM silver_cap_room WHERE TEAM = ?",
-                     [abbr], pick)
-    order = (" ORDER BY PROJECTED_ROOM DESC"
-             if "PROJECTED_ROOM" in have else "")
-    return _rows(con, f"SELECT {cols} FROM silver_cap_room{order}", [], pick)
+        where.append("TEAM = ?")
+        params.append(abbr)
+    sql = (f"SELECT {cols} FROM silver_cap_room WHERE "
+           + " AND ".join(where))
+    if not abbr and "PROJECTED_ROOM" in have:
+        sql += " ORDER BY PROJECTED_ROOM DESC"
+    return _rows(con, sql, params, pick)
 
 
 @tool(description=(
@@ -56,6 +61,11 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
     if raw_team and not abbr:
         return {"tool": "get_free_agents", "ok": False,
                 "error": team_error_message(raw_team)}
+    cap_season = _cap_season_for_fa_year(fa_year)
+    if cap_season is None:
+        return {"tool": "get_free_agents", "ok": False,
+                "error": "fa_year must be a four-digit calendar year "
+                         f"such as 2027; received {fa_year!r}"}
     try:
         with _owned_connection(None, read_only=True) as con:
             tables = _warehouse_tables(con)
@@ -79,10 +89,12 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                                [fa_year], _FA_COLS)
             cap_room = []
             if "silver_cap_room" in tables:
-                cap_room = _cap_room_rows(con, abbr)
+                cap_room = _cap_room_rows(con, abbr, cap_season)
             if not fa and not cap_room:
                 return {"tool": "get_free_agents", "ok": False,
-                        "error": "no free-agent data; run seed_free_agents.py"}
+                        "error": f"no free-agent data for FA year {fa_year} "
+                                 f"or cap season {cap_season}; "
+                                 "run seed_free_agents.py"}
     except FileNotFoundError:
         return {"tool": "get_free_agents", "ok": False,
                 "error": "warehouse absent; run seed_free_agents.py first."}
@@ -91,6 +103,7 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
         "ok": True,
         "team": abbr or "league",
         "fa_year": fa_year,
+        "cap_season": cap_season,
         "free_agents": fa,
         "cap_room": cap_room,
         "meta": {

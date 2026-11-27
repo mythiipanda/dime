@@ -414,7 +414,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
     return (
       <div key={`${side}-${abbr}`} className="flex-1 min-w-0 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <label className="font-mono text-[10px] uppercase tracking-wider text-ink-3" htmlFor={`trade-team-${side}`}>{label}</label>
+          <label className="text-[11.5px] font-medium uppercase tracking-wide text-ink-2" htmlFor={`trade-team-${side}`}>{label}</label>
           <div className="flex items-center gap-1">
             <select
               id={`trade-team-${side}`}
@@ -432,10 +432,10 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
         </div>
         {renderPackage(side)}
         <div className="rounded-card border border-line bg-surface shadow-hairline">
-          <div className="px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-ink-3">
+          <div className="px-3 py-2 text-[13px] font-semibold text-ink">
             {abbr} roster {roster?.state === "ready" ? `· ${roster.season}` : ""}
           </div>
-          <div className="max-h-72 overflow-y-auto divide-y divide-line border-t border-line">
+          <div className="max-h-[max(18rem,52vh)] overflow-y-auto divide-y divide-line border-t border-line">
             {roster?.state === "loading" && <div className="px-3 py-2 text-xs text-ink-3">Loading roster…</div>}
             {roster?.state === "error" && (
               <div className="px-3 py-2 text-xs text-red">
@@ -461,7 +461,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
           </div>
           {roster?.state === "ready" && roster.picks.length > 0 && (
             <div className="border-t border-line px-3 py-2">
-              <div className="pb-1 font-mono text-[10px] uppercase tracking-wider text-ink-3">Draft picks (no salary value)</div>
+              <div className="pb-1 text-[11.5px] font-medium text-ink-2">Draft picks (no salary value)</div>
               <div className="flex flex-wrap gap-1">
                 {roster.picks.map(pick => {
                   const id = pickKey(pick);

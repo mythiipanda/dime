@@ -82,7 +82,7 @@ function GameCard({ game }: { game: TonightGame }) {
             width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden
             className="mt-0.5 text-ink-3"
-            style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 150ms cubic-bezier(0.16,1,0.3,1)" }}
+            style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 150ms var(--ease-link)" }}
           >
             <path d="M6 9l6 6 6-6" />
           </svg>
@@ -103,7 +103,7 @@ function GameCard({ game }: { game: TonightGame }) {
       {expandable && (
         <div
           className={`grid transition-[grid-template-rows] duration-220 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
-          style={{ transitionTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
+          style={{ transitionTimingFunction: "var(--ease-out-strong)" }}
         >
           <div className="overflow-hidden">
             <div className="mt-3 border-t border-line pt-3">
