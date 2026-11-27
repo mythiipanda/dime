@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
+import { DataState } from "@/components/ds/DataState";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -183,7 +184,7 @@ function MatchupDetail({ game }: { game: MatchupGame }) {
           <MatchupBars rows={rows} aName={game.away.abbr} bName={game.home.abbr} />
         </div>
       ) : (
-        <div className="mt-3 text-[12.5px] text-ink-3">Team ratings are unavailable for this matchup.</div>
+        <DataState tone="absent" label="Team ratings are unavailable for this matchup." className="mt-3" />
       )}
 
       <div className="mt-1 space-y-2 border-t border-line pt-3">
@@ -278,7 +279,7 @@ export default function MatchupsView() {
 
       {!loading && error && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 

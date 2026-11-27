@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
+import { DataState } from "@/components/ds/DataState";
 import { Button } from "@/components/ds/Button";
 import ArtifactChart from "../ArtifactChart";
 
@@ -231,7 +232,7 @@ export default function HistoryView() {
           </div>
         )}
         {careerError && !careerLoading && (
-          <p role="alert" className="mt-3 text-[12.5px] text-red">{careerError}. No sample data is substituted.</p>
+          <DataState tone="error" label={careerError} detail="No substitute data is shown." className="mt-3" />
         )}
 
         {!careerLoading && !careerError && arc.length > 0 && (
@@ -286,7 +287,7 @@ export default function HistoryView() {
           </h3>
           {compsLoading && <p className="mt-2 text-[12.5px] text-ink-3">Scoring the pool…</p>}
           {compsError && !compsLoading && (
-            <p role="alert" className="mt-2 text-[12.5px] text-red">{compsError}. No substitute data is shown.</p>
+            <DataState tone="error" label={compsError} detail="No substitute data is shown." className="mt-2" />
           )}
           {!compsLoading && !compsError && comps?.rows && (
             <div className="mt-2 divide-y divide-line">
@@ -335,7 +336,7 @@ export default function HistoryView() {
 
         {leadersLoading && <p className="mt-2 text-[12.5px] text-ink-3">Ranking the pool…</p>}
         {leadersError && !leadersLoading && (
-          <p role="alert" className="mt-2 text-[12.5px] text-red">{leadersError}. No substitute data is shown.</p>
+          <DataState tone="error" label={leadersError} detail="No substitute data is shown." className="mt-2" />
         )}
         {!leadersLoading && !leadersError && leaders?.rows && (
           <div className="mt-2 divide-y divide-line">

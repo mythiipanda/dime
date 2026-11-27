@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
+import { DataState } from "@/components/ds/DataState";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -274,7 +275,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
 
       {!loading && error && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 
@@ -505,7 +506,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   ))}
                 </div>
               ) : (
-                <p className="mt-2 text-[12.5px] text-ink-3">Apron state unavailable.</p>
+                <DataState tone="absent" label="Apron state unavailable." className="mt-2" />
               )}
             </section>
 
