@@ -209,3 +209,22 @@ test("share minting failure is honest and in-place", async () => {
   }
 });
 
+test("post-mint edits surface Share updated instead of a dead end", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    const share = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Share")!;
+    await click(share);
+    assert.equal(mounted.objectRequests.length, 1);
+    assert.equal([...mounted.host.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Share"), false, "share hidden while snapshot matches");
+    await clickOption(mounted.host, "Jaylen Brown", "2029-30");
+    const again = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Share updated");
+    assert.ok(again, "Share updated appears once moves diverge");
+    assert.match(mounted.host.textContent!, /changed since this link was minted/);
+    await click(again);
+    assert.equal(mounted.objectRequests.length, 2, "second mint creates a new object");
+  } finally {
+    await mounted.cleanup();
+  }
+});
+

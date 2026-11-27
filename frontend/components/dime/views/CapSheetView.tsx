@@ -58,7 +58,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const [saveState, setSaveState] = useState<string | null>(null);
-  const [share, setShare] = useState<{ phase: "idle" } | { phase: "minting" } | { phase: "minted"; link: string; copied: boolean } | { phase: "error" }>({ phase: "idle" });
+  const [share, setShare] = useState<{ phase: "idle" } | { phase: "minting" } | { phase: "minted"; link: string; copied: boolean; moves: ScenarioMove[] } | { phase: "error" }>({ phase: "idle" });
   const [signingAmount, setSigningAmount] = useState("");
   const [signingLabel, setSigningLabel] = useState("");
   const fixture = useFixture();
@@ -225,7 +225,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
         try {
           window.localStorage.setItem(`dime_object_token:${created.object_id}`, created.owner_token);
         } catch {}
-        setShare({ phase: "minted", link: `${window.location.origin}/s/${created.read_token}`, copied: false });
+        setShare({ phase: "minted", link: `${window.location.origin}/s/${created.read_token}`, copied: false, moves });
       })
       .catch(() => setShare({ phase: "error" }));
   }
@@ -475,7 +475,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   {scenarioError && <p className="text-[11.5px] text-red">{scenarioError}</p>}
                   {scenario && (
                     <p className="border-t border-line pt-1.5 font-mono text-[11px] tabular-nums text-ink">
-                      payroll after: {money(scenario.pay_after)}
+                      payroll after: {money(scenario.pay_after)}M
                     </p>
                   )}
                 </div>
@@ -496,13 +496,13 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   >
                     Save to board
                   </button>
-                  {share.phase !== "minted" && (
+                  {(share.phase !== "minted" || JSON.stringify(moves) !== JSON.stringify(share.moves)) && (
                     <button
                       className="h-7 rounded-[7px] border border-line px-2 text-[11.5px] text-ink-2 hover:bg-field disabled:opacity-50"
                       onClick={mintShare}
                       disabled={share.phase === "minting"}
                     >
-                      {share.phase === "minting" ? "Sharing…" : "Share"}
+                      {share.phase === "minting" ? "Sharing…" : share.phase === "minted" ? "Share updated" : "Share"}
                     </button>
                   )}
                   <button
@@ -515,7 +515,10 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   {share.phase === "minted" && (
                     <div className="w-full rounded-[7px] border border-line bg-field p-2">
                       <p className="text-[11px] leading-[1.45] text-ink-2">
-                        Snapshot link minted — recipients see these moves evaluated live. Editing the scenario here won't change it; share again for a new link.
+                        Snapshot link minted — recipients see those moves evaluated live.
+                        {JSON.stringify(moves) !== JSON.stringify(share.moves)
+                          ? " The scenario has changed since this link was minted — the link still holds the earlier moves; use Share updated for a new link."
+                          : " Editing the scenario here won't change it; share again for a new link."}
                       </p>
                       <div className="mt-1.5 flex items-center gap-1.5">
                         <input
