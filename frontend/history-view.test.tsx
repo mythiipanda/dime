@@ -297,3 +297,60 @@ test("era-window lens narrows the comp pool and rides the URL", async () => {
     restore();
   }
 });
+
+test("compare handoff: pinned pair writes compare picks and navigates; ask envelope carries the match", async () => {
+  const asks: Array<{ text: string; context: unknown }> = [];
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/?tab=history" });
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement,
+    Element: dom.window.Element,
+    Node: dom.window.Node,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  });
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/history/career")) return Response.json(careerPayload);
+    if (url.includes("/history/era-comps")) return Response.json(compsPayload);
+    if (url.includes("/history/leaders")) return Response.json({ ok: true, rows: [], meta: {} });
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+  const { default: HistoryView } = await import("./components/dime/views/HistoryView");
+  const host = dom.window.document.getElementById("root")!;
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<HistoryView onAsk={(text: string, context: unknown) => asks.push({ text, context })} />));
+    await flush();
+    clickSeasonRow(host, "1996-97");
+    await flush();
+    const askBtn = host.querySelector("[data-testid='ask-match']");
+    assert.ok(askBtn, "comps panel carries an ask-about-the-match entry");
+    act(() => { (askBtn as HTMLElement).click(); });
+    await flush();
+    assert.equal(asks.length, 1);
+    assert.match(asks[0].text, /match/i);
+    const ctx = asks[0].context as { kind?: string; entities?: Record<string, unknown> };
+    assert.equal(ctx.kind, "era_comps", "envelope carries the era-comps kind");
+    assert.ok(ctx.entities?.player, "envelope carries the target player");
+    assert.ok(ctx.entities?.comp, "envelope carries the comp player-season");
+    const pinBtn = host.querySelector("[data-testid='pin-season']");
+    act(() => { (pinBtn as HTMLElement).click(); });
+    await flush();
+    assert.ok(!host.querySelector("[data-testid='compare-pair']"), "compare handoff is meaningless before walking away — pin IS the target");
+    const walkBtn = host.querySelector("[data-testid='walk-comp']");
+    act(() => { (walkBtn as HTMLElement).click(); });
+    await flush();
+    const compareBtn = host.querySelector("[data-testid='compare-pair']");
+    assert.ok(compareBtn, "pin chip carries a compare handoff once walked away");
+    act(() => { (compareBtn as HTMLElement).click(); });
+    await flush();
+    const picks = JSON.parse((globalThis as any).window.localStorage.getItem("dime_compare_v1") ?? "[]");
+    assert.equal(picks.length, 2, "compare handoff writes the pair into the compare surface's own state contract");
+    assert.ok(picks.every((p: { id?: number; season?: string }) => typeof p.id === "number" && typeof p.season === "string"), "picks carry ids and seasons");
+  } finally {
+    await act(async () => root.unmount());
+    globalThis.fetch = previousFetch;
+  }
+});
