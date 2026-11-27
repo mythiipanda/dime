@@ -8,6 +8,10 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr
+from ..cap_rules import (
+    matching_election as _matching_election,
+    payroll_proxy_meta as _payroll_proxy_meta,
+)
 from ._helpers import _owned_connection, _pkg
 from .cba_cap import (
     CAP,
@@ -17,6 +21,7 @@ from .cba_cap import (
     _hard_cap_consequences,
     _locate_player_team,
     _match_trade_players,
+    _operative_match_rule,
     _payroll,
     _payroll_source,
     _resolve_team_abbr,
@@ -378,14 +383,16 @@ def _placement_fits(salaries: list[int], capacities: list[int],
 def _expanded_matching_use(incoming_salaries: list[int], in_total: int,
                            out_eff: int, room_before: int,
                            capacities: list[int],
-                           required_bins: int) -> bool:
-    if not _used_expanded_matching(in_total, out_eff, room_before):
+                           required_bins: int,
+                           cushion: int = _TPE_CUSHION) -> bool:
+    if not _used_expanded_matching(
+            in_total, out_eff, room_before, cushion=cushion):
         return False
     if not capacities:
         return True
-    strict_limit = out_eff
+    strict_limit = out_eff + cushion
     if room_before > 0:
-        strict_limit += room_before + _TPE_CUSHION
+        strict_limit += room_before
     return not _placement_fits(
         incoming_salaries, [strict_limit] + capacities, required_bins,
         strict_limit)
@@ -845,9 +852,15 @@ def _evaluate_team(team: str, side: dict[str, Any],
                 if canonical_team_abbr(move["to"]) == team
                 for pick in move["picks"]]
     is_snt_receiver = team == canonical_team_abbr(snt_receiver)
+    cushion = 0 if state_after["over_apron1"] else _TPE_CUSHION
     expanded_matching = _expanded_matching_use(
         incoming_salaries, side["in_total"], out_eff, room_before,
-        usage["capacities"], required_tpe_bins)
+        usage["capacities"], required_tpe_bins, cushion)
+    election = _matching_election(
+        side["in_total"], out_eff, room_before, cushion,
+        len(side["out_names"]), expanded_matching,
+        bool(usage["active"]))
+    rule = _operative_match_rule(rule, election)
     hard_cap = _hard_cap_consequences(
         team, pay_after, aggregates=aggregates, cash_out=cash_out,
         prior_tpe=usage["prior"], snt_tpe=usage["snt"],
@@ -879,6 +892,9 @@ def _evaluate_team(team: str, side: dict[str, Any],
         "matching_ok": salary_fit,
         "aggregates": aggregates,
         "hard_cap": hard_cap["hard_cap"],
+        "hard_cap_causes": hard_cap["causes"],
+        "hard_cap_violations": hard_cap["violations"],
+        **election,
         "over_apron1": state_after["over_apron1"],
         "over_apron2": state_after["over_apron2"],
         "room_apron2": state_after["room_apron2"],
@@ -1113,11 +1129,15 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
         "source": state["source"], "rules": "v2-2023cba-full",
         "salary_date": state["salary_date"],
         "season": state["season"],
+        **_payroll_proxy_meta(),
         "disclaimer": "Estimate only. Covers matching, apron "
         "aggregation, hard caps, typed TPE restrictions, cash "
         "bans, sign-and-trade terms/BYC, year-grain pick "
-        "ownership, Stepien and frozen-pick rules. Skips "
-        "no-trade clauses, trade kickers, poison-pill, and "
+        "ownership, Stepien and frozen-pick rules. Salary-matching "
+        "mechanism use is inferred as the least restrictive structure "
+        "available from the supplied players; actual NBA trade-call "
+        "exception elections and prior hard-cap history are not modeled. "
+        "Skips no-trade clauses, trade kickers, poison-pill, and "
         "minimum-salary exceptions; "
         f"{_PICK_OWNERSHIP_LIMITATIONS}; sign-and-trade "
         f"{_SNT_GUARANTEE_DISCLOSURE}; prior-team/preseason "
