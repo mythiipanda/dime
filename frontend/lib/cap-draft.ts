@@ -1,4 +1,5 @@
 import type { ScenarioMove } from "./capsheet-fixture";
+import type { MoveGroupsMap } from "./move-groups";
 import { mintObject, updateObject, fetchOwnedObject } from "./objects-client";
 
 const mappingKey = (team: string, season: string) => `dime_cap_draft:${team}:${season}`;
@@ -23,11 +24,11 @@ function clearMapping(team: string, season: string) {
   } catch {}
 }
 
-function payloadFor(team: string, season: string, moves: ScenarioMove[]) {
-  return { team, season, moves };
+function payloadFor(team: string, season: string, moves: ScenarioMove[], groups?: MoveGroupsMap) {
+  return { team, season, moves, ...(groups && Object.keys(groups).length > 0 ? { groups } : {}) };
 }
 
-export async function syncCapDraft(team: string, season: string, moves: ScenarioMove[]): Promise<boolean> {
+export async function syncCapDraft(team: string, season: string, moves: ScenarioMove[], groups?: MoveGroupsMap): Promise<boolean> {
   const existing = draftMapping(team, season);
   if (moves.length === 0) {
     if (existing) {
@@ -37,7 +38,7 @@ export async function syncCapDraft(team: string, season: string, moves: Scenario
     }
     return true;
   }
-  const payload = payloadFor(team, season, moves);
+  const payload = payloadFor(team, season, moves, groups);
   if (existing) {
     const updated = await updateObject(existing, { payload });
     if (updated) return true;
@@ -52,12 +53,12 @@ export async function syncCapDraft(team: string, season: string, moves: Scenario
   }
 }
 
-export async function loadCapDraft(team: string, season: string): Promise<ScenarioMove[] | null> {
+export async function loadCapDraft(team: string, season: string): Promise<{ moves: ScenarioMove[]; groups?: MoveGroupsMap } | null> {
   const objectId = draftMapping(team, season);
   if (!objectId) return null;
   const owned = await fetchOwnedObject(objectId);
   const payload = owned && typeof owned === "object" ? (owned as Record<string, unknown>).payload as Record<string, unknown> | undefined : undefined;
   if (!payload || !Array.isArray(payload.moves) || payload.moves.length === 0) return null;
   if ((owned as Record<string, unknown>).archived === true) return null;
-  return payload.moves as ScenarioMove[];
+  return { moves: payload.moves as ScenarioMove[], ...(payload.groups && typeof payload.groups === "object" ? { groups: payload.groups as MoveGroupsMap } : {}) };
 }

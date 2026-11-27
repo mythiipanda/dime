@@ -1,4 +1,5 @@
 import type { ScenarioMove } from "./capsheet-fixture";
+import type { MoveGroupsMap } from "./move-groups";
 
 const KEY = "dime_cap_handoff_v1";
 
@@ -7,6 +8,7 @@ export interface CapHandoff {
   season: string;
   moves: ScenarioMove[];
   source: string;
+  groups?: MoveGroupsMap;
 }
 
 function validMove(move: unknown): move is ScenarioMove {
@@ -30,7 +32,7 @@ export function consumeCapHandoff(): CapHandoff | null {
     if (!parsed || typeof parsed !== "object") return null;
     const candidate = parsed as Record<string, unknown>;
     if (typeof candidate.team !== "string" || typeof candidate.season !== "string" || !Array.isArray(candidate.moves) || candidate.moves.length === 0 || !candidate.moves.every(validMove)) return null;
-    return { team: candidate.team, season: candidate.season, moves: candidate.moves, source: typeof candidate.source === "string" ? candidate.source : "" };
+    return { team: candidate.team, season: candidate.season, moves: candidate.moves, source: typeof candidate.source === "string" ? candidate.source : "", ...(candidate.groups && typeof candidate.groups === "object" ? { groups: candidate.groups as MoveGroupsMap } : {}) };
   } catch {
     return null;
   }
