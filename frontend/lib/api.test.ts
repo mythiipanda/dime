@@ -322,7 +322,7 @@ type SseMock = {
 
 
 
-function installSseMock(): SseMock {
+function installSseMock(runTimeoutHeader: string | null = null): SseMock {
   const encoder = new TextEncoder();
   const queue: Uint8Array[] = [];
   const pending: ((r: { done: boolean; value?: Uint8Array }) => void)[] = [];
@@ -377,7 +377,7 @@ function installSseMock(): SseMock {
     );
     return {
       ok: true,
-      headers: { get: () => "text/event-stream" },
+      headers: { get: (name: string) => name === "x-dime-run-timeout-ms" ? runTimeoutHeader : "text/event-stream" },
       body: { getReader: () => reader },
     };
   };
@@ -483,7 +483,7 @@ test("watchdog: dead connection still aborts on idle after 90s", async (t) => {
   }
 });
 
-test("watchdog: 8-min absolute ceiling fires even with real events flowing", async (t) => {
+test("watchdog: fallback absolute ceiling fires even with real events flowing", async (t) => {
   t.mock.timers.enable({ apis: ["setInterval", "Date"] });
   const sse = installSseMock();
   const s = streamHandlers();
@@ -497,8 +497,48 @@ test("watchdog: 8-min absolute ceiling fires even with real events flowing", asy
     }
     await p;
     assert.deepEqual(s.errors, [
-      "The request timed out after 8 minutes. Try a simpler question or try again.",
+      "This run is taking longer than the live window, but it continues on the server - reload this thread in a few minutes to see the completed answer.",
     ]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("watchdog: server-advertised budget shortens the ceiling with grace", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  const sse = installSseMock("60000");
+  const s = streamHandlers();
+  try {
+    const p = postChatStream("q", null, s.handlers);
+    sse.emit("message");
+    await advance(t, 30_000);
+    sse.emit("message");
+    await advance(t, 30_000);
+    assert.deepEqual(s.errors, []);
+    sse.emit("message");
+    await advance(t, 20_000);
+    await p;
+    assert.deepEqual(s.errors, [
+      "This run is taking longer than the live window, but it continues on the server - reload this thread in a few minutes to see the completed answer.",
+    ]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("watchdog: server budget above the fallback extends the ceiling", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  const sse = installSseMock("900000");
+  const s = streamHandlers();
+  try {
+    const p = postChatStream("q", null, s.handlers);
+    for (let i = 0; i < 17; i++) {
+      sse.emit("message");
+      await advance(t, 30_000);
+    }
+    assert.deepEqual(s.errors, []);
+    sse.end();
+    await p;
   } finally {
     delete (globalThis as Record<string, unknown>).fetch;
   }

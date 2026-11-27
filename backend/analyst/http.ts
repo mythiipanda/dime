@@ -460,7 +460,7 @@ export function createProductServer(options: {
         let heartbeat: ReturnType<typeof setTimeout> | undefined;
         const resetHeartbeat = () => { clearTimeout(heartbeat); heartbeat = setTimeout(() => { res.write(encodeEvent({ type: "ping", data: { ok: true } })); resetHeartbeat(); }, 15000); };
         resetHeartbeat();
-        res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "x-dime-run-id": run });
+        res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "x-dime-run-id": run, "x-dime-run-timeout-ms": String(timeoutMs) });
         try {
             for await (const event of analyst.stream(input, controller.signal, run, { runTimeoutMs: timeoutMs })) {
                 res.write(encodeEvent(event));
