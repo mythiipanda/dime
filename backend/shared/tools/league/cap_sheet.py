@@ -7,6 +7,8 @@ from ..cap_rules import (
     apron_state,
     cba_restrictions,
     matching_band,
+    matching_election,
+    payroll_proxy_meta,
     roster_issues,
     scenario_trace,
     used_expanded_matching,
@@ -224,7 +226,7 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
             "meta": {"holds_note": holds_note, "season_columns": sheet["seasons"],
                      "unrolling": "shared.tools.cap_sheet",
                      "source": _payroll_source(con), "salary_date": _salary_date(con),
-                     "season": season}}
+                     "season": season, **payroll_proxy_meta()}}
 
 
 def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
@@ -349,22 +351,31 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     room_before = max(0, lines["cap"] - pay_before)
     if out_names and in_names:
         aggregates = len(out_names) > 1
-        if used_expanded_matching(in_total, out_total, room_before):
+        cushion = 0 if state["over_apron1"] else 250_000
+        expanded_matching = used_expanded_matching(
+            in_total, out_total, room_before, cushion=cushion)
+        election = matching_election(
+            in_total, out_total, room_before, cushion,
+            len(out_names), expanded_matching)
+        if expanded_matching:
             hard_cap = "first apron"
             if pay_after > lines["apron1"]:
-                issues.append(f"{team} is hard-capped at the first apron by "
-                              "expanded salary matching")
+                issues.append(
+                    f"{team} cannot use the Expanded Traded Player Exception "
+                    f"because post-trade payroll proxy (${pay_after:,}) would "
+                    f"exceed the first apron (${lines['apron1']:,}); the "
+                    "transaction is prohibited")
         if state["over_apron2"] and aggregates:
             issues.append("cannot aggregate salaries above the second apron")
             matching = {"incoming": in_total, "outgoing": out_total, "legal": False,
                         "match_rule": "no aggregation (above the second apron)",
-                        "allowed_incoming": 0}
+                        "allowed_incoming": 0, **election}
         else:
             band = matching_band(out_total, bool(state["over_apron1"]), room_before)
             matching = {"incoming": in_total, "outgoing": out_total,
                         "allowed_incoming": band["allowed_incoming"],
                         "match_rule": band["match_rule"],
-                        "legal": in_total <= band["allowed_incoming"]}
+                        "legal": in_total <= band["allowed_incoming"], **election}
             if not matching["legal"]:
                 issues.append(f"{team} takes back too much "
                               f"(${in_total:,} vs {band['allowed_incoming']:,} "
@@ -388,6 +399,7 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "matching": matching,
             "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con),
                      "requested_season": requested_season,
+                     **payroll_proxy_meta(),
                      **({"waiver_basis": WAIVER_BASIS,
                          "waiver_timing": waiver_timing}
                         if any(move.get("kind") == "waive" for move in moves) else {})}}

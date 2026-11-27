@@ -56,6 +56,13 @@ def test_used_expanded_matching():
     assert used_expanded_matching(30_000_000, 20_000_000) is True
     assert used_expanded_matching(20_000_000, 20_000_000) is False
     assert used_expanded_matching(10_000_000, 20_000_000) is False
+    assert used_expanded_matching(20_100_000, 20_000_000) is False
+    assert used_expanded_matching(20_250_000, 20_000_000) is False
+    assert used_expanded_matching(20_250_001, 20_000_000) is True
+    assert used_expanded_matching(
+        20_100_000, 20_000_000, cushion=0) is True
+    assert used_expanded_matching(
+        20_000_000, 20_000_000, cushion=0) is False
     assert used_expanded_matching(35_000_000, 20_000_000, cap_room=15_000_000) is False
     assert used_expanded_matching(36_000_000, 20_000_000, cap_room=15_000_000) is True
 
@@ -73,7 +80,8 @@ def test_hard_cap_consequences_cover_both_triggers_post_trade():
         aggregates=True, expanded_matching=True)
     assert over_first["violations"] == ["first apron"]
     assert len(over_first["issues"]) == 1
-    assert "expanded salary matching" in over_first["issues"][0]
+    assert "Expanded Traded Player Exception" in over_first["issues"][0]
+    assert "transaction is prohibited" in over_first["issues"][0]
 
     over_second = hard_cap_consequences(
         "BOS", CAP["apron2"] + 1,

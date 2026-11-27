@@ -137,6 +137,150 @@ def test_crossing_first_apron_uses_post_trade_strict_matching(monkeypatch, tmp_p
     assert any("BOS takes back too much" in issue for issue in out["issues"])
 
 
+def _standard_band_legality(monkeypatch, tmp_path, bos_payroll, incoming):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", bos_payroll, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", incoming)]))
+    return get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+
+
+@pytest.mark.parametrize("incoming", [20_100_000, 20_250_000])
+def test_standard_tpe_band_is_legal_without_hard_cap(
+        monkeypatch, tmp_path, incoming):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 195_000_000, incoming)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 195_000_000 - 20_000_000 + incoming
+    assert row["matching_structure"] == "standard_simultaneous"
+    assert row["matching_mechanisms"] == ["standard_simultaneous"]
+    assert row["expanded_required"] is False
+    assert row["hard_cap"] == ""
+    assert "standard TPE" in row["matching_note"]
+    assert "no expanded TPE" in row["matching_note"]
+
+
+def test_standard_tpe_exact_boundary_plus_one_requires_expanded(
+        monkeypatch, tmp_path):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 195_000_000, 20_250_001)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 195_250_001
+    assert row["matching_structure"] == "expanded"
+    assert row["matching_mechanisms"] == ["expanded"]
+    assert row["expanded_required"] is True
+    assert row["hard_cap"] == "first apron"
+    assert row["hard_cap_violations"] == []
+
+
+def test_above_first_apron_surplus_is_prohibited_expanded_use(
+        monkeypatch, tmp_path):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 209_000_000, 20_100_000)
+    assert out["ok"] is True
+    assert out["legal"] is False
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 209_100_000
+    assert row["matching_structure"] == "expanded"
+    assert row["expanded_required"] is True
+    assert row["hard_cap"] == "first apron"
+    assert row["hard_cap_violations"] == ["first apron"]
+    assert any("cannot use the Expanded Traded Player Exception" in issue
+               and "transaction is prohibited" in issue
+               for issue in out["issues"])
+
+
+def test_above_first_apron_exact_standard_match_is_legal_without_hard_cap(
+        monkeypatch, tmp_path):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 209_100_000, 20_000_000)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 209_100_000
+    assert row["over_apron1"] is True
+    assert row["matching_structure"] == "standard_simultaneous"
+    assert row["expanded_required"] is False
+    assert row["hard_cap"] == ""
+
+
+def _standard_band_check(monkeypatch, tmp_path, bos_payroll, incoming):
+    from shared.tools import get_trade_check
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", bos_payroll, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", incoming)]))
+    return get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One",
+        "team_b": "MIA", "players_b": "Beta Two",
+        "season": "2026-27",
+    })
+
+
+@pytest.mark.parametrize(
+    "payroll,incoming,legal,structure,expanded,hard_cap",
+    [
+        (195_000_000, 20_100_000, True, "standard_simultaneous", False, ""),
+        (195_000_000, 20_250_000, True, "standard_simultaneous", False, ""),
+        (195_000_000, 20_250_001, True, "expanded", True, "first apron"),
+        (209_000_000, 20_100_000, False, "expanded", True, "first apron"),
+        (209_100_000, 20_000_000, True, "standard_simultaneous", False, ""),
+    ])
+def test_trade_check_standard_tpe_band_vectors(
+        monkeypatch, tmp_path, payroll, incoming, legal, structure,
+        expanded, hard_cap):
+    out = _standard_band_check(monkeypatch, tmp_path, payroll, incoming)
+    assert out["ok"] is True
+    assert out["rows"]["legal"] is legal, out["rows"]["issues"]
+    row = out["rows"]["team_a"]
+    assert row["payroll"] == payroll
+    assert row["matching_structure"] == structure
+    assert row["matching_mechanisms"] == [structure]
+    assert row["expanded_required"] is expanded
+    assert row["hard_cap"] == hard_cap
+    assert out["meta"]["salary_basis"] == (
+        "approximate_salary_ledger_not_exact_apron_team_salary")
+
+
+def test_trade_legality_meta_discloses_payroll_proxy(monkeypatch, tmp_path):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 195_000_000, 20_100_000)
+    assert out["ok"] is True
+    meta = out["meta"]
+    assert meta["salary_basis"] == (
+        "approximate_salary_ledger_not_exact_apron_team_salary")
+    assert meta["ats_exact"] is False
+    assert meta["ats_missing_inputs"] == [
+        "performance_bonus_amounts_and_likelihood",
+        "contract_component_and_protection_allocations",
+        "actual_dead_money_and_stretch_elections",
+        "rfa_offer_sheet_required_tender_and_free_agent_state",
+        "exception_inventory_and_usage",
+        "contract_subtype_timing_flags",
+        "official_team_salary_reconciliation",
+    ]
+    assert meta["payroll_proxy_disclosure"] == (
+        "Approximation, not exact Apron Team Salary: this result uses the "
+        "warehouse salary ledger of listed player salaries only. It does not "
+        "calculate exact ATS because performance bonuses (including unlikely "
+        "bonuses counted for apron purposes), waived/stretched dead money, "
+        "retired-player or grievance amounts, minimum-contract apron adjustments, "
+        "restricted free-agent/offer-sheet/required-tender amounts, exception "
+        "bookkeeping, two-way/conversion status, and offseason next-year "
+        "assumptions are missing or estimated. Apron room, hard-cap, and TPE "
+        "conclusions are screening estimates and can be wrong near either apron; "
+        "do not represent this as a final CBA legality determination.")
+
+
 def test_expanded_matching_below_first_apron_is_legal_hard_cap_trigger(
         monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
@@ -174,8 +318,8 @@ def test_expanded_matching_cannot_finish_above_first_apron(
     row = _team_rows(out)["BOS"]
     assert row["payroll_after"] == 210_000_000
     assert row["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
-               and "expanded salary matching" in issue
+    assert any("cannot use the Expanded Traded Player Exception" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
 
 
@@ -239,8 +383,8 @@ def test_trade_check_expanded_matching_over_first_apron_issue(
     rows = out["rows"]
     assert rows["legal"] is False
     assert rows["team_a"]["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
-               and "expanded salary matching" in issue
+    assert any("cannot use the Expanded Traded Player Exception" in issue
+               and "transaction is prohibited" in issue
                for issue in rows["issues"])
 
 
@@ -293,8 +437,8 @@ def test_cap_scenario_expanded_matching_cannot_finish_above_first_apron(
     assert out["ok"] is True
     assert out["summary"]["payroll_after"] == 210_000_000
     assert out["summary"]["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
-               and "expanded salary matching" in issue
+    assert any("cannot use the Expanded Traded Player Exception" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
 
 
@@ -456,7 +600,8 @@ def test_sign_and_trade_receiver_cannot_finish_above_first_apron(
     assert rows["MIA"]["matching_ok"] is True
     assert rows["MIA"]["payroll_after"] == 215_000_000
     assert rows["MIA"]["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
+    assert any("cannot use a sign-and-trade acquisition" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
     assert not any("takes back too much" in issue for issue in out["issues"])
 
@@ -480,7 +625,8 @@ def test_second_apron_cash_is_rejected(monkeypatch, tmp_path):
     assert rows["BOS"]["cash_out"] == 1_000_000
     assert any("cannot send cash above the second apron" in issue
                for issue in out["issues"])
-    assert any("hard-capped at the second apron" in issue
+    assert any("cannot use cash in a trade" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
 
 
@@ -527,8 +673,8 @@ def test_prior_year_ordinary_tpe_hard_caps_at_first_apron(
     assert row["over_apron1"] is True
     assert row["over_apron2"] is False
     assert row["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
-               and "traded player exception" in issue
+    assert any("cannot use the prior-year traded player exception" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
 
 
