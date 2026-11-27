@@ -112,7 +112,7 @@ def salary_records(con, season: str | None = None, salary_season: str | None = N
                 records = rows
             else:
                 for row in rows:
-                    primary = match_record(records, row['PLAYER_NAME'], row.get('PLAYER_ID'), row['TEAM'])
+                    primary = match_record(records, row['PLAYER_NAME'], row.get('PLAYER_ID'), row['TEAM'], salary=row.get('salary'))
                     if primary is None:
                         records.append(row)
                     elif primary['salary'] is None:
@@ -122,7 +122,13 @@ def salary_records(con, season: str | None = None, salary_season: str | None = N
     return records
 
 
-def match_record(records: list[dict], name: str, player_id=None, team: str = '') -> dict | None:
+def name_tokens(value: object) -> set[str]:
+    text = ''.join(c for c in unicodedata.normalize('NFKD', str(value or ''))
+                   if not unicodedata.combining(c)).lower()
+    return {t for t in re.findall(r'[a-z]+', text) if len(t) >= 4}
+
+
+def match_record(records: list[dict], name: str, player_id=None, team: str = '', salary=None) -> dict | None:
     team_code = canonical_team_abbr(team)
     if player_id is not None:
         hits = [r for r in records if r.get('PLAYER_ID') == player_id]
@@ -136,7 +142,17 @@ def match_record(records: list[dict], name: str, player_id=None, team: str = '')
     if len(hits) == 1:
         return hits[0]
     hits = [r for r in hits if canonical_team_abbr(r.get('TEAM')) == team_code]
-    return hits[0] if len(hits) == 1 else None
+    if len(hits) == 1:
+        return hits[0]
+    if salary and team_code:
+        want = name_tokens(name)
+        hits = [r for r in records
+                if r.get('salary') and float(r['salary']) == float(salary)
+                and canonical_team_abbr(r.get('TEAM')) == team_code
+                and name_tokens(r.get('PLAYER_NAME', r.get('PLAYER'))) & want]
+        if len(hits) == 1:
+            return hits[0]
+    return None
 
 
 def warehouse_player_ids(con) -> list[dict]:
