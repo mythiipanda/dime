@@ -157,7 +157,7 @@ function MatchupDetail({ game }: { game: MatchupGame }) {
   return (
     <div
       className="rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5"
-      style={{ animation: "fade-up 200ms cubic-bezier(0.23,1,0.32,1) both" }}
+      style={{ animation: "fade-up 200ms var(--ease-out-strong) both" }}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="text-[14px] font-medium text-ink">

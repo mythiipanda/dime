@@ -252,7 +252,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       )}
 
       {!loading && !error && sheet && (
-        <div className="mt-4 flex flex-col gap-3 lg:flex-row">
+        <div key={team} className="mt-4 flex flex-col gap-3 lg:flex-row" style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
           <div className="min-w-0 flex-1 rounded-[10px] bg-surface shadow-hairline">
             <div className="flex items-center justify-between px-4 pt-3">
               <span className="text-[13px] font-semibold text-ink">

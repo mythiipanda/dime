@@ -166,7 +166,7 @@ export default function ScoutView() {
       )}
 
       {!loading && !error && data && team !== opponent && (
-        <div className="mt-4 grid items-start gap-3 xl:grid-cols-2">
+        <div key={`${team}-${opponent}`} className="mt-4 grid items-start gap-3 xl:grid-cols-2" style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
           {data.edge && (
             <div className="rounded-[10px] bg-surface p-4 text-[13px] leading-[1.6] text-ink-2 shadow-hairline sm:p-5 xl:col-span-2">
               <span className="text-[13px] font-semibold text-ink">Edge</span>
