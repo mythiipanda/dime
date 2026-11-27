@@ -58,7 +58,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .workspace-embedded { display: flex; height: calc(100dvh - 240px); min-height: 520px; }
 .workspace-embedded > section { width: 100%; min-height: 0; }
 .tools-view { display: flex; flex-direction: column; height: 100%; min-height: 700px; }
-.tools-view > * { flex: 1; min-height: 0; }
+.tools-view > * { flex: 1; min-height: 0; min-width: 0; width: 100%; }
 .workflow-page { max-width: 1020px; margin: 0 auto; padding: 48px 40px 64px; }
 .workflow-card { text-align: left; display: flex; flex-direction: column; min-height: 164px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); transition: border-color 150ms, transform 200ms var(--ease-out-strong), box-shadow 200ms; }
 .workflow-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-card); transform: translateY(-2px); }
