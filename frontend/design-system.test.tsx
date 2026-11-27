@@ -284,7 +284,7 @@ test("card sections dedupe a citation shared by every section to one line", () =
   }
 });
 
-test("undeclared provenance does not occupy the shell headline slot", () => {
-  const source = readFileSync(new URL("./lib/stream/provenance.ts", import.meta.url), "utf8");
-  assert.ok(!source.includes('"source not declared"'), "missing provenance quiets to the disclosure row instead of a second headline");
+test("the shell never renders undeclared provenance as a headline subtitle", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactShell.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes('source === "source not declared"'), "the shell drops the undeclared-provenance string from the subtitle slot");
 });
