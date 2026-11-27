@@ -99,9 +99,10 @@ def _population_spread(values: list[float]) -> float:
 def _round_val(key: str, value: object) -> float:
     return round(float(value or 0), 3) if key in _PERCENT_FEATURES else round(float(value or 0), 1)
 
-def _case_val(key: str, value: object) -> float:
-    if key in _PERCENT_FEATURES:
-        return round(float(value or 0) * 100, 1)
+def _prose_val(key: str, value: object) -> float:
+    number = float(value or 0)
+    if FEATURE_LABELS.get(key, "").endswith("%") and abs(number) <= 1:
+        return round(number * 100, 1)
     return _round_val(key, value)
 
 def _formula(spec: dict[str, Any]) -> str:
@@ -315,18 +316,18 @@ def _candidate_row(rank: int, total: float, row: dict[str, Any], contribs: list[
                    if float(row[f]) == bests[f]), None)
     if leader is not None:
         case_for = (f"leads the pool in {FEATURE_LABELS.get(leader, leader)} "
-                    f"at {_case_val(leader, row[leader])}")
+                    f"at {_prose_val(leader, row[leader])}")
     else:
         top_feat, top_z = max(
             contribs, key=lambda t: signs[t[1]] * t[2])[1:3]
         case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
-                    f"at {_case_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
+                    f"at {_prose_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
     weak_feat, weak_dz = min(
         ((feat, signs[feat] * z) for _, feat, z in contribs),
         key=lambda t: t[1])
     weak_label = FEATURE_LABELS.get(weak_feat, weak_feat)
-    weak_val = _case_val(weak_feat, row[weak_feat])
-    weak_avg = _case_val(weak_feat, means[weak_feat])
+    weak_val = _prose_val(weak_feat, row[weak_feat])
+    weak_avg = _prose_val(weak_feat, means[weak_feat])
     if weak_dz >= 0 or weak_val == weak_avg:
         case_against = (f"no clear weakness - closest to the pool "
                         f"average in {weak_label} ({weak_val})")
