@@ -43,7 +43,7 @@ FEATURE_LABELS = {
     "team_win_pct": "team win%", "team_opp_ppg": "opp PPG",
 }
 
-_ROUND3 = {"ts_pct", "team_win_pct"}
+_PERCENT_FEATURES = {"ts_pct", "team_win_pct"}
 
 STANDINGS_FIELDS = ("team_id", "wins", "losses", "opp_points_pg")
 
@@ -97,7 +97,12 @@ def _population_spread(values: list[float]) -> float:
     return math.sqrt(math.fsum((v - mean) ** 2 for v in values) / len(values))
 
 def _round_val(key: str, value: object) -> float:
-    return round(float(value or 0), 3) if key in _ROUND3 else round(float(value or 0), 1)
+    return round(float(value or 0), 3) if key in _PERCENT_FEATURES else round(float(value or 0), 1)
+
+def _case_val(key: str, value: object) -> float:
+    if key in _PERCENT_FEATURES:
+        return round(float(value or 0) * 100, 1)
+    return _round_val(key, value)
 
 def _formula(spec: dict[str, Any]) -> str:
     out = ""
@@ -137,7 +142,7 @@ def _missing_table() -> str | None:
     return None
 
 def _pool(season: str) -> list[dict[str, Any]]:
-    season = resolve_season(season)
+    season = resolve_season(season, table="silver_leaders_pts")
     source = _standings_for(str(season))
     return store._read_df(
         f"""SELECT l.PLAYER AS player, l.TEAM AS team,
@@ -172,7 +177,7 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
         valid = ", ".join(sorted(PROJECTION_SPECS))
         return {"tool": "get_award_race", "ok": False, "rows": {},
                 "meta": {}, "error": f"unknown award '{award}'; valid awards: {valid}"}
-    season = resolve_season(season)
+    season = resolve_season(season, table="silver_leaders_pts")
     season = clamp_season(season)
     spec = PROJECTION_SPECS[canon]
     if spec.get("unavailable"):
@@ -310,18 +315,18 @@ def _candidate_row(rank: int, total: float, row: dict[str, Any], contribs: list[
                    if float(row[f]) == bests[f]), None)
     if leader is not None:
         case_for = (f"leads the pool in {FEATURE_LABELS.get(leader, leader)} "
-                    f"at {_round_val(leader, row[leader])}")
+                    f"at {_case_val(leader, row[leader])}")
     else:
         top_feat, top_z = max(
             contribs, key=lambda t: signs[t[1]] * t[2])[1:3]
         case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
-                    f"at {_round_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
+                    f"at {_case_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
     weak_feat, weak_dz = min(
         ((feat, signs[feat] * z) for _, feat, z in contribs),
         key=lambda t: t[1])
     weak_label = FEATURE_LABELS.get(weak_feat, weak_feat)
-    weak_val = _round_val(weak_feat, row[weak_feat])
-    weak_avg = _round_val(weak_feat, means[weak_feat])
+    weak_val = _case_val(weak_feat, row[weak_feat])
+    weak_avg = _case_val(weak_feat, means[weak_feat])
     if weak_dz >= 0 or weak_val == weak_avg:
         case_against = (f"no clear weakness - closest to the pool "
                         f"average in {weak_label} ({weak_val})")
