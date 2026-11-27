@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ...contracts import contract_details, match_record, normalize_name, salary_records
+from ...contracts import canonical_team_abbr, contract_details, match_record, normalize_name, salary_records
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 from .cba_cap import (
     CAP,
@@ -379,7 +379,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
         limit = max(1, min(int(max_packages or 3), 10))
     except (TypeError, ValueError):
         limit = 3
-    restrict = {t.strip().upper()
+    restrict = {canonical_team_abbr(t)
                 for t in str(teams or "").split(",") if t.strip()}
 
     with _owned_connection(None, read_only=True) as con:

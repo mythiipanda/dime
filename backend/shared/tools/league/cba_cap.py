@@ -3,7 +3,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ...contracts import contract_details, resolve_salary_column, salary_records
+from ...contracts import canonical_team_abbr, contract_details, resolve_salary_column, salary_records
 from .._core import coerce_team_id, team_error_message
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
@@ -252,6 +252,7 @@ def _payroll(team: str, con: object = None,
                     f"silver_salaries has no salary column for season "
                     f"{season or 'unknown'}")
             records = salary_records(con, salary_season=season)
+            team_code = canonical_team_abbr(team)
             team_cache: dict[str, str] = {}
             rows = []
             players = []
@@ -265,7 +266,7 @@ def _payroll(team: str, con: object = None,
                     record_team = team_cache[key]
                 else:
                     record_team = str(r.get('TEAM') or '')
-                if record_team.upper() != team.upper():
+                if canonical_team_abbr(record_team) != team_code:
                     continue
                 salary = r.get('salary')
                 if salary is None:
@@ -369,7 +370,7 @@ def _season_player_team(con: object, name: str, season: str,
         except Exception:
             row = None
         if row and row[0]:
-            return str(row[0]).upper()
+            return canonical_team_abbr(row[0])
     return None
 
 

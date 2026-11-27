@@ -2,6 +2,7 @@ import duckdb
 import polars as pl
 import pytest
 
+from shared import store
 from shared.contracts import (
     canonical_team_abbr,
     match_record,
@@ -9,6 +10,38 @@ from shared.contracts import (
     salary_records,
     warehouse_player_ids,
 )
+from shared.tools.league.cba_cap import _payroll
+from shared.tools.league.trade_value import get_trade_partners
+
+
+class _NoCloseConnection:
+    def __init__(self, real):
+        self.real = real
+
+    def __getattr__(self, name):
+        return getattr(self.real, name)
+
+    def close(self):
+        pass
+
+
+def _install_in_memory_warehouse(monkeypatch, con):
+    proxy = _NoCloseConnection(con)
+
+    def connect(*args, **kwargs):
+        return proxy
+
+    monkeypatch.setattr(store, 'connect', connect)
+
+
+def _seed_partner_salaries(con):
+    con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2026_27 BIGINT)')
+    rows = [
+        ('Star Example', 'BOS', 10_000_000),
+        ('Partner Example', 'BRK', 10_000_000),
+        ('Partner Depth', 'BRK', 10_000_000),
+    ]
+    con.executemany('INSERT INTO silver_salaries VALUES (?, ?, ?)', rows)
 
 
 @pytest.mark.parametrize('raw,expected', [
@@ -84,5 +117,64 @@ def test_identity_rows_canonicalize_and_resolve_team_aliases():
         assert {row['TEAM'] for row in identity_rows} == {'WAS', 'BOS'}
         frame = pl.DataFrame({'PLAYER_NAME': ['Shared Example'], 'TEAM': ['wsh']})
         assert resolve_player_ids(frame, con)['PLAYER_ID'].to_list() == [1]
+    finally:
+        con.close()
+
+
+def test_payroll_canonicalizes_season_lookup_and_requested_team():
+    con = duckdb.connect(':memory:')
+    try:
+        con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2026_27 BIGINT)')
+        con.execute("INSERT INTO silver_salaries VALUES ('Payroll Example', 'BRK', 10000000)")
+        con.execute('CREATE TABLE silver_player_season (PLAYER VARCHAR, TEAM VARCHAR, _season VARCHAR)')
+        con.execute("INSERT INTO silver_player_season VALUES ('Payroll Example', 'BRK', '2026-27')")
+        canonical = _payroll('BKN', con, '2026-27')
+        raw = _payroll('BRK', con, '2026-27')
+        assert canonical == raw
+        assert canonical[0] == 10_000_000
+        assert [row['team'] for row in canonical[1]] == ['BKN']
+    finally:
+        con.close()
+
+
+def test_product_trade_assets_canonicalizes_requested_team(monkeypatch):
+    from analyst.direct_data import product_trade_assets
+
+    con = duckdb.connect(':memory:')
+    try:
+        _seed_partner_salaries(con)
+        _install_in_memory_warehouse(monkeypatch, con)
+        canonical = product_trade_assets.invoke({'team': 'BKN', 'season': '2026-27'})
+        raw = product_trade_assets.invoke({'team': 'BRK', 'season': '2026-27'})
+        assert canonical == raw
+        assert canonical['ok'] is True
+        assert canonical['team'] == 'BKN'
+        assert [row['name'] for row in canonical['players']] == ['Partner Example', 'Partner Depth']
+    finally:
+        con.close()
+
+
+def test_trade_partners_canonicalizes_restrict_entries(monkeypatch):
+    con = duckdb.connect(':memory:')
+    try:
+        _seed_partner_salaries(con)
+        _install_in_memory_warehouse(monkeypatch, con)
+        canonical = get_trade_partners.invoke({
+            'player': 'Star Example',
+            'season': '2026-27',
+            'teams': 'BKN',
+            'max_packages': 3,
+        })
+        raw = get_trade_partners.invoke({
+            'player': 'Star Example',
+            'season': '2026-27',
+            'teams': 'BRK',
+            'max_packages': 3,
+        })
+        assert canonical['ok'] is True
+        assert raw['ok'] is True
+        assert canonical['rows'] == raw['rows']
+        assert canonical['rows']
+        assert {row['team'] for row in canonical['rows']} == {'BKN'}
     finally:
         con.close()

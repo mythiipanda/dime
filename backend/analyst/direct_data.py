@@ -111,8 +111,8 @@ def product_trade_partners(player: str, season: str = '2026-27', teams: str = ''
 @tool(description='List one team\'s trade assets: roster salaries and owned draft picks.')
 def product_trade_assets(team: str, season: str = '2026-27') -> dict:
     from shared import store
-    from shared.contracts import salary_records
-    abbr = str(team or '').strip().upper()
+    from shared.contracts import canonical_team_abbr, salary_records
+    abbr = canonical_team_abbr(team)
     if not abbr:
         return {'ok': False, 'error': 'team needed'}
     try:
