@@ -213,3 +213,29 @@ def test_run_python_preserves_python_side_recovery_hint(monkeypatch, tmp_path):
     assert res["ok"] is False
     assert "unterminated" in res["error"]
     assert "triple" in res["recovery_hint"].lower()
+
+
+def test_enrich_error_passes_success_shaped_payloads_without_ok_key():
+    from analyst.tools.errors import enrich_error
+
+    payload = {"threads": [{"id": "t1", "title": "x"}]}
+    res = enrich_error("product_threads", dict(payload))
+    assert res == payload
+    assert "error" not in res
+    assert "recovery_hint" not in res
+
+    empty = {"runs": []}
+    res = enrich_error("product_runs", dict(empty))
+    assert res == empty
+    assert "summary" not in res
+
+
+def test_enrich_error_still_enriches_positive_failure_signals():
+    from analyst.tools.errors import enrich_error
+
+    explicit = enrich_error("product_x", {"ok": False, "reason": "ratings_table_empty"})
+    assert "recovery_hint" in explicit
+    assert explicit["error"]
+
+    errored = enrich_error("product_y", {"error": "boom"})
+    assert "next_actions" in errored

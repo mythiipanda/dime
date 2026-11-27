@@ -276,6 +276,11 @@ def _column_semantics(table: str, name: str) -> tuple[str, str]:
                 "per_mode48 to PerMode48.default='Totals'"
             )
             return unit, note
+    if table_key == "silver_prospect_stats" and upper == "USG":
+        return (
+            "pct",
+            "usage rate in percentage points on a 0-100 scale, not a 0-1 fraction",
+        )
     if table_key == "silver_hist_player_seasons":
         totals_units = {
             "PTS_TOTAL": (

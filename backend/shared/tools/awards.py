@@ -43,7 +43,7 @@ FEATURE_LABELS = {
     "team_win_pct": "team win%", "team_opp_ppg": "opp PPG",
 }
 
-_ROUND3 = {"ts_pct", "team_win_pct"}
+_PERCENT_FEATURES = {"ts_pct", "team_win_pct"}
 
 STANDINGS_FIELDS = ("team_id", "wins", "losses", "opp_points_pg")
 
@@ -97,7 +97,7 @@ def _population_spread(values: list[float]) -> float:
     return math.sqrt(math.fsum((v - mean) ** 2 for v in values) / len(values))
 
 def _round_val(key: str, value: object) -> float:
-    return round(float(value or 0), 3) if key in _ROUND3 else round(float(value or 0), 1)
+    return round(float(value or 0), 3) if key in _PERCENT_FEATURES else round(float(value or 0), 1)
 
 def _prose_val(key: str, value: object) -> float:
     number = float(value or 0)
@@ -143,7 +143,8 @@ def _missing_table() -> str | None:
     return None
 
 def _pool(season: str) -> list[dict[str, Any]]:
-    season = resolve_season(season)
+    season = resolve_season(season, table="silver_leaders_pts")
+    season = clamp_season(season, table="silver_leaders_pts")
     source = _standings_for(str(season))
     return store._read_df(
         f"""SELECT l.PLAYER AS player, l.TEAM AS team,
@@ -178,8 +179,8 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
         valid = ", ".join(sorted(PROJECTION_SPECS))
         return {"tool": "get_award_race", "ok": False, "rows": {},
                 "meta": {}, "error": f"unknown award '{award}'; valid awards: {valid}"}
-    season = resolve_season(season)
-    season = clamp_season(season)
+    season = resolve_season(season, table="silver_leaders_pts")
+    season = clamp_season(season, table="silver_leaders_pts")
     spec = PROJECTION_SPECS[canon]
     if spec.get("unavailable"):
         return {"tool": "get_award_race", "ok": False, "rows": {},

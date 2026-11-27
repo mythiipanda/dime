@@ -13,7 +13,10 @@ from .cba_cap import (
     _hard_cap_consequences,
     _locate_player_team,
     _match_trade_players,
+    _matching_election,
+    _operative_match_rule,
     _payroll,
+    _payroll_proxy_meta,
     _payroll_source,
     _salary_date,
     _used_expanded_matching,
@@ -209,8 +212,12 @@ def get_cap_scenario(team: str = "", signings: str = "",
     hard_cap = ""
     if trade_names and in_names:
         aggregates = len(trade_names) > 1
+        cushion = 0 if state_after["over_apron1"] else 250_000
         expanded_matching = _used_expanded_matching(
-            in_total, trade_total, room_before)
+            in_total, trade_total, room_before, cushion=cushion)
+        election = _matching_election(
+            in_total, trade_total, room_before, cushion,
+            len(trade_names), expanded_matching)
         consequence = _hard_cap_consequences(
             team.upper(), pay_after, aggregates=aggregates,
             expanded_matching=expanded_matching)
@@ -220,13 +227,14 @@ def get_cap_scenario(team: str = "", signings: str = "",
             issues.append("cannot aggregate salaries above the second apron")
             matching = {"incoming": in_total, "outgoing": trade_total,
                         "legal": False, "match_rule": "no aggregation (above the second apron)",
-                        "allowed_incoming": 0}
+                        "allowed_incoming": 0, **election}
         else:
             allow, rule = _allowed_incoming(
                 trade_total, bool(state_after["over_apron1"]), room_before)
+            rule = _operative_match_rule(rule, election)
             matching = {"incoming": in_total, "outgoing": trade_total,
                         "allowed_incoming": allow, "match_rule": rule,
-                        "legal": in_total <= allow}
+                        "legal": in_total <= allow, **election}
             if not matching["legal"]:
                 issues.append(
                     f"{team.upper()} takes back too much "
@@ -259,6 +267,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
         "issues": issues,
         "meta": {"source": source, "rules": "v2-2023cba",
                  "salary_date": salary_date, "season": season,
+                 **_payroll_proxy_meta(),
                  "roster_note": "player counts come from the salary sheet and "
                                 "may include dead money; confirm against the "
                                 "roster table",
