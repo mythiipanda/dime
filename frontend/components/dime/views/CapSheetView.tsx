@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
@@ -257,8 +258,17 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       </div>
 
       {loading && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Loading the cap sheet…
+        <div className="mt-4 flex flex-col gap-3 lg:flex-row" aria-label="loading the cap sheet">
+          <div className="min-w-0 flex-1 rounded-[10px] bg-surface p-4 shadow-hairline">
+            <Skeleton className="h-4 w-52" />
+            <div className="mt-4 space-y-2.5">
+              {Array.from({ length: 12 }).map((_, i) => <Skeleton key={i} className="h-[22px]" />)}
+            </div>
+          </div>
+          <div className="w-full shrink-0 space-y-3 lg:w-[300px]">
+            <Skeleton className="h-[150px] rounded-[10px]" />
+            <Skeleton className="h-[110px] rounded-[10px]" />
+          </div>
         </div>
       )}
 

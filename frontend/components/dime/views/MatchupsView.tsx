@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
 import { apiPath } from "@/lib/api";
@@ -267,8 +268,11 @@ export default function MatchupsView() {
       </div>
 
       {loading && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Loading tonight&rsquo;s slate…
+        <div className="mt-4 grid items-start gap-3 xl:grid-cols-[280px_1fr]" aria-label="loading tonight's slate">
+          <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[54px] rounded-[10px]" />)}
+          </div>
+          <Skeleton className="h-[420px] rounded-[10px]" />
         </div>
       )}
 

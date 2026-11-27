@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 import { Button } from "@/components/ds/Button";
@@ -221,7 +222,14 @@ export default function HistoryView() {
           </Button>
         </form>
 
-        {careerLoading && <p className="mt-3 text-[12.5px] text-ink-3">Loading the arc…</p>}
+        {careerLoading && (
+          <div className="mt-3" aria-label="loading the arc">
+            <Skeleton className="h-[200px] rounded-[8px]" />
+            <div className="mt-3 space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[18px]" />)}
+            </div>
+          </div>
+        )}
         {careerError && !careerLoading && (
           <p role="alert" className="mt-3 text-[12.5px] text-red">{careerError}. No sample data is substituted.</p>
         )}
