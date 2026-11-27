@@ -4,8 +4,10 @@ from typing import Any
 from ..cap_rules import (
     CAP,
     CAP_GROWTH_ASSUMPTION,
+    active_hard_cap_failure,
     apron_state,
     cba_restrictions,
+    hard_cap_consequences,
     matching_band,
     matching_election,
     operative_match_rule,
@@ -272,6 +274,317 @@ def _validated_signing_move(raw: dict[str, Any], move_index: int, team: str,
     return move, validation, None
 
 
+def _initial_sequence_state(payload: dict[str, Any], pay_before: int,
+                            errors: list[dict[str, str]]) -> dict[str, Any]:
+    return {
+        "moves": [],
+        "errors": list(errors),
+        "running_payroll": int(pay_before),
+        "roster_delta": 0,
+        "exception_state": initial_exception_state(payload.get("exception_state")),
+        "active_hard_caps": [],
+        "hard_cap_labels": [],
+        "issues": [],
+        "signing_validations": [],
+        "signing_blocking": [],
+        "signing_advisory": [],
+        "matching": None,
+        "trade_group": None,
+    }
+
+
+def _add_move_error(sequence: dict[str, Any], move_index: int, error: str) -> None:
+    sequence["errors"].append({"move": str(move_index), "error": error})
+
+
+def _ensure_trade_group(sequence: dict[str, Any], move_index: int) -> dict[str, Any]:
+    group = sequence.get("trade_group")
+    if group is None:
+        group = {
+            "start_index": move_index,
+            "end_index": move_index,
+            "payroll_before": int(sequence["running_payroll"]),
+            "payroll_after": int(sequence["running_payroll"]),
+            "in_names": [], "out_names": [],
+            "in_total": 0, "out_total": 0,
+        }
+        sequence["trade_group"] = group
+    return group
+
+
+def _activate_hard_caps(sequence: dict[str, Any], hard_cap: str) -> None:
+    for apron in str(hard_cap or "").split("+"):
+        if apron and apron not in sequence["active_hard_caps"]:
+            sequence["active_hard_caps"].append(apron)
+
+
+def _trade_matching_verdict(team: str, group: dict[str, Any],
+                            lines: dict[str, Any]) -> tuple[dict[str, Any], list[str], bool, dict[str, Any]]:
+    in_total = int(group["in_total"])
+    out_total = int(group["out_total"])
+    payroll_after = int(group["payroll_after"])
+    payroll_before = int(group["payroll_before"])
+    post_state = apron_state(payroll_after, lines)
+    room_before = max(0, lines["cap"] - payroll_before)
+    aggregates = len(group["out_names"]) > 1
+    cushion = 0 if post_state["over_apron1"] else 250_000
+    expanded_matching = used_expanded_matching(
+        in_total, out_total, room_before, cushion=cushion)
+    election = matching_election(
+        in_total, out_total, room_before, cushion,
+        len(group["out_names"]), expanded_matching)
+    issues: list[str] = []
+    if post_state["over_apron2"] and aggregates:
+        issues.append("cannot aggregate salaries above the second apron")
+        matching = {"incoming": in_total, "outgoing": out_total, "legal": False,
+                    "match_rule": "no aggregation (above the second apron)",
+                    "allowed_incoming": 0, **election}
+    else:
+        band = matching_band(out_total, bool(post_state["over_apron1"]), room_before)
+        rule = operative_match_rule(band["match_rule"], election)
+        matching = {"incoming": in_total, "outgoing": out_total,
+                    "allowed_incoming": band["allowed_incoming"],
+                    "match_rule": rule,
+                    "legal": in_total <= band["allowed_incoming"], **election}
+        if not matching["legal"]:
+            issues.append(f"{team} takes back too much "
+                          f"(${in_total:,} vs {band['allowed_incoming']:,} "
+                          f"allowed under {rule})")
+    return matching, issues, expanded_matching, post_state
+
+
+def _close_trade_group(sequence: dict[str, Any], team: str,
+                       lines: dict[str, Any]) -> None:
+    group = sequence.get("trade_group")
+    if group is None:
+        return
+    sequence["trade_group"] = None
+    if not group["out_names"] or not group["in_names"]:
+        return
+    matching, matching_issues, expanded_matching, _post_state = _trade_matching_verdict(
+        team, group, lines)
+    matching["evaluation_move_index"] = group["end_index"]
+    matching["post_trade_payroll"] = int(group["payroll_after"])
+    consequence = hard_cap_consequences(
+        team, int(group["payroll_after"]), aggregates=len(group["out_names"]) > 1,
+        expanded_matching=expanded_matching, lines=lines)
+    issues: list[str] = []
+    active_failure = active_hard_cap_failure(
+        int(group["payroll_after"]), sequence["active_hard_caps"], lines,
+        transaction="trade")
+    if active_failure:
+        issues.append(f"{team} cannot complete the trade because {active_failure}; "
+                      "the transaction is prohibited")
+    issues.extend(consequence["issues"])
+    issues.extend(matching_issues)
+    sequence["issues"].extend(issues)
+    sequence["matching"] = matching
+    if consequence["hard_cap"]:
+        sequence["hard_cap_labels"].append(consequence["hard_cap"])
+    if (consequence["hard_cap"] and not consequence["violations"]
+            and not active_failure and matching.get("legal")):
+        _activate_hard_caps(sequence, consequence["hard_cap"])
+
+
+def _process_signing(raw: dict[str, Any], move_index: int, team: str,
+                     season: str, lines: dict[str, Any],
+                     sequence: dict[str, Any]) -> None:
+    if isinstance(raw.get("exception_state"), dict):
+        sequence["exception_state"] = initial_exception_state(
+            {**sequence["exception_state"], **raw["exception_state"]})
+    move, validation, error = _validated_signing_move(
+        raw, move_index, team, int(sequence["running_payroll"]), lines,
+        sequence["exception_state"], sequence["active_hard_caps"], season)
+    if error:
+        _add_move_error(sequence, move_index, str(error))
+        return
+    sequence["moves"].append(move)
+    sequence["signing_validations"].append(validation)
+    player = str(validation.get("player") or "signing")
+    blocking = [f"{player}: {issue}" for issue in validation["blocking_issues"]]
+    sequence["signing_blocking"].extend(blocking)
+    sequence["issues"].extend(blocking)
+    sequence["signing_advisory"].extend(
+        f"{player}: {issue}" for issue in validation["advisory_issues"])
+    if validation["hard_cap_trigger"]:
+        sequence["hard_cap_labels"].append(validation["hard_cap_trigger"])
+    if validation["legal"]:
+        sequence["exception_state"] = consume_signing_exception(
+            sequence["exception_state"], validation)
+        _activate_hard_caps(sequence, validation["hard_cap_trigger"])
+    sequence["running_payroll"] += int(move["amount"])
+    sequence["roster_delta"] += 1
+
+
+def _process_trade_out(con, raw: dict[str, Any], move_index: int, team: str,
+                       season: str, roster: list[dict[str, Any]],
+                       sequence: dict[str, Any]) -> None:
+    player = str(raw.get("player") or "").strip()
+    if not player:
+        _add_move_error(sequence, move_index, "trade_out needs a player")
+        return
+    _total, matched, unknown = _match_trade_players(team, player, con, season)
+    if unknown or not matched:
+        _add_move_error(sequence, move_index, f"could not match {player} on {team}")
+        return
+    hit = next((p for p in roster if p["player"] == matched[0]), None)
+    amount = int((hit or {}).get("salary") or 0)
+    move = {"kind": "trade_out", "detail": f"out {matched[0]}",
+            "amount": amount}
+    sequence["moves"].append(move)
+    sequence["running_payroll"] += _move_delta(move)
+    sequence["roster_delta"] -= 1
+    group = _ensure_trade_group(sequence, move_index)
+    group["end_index"] = move_index
+    group["payroll_after"] = int(sequence["running_payroll"])
+    group["out_names"].append(matched[0])
+    group["out_total"] += amount
+
+
+def _process_trade_in(con, raw: dict[str, Any], move_index: int, team: str,
+                      season: str, sequence: dict[str, Any]) -> None:
+    player = str(raw.get("player") or "").strip()
+    if not player:
+        _add_move_error(sequence, move_index, "trade_in needs a player")
+        return
+    found = _locate_player_team(player, con, season)
+    if found is None:
+        _add_move_error(sequence, move_index, f"could not locate {player}")
+        return
+    cname, cteam, csal = found
+    if str(cteam).upper() == team:
+        _add_move_error(sequence, move_index, f"{cname} is already on {team}")
+        return
+    salary = int(csal or 0)
+    move = {"kind": "trade_in",
+            "detail": f"in {cname} (from {cteam})", "amount": salary}
+    sequence["moves"].append(move)
+    sequence["running_payroll"] += _move_delta(move)
+    sequence["roster_delta"] += 1
+    group = _ensure_trade_group(sequence, move_index)
+    group["end_index"] = move_index
+    group["payroll_after"] = int(sequence["running_payroll"])
+    group["in_names"].append(cname)
+    group["in_total"] += salary
+
+
+def _process_waiver(con, raw: dict[str, Any], move_index: int, team: str,
+                    season: str, roster: list[dict[str, Any]],
+                    waiver_timing: dict[str, Any],
+                    sequence: dict[str, Any]) -> None:
+    player = str(raw.get("player") or "").strip()
+    stretch = bool(raw.get("stretch"))
+    _total, matched, unknown = _match_trade_players(team, player, con, season)
+    if unknown or not matched:
+        _add_move_error(sequence, move_index, f"could not match {player} on {team}")
+        return
+    hit = next((p for p in roster if p["player"] == matched[0]), None)
+    amount = int((hit or {}).get("salary") or 0)
+    move = waiver_move(con, team, matched[0], amount, season, stretch,
+                       timing=waiver_timing)
+    sequence["moves"].append(move)
+    sequence["running_payroll"] += _move_delta(move)
+    sequence["roster_delta"] -= 1
+
+
+def _process_option(con, raw: dict[str, Any], move_index: int, team: str,
+                    season: str, rejected_options: dict[int, str],
+                    sequence: dict[str, Any]) -> None:
+    player = str(raw.get("player") or "").strip()
+    exercise = bool(raw.get("exercise", True))
+    move_season = str(raw.get("season") or season).strip() or season
+    if move_index in rejected_options:
+        return
+    if move_season != season:
+        _add_move_error(
+            sequence, move_index,
+            f"option decision for {move_season} is outside scenario season {season}; evaluate one season at a time")
+        return
+    if exercise:
+        return
+    move, error = _option_decline_move(con, team, season, player)
+    if error:
+        _add_move_error(sequence, move_index, error)
+        return
+    sequence["moves"].append(move)
+    sequence["running_payroll"] += _move_delta(move)
+    sequence["roster_delta"] -= 1
+
+
+def _process_scenario_move(con, raw: Any, move_index: int, team: str,
+                           season: str, lines: dict[str, Any],
+                           roster: list[dict[str, Any]],
+                           waiver_timing: dict[str, Any],
+                           rejected_options: dict[int, str],
+                           sequence: dict[str, Any]) -> None:
+    if not isinstance(raw, dict):
+        _add_move_error(sequence, move_index, "move must be an object")
+        return
+    kind = str(raw.get("kind") or "").strip()
+    if kind not in ("trade_out", "trade_in"):
+        _close_trade_group(sequence, team, lines)
+    if kind == "signing":
+        _process_signing(raw, move_index, team, season, lines, sequence)
+    elif kind == "trade_out":
+        _process_trade_out(con, raw, move_index, team, season, roster, sequence)
+    elif kind == "trade_in":
+        _process_trade_in(con, raw, move_index, team, season, sequence)
+    elif kind == "waive":
+        _process_waiver(con, raw, move_index, team, season, roster,
+                        waiver_timing, sequence)
+    elif kind == "option_decision":
+        _process_option(con, raw, move_index, team, season,
+                        rejected_options, sequence)
+    else:
+        _add_move_error(sequence, move_index, f"unknown move kind '{kind}'")
+
+
+def _scenario_result(con, team: str, season: str, requested_season: str,
+                     pay_before: int, roster: list[dict[str, Any]],
+                     lines: dict[str, Any], lines_projected: bool,
+                     waiver_timing: dict[str, Any],
+                     sequence: dict[str, Any]) -> dict[str, Any]:
+    trace = scenario_trace(pay_before, sequence["moves"], f"{team} committed payroll")
+    pay_after = int(trace["pay_after"])
+    state = apron_state(pay_after, lines)
+    if any(row.get("mechanism_selected") == "tmle" and row.get("legal")
+           for row in sequence["signing_validations"]):
+        sequence["signing_advisory"].append(
+            "post-TMLE row A-F cross-move enforcement is incomplete in signing validation v1")
+    roster_after = len(roster) + int(sequence["roster_delta"])
+    roster_issue_list = roster_issues(roster_after)
+    issues = list(roster_issue_list) + list(sequence["issues"])
+    hard_cap = _merge_hard_cap_labels(*sequence["hard_cap_labels"])
+    state_with_room = {**state, "cap_room": lines["cap"] - pay_after}
+    restrictions = cba_restrictions(state_with_room, season)
+    state["room_under_apron2"] = state["room_apron2"]
+    return {"ok": True, "team": team, "season": season,
+            "salary_basis": payroll_proxy_meta()["salary_basis"],
+            "ats_exact": False,
+            "steps": trace["steps"], "pay_after": pay_after,
+            "pay_before": int(pay_before), "state": state,
+            "lines": lines, "lines_projected": lines_projected,
+            "restrictions": restrictions,
+            "roster_before": len(roster), "roster_after": roster_after,
+            "roster_issues": roster_issue_list,
+            "hard_cap": hard_cap, "issues": issues,
+            "errors": sequence["errors"],
+            "matching": sequence["matching"],
+            "signing_validations": sequence["signing_validations"],
+            "signing_exception_state": sequence["exception_state"],
+            "blocking_issues": sequence["signing_blocking"],
+            "advisory_issues": sequence["signing_advisory"],
+            "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con),
+                     "requested_season": requested_season,
+                     "signing_validation_version": SIGNING_VALIDATION_VERSION,
+                     "signing_proxy_disclosure": SIGNING_PROXY_DISCLOSURE,
+                     "hard_cap_state_basis": "caller-order scenario sequence",
+                     **payroll_proxy_meta(),
+                     **({"waiver_basis": WAIVER_BASIS,
+                         "waiver_timing": waiver_timing}
+                        if any(move.get("kind") == "waive" for move in sequence["moves"]) else {})}}
+
+
 def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     team = str(payload.get("team") or "").strip().upper()
     requested_season = str(payload.get("season") or "").strip() or "2026-27"
@@ -290,205 +603,15 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         pay_before, roster = _payroll(team, con, season)
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:200]}
-    errors: list[dict[str, str]] = [
+    initial_errors: list[dict[str, str]] = [
         {"move": str(i), "error": error}
         for i, error in sorted(rejected_options.items())]
-    moves: list[dict[str, Any]] = []
-    in_names: list[str] = []
-    out_names: list[str] = []
-    in_total = 0
-    out_total = 0
-    sign_count = 0
-    roster_delta = 0
-    running_payroll = int(pay_before)
-    exception_state = initial_exception_state(payload.get("exception_state"))
-    active_hard_caps: list[str] = []
-    signing_validations: list[dict[str, Any]] = []
-    signing_blocking: list[str] = []
-    signing_advisory: list[str] = []
-    signing_hard_caps: list[str] = []
-    for i, raw in enumerate(moves_in):
-        if not isinstance(raw, dict):
-            errors.append({"move": str(i), "error": "move must be an object"})
-            continue
-        kind = str(raw.get("kind") or "").strip()
-        if kind == "signing":
-            if isinstance(raw.get("exception_state"), dict):
-                exception_state = initial_exception_state(
-                    {**exception_state, **raw["exception_state"]})
-            move, validation, error = _validated_signing_move(
-                raw, i, team, running_payroll, lines, exception_state,
-                active_hard_caps, season)
-            if error:
-                errors.append({"move": str(i), "error": error})
-                continue
-            moves.append(move)
-            signing_validations.append(validation)
-            player = str(validation.get("player") or "signing")
-            signing_blocking.extend(
-                f"{player}: {issue}" for issue in validation["blocking_issues"])
-            signing_advisory.extend(
-                f"{player}: {issue}" for issue in validation["advisory_issues"])
-            if validation["hard_cap_trigger"]:
-                signing_hard_caps.append(validation["hard_cap_trigger"])
-            if validation["legal"]:
-                exception_state = consume_signing_exception(exception_state, validation)
-                if (validation["hard_cap_trigger"]
-                        and validation["hard_cap_trigger"] not in active_hard_caps):
-                    active_hard_caps.append(validation["hard_cap_trigger"])
-            running_payroll += int(move["amount"])
-            sign_count += 1
-            roster_delta += 1
-        elif kind == "trade_out":
-            player = str(raw.get("player") or "").strip()
-            if not player:
-                errors.append({"move": str(i), "error": "trade_out needs a player"})
-                continue
-            total, matched, unknown = _match_trade_players(team, player, con, season)
-            if unknown or not matched:
-                errors.append({"move": str(i),
-                               "error": f"could not match {player} on {team}"})
-                continue
-            hit = next((p for p in roster if p["player"] == matched[0]), None)
-            amount = int((hit or {}).get("salary") or 0)
-            move = {"kind": "trade_out", "detail": f"out {matched[0]}",
-                    "amount": amount}
-            moves.append(move)
-            running_payroll += _move_delta(move)
-            out_names.append(matched[0])
-            out_total += amount
-            roster_delta -= 1
-        elif kind == "trade_in":
-            player = str(raw.get("player") or "").strip()
-            if not player:
-                errors.append({"move": str(i), "error": "trade_in needs a player"})
-                continue
-            found = _locate_player_team(player, con, season)
-            if found is None:
-                errors.append({"move": str(i), "error": f"could not locate {player}"})
-                continue
-            cname, cteam, csal = found
-            if str(cteam).upper() == team:
-                errors.append({"move": str(i),
-                               "error": f"{cname} is already on {team}"})
-                continue
-            salary = int(csal or 0)
-            move = {"kind": "trade_in",
-                    "detail": f"in {cname} (from {cteam})", "amount": salary}
-            moves.append(move)
-            running_payroll += _move_delta(move)
-            in_names.append(cname)
-            in_total += salary
-            roster_delta += 1
-        elif kind == "waive":
-            player = str(raw.get("player") or "").strip()
-            stretch = bool(raw.get("stretch"))
-            total, matched, unknown = _match_trade_players(team, player, con, season)
-            if unknown or not matched:
-                errors.append({"move": str(i),
-                               "error": f"could not match {player} on {team}"})
-                continue
-            hit = next((p for p in roster if p["player"] == matched[0]), None)
-            amount = int((hit or {}).get("salary") or 0)
-            move = waiver_move(con, team, matched[0], amount, season, stretch,
-                               timing=waiver_timing)
-            moves.append(move)
-            running_payroll += _move_delta(move)
-            roster_delta -= 1
-        elif kind == "option_decision":
-            player = str(raw.get("player") or "").strip()
-            exercise = bool(raw.get("exercise", True))
-            move_season = str(raw.get("season") or season).strip() or season
-            if i in rejected_options:
-                continue
-            if move_season != season:
-                errors.append({"move": str(i),
-                               "error": f"option decision for {move_season} is outside scenario season {season}; evaluate one season at a time"})
-                continue
-            if exercise:
-                continue
-            move, error = _option_decline_move(con, team, season, player)
-            if error:
-                errors.append({"move": str(i), "error": error})
-                continue
-            moves.append(move)
-            running_payroll += _move_delta(move)
-            roster_delta -= 1
-        else:
-            errors.append({"move": str(i), "error": f"unknown move kind '{kind}'"})
-    trace = scenario_trace(pay_before, moves, f"{team} committed payroll")
-    pay_after = int(trace["pay_after"])
-    state = apron_state(pay_after, lines)
-    issues: list[str] = []
-    matching: dict[str, Any] | None = None
-    hard_cap = ""
-    room_before = max(0, lines["cap"] - pay_before)
-    if out_names and in_names:
-        aggregates = len(out_names) > 1
-        cushion = 0 if state["over_apron1"] else 250_000
-        expanded_matching = used_expanded_matching(
-            in_total, out_total, room_before, cushion=cushion)
-        election = matching_election(
-            in_total, out_total, room_before, cushion,
-            len(out_names), expanded_matching)
-        if expanded_matching:
-            hard_cap = "first apron"
-            if pay_after > lines["apron1"]:
-                issues.append(
-                    f"{team} cannot use the Expanded Traded Player Exception "
-                    f"because post-trade payroll proxy (${pay_after:,}) would "
-                    f"exceed the first apron (${lines['apron1']:,}); the "
-                    "transaction is prohibited")
-        if state["over_apron2"] and aggregates:
-            issues.append("cannot aggregate salaries above the second apron")
-            matching = {"incoming": in_total, "outgoing": out_total, "legal": False,
-                        "match_rule": "no aggregation (above the second apron)",
-                        "allowed_incoming": 0, **election}
-        else:
-            band = matching_band(out_total, bool(state["over_apron1"]), room_before)
-            rule = operative_match_rule(band["match_rule"], election)
-            matching = {"incoming": in_total, "outgoing": out_total,
-                        "allowed_incoming": band["allowed_incoming"],
-                        "match_rule": rule,
-                        "legal": in_total <= band["allowed_incoming"], **election}
-            if not matching["legal"]:
-                issues.append(f"{team} takes back too much "
-                              f"(${in_total:,} vs {band['allowed_incoming']:,} "
-                              f"allowed under {rule})")
-        if aggregates and pay_after > lines["apron2"]:
-            issues.append("aggregation would hard-cap the team at the second apron")
-    hard_cap = _merge_hard_cap_labels(hard_cap, *signing_hard_caps)
-    issues.extend(signing_blocking)
-    if any(row.get("mechanism_selected") == "tmle" and row.get("legal")
-           for row in signing_validations):
-        signing_advisory.append(
-            "post-TMLE row A-F cross-move enforcement is incomplete in signing validation v1")
-    roster_after = len(roster) + roster_delta
-    roster_issue_list = roster_issues(roster_after)
-    issues.extend(roster_issue_list)
-    state_with_room = {**state, "cap_room": lines["cap"] - pay_after}
-    restrictions = cba_restrictions(state_with_room, season)
-    state["room_under_apron2"] = state["room_apron2"]
-    return {"ok": True, "team": team, "season": season,
-            "salary_basis": payroll_proxy_meta()["salary_basis"],
-            "ats_exact": False,
-            "steps": trace["steps"], "pay_after": pay_after,
-            "pay_before": int(pay_before), "state": state,
-            "lines": lines, "lines_projected": lines_projected,
-            "restrictions": restrictions,
-            "roster_before": len(roster), "roster_after": roster_after,
-            "roster_issues": roster_issue_list,
-            "hard_cap": hard_cap, "issues": issues, "errors": errors,
-            "matching": matching,
-            "signing_validations": signing_validations,
-            "signing_exception_state": exception_state,
-            "blocking_issues": signing_blocking,
-            "advisory_issues": signing_advisory,
-            "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con),
-                     "requested_season": requested_season,
-                     "signing_validation_version": SIGNING_VALIDATION_VERSION,
-                     "signing_proxy_disclosure": SIGNING_PROXY_DISCLOSURE,
-                     **payroll_proxy_meta(),
-                     **({"waiver_basis": WAIVER_BASIS,
-                         "waiver_timing": waiver_timing}
-                        if any(move.get("kind") == "waive" for move in moves) else {})}}
+    sequence = _initial_sequence_state(payload, pay_before, initial_errors)
+    for move_index, raw in enumerate(moves_in):
+        _process_scenario_move(
+            con, raw, move_index, team, season, lines, roster,
+            waiver_timing, rejected_options, sequence)
+    _close_trade_group(sequence, team, lines)
+    return _scenario_result(
+        con, team, season, requested_season, pay_before, roster,
+        lines, lines_projected, waiver_timing, sequence)

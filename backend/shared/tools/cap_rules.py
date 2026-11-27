@@ -253,6 +253,20 @@ def hard_cap_consequences(team: str, payroll_after: int, *,
             "causes": causes, "violations": violations, "issues": issues}
 
 
+def active_hard_cap_failure(payroll_after: int, active_hard_caps: list[str],
+                            lines: dict | None = None,
+                            transaction: str = "move") -> str:
+    lines = lines or CAP
+    active = set(active_hard_caps or [])
+    if "first apron" in active and payroll_after > lines["apron1"]:
+        return (f"post-{transaction} payroll proxy (${payroll_after:,}) exceeds "
+                f"the active first apron hard cap (${lines['apron1']:,})")
+    if "second apron" in active and payroll_after > lines["apron2"]:
+        return (f"post-{transaction} payroll proxy (${payroll_after:,}) exceeds "
+                f"the active second apron hard cap (${lines['apron2']:,})")
+    return ""
+
+
 def matching_band(outgoing: int, over_apron1: bool,
                   cap_room: int = 0) -> dict[str, Any]:
     amount, rule = allowed_incoming(outgoing, over_apron1, cap_room)

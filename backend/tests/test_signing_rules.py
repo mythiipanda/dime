@@ -252,3 +252,141 @@ def test_typed_scenario_tracks_signing_validation_and_exception_consumption():
     assert signing_steps[0]["validation"]["mechanism_selected"] == "ntmle"
     assert out["meta"]["signing_validation_version"] == "v1"
     assert out["meta"]["ats_exact"] is False
+
+
+def _chronology_con():
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
+        "PLAYER_ID BIGINT, GUARANTEED BIGINT, SALARY_2026_27 BIGINT, SALARY_2027_28 BIGINT)")
+    rows = [("Outgoing Star", "TST", 20_000_000),
+            ("Incoming Star", "OTH", 29_000_000)]
+    rows += [(f"Roster {i}", "TST", 13_800_000) for i in range(1, 13)]
+    rows.append(("Roster 13", "TST", 13_400_000))
+    for i, (name, team, salary) in enumerate(rows, 1):
+        con.execute("INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?, ?)",
+                    [name, team, i, salary, salary, salary])
+    return con
+
+
+def test_trade_hard_cap_is_chronological_not_retroactive():
+    import duckdb
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = _chronology_con()
+    try:
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [
+                {"kind": "trade_out", "player": "Outgoing Star"},
+                {"kind": "trade_in", "player": "Incoming Star"},
+                {"kind": "signing", "player": "Minimum Player", "amount": 1_357_763,
+                 "years": 1, "mechanism": "minimum", "years_of_service": 0},
+            ]})
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert out["matching"]["legal"] is True
+    assert out["matching"]["post_trade_payroll"] == 208_000_000
+    assert out["hard_cap"] == "first apron"
+    validation = out["signing_validations"][0]
+    assert validation["outcome"] == "illegal"
+    assert "active first apron hard cap" in validation["blocking_issues"][0]
+    assert not any("post-trade payroll proxy ($209,357,763)" in issue
+                   for issue in out["issues"])
+
+
+def test_declared_below_cap_mode_bars_over_cap_exceptions():
+    out = validate(150_000_000, 15_000_000, 1,
+                   state={"operating_mode": "below_cap"})
+    assert out["outcome"] == "illegal"
+    assert out["mechanism_selected"] is None
+    reasons = rejection_reasons(out)
+    assert "below-cap operating mode" in reasons["ntmle"]
+    assert "mid-level exception for room teams ceiling" in reasons["room_exception"]
+
+
+def test_auto_with_no_legal_candidate_in_any_mode_is_illegal_not_ambiguous():
+    out = validate(150_000_000, 40_000_000, 1)
+    assert out["outcome"] == "illegal"
+    assert out["mechanism_inference"] == "none"
+    assert out["legal_candidates"] == []
+    assert "no valid signing mechanism" in out["blocking_issues"][0]
+
+
+def test_auto_tie_breaker_is_disclosed():
+    out = validate(190_000_000, 5_400_000, 2)
+    assert out["mechanism_selected"] == "ntmle"
+    assert "bae carries a consecutive-year frequency restriction" in out["selection_tie_breaker"]
+
+
+def test_minimum_salary_schedule_enforces_exact_second_year_minimum():
+    bad = validate(225_000_000, 1_357_763, 2, "minimum", yos=0)
+    assert bad["outcome"] == "legal_approximation"
+    move = {"player": "Scheduled Minimum", "amount": 1_357_763, "years": 2,
+            "mechanism": "minimum", "years_of_service": 0,
+            "salary_schedule": [1_357_763, 20_000_000]}
+    out = validate_signing(move, team="TST", payroll_before=225_000_000)
+    assert out["outcome"] == "illegal"
+    assert "second-year salary" in out["blocking_issues"][0]
+    assert "$2,294,370" in out["blocking_issues"][0]
+    move["salary_schedule"] = [1_357_763, 2_294_370]
+    good = validate_signing(move, team="TST", payroll_before=225_000_000)
+    assert good["outcome"] == "legal_approximation"
+
+
+def test_unsupported_typed_free_agent_inputs_are_errors_not_silently_ignored():
+    base = {"player": "Own Free Agent", "amount": 10_000_000, "years": 1,
+            "mechanism": "ntmle", "prior_team": "TST"}
+    out = validate_signing(base, team="TST", payroll_before=190_000_000)
+    assert out["input_errors"]
+    assert "prior_team cannot be consumed" in out["input_errors"][0]
+    base = {"player": "Own Free Agent", "amount": 10_000_000, "years": 1,
+            "mechanism": "ntmle", "free_agent_status": "non_bird"}
+    out = validate_signing(base, team="TST", payroll_before=190_000_000)
+    assert "free_agent_status cannot be consumed" in out["input_errors"][0]
+    base = {"player": "Own Free Agent", "amount": 10_000_000, "years": 1,
+            "mechanism": "ntmle", "replaces_cap_hold": True}
+    out = validate_signing(base, team="TST", payroll_before=190_000_000)
+    assert "replaces_cap_hold requires exact cap-hold ledger state" in out["input_errors"][0]
+
+
+def test_future_season_exceptions_scale_from_season_cap_line_or_require_lines():
+    ratio_lines = {key: int(round(value * 1.07)) for key, value in CAP.items()}
+    amount = 16_098_000
+    out = validate_signing(
+        {"player": "Future MLE", "amount": amount, "years": 4,
+         "mechanism": "ntmle"},
+        team="TST", payroll_before=190_000_000, lines=ratio_lines,
+        season="2027-28")
+    assert out["outcome"] == "legal_approximation"
+    assert out["exception_amount"] == amount
+    assert out["exception_amount_basis"] == "cba cap-growth formula using supplied season cap line"
+    missing_lines = validate_signing(
+        {"player": "Future MLE", "amount": amount, "years": 4,
+         "mechanism": "ntmle"},
+        team="TST", payroll_before=190_000_000, season="2027-28")
+    assert missing_lines["input_errors"]
+    assert "season-specific cap lines are required" in missing_lines["input_errors"][0]
+
+
+def test_roster_failure_is_reported_before_apron_failure():
+    import duckdb
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
+            "PLAYER_ID BIGINT, GUARANTEED BIGINT, SALARY_2026_27 BIGINT)")
+        for i in range(1, 16):
+            con.execute("INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?)",
+                        [f"Roster {i}", "TST", i, 13_000_000, 13_000_000])
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [{"kind": "signing", "player": "Too Much",
+                       "amount": 15_044_000, "years": 1,
+                       "mechanism": "ntmle"}]})
+    finally:
+        con.close()
+    assert out["issues"][0].startswith("roster would be 16 players")
+    assert "first apron" in out["issues"][1]
