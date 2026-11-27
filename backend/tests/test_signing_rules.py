@@ -4,6 +4,8 @@ from shared.tools.cap_rules import CAP
 from shared.tools.signing_rules import (
     consume_signing_exception,
     initial_exception_state,
+    minimum_salary,
+    second_year_minimum_salary,
     validate_signing,
 )
 
@@ -394,3 +396,138 @@ def test_roster_failure_is_reported_before_apron_failure():
         con.close()
     assert out["issues"][0].startswith("roster would be 16 players")
     assert "first apron" in out["issues"][1]
+
+
+def test_minimum_salary_scales_match_published_2026_27_multiyear_table():
+    first_year = {
+        0: 1_357_763, 1: 2_185_116, 2: 2_449_421, 3: 2_537_526,
+        4: 2_625_627, 5: 2_845_883, 6: 3_066_143, 7: 3_286_399,
+        8: 3_506_659, 9: 3_524_115, 10: 3_876_529,
+    }
+    second_year = {
+        1: 2_294_370, 2: 2_571_895, 3: 2_664_401, 4: 2_756_912,
+        5: 2_988_178, 6: 3_219_451, 7: 3_450_720, 8: 3_681_991,
+        9: 3_700_320, 10: 4_070_355,
+    }
+    for yos, expected in first_year.items():
+        assert minimum_salary(yos) == expected
+    for service_year, expected in second_year.items():
+        assert second_year_minimum_salary(service_year - 1, "2026-27", CAP) == expected
+    assert second_year_minimum_salary(10, "2026-27", CAP) == second_year[10]
+
+
+def test_five_yos_minimum_schedule_boundary_is_exact_to_the_dollar():
+    move = {"player": "Boundary Minimum", "amount": 2_845_883, "years": 2,
+            "mechanism": "minimum", "years_of_service": 5,
+            "salary_schedule": [2_845_883, 3_219_451]}
+    good = validate_signing(move, team="TST", payroll_before=225_000_000)
+    assert good["outcome"] == "legal_approximation"
+    low = dict(move, salary_schedule=[2_845_883, 3_219_450])
+    bad = validate_signing(low, team="TST", payroll_before=225_000_000)
+    assert bad["outcome"] == "illegal"
+    assert "$3,219,451" in bad["blocking_issues"][0]
+
+
+def _payroll_con(total: int, players: int = 10):
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
+        "PLAYER_ID BIGINT, GUARANTEED BIGINT, SALARY_2026_27 BIGINT)")
+    base = total // players
+    amounts = [base] * players
+    amounts[-1] += total - sum(amounts)
+    for i, amount in enumerate(amounts, 1):
+        con.execute("INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?)",
+                    [f"Roster {i}", "TST", i, amount, amount])
+    return con
+
+
+def test_per_move_exception_state_cannot_reset_cumulative_consumption():
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = _payroll_con(189_000_000)
+    try:
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [
+                {"kind": "signing", "player": "First", "amount": 4_000_000,
+                 "years": 1, "mechanism": "ntmle",
+                 "exception_state": {"ntmle_used": 10_000_000}},
+                {"kind": "signing", "player": "Second", "amount": 4_000_000,
+                 "years": 1, "mechanism": "ntmle",
+                 "exception_state": {"ntmle_used": 10_000_000}},
+            ]})
+    finally:
+        con.close()
+    validations = out["signing_validations"]
+    assert validations[0]["outcome"] == "legal_approximation"
+    assert validations[0]["exception_remaining"] == 1_044_000
+    assert validations[1]["outcome"] == "illegal"
+    assert validations[1]["exception_remaining"] == 1_044_000
+    assert "remaining" in validations[1]["blocking_issues"][0]
+    assert any("exception_state.ntmle_used" in row["error"]
+               and "override rejected" in row["error"]
+               for row in out["errors"])
+    assert out["signing_exception_state"]["ntmle_used"] == 14_000_000
+
+
+def test_first_move_exception_state_input_seeds_single_validation():
+    out = validate_signing(
+        {"player": "Prior Use", "amount": 4_000_000, "years": 1,
+         "mechanism": "ntmle", "exception_state": {"ntmle_used": 10_000_000}},
+        team="TST", payroll_before=190_000_000)
+    assert out["outcome"] == "legal_approximation"
+    assert out["exception_remaining"] == 1_044_000
+
+
+def test_prohibited_signing_hard_cap_trigger_is_disclosed_not_active():
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = _payroll_con(203_500_000)
+    try:
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [
+                {"kind": "signing", "player": "Too High", "amount": 5_516_000,
+                 "years": 2, "mechanism": "ntmle"},
+                {"kind": "signing", "player": "Minimum Player", "amount": 1_357_763,
+                 "years": 1, "mechanism": "minimum", "years_of_service": 0},
+            ]})
+    finally:
+        con.close()
+    validations = out["signing_validations"]
+    assert validations[0]["outcome"] == "illegal"
+    assert validations[0]["hard_cap_trigger"] == "first apron"
+    assert validations[1]["outcome"] == "legal_approximation"
+    assert out["hard_cap"] == ""
+    assert out["active_hard_caps"] == []
+    assert out["hard_cap_triggers"] == [
+        {"transaction": "signing", "move_index": 0,
+         "apron": "first apron", "status": "prohibited"}]
+    assert out["would_be_hard_cap_triggers"] == out["hard_cap_triggers"]
+
+
+def test_exception_state_rejects_malformed_keys_and_types():
+    move = {"player": "Malformed State", "amount": 4_000_000, "years": 1,
+            "mechanism": "ntmle",
+            "exception_state": {"ntmle_used": 1.5, "typo_key": True}}
+    out = validate_signing(move, team="TST", payroll_before=190_000_000)
+    assert out["mechanism_inference"] == "input_error"
+    assert any("unknown exception_state key 'typo_key'" in e for e in out["input_errors"])
+    assert any("exception_state.ntmle_used must be a non-negative integer" in e
+               for e in out["input_errors"])
+
+
+def test_top_level_exception_state_rejects_malformed_input_explicitly():
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = _payroll_con(189_000_000)
+    try:
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "exception_state": {"ntmle_used": -1},
+            "moves": [{"kind": "signing", "player": "First", "amount": 4_000_000,
+                       "years": 1, "mechanism": "ntmle"}]})
+    finally:
+        con.close()
+    assert any(row["move"] == "scenario"
+               and "exception_state.ntmle_used" in row["error"]
+               for row in out["errors"])

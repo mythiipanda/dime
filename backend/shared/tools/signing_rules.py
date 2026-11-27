@@ -50,7 +50,7 @@ MINIMUM_SALARY_SCALE_2026_27 = {
 }
 MINIMUM_SECOND_YEAR_SCALE_2026_27 = {
     1: 2_294_370, 2: 2_571_895, 3: 2_664_401, 4: 2_756_912,
-    5: 2_988_178, 6: 3_219_450, 7: 3_450_720, 8: 3_681_991,
+    5: 2_988_178, 6: 3_219_451, 7: 3_450_720, 8: 3_681_991,
     9: 3_700_320, 10: 4_070_355,
 }
 SIGNING_PROXY_DISCLOSURE = (
@@ -148,6 +148,41 @@ def initial_exception_state(seed: dict[str, Any] | None = None) -> dict[str, Any
     if mode in ("unknown", "over_cap", "below_cap"):
         state["operating_mode"] = mode
     return state
+
+
+EXCEPTION_STATE_NUMERIC_KEYS = ("ntmle_used", "tmle_used", "bae_used", "room_used")
+EXCEPTION_STATE_KEYS = EXCEPTION_STATE_NUMERIC_KEYS + (
+    "bae_used_prior_cap_year", "operating_mode")
+
+
+def normalize_exception_state_input(raw: Any) -> tuple[dict[str, Any] | None, list[str]]:
+    if not isinstance(raw, dict):
+        return None, ["exception_state must be an object"]
+    errors: list[str] = []
+    state = initial_exception_state()
+    for key in raw:
+        if key not in EXCEPTION_STATE_KEYS:
+            errors.append(f"unknown exception_state key '{key}'")
+    for key in EXCEPTION_STATE_NUMERIC_KEYS:
+        if key not in raw:
+            continue
+        value = _strict_integer(raw.get(key))
+        if value is None or value < 0:
+            errors.append(f"exception_state.{key} must be a non-negative integer")
+        else:
+            state[key] = value
+    if "bae_used_prior_cap_year" in raw:
+        if isinstance(raw.get("bae_used_prior_cap_year"), bool):
+            state["bae_used_prior_cap_year"] = bool(raw["bae_used_prior_cap_year"])
+        else:
+            errors.append("exception_state.bae_used_prior_cap_year must be a boolean")
+    if "operating_mode" in raw:
+        mode = str(raw.get("operating_mode") or "").strip().lower()
+        if mode in ("unknown", "over_cap", "below_cap"):
+            state["operating_mode"] = mode
+        else:
+            errors.append("exception_state.operating_mode must be unknown, over_cap, or below_cap")
+    return (None if errors else state), errors
 
 
 def normalize_signing_input(raw: Any) -> tuple[dict[str, Any] | None, list[str]]:
@@ -640,10 +675,19 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
     move, input_errors = normalize_signing_input(raw)
     if move is None or input_errors:
         return _input_error_result(raw, input_errors)
-    state_seed = dict(exception_state or {})
-    if isinstance(raw, dict) and isinstance(raw.get("exception_state"), dict):
-        state_seed.update(raw["exception_state"])
-    state = initial_exception_state(state_seed)
+    if exception_state is not None:
+        state_seed = exception_state
+    elif isinstance(raw, dict) and "exception_state" in raw:
+        state_seed = raw.get("exception_state")
+    else:
+        state_seed = None
+    if state_seed is None:
+        state = initial_exception_state()
+    else:
+        normalized_state, state_errors = normalize_exception_state_input(state_seed)
+        if state_errors or normalized_state is None:
+            return _input_error_result(raw, state_errors)
+        state = normalized_state
     checks, generic_failures, missing = _generic_checks(move, lines, season)
     candidates = _candidate_map(
         move, team, payroll_before, lines, state, season,

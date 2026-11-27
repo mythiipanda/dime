@@ -21,6 +21,7 @@ from ..signing_rules import (
     SIGNING_VALIDATION_VERSION,
     consume_signing_exception,
     initial_exception_state,
+    normalize_exception_state_input,
     validate_signing,
 )
 from ..cap_sheet import option_column, season_column, unroll_team_sheet
@@ -153,7 +154,7 @@ def cap_lines_for_season(con, season: str) -> tuple[dict[str, Any], bool]:
                 row = by_season[season]
                 if row[1]:
                     return {"cap": int(row[1]), "tax": int(row[2] or 0),
-                            "apron1": int(row[3] or 0), "apron2": int(row[4] or 0)}, False
+                            "apron1": int(row[3] or 0), "apron2": int(row[4] or 0)}, True
             latest = sorted(by_season)
             if latest:
                 anchor = by_season[latest[-1]]
@@ -253,13 +254,43 @@ def _merge_hard_cap_labels(*values: str) -> str:
     return "+".join(merged)
 
 
+def _exception_override_errors(declared: Any, current: dict[str, Any],
+                               adopt_initial: bool) -> tuple[dict[str, Any] | None, list[str]]:
+    normalized, errors = normalize_exception_state_input(declared)
+    if errors:
+        return None, [error if "override rejected" in error else
+                      f"{error}; exception_state override rejected"
+                      for error in errors]
+    if normalized is None or adopt_initial:
+        return normalized, []
+    conflicts: list[str] = []
+    for key in declared:
+        if key in normalized and normalized[key] != current.get(key):
+            conflicts.append(
+                f"exception_state.{key} is fixed at scenario start: declared "
+                f"{normalized[key]!r} but cumulative state is {current.get(key)!r}; "
+                "override rejected")
+    return normalized, conflicts
+
+
+def _record_hard_cap_trigger(sequence: dict[str, Any], transaction: str,
+                             move_index: int, hard_cap: str, active: bool) -> None:
+    for apron in str(hard_cap or "").split("+"):
+        if apron:
+            sequence["hard_cap_trigger_events"].append({
+                "transaction": transaction, "move_index": move_index,
+                "apron": apron, "status": "active" if active else "prohibited"})
+
+
 def _validated_signing_move(raw: dict[str, Any], move_index: int, team: str,
                             payroll_before: int, lines: dict[str, Any],
                             exception_state: dict[str, Any],
                             active_hard_caps: list[str], season: str
                             ) -> tuple[dict[str, Any] | None, dict[str, Any], str | None]:
+    validation_input = {key: value for key, value in raw.items()
+                        if key != "exception_state"}
     validation = validate_signing(
-        raw, team=team, payroll_before=payroll_before, lines=lines,
+        validation_input, team=team, payroll_before=payroll_before, lines=lines,
         exception_state=exception_state, active_hard_caps=active_hard_caps,
         season=season)
     validation["move_index"] = move_index
@@ -276,14 +307,27 @@ def _validated_signing_move(raw: dict[str, Any], move_index: int, team: str,
 
 def _initial_sequence_state(payload: dict[str, Any], pay_before: int,
                             errors: list[dict[str, str]]) -> dict[str, Any]:
+    exception_state = initial_exception_state()
+    exception_state_seeded = False
+    if "exception_state" in payload:
+        normalized, state_errors = normalize_exception_state_input(
+            payload.get("exception_state"))
+        if state_errors:
+            for error in state_errors:
+                errors.append({"move": "scenario", "error": error})
+        elif normalized is not None:
+            exception_state = normalized
+            exception_state_seeded = True
     return {
         "moves": [],
         "errors": list(errors),
         "running_payroll": int(pay_before),
         "roster_delta": 0,
-        "exception_state": initial_exception_state(payload.get("exception_state")),
+        "exception_state": exception_state,
+        "exception_state_open": True,
+        "exception_state_seeded": exception_state_seeded,
         "active_hard_caps": [],
-        "hard_cap_labels": [],
+        "hard_cap_trigger_events": [],
         "issues": [],
         "signing_validations": [],
         "signing_blocking": [],
@@ -379,21 +423,44 @@ def _close_trade_group(sequence: dict[str, Any], team: str,
     issues.extend(matching_issues)
     sequence["issues"].extend(issues)
     sequence["matching"] = matching
-    if consequence["hard_cap"]:
-        sequence["hard_cap_labels"].append(consequence["hard_cap"])
-    if (consequence["hard_cap"] and not consequence["violations"]
-            and not active_failure and matching.get("legal")):
+    activated = bool(consequence["hard_cap"] and not consequence["violations"]
+                     and not active_failure and matching.get("legal"))
+    _record_hard_cap_trigger(sequence, "trade", int(group["end_index"]),
+                             str(consequence["hard_cap"]), activated)
+    if activated:
         _activate_hard_caps(sequence, consequence["hard_cap"])
+
+
+def _prepare_signing_exception_state(raw: dict[str, Any], move_index: int,
+                                     sequence: dict[str, Any]) -> dict[str, Any]:
+    if "exception_state" not in raw:
+        sequence["exception_state_open"] = False
+        return raw
+    declared = raw.get("exception_state")
+    adopt_initial = bool(sequence["exception_state_open"]
+                         and not sequence["exception_state_seeded"])
+    normalized, override_errors = _exception_override_errors(
+        declared, sequence["exception_state"], adopt_initial)
+    if override_errors:
+        for error in override_errors:
+            _add_move_error(sequence, move_index, error)
+    elif normalized is not None and adopt_initial and isinstance(declared, dict):
+        seed = dict(sequence["exception_state"])
+        for key in declared:
+            if key in normalized:
+                seed[key] = normalized[key]
+        sequence["exception_state"] = initial_exception_state(seed)
+        sequence["exception_state_seeded"] = True
+    sequence["exception_state_open"] = False
+    return {key: value for key, value in raw.items() if key != "exception_state"}
 
 
 def _process_signing(raw: dict[str, Any], move_index: int, team: str,
                      season: str, lines: dict[str, Any],
                      sequence: dict[str, Any]) -> None:
-    if isinstance(raw.get("exception_state"), dict):
-        sequence["exception_state"] = initial_exception_state(
-            {**sequence["exception_state"], **raw["exception_state"]})
+    validation_raw = _prepare_signing_exception_state(raw, move_index, sequence)
     move, validation, error = _validated_signing_move(
-        raw, move_index, team, int(sequence["running_payroll"]), lines,
+        validation_raw, move_index, team, int(sequence["running_payroll"]), lines,
         sequence["exception_state"], sequence["active_hard_caps"], season)
     if error:
         _add_move_error(sequence, move_index, str(error))
@@ -406,8 +473,9 @@ def _process_signing(raw: dict[str, Any], move_index: int, team: str,
     sequence["issues"].extend(blocking)
     sequence["signing_advisory"].extend(
         f"{player}: {issue}" for issue in validation["advisory_issues"])
-    if validation["hard_cap_trigger"]:
-        sequence["hard_cap_labels"].append(validation["hard_cap_trigger"])
+    _record_hard_cap_trigger(sequence, "signing", move_index,
+                             str(validation["hard_cap_trigger"]),
+                             bool(validation["legal"]))
     if validation["legal"]:
         sequence["exception_state"] = consume_signing_exception(
             sequence["exception_state"], validation)
@@ -554,7 +622,10 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
     roster_after = len(roster) + int(sequence["roster_delta"])
     roster_issue_list = roster_issues(roster_after)
     issues = list(roster_issue_list) + list(sequence["issues"])
-    hard_cap = _merge_hard_cap_labels(*sequence["hard_cap_labels"])
+    hard_cap = _merge_hard_cap_labels(*sequence["active_hard_caps"])
+    trigger_events = [dict(event) for event in sequence["hard_cap_trigger_events"]]
+    would_be_triggers = [dict(event) for event in trigger_events
+                         if event["status"] != "active"]
     state_with_room = {**state, "cap_room": lines["cap"] - pay_after}
     restrictions = cba_restrictions(state_with_room, season)
     state["room_under_apron2"] = state["room_apron2"]
@@ -567,7 +638,11 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
             "restrictions": restrictions,
             "roster_before": len(roster), "roster_after": roster_after,
             "roster_issues": roster_issue_list,
-            "hard_cap": hard_cap, "issues": issues,
+            "hard_cap": hard_cap,
+            "active_hard_caps": list(sequence["active_hard_caps"]),
+            "hard_cap_triggers": trigger_events,
+            "would_be_hard_cap_triggers": would_be_triggers,
+            "issues": issues,
             "errors": sequence["errors"],
             "matching": sequence["matching"],
             "signing_validations": sequence["signing_validations"],
