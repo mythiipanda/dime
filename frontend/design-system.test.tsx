@@ -283,3 +283,8 @@ test("card sections dedupe a citation shared by every section to one line", () =
     assert.ok(!card.includes("Scope not declared"), `${file} must not headline missing scope in the subtitle — the quiet provenance row carries it`);
   }
 });
+
+test("undeclared provenance does not occupy the shell headline slot", () => {
+  const source = readFileSync(new URL("./lib/stream/provenance.ts", import.meta.url), "utf8");
+  assert.ok(!source.includes('"source not declared"'), "missing provenance quiets to the disclosure row instead of a second headline");
+});

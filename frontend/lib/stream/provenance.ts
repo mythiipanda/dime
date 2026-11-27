@@ -205,7 +205,7 @@ export function provenanceSource(
   if (provenance.origin === "live") return "live sources";
   if (provenance.origin === "mixed") return "mixed sources";
   if (provenance.origin === "partly-undeclared") return "mixed sources, partly undeclared";
-  return "source not declared";
+  return undefined;
 }
 
 function parseGap(raw: unknown): EvidenceGapNote | null {
