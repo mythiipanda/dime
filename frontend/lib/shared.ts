@@ -203,7 +203,7 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
 ): Promise<SharedScenarioState> {
   let envelope: { kind: string; title: string; payload: Record<string, unknown>; updated_at: string; archived: boolean };
   try {
-    const response = await fetchImpl(`${backend}/s/${encodeURIComponent(token)}`);
+    const response = await fetchImpl(`${backend}/s/${encodeURIComponent(token)}`, { cache: "no-store" });
     if (response.status === 404) return { status: "not_found" };
     if (response.status === 422) return { status: "invalid" };
     if (!response.ok) return { status: "unavailable" };
