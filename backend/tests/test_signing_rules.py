@@ -517,6 +517,33 @@ def test_exception_state_rejects_malformed_keys_and_types():
                for e in out["input_errors"])
 
 
+def test_scenario_malformed_per_move_exception_state_is_input_error_without_consumption():
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = _payroll_con(189_000_000)
+    try:
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [{"kind": "signing", "player": "Malformed State",
+                       "amount": 4_000_000, "years": 1, "mechanism": "ntmle",
+                       "exception_state": {"ntmle_used": 1.5, "typo_key": True}}]})
+    finally:
+        con.close()
+    assert len(out["signing_validations"]) == 1
+    validation = out["signing_validations"][0]
+    assert validation["outcome"] == "unknown"
+    assert validation["mechanism_inference"] == "input_error"
+    assert validation["legal"] is False
+    assert validation["exception_use"] is None
+    assert any("unknown exception_state key 'typo_key'" in e
+               for e in validation["input_errors"])
+    assert any("exception_state.ntmle_used must be a non-negative integer" in e
+               for e in validation["input_errors"])
+    assert any("override rejected" in row["error"] for row in out["errors"])
+    assert out["signing_exception_state"]["ntmle_used"] == 0
+    assert out["pay_after"] == out["pay_before"]
+    assert not any(step["kind"] == "signing" for step in out["steps"])
+
+
 def test_top_level_exception_state_rejects_malformed_input_explicitly():
     from shared.tools.league.cap_sheet import evaluate_cap_scenario
     con = _payroll_con(189_000_000)

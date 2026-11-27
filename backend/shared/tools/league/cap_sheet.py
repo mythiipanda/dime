@@ -255,14 +255,14 @@ def _merge_hard_cap_labels(*values: str) -> str:
 
 
 def _exception_override_errors(declared: Any, current: dict[str, Any],
-                               adopt_initial: bool) -> tuple[dict[str, Any] | None, list[str]]:
+                               adopt_initial: bool) -> tuple[dict[str, Any] | None, list[str], bool]:
     normalized, errors = normalize_exception_state_input(declared)
     if errors:
         return None, [error if "override rejected" in error else
                       f"{error}; exception_state override rejected"
-                      for error in errors]
+                      for error in errors], True
     if normalized is None or adopt_initial:
-        return normalized, []
+        return normalized, [], False
     conflicts: list[str] = []
     for key in declared:
         if key in normalized and normalized[key] != current.get(key):
@@ -270,7 +270,7 @@ def _exception_override_errors(declared: Any, current: dict[str, Any],
                 f"exception_state.{key} is fixed at scenario start: declared "
                 f"{normalized[key]!r} but cumulative state is {current.get(key)!r}; "
                 "override rejected")
-    return normalized, conflicts
+    return normalized, conflicts, False
 
 
 def _record_hard_cap_trigger(sequence: dict[str, Any], transaction: str,
@@ -432,14 +432,14 @@ def _close_trade_group(sequence: dict[str, Any], team: str,
 
 
 def _prepare_signing_exception_state(raw: dict[str, Any], move_index: int,
-                                     sequence: dict[str, Any]) -> dict[str, Any]:
+                                     sequence: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     if "exception_state" not in raw:
         sequence["exception_state_open"] = False
-        return raw
+        return raw, False
     declared = raw.get("exception_state")
     adopt_initial = bool(sequence["exception_state_open"]
                          and not sequence["exception_state_seeded"])
-    normalized, override_errors = _exception_override_errors(
+    normalized, override_errors, normalization_failed = _exception_override_errors(
         declared, sequence["exception_state"], adopt_initial)
     if override_errors:
         for error in override_errors:
@@ -452,13 +452,22 @@ def _prepare_signing_exception_state(raw: dict[str, Any], move_index: int,
         sequence["exception_state"] = initial_exception_state(seed)
         sequence["exception_state_seeded"] = True
     sequence["exception_state_open"] = False
-    return {key: value for key, value in raw.items() if key != "exception_state"}
+    stripped = {key: value for key, value in raw.items() if key != "exception_state"}
+    return stripped, normalization_failed
 
 
 def _process_signing(raw: dict[str, Any], move_index: int, team: str,
                      season: str, lines: dict[str, Any],
                      sequence: dict[str, Any]) -> None:
-    validation_raw = _prepare_signing_exception_state(raw, move_index, sequence)
+    validation_raw, exception_state_invalid = _prepare_signing_exception_state(
+        raw, move_index, sequence)
+    if exception_state_invalid:
+        validation = validate_signing(
+            raw, team=team, payroll_before=int(sequence["running_payroll"]),
+            lines=lines, active_hard_caps=sequence["active_hard_caps"], season=season)
+        validation["move_index"] = move_index
+        sequence["signing_validations"].append(validation)
+        return
     move, validation, error = _validated_signing_move(
         validation_raw, move_index, team, int(sequence["running_payroll"]), lines,
         sequence["exception_state"], sequence["active_hard_caps"], season)
