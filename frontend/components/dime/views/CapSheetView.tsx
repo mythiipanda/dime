@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
@@ -8,6 +8,7 @@ import { DataState } from "@/components/ds/DataState";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
 import { consumeCapHandoff } from "@/lib/cap-handoff";
+import { syncCapDraft, loadCapDraft } from "@/lib/cap-draft";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -68,13 +69,46 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const fixture = useFixture();
   const scenarioSeason = useMemo(() => scenarioSeasonForMoves(moves), [moves]);
 
+  const handoffConsumed = useRef(false);
   useEffect(() => {
     const handoff = consumeCapHandoff();
     if (!handoff) return;
+    handoffConsumed.current = true;
     setTeam(handoff.team);
     setMoves(handoff.moves);
     setHandoffNote(handoff.source ? `Imported from the trade machine — ${handoff.source}. The trade is a one-way copy: edits here don't affect it.` : null);
   }, []);
+
+  const draftKey = `${team}:${scenarioSeason ?? DEFAULT_SCENARIO_SEASON}`;
+  const restoreKey = useRef<string | null>(null);
+  const settledDrafts = useRef<Set<string>>(new Set());
+  const [draftSettled, setDraftSettled] = useState(0);
+  useEffect(() => {
+    if (restoreKey.current === draftKey) return;
+    restoreKey.current = draftKey;
+    if (handoffConsumed.current) {
+      settledDrafts.current.add(draftKey);
+      return;
+    }
+    let active = true;
+    loadCapDraft(team, scenarioSeason ?? DEFAULT_SCENARIO_SEASON).then((restored) => {
+      if (!active) return;
+      settledDrafts.current.add(draftKey);
+      setDraftSettled((count) => count + 1);
+      if (!restored) return;
+      setMoves((current) => current.length === 0 ? restored : current);
+    });
+    return () => { active = false; };
+  }, [draftKey, team, scenarioSeason]);
+
+  useEffect(() => {
+    if (!settledDrafts.current.has(draftKey)) return;
+    const currentSeason = scenarioSeason ?? DEFAULT_SCENARIO_SEASON;
+    const timer = setTimeout(() => {
+      void syncCapDraft(team, currentSeason, moves);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [draftKey, draftSettled, team, scenarioSeason, moves]);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
