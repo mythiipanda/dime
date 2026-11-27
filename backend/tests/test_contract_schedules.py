@@ -411,3 +411,43 @@ def test_seed_rejects_canonical_database(monkeypatch):
     monkeypatch.setattr('sys.argv', [str(path), '--scratch-db', str(store.CANONICAL_DB_PATH)])
     with pytest.raises(SystemExit):
         module.main()
+
+
+def test_match_record_merges_name_variant_on_team_salary_token():
+    from shared.contracts import match_record
+    records = [{'PLAYER_NAME': 'Santi Aldama', 'TEAM': 'DAL', 'salary': 17007043}]
+    hit = match_record(records, 'Santiago Aldama', None, 'DAL', salary=17007043)
+    assert hit is records[0]
+
+
+def test_match_record_word_order_variant():
+    from shared.contracts import match_record
+    records = [{'PLAYER_NAME': 'Hansen Yang', 'TEAM': 'POR', 'salary': 4643520}]
+    assert match_record(records, 'Yang Hansen', None, 'POR', salary=4643520) is records[0]
+
+
+def test_match_record_no_merge_without_shared_token():
+    from shared.contracts import match_record
+    records = [{'PLAYER_NAME': 'Evan Mobley', 'TEAM': 'CLE', 'salary': 50105628}]
+    assert match_record(records, 'Donovan Mitchell', None, 'CLE', salary=50105628) is None
+
+
+def test_match_record_no_merge_on_salary_mismatch():
+    from shared.contracts import match_record
+    records = [{'PLAYER_NAME': 'Santi Aldama', 'TEAM': 'DAL', 'salary': 17007043}]
+    assert match_record(records, 'Santiago Aldama', None, 'DAL', salary=18485916) is None
+
+
+def test_match_record_no_merge_across_teams():
+    from shared.contracts import match_record
+    records = [{'PLAYER_NAME': 'Santi Aldama', 'TEAM': 'MEM', 'salary': 17007043}]
+    assert match_record(records, 'Santiago Aldama', None, 'DAL', salary=17007043) is None
+
+
+def test_match_record_ambiguous_variant_hits_stay_separate():
+    from shared.contracts import match_record
+    records = [
+        {'PLAYER_NAME': 'Santi Aldama', 'TEAM': 'DAL', 'salary': 17007043},
+        {'PLAYER_NAME': 'Santi Aldama Jr', 'TEAM': 'DAL', 'salary': 17007043},
+    ]
+    assert match_record(records, 'Santiago Aldama', None, 'DAL', salary=17007043) is None
