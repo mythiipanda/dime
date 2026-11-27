@@ -299,10 +299,17 @@ test("currency-shorthand units compose inline with the number, not as a detached
   const format = readFileSync(new URL("./lib/metric-format.ts", import.meta.url), "utf8");
   assert.ok(format.includes('unit.startsWith("$")'), "shorthand currency units compose inline ($172M not 172 + $M beneath)");
   const card = readFileSync(new URL("./components/dime/ArtifactTeamCard.tsx", import.meta.url), "utf8");
-  assert.ok(card.includes('metric.unit.startsWith("$")'), "the detached caption drops when the unit already rides inline");
+  assert.ok(card.includes("unitEmbeddedInline(metric.unit)"), "the detached caption drops when the unit already rides inline");
 });
 
 test("an empty verification verdict compresses to one quiet line", () => {
   const source = readFileSync(new URL("./components/site/harness/AnswerView.tsx", import.meta.url), "utf8");
   assert.ok(source.includes("emptyCase"), "no-verified-claims renders as one quiet line, not a heavy card");
+});
+
+test("section metrics use the headline formatter and inline units never double as captions", () => {
+  const sections = readFileSync(new URL("./components/dime/ArtifactCardSections.tsx", import.meta.url), "utf8");
+  assert.ok(sections.includes("formatHeadlineMetric(metric.value, metric.unit)") || sections.includes("formatHeadlineMetric(metric.value,"), "section metrics compose through the shared formatter — no String(value) bypass");
+  const format = readFileSync(new URL("./lib/metric-format.ts", import.meta.url), "utf8");
+  assert.ok(format.includes('unit === "usd_dollars"'), "the canonical currency token counts as inline-embedded — no machine-token caption");
 });

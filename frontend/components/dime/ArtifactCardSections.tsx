@@ -1,6 +1,7 @@
 "use client";
 
 import type { PlayerCardSectionPayload } from "@/lib/dime-stream";
+import { formatHeadlineMetric, unitEmbeddedInline } from "@/lib/metric-format";
 
 export function cardSectionCitation(section: PlayerCardSectionPayload): string {
   const parts = [section.provenance?.dataset, section.provenance?.season, section.provenance?.capability].filter(Boolean);
@@ -24,8 +25,8 @@ export function CardSection({ section, sharedCitation }: { section: PlayerCardSe
     {section.metrics && section.metrics.length > 0 && <dl className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3">
       {section.metrics.map((metric, i) => <div key={`${metric.column}-${i}`} className="min-w-0">
         <dt className="break-words text-xs text-ink-2">{metric.label}</dt>
-        <dd className="mt-1 break-words text-lg font-medium tabular-nums tracking-tight text-ink">{metric.value === null ? <span aria-label="Not available">—</span> : String(metric.value)}</dd>
-        <dd className="mt-0.5 break-words text-xs text-ink-3">{metric.unit || "Unit not declared"}</dd>
+        <dd className="mt-1 break-words text-lg font-medium tabular-nums tracking-tight text-ink">{metric.value === null ? <span aria-label="Not available">—</span> : formatHeadlineMetric(metric.value, metric.unit)}</dd>
+        {!(unitEmbeddedInline(metric.unit)) && <dd className="mt-0.5 break-words text-xs text-ink-3">{metric.unit || "Unit not declared"}</dd>}
       </div>)}
     </dl>}
   </div>;
