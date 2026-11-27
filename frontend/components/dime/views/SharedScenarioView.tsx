@@ -180,6 +180,19 @@ export function SharedScenarioView({
                   ))}
                 </div>
               )}
+              {((season as { trade_exceptions?: { amount: number; kind: string; exactness: string; status: string; note: string }[] }).trade_exceptions ?? []).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5 border-t border-line pt-2">
+                  {((season as { trade_exceptions?: { amount: number; kind: string; exactness: string; status: string; note: string }[] }).trade_exceptions ?? []).map((tpe, i) => (
+                    <span
+                      key={i}
+                      title={tpe.note}
+                      className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${tpe.status === "active" ? "bg-field text-ink-2" : "bg-field/50 text-ink-3 line-through"}`}
+                    >
+                      TPE {money(tpe.amount)} · {tpe.exactness.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              )}
               {season.roster_issues.length > 0 && (
                 <div className="mt-2 border-t border-line pt-2">
                   {season.roster_issues.map((issue, i) => (

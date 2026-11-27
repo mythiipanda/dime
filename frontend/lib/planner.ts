@@ -65,12 +65,12 @@ export type ProjectionResponse = {
   disclosures: string[];
 };
 
-export async function fetchProjection(team: string, season: string, moves: ScenarioMove[]): Promise<ProjectionResponse | null> {
+export async function fetchProjection(team: string, season: string, moves: ScenarioMove[], tpes?: unknown[]): Promise<ProjectionResponse | null> {
   try {
     const response = await fetch(`${BACKEND}${apiPath("/cap/projection")}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ team, season, moves }),
+      body: JSON.stringify({ team, season, moves, tpes }),
     });
     const body: unknown = await response.json().catch(() => null);
     if (!body || typeof body !== "object" || (body as ProjectionResponse).ok !== true) return null;

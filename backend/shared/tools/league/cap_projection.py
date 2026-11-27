@@ -283,7 +283,8 @@ def _exceptions_block(lines: dict[str, Any], effects: list[dict[str, Any]],
     return rows
 
 
-def _tpe_disclosures(rows: list, season: str, team: str) -> list[dict[str, Any]]:
+def _tpe_disclosures(rows: list, season: str, team: str,
+                     default_origin: int | None = None) -> list[dict[str, Any]]:
     try:
         start = int(str(season)[:4])
     except (TypeError, ValueError):
@@ -298,7 +299,7 @@ def _tpe_disclosures(rows: list, season: str, team: str) -> list[dict[str, Any]]
         if not isinstance(amount, int) or amount <= 0:
             continue
         origin = raw.get("origin_year")
-        origin = int(origin) if isinstance(origin, int) else start
+        origin = int(origin) if isinstance(origin, int) else (default_origin or start)
         if origin + 1 < start:
             status = "expired"
         elif origin > start:
@@ -570,7 +571,9 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "ordering_notes": ordering_notes,
             "exceptions": _exceptions_block(lines, effects, pay_after),
             **({"trade_exceptions": disclosed}
-               if (disclosed := _tpe_disclosures(tpes_in, season, team)) else {}),
+               if (disclosed := _tpe_disclosures(
+                       tpes_in, season, team,
+                       default_origin=int(str(base_season)[:4]))) else {}),
             **({"cap_holds": holds_by_season[season]["total"],
                 "cap_holds_exactness": holds_by_season[season]["exactness"],
                 "cap_hold_details": [{"player": str(r.get("PLAYER_NAME") or r.get("player") or ""),
