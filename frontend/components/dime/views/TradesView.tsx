@@ -520,7 +520,8 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
 
   const renderFillers = (side: number) => {
     if (multi || side > 1) return null;
-    const needs = check.state === "ok" ? (side === 0 ? check.rows.team_a : check.rows.team_b).outgoing_needed : 0;
+    const sideRows = check.state === "ok" ? (side === 0 ? check.rows.team_a : check.rows.team_b) : null;
+    const needs = sideRows ? Math.max(0, sideRows.outgoing_needed - sideRows.out) : 0;
     const active = fillers.state !== "idle" && fillers.side === side;
     if (needs <= 0) return null;
     return (
