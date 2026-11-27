@@ -17,8 +17,9 @@ def test_sheet_shape_boston(con):
     from shared.tools.league.cap_sheet import cap_sheet_rows
     out = cap_sheet_rows(con, "BOS", "2026-27")
     assert out["ok"] is True, out.get("error")
-    assert out["lines"]["cap"] == 164_961_000
-    assert out["lines_projected"] is False
+    assert "2026-27" in out["lines"]
+    assert out["lines"]["2026-27"]["cap"] == 164_961_000
+    assert out["lines"]["2026-27"]["projected"] is False
     assert len(out["players"]) >= 10
     first = out["players"][0]
     assert first["player"]
@@ -32,7 +33,7 @@ def test_sheet_shape_boston(con):
                 "incomplete_roster_charges", "payroll"):
         assert key in entry
     assert entry["payroll"] == entry["committed"] + entry["dead_money"] + entry["cap_holds"] + entry["incomplete_roster_charges"] or entry["payroll"] >= entry["committed"]
-    assert set(out["state"]) == {"over_tax", "over_apron1", "over_apron2", "room_apron1", "room_apron2"}
+    assert {"over_tax", "over_apron1", "over_apron2", "room_apron1", "room_apron2", "room_under_apron2"} <= set(out["state"])
 
 
 def test_sheet_multi_year_matrix(con):

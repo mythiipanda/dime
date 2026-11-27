@@ -117,6 +117,19 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
         return {"ok": False, "error": str(exc)[:200]}
     if not rows:
         return {"ok": False, "error": f"no silver_salaries rows for {team}"}
+    if "silver_cap_players" in tables:
+        try:
+            type_rows = con.execute(
+                "SELECT player, contract_type FROM silver_cap_players "
+                "WHERE UPPER(team) = UPPER(?) AND _season = (SELECT MAX(_season) FROM silver_cap_players)",
+                [team]).fetchall()
+            types = {str(r[0]).lower(): str(r[1] or "") for r in type_rows}
+            for row in rows:
+                hit = types.get(str(row.get("PLAYER_NAME") or "").lower())
+                if hit:
+                    row["contract_type"] = hit
+        except Exception:
+            pass
     sheet = unroll_team_sheet(rows, season)
     totals: dict[str, dict[str, Any]] = {}
     for label in sheet["seasons"]:
@@ -141,14 +154,22 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
     for label, entry in totals.items():
         entry["payroll"] = (entry["committed"] + entry["dead_money"]
                             + entry["cap_holds"] + entry["incomplete_roster_charges"])
+    lines_by_season: dict[str, Any] = {}
+    for label in totals:
+        llines, lproj = cap_lines_for_season(con, label)
+        lines_by_season[label] = {**llines, "projected": lproj}
     lines, projected = cap_lines_for_season(con, season)
     committed_now = totals.get(season, {}).get("payroll", 0)
+    state = apron_state(int(committed_now), lines)
+    state["room_under_apron2"] = state["room_apron2"]
     return {"ok": True, "team": str(team).upper(), "season": season,
-            "lines": lines, "lines_projected": projected,
+            "lines": lines_by_season, "lines_projected": projected,
             "players": sheet["players"], "totals": totals,
-            "state": apron_state(int(committed_now), lines),
+            "state": state,
             "meta": {"holds_note": holds_note, "season_columns": sheet["seasons"],
-                     "unrolling": "shared.tools.cap_sheet"}}
+                     "unrolling": "shared.tools.cap_sheet",
+                     "source": _payroll_source(con), "salary_date": _salary_date(con),
+                     "season": season}}
 
 
 def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
@@ -298,15 +319,18 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         if aggregates and pay_after > lines["apron2"]:
             issues.append("aggregation would hard-cap the team at the second apron")
     roster_after = len(roster) + roster_delta
-    issues.extend(roster_issues(roster_after))
+    roster_issue_list = roster_issues(roster_after)
+    issues.extend(roster_issue_list)
     state_with_room = {**state, "cap_room": lines["cap"] - pay_after}
     restrictions = cba_restrictions(state_with_room, season)
+    state["room_under_apron2"] = state["room_apron2"]
     return {"ok": True, "team": team, "season": season,
             "steps": trace["steps"], "pay_after": pay_after,
             "pay_before": int(pay_before), "state": state,
             "lines": lines, "lines_projected": lines_projected,
             "restrictions": restrictions,
             "roster_before": len(roster), "roster_after": roster_after,
+            "roster_issues": roster_issue_list,
             "hard_cap": hard_cap, "issues": issues, "errors": errors,
             "matching": matching,
             "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con)}}

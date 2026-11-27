@@ -420,7 +420,9 @@ export default function CapSheetView() {
               {scenario?.errors?.length ? (
                 <div className="mt-2 border-t border-line pt-2">
                   {scenario.errors.map((err, i) => (
-                    <p key={i} className="text-[11.5px] text-red">{err}</p>
+                    <p key={i} className="text-[11.5px] text-red">
+                      {typeof err === "string" ? err : `move ${err.move ?? i}: ${err.error ?? "invalid move"}`}
+                    </p>
                   ))}
                 </div>
               ) : null}

@@ -2,7 +2,7 @@ export type CapYear = {
   season: string;
   salary: number | null;
   option: "player" | "team" | null;
-  guaranteed: boolean;
+  guaranteed: boolean | null;
 };
 
 export type CapPlayer = {
@@ -62,7 +62,7 @@ export type ScenarioResponse = {
   state: { over_tax: boolean; over_apron1: boolean; over_apron2: boolean; room_under_apron2?: number };
   restrictions: { threshold: string; status: string; rule: string }[];
   roster_issues: string[];
-  errors: string[];
+  errors: (string | { move: string; error: string })[];
 };
 
 const SEASONS = ["2026-27", "2027-28", "2028-29", "2029-30", "2030-31", "2031-32"];
