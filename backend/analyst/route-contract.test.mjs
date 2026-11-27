@@ -24,6 +24,7 @@ const data={close:async()=>{},async call(name,args){switch(name){
  case "product_debate":if(args.season==="2025-26")return cases.find(c=>c.path==="/api/debate-card?a=A&b=B").body;return {result:{ok:true,rows:{path:"/private/debate_A_vs_B_1.html",players:["A","B"]}},season:args.season};
  case "product_today":return output("today",args);
  case "product_matchups":return {ok:true,date:"2026-11-25",season:"2026-27",games:[]};
+ case "product_awards":return {ok:true,season:"2025-26",awards:[]};
  case "product_watchlist":return output("watchlist",args);
  case "product_watchlist_add":return output("watchlist_add",args);
  case "product_watchlist_remove":return output("watchlist_remove",args);

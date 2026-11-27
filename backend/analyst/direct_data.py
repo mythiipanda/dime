@@ -462,6 +462,29 @@ def product_matchups(season: str = '') -> dict:
     finally:
         con.close()
 
+@tool(description='Read the warehouse-backed award race projections across all tracked awards.')
+def product_awards(season: str = '') -> dict:
+    from shared.tools.awards import PROJECTION_SPECS, get_award_race
+    awards = []
+    for key in sorted(PROJECTION_SPECS):
+        try:
+            result = get_award_race.invoke({'award': key, 'season': season or None})
+        except Exception as exc:
+            awards.append({'award': key, 'ok': False, 'error': str(exc)[:200], 'candidates': []})
+            continue
+        result = _decoded(result)
+        rows = result.get('rows') or {}
+        candidates = rows.get('candidates') if isinstance(rows, dict) else None
+        awards.append({
+            'award': key,
+            'ok': bool(result.get('ok')) and candidates is not None,
+            'error': result.get('error'),
+            'season': (result.get('meta') or {}).get('season'),
+            'caveat': PROJECTION_SPECS[key].get('proxy_caveat'),
+            'candidates': (candidates or [])[:10],
+        })
+    seasons = [a['season'] for a in awards if a.get('season')]
+    return {'ok': True, 'season': seasons[0] if seasons else season, 'awards': awards}
 @tool(description='Read the current watchlist data.')
 def product_watchlist(season: str = '2025-26') -> dict:
     from shared.tools.watchlist import get_watchlist
@@ -805,7 +828,7 @@ def internal_catalogue():
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
-        product_compare, product_draft, product_matchups)
+        product_compare, product_draft, product_matchups, product_awards)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description
