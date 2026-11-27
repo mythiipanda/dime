@@ -32,6 +32,7 @@ type CareerResponse = {
 type CompDriver = { stat: string; target: number | null; comp: number | null };
 
 type CompRow = {
+  z?: Record<string, number>;
   PLAYER: string;
   PLAYER_ID: number;
   TEAM: string;
@@ -54,8 +55,10 @@ type CompsResponse = {
   ok: boolean;
   qualified?: boolean;
   rows?: CompRow[];
+  player?: { name?: string; z?: Record<string, number> };
   qualification?: CompsQualification;
   qualifying_seasons?: string[];
+  meta?: { features?: string[]; feature_labels?: Record<string, string> };
   error?: string;
 };
 
@@ -96,6 +99,51 @@ function fmtDriver(stat: string, value: number | null): string {
   return String(value);
 }
 
+
+function ShapeChart({ target, comp, features, labels, compName }: {
+  target: Record<string, number>;
+  comp: Record<string, number>;
+  features: string[];
+  labels: Record<string, string>;
+  compName: string;
+}) {
+  const CLAMP = 3;
+  const width = (z: number) => `${Math.min(Math.abs(z), CLAMP) / CLAMP * 50}%`;
+  return (
+    <div data-testid="shape-chart" className="rounded-[8px] bg-field p-3">
+      <p className="font-mono text-[10px] text-ink-3">{`shape profile vs ${compName} — within-season z-scores from center zero; overlap is the match, clamped at ±3`}</p>
+      <div className="mt-2 space-y-1">
+        {features.map((feat) => {
+          const tz = target[feat] ?? 0;
+          const cz = comp[feat] ?? 0;
+          return (
+            <div key={feat} className="grid grid-cols-[130px_minmax(0,1fr)] items-center gap-2">
+              <span className="truncate text-right text-[10.5px] text-ink-3">{labels[feat] ?? feat}</span>
+              <div className="relative h-[10px]">
+                <div className="absolute left-1/2 top-0 h-full w-px bg-line" />
+                <div
+                  data-z={tz.toFixed(1)}
+                  data-side="target"
+                  className="absolute top-[1px] h-[8px] rounded-[2px] bg-ink-3/50"
+                  style={{ width: width(tz), ...(tz >= 0 ? { right: "50%" } : { left: "50%" }) }}
+                  title={`target z ${tz.toFixed(1)}`}
+                />
+                <div
+                  data-z={cz.toFixed(1)}
+                  data-side="comp"
+                  className="absolute top-[1px] h-[8px] rounded-[2px] bg-accent/70"
+                  style={{ width: width(cz), ...(cz >= 0 ? { left: "50%" } : { right: "50%" }), opacity: 0.75 }}
+                  title={`comp z ${cz.toFixed(1)}`}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [query, setQuery] = useState("Jayson Tatum");
   const [player, setPlayer] = useState("Jayson Tatum");
@@ -106,6 +154,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
   const [comps, setComps] = useState<CompsResponse | null>(null);
   const [compsError, setCompsError] = useState<string | null>(null);
   const [compsLoading, setCompsLoading] = useState(false);
+  const [selectedComp, setSelectedComp] = useState(0);
   const [leaderSeason, setLeaderSeason] = useState("1996-97");
   const [category, setCategory] = useState<string>("pts");
   const [leaders, setLeaders] = useState<LeadersResponse | null>(null);
@@ -164,6 +213,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           setComps(null);
         } else {
           setComps(value);
+          setSelectedComp(0);
         }
         setCompsLoading(false);
       })
@@ -379,13 +429,27 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           )}
           {!compsLoading && !compsError && comps?.qualified !== false && comps?.rows && comps.rows.length > 0 && (
             <div className="mt-2">
-              <p className="font-mono text-[10px] text-ink-3">driver values: target season vs comp</p>
+              {(() => {
+                const features = comps.meta?.features ?? [];
+                const labels = comps.meta?.feature_labels ?? {};
+                const tz = comps.player?.z;
+                const active = comps.rows[Math.min(selectedComp, comps.rows.length - 1)];
+                if (!tz || !active?.z || features.length === 0) return null;
+                return <ShapeChart target={tz} comp={active.z} features={features} labels={labels} compName={`${active.PLAYER} ${active.season}`} />;
+              })()}
+              <p className="mt-2 font-mono text-[10px] text-ink-3">driver values: target season vs comp · click a comp to overlay its shape</p>
               {comps.rows.length === 0 && (
                 <p className="mt-1.5 text-[12.5px] text-ink-2">no era neighbors found within the pool window — widen the window or pick another season.</p>
               )}
               <div className="mt-1.5 divide-y divide-line">
                 {comps.rows.map((comp, i) => (
-                  <div key={`${comp.PLAYER_ID}-${comp.season}-${i}`} className="py-2.5">
+                  <button
+                    type="button"
+                    key={`${comp.PLAYER_ID}-${comp.season}-${i}`}
+                    className={`block w-full cursor-pointer py-2.5 text-left ${i === selectedComp ? "bg-field" : ""} rounded-[6px] px-2 -mx-2`}
+                    onClick={() => setSelectedComp(i)}
+                    title="overlay this comp's shape profile"
+                  >
                     <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
                       <span className="text-ink">
                         {comp.PLAYER}
@@ -412,7 +476,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                         ))}
                       </div>
                     )}
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
