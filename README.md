@@ -141,6 +141,13 @@ all through 2025-26 where the source reaches. Derived tables
 summaries) are rebuilt by `backend/scripts/refresh_warehouse.py`
 and published with `backend/scripts/publish_warehouse.py`.
 
+Free-agent planning rows are planning-grade estimates rather than
+official future numbers. `backend/scripts/seed_free_agents.py` uses the
+official 2026-27 cap and exception amounts as its base and projects the
+2027-28 cap season by multiplying each amount by a fixed 1.10 (10%)
+growth assumption, then truncating to whole dollars. Those rows carry
+`ESTIMATED` and name the target `CAP_SEASON`.
+
 ## Evals and tests
 
 The benchmark pack lives in the private dime-internal repo

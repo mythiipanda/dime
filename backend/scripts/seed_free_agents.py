@@ -18,8 +18,8 @@ FA_YEAR = 2027
 CAP_2026_27 = {"cap": 164_961_000, "tax": 200_428_000,
                "apron1": 209_015_000, "apron2": 221_686_000}
 CAP_GROWTH = 1.10
-EXCEPTIONS_2026_27 = {"ntmle": 14_100_000, "room": 8_800_000,
-                      "bae": 5_700_000}
+EXCEPTIONS_2026_27 = {"ntmle": 15_044_000, "tmle": 6_064_000,
+                      "room": 9_366_000, "bae": 5_477_000}
 MIN_SALARY = 1_272_870
 ROSTER_SPOTS = 15
 
@@ -31,7 +31,7 @@ ROOM_COLS = ["TEAM", "CAP_SEASON", "COMMITTED_SALARY",
              "MAX_ROOM",
              "PROJECTED_CAP", "PROJECTED_TAX", "PROJECTED_APRON1",
              "PROJECTED_APRON2", "NTMLE_EST", "BAE_EST", "ROOM_EST",
-             "PLAYERS_UNDER_CONTRACT", "PENDING_OPTIONS",
+             "TMLE_EST", "PLAYERS_UNDER_CONTRACT", "PENDING_OPTIONS",
              "ESTIMATED"]
 
 _OPTION_TO_FA = {"player": "player_option", "team": "team_option",
@@ -146,6 +146,7 @@ def build_frames(frame: pl.DataFrame, fa_season_key: str,
             "NTMLE_EST": int(EXCEPTIONS_2026_27["ntmle"] * CAP_GROWTH),
             "BAE_EST": int(EXCEPTIONS_2026_27["bae"] * CAP_GROWTH),
             "ROOM_EST": int(EXCEPTIONS_2026_27["room"] * CAP_GROWTH),
+            "TMLE_EST": int(EXCEPTIONS_2026_27["tmle"] * CAP_GROWTH),
             "PLAYERS_UNDER_CONTRACT": e["under_contract"],
             "PENDING_OPTIONS": e["options"], "ESTIMATED": True})
     return (pl.DataFrame(fa_rows) if fa_rows

@@ -12,7 +12,7 @@ _ROOM_COLS = ["TEAM", "COMMITTED_SALARY", "PENDING_OPTION_SALARY",
               "FA_HOLDS_EST", "INCOMPLETE_ROSTER_CHARGES",
               "PROJECTED_ROOM", "MAX_ROOM", "PROJECTED_CAP",
               "PROJECTED_TAX", "PROJECTED_APRON1", "PROJECTED_APRON2",
-              "NTMLE_EST", "BAE_EST", "ROOM_EST",
+              "NTMLE_EST", "BAE_EST", "ROOM_EST", "TMLE_EST",
               "PLAYERS_UNDER_CONTRACT", "PENDING_OPTIONS", "ESTIMATED"]
 
 _EXTENSION_ELIGIBLE = {"ufa", "rfa"}
@@ -142,10 +142,11 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
            "scenarios": scenarios, "checks": checks,
            "exceptions": {
                "ntmle": room.get("NTMLE_EST") if room else None,
+               "tmle": room.get("TMLE_EST") if room else None,
                "bae": room.get("BAE_EST") if room else None,
                "room": room.get("ROOM_EST") if room else None,
-               "note": "under_cap path uses room exception; "
-                       "over_cap path uses ntmle+bae"},
+               "note": "under_cap path uses room exception; over_cap "
+                       "exception depends on tax/apron position"},
            "context": {
                "committed_salary": room.get("COMMITTED_SALARY")
                if room else None,
