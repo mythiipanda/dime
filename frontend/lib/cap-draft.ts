@@ -27,25 +27,29 @@ function payloadFor(team: string, season: string, moves: ScenarioMove[]) {
   return { team, season, moves };
 }
 
-export async function syncCapDraft(team: string, season: string, moves: ScenarioMove[]): Promise<void> {
+export async function syncCapDraft(team: string, season: string, moves: ScenarioMove[]): Promise<boolean> {
   const existing = draftMapping(team, season);
   if (moves.length === 0) {
     if (existing) {
-      await updateObject(existing, { archived: true });
+      const archived = await updateObject(existing, { archived: true });
+      if (!archived) return false;
       clearMapping(team, season);
     }
-    return;
+    return true;
   }
   const payload = payloadFor(team, season, moves);
   if (existing) {
     const updated = await updateObject(existing, { payload });
-    if (updated) return;
+    if (updated) return true;
     clearMapping(team, season);
   }
   try {
     const minted = await mintObject("cap_scenario", `${team} working scenario · ${season}`, payload);
     retainMapping(team, season, minted.object_id);
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function loadCapDraft(team: string, season: string): Promise<ScenarioMove[] | null> {

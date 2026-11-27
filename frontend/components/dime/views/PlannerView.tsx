@@ -75,6 +75,7 @@ export default function PlannerView() {
   const [extendTarget, setExtendTarget] = useState<string | null>(null);
   const [extendAmount, setExtendAmount] = useState("");
   const [extendYears, setExtendYears] = useState("1");
+  const [syncFailed, setSyncFailed] = useState(false);
 
   const project = useCallback(async (teamCode: string, scenarioMoves: ScenarioMove[]) => {
     const result = await fetchProjection(teamCode, BASE_SEASON, scenarioMoves);
@@ -100,7 +101,8 @@ export default function PlannerView() {
 
   const applyMoves = useCallback((next: ScenarioMove[]) => {
     setMoves(next);
-    void syncCapDraft(team, BASE_SEASON, next).catch(() => {});
+    setSyncFailed(false);
+    void syncCapDraft(team, BASE_SEASON, next).then(ok => setSyncFailed(!ok));
     void project(team, next);
   }, [team, project]);
 
@@ -194,6 +196,12 @@ export default function PlannerView() {
             <p className="mt-6 rounded-[10px] bg-surface px-4 py-2.5 text-[12.5px] text-ink-2 shadow-hairline">
               Baseline projection — no scenario moves yet. Add moves here or in the cap sheet; they write through to the shared draft.
             </p>
+          )}
+
+          {syncFailed && (
+            <div className="mt-4 rounded-[10px] border border-red/30 bg-surface px-4 py-3">
+              <p className="text-[12.5px] text-red">The moves below didn&apos;t persist to the shared draft — they project here but won&apos;t survive reload or reach the cap sheet. Retry by removing and re-adding the last move.</p>
+            </div>
           )}
 
           {projection.errors.length > 0 && (
