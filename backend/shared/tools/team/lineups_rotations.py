@@ -461,7 +461,7 @@ def _assemble_rotation_report(
                     "lineup EST_MIN = poss/2; lineup MIN is full-season"
                     " 2025-26 (silver_lineups, sportsdataverse seeds);"
                     " player MIN is season-to-date"
-                    " from silver_hist_player_seasons"
+                    " from silver_player_season (hist seasons fall back to silver_hist_player_seasons)"
                 ),
             },
             "tiers": tiers,
@@ -486,7 +486,7 @@ def _assemble_rotation_report(
                 " MIN is full-season 2025-26 (sportsdataverse seeds); units under the"
                 f" {min_possessions}-possession floor are hidden by"
                 " get_lineup_stats, never presented as signal; player MIN is"
-                " season-to-date from silver_hist_player_seasons and on/off"
+                " season-to-date from silver_player_season and on/off"
                 " from silver_on_off; every number is labeled with its source"
                 " table and coverage in coverage/meta"
             ),
@@ -498,6 +498,15 @@ def _fetch_rotation_players(season: str, abbrev: str) -> list[dict[str, Any]]:
     season = _pkg().resolve_season(season)
     from ... import store as _store
 
+    rows = _store._read_df(
+        "SELECT PLAYER_ID AS player_id, PLAYER AS player_name,"
+        " GP AS gp, MPG AS min, PPG AS pts"
+        " FROM silver_player_season"
+        " WHERE _season = ? AND TEAM = ?",
+        [season, abbrev],
+    )
+    if rows:
+        return rows
     return _store._read_df(
         "SELECT player_id, player_name, gp, min, pts"
         " FROM silver_hist_player_seasons"
