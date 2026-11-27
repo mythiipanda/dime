@@ -1,14 +1,3 @@
-"""Multi-year cap scenario projection.
-
-Composes per-season warehouse payroll baselines with carry-forward move
-effects: trades move contracts across teams for every remaining season,
-waivers leave dead-money schedules, signings are one-year deals unless the
-move vocabulary grows contract structure. Cap lines come from
-silver_cap_room projections where available. Exactness and disclosure
-follow the derivation contract: every projected number carries its basis,
-and approximations are labeled rather than hidden.
-"""
-
 import re as _re
 from typing import Any
 
