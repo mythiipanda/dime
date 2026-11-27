@@ -117,7 +117,7 @@ function ShapeChart({ target, comp, features, labels, compName }: {
           const tz = target[feat] ?? 0;
           const cz = comp[feat] ?? 0;
           return (
-            <div key={feat} className="grid grid-cols-[130px_minmax(0,1fr)] items-center gap-2">
+            <div key={feat} className="grid grid-cols-[170px_minmax(0,1fr)] items-center gap-2">
               <span className="truncate text-right text-[10.5px] text-ink-3">{labels[feat] ?? feat}</span>
               <div className="relative h-[10px]">
                 <div className="absolute left-1/2 top-0 h-full w-px bg-line" />
@@ -125,7 +125,7 @@ function ShapeChart({ target, comp, features, labels, compName }: {
                   data-z={tz.toFixed(1)}
                   data-side="target"
                   className="absolute top-[1px] h-[8px] rounded-[2px] bg-ink-3/50"
-                  style={{ width: width(tz), ...(tz >= 0 ? { right: "50%" } : { left: "50%" }) }}
+                  style={{ width: width(tz), ...(tz >= 0 ? { left: "50%" } : { right: "50%" }) }}
                   title={`target z ${tz.toFixed(1)}`}
                 />
                 <div
@@ -448,6 +448,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                     key={`${comp.PLAYER_ID}-${comp.season}-${i}`}
                     className={`block w-full cursor-pointer py-2.5 text-left ${i === selectedComp ? "bg-field" : ""} rounded-[6px] px-2 -mx-2`}
                     onClick={() => setSelectedComp(i)}
+                    aria-pressed={i === selectedComp}
                     title="overlay this comp's shape profile"
                   >
                     <div className="flex items-baseline justify-between gap-2 text-[12.5px]">

@@ -159,6 +159,12 @@ test("history shape chart renders paired z-profile bars for the selected comp", 
     const pct = parseFloat(width);
     assert.ok(pct > 30 && pct <= 50, `z=2.1 clamped-at-3 width should be ~35% of the full track, got ${width}`);
     assert.match(host.textContent ?? "", /shape profile/);
+    const targetBar = Array.from(bars).find((b) => b.getAttribute("data-side") === "target" && b.getAttribute("data-z") === "2.1") as HTMLElement;
+    const compBar = Array.from(bars).find((b) => b.getAttribute("data-side") === "comp" && b.getAttribute("data-z") === "2.0") as HTMLElement;
+    assert.ok(compBar, "comp bar carries its z value");
+    assert.equal(targetBar.style.left, compBar.style.left, "same-sign bars must anchor on the same side of center — overlap is the match");
+    assert.equal(targetBar.style.right, compBar.style.right);
+    assert.notEqual(targetBar.style.left, "", "positive z anchors left edge at center (extends right)");
   } finally {
     await act(async () => root.unmount());
     restore();
