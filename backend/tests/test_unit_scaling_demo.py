@@ -63,11 +63,3 @@ def test_draft_board_stats_use_school_to_break_name_collision():
     wing = next(r for r in board['rows'] if r['name'] == 'Other Wing')
     assert wing['pts'] == 22.1
     assert wing['usg'] == 27.4
-
-
-def test_rotation_rows_carry_per_game_points():
-    rows = []
-    for line in open('backend/shared/tools/team/lineups_rotations.py'):
-        rows.append(line)
-    src = ''.join(rows)
-    assert '"PPG"' in src, 'rotation enriched rows must carry a per-game PPG field'

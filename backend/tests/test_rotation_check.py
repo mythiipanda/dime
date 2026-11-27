@@ -172,6 +172,29 @@ def test_tool_hermetic_with_monkeypatched_fetchers(monkeypatch):
     assert isinstance(rows["thin_flags"], list)
     assert res["meta"]["source"] == "warehouse"
 
+def test_rotation_emits_per_game_points_beside_season_total(monkeypatch):
+    raw = [{"player_id": 1627759, "player_name": "Jaylen Brown", "gp": 71,
+            "min": 34.4, "pts": 28.7}]
+
+    async def _units(*a, **k):
+        return []
+
+    monkeypatch.setattr("shared.tools.team.coerce_team_id", lambda t: 2)
+    monkeypatch.setattr("shared.tools.team._abbrev", lambda t: "BOS")
+    monkeypatch.setattr("shared.tools.team._fetch_rotation_players",
+                        lambda *a, **k: raw)
+    monkeypatch.setattr("shared.tools.team._fetch_rotation_onoff",
+                        lambda *a, **k: (110.0, 108.0, 2.0, True))
+    monkeypatch.setattr("shared.tools.team._fetch_rotation_units", _units)
+    monkeypatch.setattr("shared.tools.team._fetch_rotation_clutch",
+                        lambda *a, **k: [])
+    res = _asyncio.run(get_rotation_check.ainvoke({"team": "BOS"}))
+    row = res["rows"]["tiers"]["core"][0]
+    assert row["PLAYER"] == "Jaylen Brown"
+    assert row["MPG"] == 34.4
+    assert row["PPG"] == 28.7
+    assert row["PTS"] == 2037.7
+
 def _star(name, mpg, gp, pid):
     return {"PLAYER": name, "PLAYER_ID": pid, "GP": gp,
             "MIN": round(mpg * gp, 1), "MPG": float(mpg),

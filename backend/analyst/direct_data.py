@@ -917,35 +917,45 @@ def _draft_board(con, tables: set, season: str) -> dict:
         use = str(latest[0]) if latest and latest[0] else ""
     cite = {"table": "silver_draft_boards" + (" + silver_prospect_stats" if "silver_prospect_stats" in tables else ""),
             "as_of": _draft_as_of(con, "silver_draft_boards")}
-    board_row = con.execute(
-        'SELECT BOARD FROM silver_draft_boards WHERE _season = ? GROUP BY BOARD '
-        'ORDER BY CASE WHEN BOARD = \'big_board\' THEN 0 ELSE 1 END, BOARD LIMIT 1', [use]).fetchone()
+    board_kind = con.execute(
+        "SELECT CASE WHEN COUNT(*) FILTER (BOARD = 'big_board') > 0 THEN 'big_board' ELSE 'mock_draft' END "
+        "FROM silver_draft_boards WHERE _season = ?", [use]).fetchone()[0]
+    base_rows = con.execute(
+        'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL, PLAYER_SLUG FROM silver_draft_boards '
+        'WHERE _season = ? AND BOARD = ? ORDER BY "ORDER"', [use, board_kind]).fetchall()
+    deduped_rows = []
+    seen_keys = set()
+    for index, row in enumerate(base_rows):
+        slug = str(row[4] or "")
+        key = slug if slug else f"row:{index}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped_rows.append(row[:4])
+        if len(deduped_rows) == 60:
+            break
+    stats_by_name: dict = {}
+    if "silver_prospect_stats" in tables:
+        for s in con.execute(
+                'SELECT PLAYER_NAME, TEAM, GP, PTS, REB, AST, TS_PCT, USG '
+                'FROM silver_prospect_stats WHERE _season = ?', [use]).fetchall():
+            stats_by_name.setdefault(str(s[0]).lower(), []).append(s)
+    def _match_stats(name: str, school: object):
+        candidates = stats_by_name.get(str(name).lower()) or []
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+        school_key = str(school or '').lower()
+        matches = [c for c in candidates if school_key and str(c[1] or '').lower() == school_key]
+        if matches:
+            return max(matches, key=lambda c: float(c[2] or 0))
+        return None
     rows = []
-    if board_row and board_row[0]:
-        board_name = str(board_row[0])
-        ranked_board = (
-            'FROM (SELECT *, ROW_NUMBER() OVER ('
-            'PARTITION BY _season, BOARD, COALESCE(NULLIF(PLAYER_SLUG, \'\'), \'unkeyed:\' || CAST(rowid AS VARCHAR)) '
-            'ORDER BY "ORDER") AS brn '
-            'FROM silver_draft_boards WHERE _season = ? AND BOARD = ?) b ')
-        if "silver_prospect_stats" in tables:
-            rows = con.execute(
-                'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL, s.GP, s.PTS, s.REB, s.AST, s.TS_PCT, s.USG '
-                + ranked_board +
-                'LEFT JOIN ('
-                'SELECT PLAYER_NAME, TEAM, _season, GP, PTS, REB, AST, TS_PCT, USG, name_rows, team_rn FROM ('
-                'SELECT *, COUNT(*) OVER (PARTITION BY lower(PLAYER_NAME), _season) AS name_rows, '
-                'ROW_NUMBER() OVER (PARTITION BY lower(PLAYER_NAME), _season, lower(COALESCE(TEAM, \'\')) '
-                'ORDER BY GP DESC NULLS LAST) AS team_rn '
-                'FROM silver_prospect_stats)'
-                ') s ON lower(s.PLAYER_NAME) = lower(b.PLAYER_NAME) AND s._season = b._season '
-                'AND s.team_rn = 1 AND (s.name_rows = 1 OR lower(COALESCE(s.TEAM, \'\')) = lower(COALESCE(b.SCHOOL, \'\'))) '
-                'WHERE b.brn = 1 ORDER BY b."ORDER" LIMIT 60', [use, board_name]).fetchall()
-        else:
-            rows = [r[:4] + (None,) * 6 for r in con.execute(
-                'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL '
-                + ranked_board +
-                'WHERE b.brn = 1 ORDER BY b."ORDER" LIMIT 60', [use, board_name]).fetchall()]
+    for r in deduped_rows:
+        s = _match_stats(r[1], r[3])
+        stat_values = (s[2], s[3], s[4], s[5], s[6], s[7]) if s else (None,) * 6
+        rows.append(tuple(r) + stat_values)
     board = [{"pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
               "gp": r[4], "pts": r[5], "reb": r[6], "ast": r[7], "ts_pct": r[8], "usg": r[9]}
              for r in rows]
