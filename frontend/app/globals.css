@@ -1463,3 +1463,31 @@ th.is-colsel .records-header-icon {
     transition-duration: 0.01ms !important;
   }
 }
+
+.dime-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+  color: var(--ink);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.dime-toast[data-type="error"] {
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line-strong));
+}
+
+.dime-toast-title {
+  font-weight: 500;
+}
+
+.dime-toast-description {
+  color: var(--ink-2);
+}
