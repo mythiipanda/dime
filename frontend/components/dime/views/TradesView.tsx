@@ -123,6 +123,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
   const [fillers, setFillers] = useState<FillersState>({ state: "idle" });
   const [snapshot, setSnapshot] = useState<ScenarioSnapshot | null>(null);
   const [inventory, setInventory] = useState<TpeRow[]>([]);
+  const [manualEntry, setManualEntry] = useState<{ side: number; amount: string } | null>(null);
   const [loadNote, setLoadNote] = useState<string | null>(null);
   const checkSeq = useRef(0);
 
@@ -617,11 +618,11 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             )}
           </div>
         )}
-        {inventory.some(row => row.team === abbr) && (
+        {(inventory.some(row => row.team === abbr) || manualEntry?.side === side) && (
           <div className="rounded-card border border-line bg-surface px-3 py-2 text-xs shadow-hairline">
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-mono text-[10px] uppercase tracking-wider text-ink-3">exception inventory</span>
-              <span className="font-mono text-[10px] text-ink-3">applied to evaluation</span>
+              {inventory.some(row => row.team === abbr) && <span className="font-mono text-[10px] text-ink-3">applied to evaluation</span>}
             </div>
             <div className="mt-1 space-y-1">
               {inventory.map((row, index) => row.team === abbr && (
@@ -637,8 +638,49 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
                   >×</button>
                 </div>
               ))}
+              {manualEntry?.side === side ? (
+                <form
+                  className="flex items-center gap-1.5"
+                  onSubmit={event => {
+                    event.preventDefault();
+                    const millions = parseFloat(manualEntry.amount);
+                    if (Number.isFinite(millions) && millions > 0) {
+                      setInventory(rows => [...rows, { team: abbr, amount: Math.round(millions * 1_000_000), kind: "ordinary", exactness: "user_declared" }]);
+                    }
+                    setManualEntry(null);
+                  }}
+                >
+                  <input
+                    autoFocus
+                    className="h-6 w-20 rounded-[6px] border border-line bg-field px-1.5 font-mono text-[11px] text-ink"
+                    placeholder="0.0"
+                    value={manualEntry.amount}
+                    onChange={event => setManualEntry({ side, amount: event.target.value })}
+                    aria-label={`${abbr} exception amount in millions`}
+                  />
+                  <span className="text-[10px] text-ink-3">$M</span>
+                  <button type="submit" className="font-mono text-[10px] text-accent underline underline-offset-2">add</button>
+                  <button type="button" className="font-mono text-[10px] text-ink-3" onClick={() => setManualEntry(null)}>cancel</button>
+                </form>
+              ) : (
+                <button
+                  className="font-mono text-[10px] text-ink-3 underline underline-offset-2 hover:text-accent"
+                  onClick={() => setManualEntry({ side, amount: "" })}
+                >
+                  add manually
+                </button>
+              )}
             </div>
           </div>
+        )}
+        {!inventory.some(row => row.team === abbr) && manualEntry?.side !== side && (
+          <button
+            className="w-full text-left font-mono text-[10px] text-ink-3 underline underline-offset-2 hover:text-accent px-1"
+            onClick={() => setManualEntry({ side, amount: "" })}
+            title="Exceptions come from your own prior constructions or manual entry — real-world inventory is not derivable from the warehouse"
+          >
+            no exceptions on file — add manually
+          </button>
         )}
         {(leg || check.state === "ok") && (
           <button
