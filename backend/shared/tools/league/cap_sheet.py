@@ -14,6 +14,13 @@ from ..cap_rules import (
     scenario_trace,
     used_expanded_matching,
 )
+from ..signing_rules import (
+    SIGNING_PROXY_DISCLOSURE,
+    SIGNING_VALIDATION_VERSION,
+    consume_signing_exception,
+    initial_exception_state,
+    validate_signing,
+)
 from ..cap_sheet import option_column, season_column, unroll_team_sheet
 from .cba_cap import (
     _locate_player_team,
@@ -230,6 +237,41 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                      "season": season, **payroll_proxy_meta()}}
 
 
+def _move_delta(move: dict[str, Any]) -> int:
+    amount = int(move.get("amount") or 0)
+    return -amount if move.get("kind") in ("trade_out", "waive") else amount
+
+
+def _merge_hard_cap_labels(*values: str) -> str:
+    merged: list[str] = []
+    for value in values:
+        for part in str(value or "").split("+"):
+            if part and part not in merged:
+                merged.append(part)
+    return "+".join(merged)
+
+
+def _validated_signing_move(raw: dict[str, Any], move_index: int, team: str,
+                            payroll_before: int, lines: dict[str, Any],
+                            exception_state: dict[str, Any],
+                            active_hard_caps: list[str], season: str
+                            ) -> tuple[dict[str, Any] | None, dict[str, Any], str | None]:
+    validation = validate_signing(
+        raw, team=team, payroll_before=payroll_before, lines=lines,
+        exception_state=exception_state, active_hard_caps=active_hard_caps,
+        season=season)
+    validation["move_index"] = move_index
+    if validation["input_errors"]:
+        return None, validation, "; ".join(validation["input_errors"])
+    display = str(raw.get("label") or raw.get("player")
+                  or f"${validation['amount'] / 1_000_000:g}M signing")
+    move = {"kind": "signing", "detail": f"sign {display}",
+            "amount": validation["amount"], "validation": validation}
+    if raw.get("player"):
+        move["player"] = str(raw.get("player"))
+    return move, validation, None
+
+
 def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     team = str(payload.get("team") or "").strip().upper()
     requested_season = str(payload.get("season") or "").strip() or "2026-27"
@@ -258,19 +300,43 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     out_total = 0
     sign_count = 0
     roster_delta = 0
+    running_payroll = int(pay_before)
+    exception_state = initial_exception_state(payload.get("exception_state"))
+    active_hard_caps: list[str] = []
+    signing_validations: list[dict[str, Any]] = []
+    signing_blocking: list[str] = []
+    signing_advisory: list[str] = []
+    signing_hard_caps: list[str] = []
     for i, raw in enumerate(moves_in):
         if not isinstance(raw, dict):
             errors.append({"move": str(i), "error": "move must be an object"})
             continue
         kind = str(raw.get("kind") or "").strip()
         if kind == "signing":
-            amount = raw.get("amount")
-            if not isinstance(amount, (int, float)) or amount <= 0:
-                errors.append({"move": str(i), "error": "signing needs a positive amount"})
+            if isinstance(raw.get("exception_state"), dict):
+                exception_state = initial_exception_state(
+                    {**exception_state, **raw["exception_state"]})
+            move, validation, error = _validated_signing_move(
+                raw, i, team, running_payroll, lines, exception_state,
+                active_hard_caps, season)
+            if error:
+                errors.append({"move": str(i), "error": error})
                 continue
-            label = str(raw.get("label") or f"${amount / 1_000_000:g}M signing")
-            moves.append({"kind": "signing", "detail": f"sign {label}",
-                          "amount": int(amount)})
+            moves.append(move)
+            signing_validations.append(validation)
+            player = str(validation.get("player") or "signing")
+            signing_blocking.extend(
+                f"{player}: {issue}" for issue in validation["blocking_issues"])
+            signing_advisory.extend(
+                f"{player}: {issue}" for issue in validation["advisory_issues"])
+            if validation["hard_cap_trigger"]:
+                signing_hard_caps.append(validation["hard_cap_trigger"])
+            if validation["legal"]:
+                exception_state = consume_signing_exception(exception_state, validation)
+                if (validation["hard_cap_trigger"]
+                        and validation["hard_cap_trigger"] not in active_hard_caps):
+                    active_hard_caps.append(validation["hard_cap_trigger"])
+            running_payroll += int(move["amount"])
             sign_count += 1
             roster_delta += 1
         elif kind == "trade_out":
@@ -285,8 +351,10 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 continue
             hit = next((p for p in roster if p["player"] == matched[0]), None)
             amount = int((hit or {}).get("salary") or 0)
-            moves.append({"kind": "trade_out", "detail": f"out {matched[0]}",
-                          "amount": amount})
+            move = {"kind": "trade_out", "detail": f"out {matched[0]}",
+                    "amount": amount}
+            moves.append(move)
+            running_payroll += _move_delta(move)
             out_names.append(matched[0])
             out_total += amount
             roster_delta -= 1
@@ -305,8 +373,10 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                                "error": f"{cname} is already on {team}"})
                 continue
             salary = int(csal or 0)
-            moves.append({"kind": "trade_in",
-                          "detail": f"in {cname} (from {cteam})", "amount": salary})
+            move = {"kind": "trade_in",
+                    "detail": f"in {cname} (from {cteam})", "amount": salary}
+            moves.append(move)
+            running_payroll += _move_delta(move)
             in_names.append(cname)
             in_total += salary
             roster_delta += 1
@@ -320,8 +390,10 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 continue
             hit = next((p for p in roster if p["player"] == matched[0]), None)
             amount = int((hit or {}).get("salary") or 0)
-            moves.append(waiver_move(con, team, matched[0], amount, season, stretch,
-                                     timing=waiver_timing))
+            move = waiver_move(con, team, matched[0], amount, season, stretch,
+                               timing=waiver_timing)
+            moves.append(move)
+            running_payroll += _move_delta(move)
             roster_delta -= 1
         elif kind == "option_decision":
             player = str(raw.get("player") or "").strip()
@@ -340,6 +412,7 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 errors.append({"move": str(i), "error": error})
                 continue
             moves.append(move)
+            running_payroll += _move_delta(move)
             roster_delta -= 1
         else:
             errors.append({"move": str(i), "error": f"unknown move kind '{kind}'"})
@@ -384,6 +457,12 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                               f"allowed under {rule})")
         if aggregates and pay_after > lines["apron2"]:
             issues.append("aggregation would hard-cap the team at the second apron")
+    hard_cap = _merge_hard_cap_labels(hard_cap, *signing_hard_caps)
+    issues.extend(signing_blocking)
+    if any(row.get("mechanism_selected") == "tmle" and row.get("legal")
+           for row in signing_validations):
+        signing_advisory.append(
+            "post-TMLE row A-F cross-move enforcement is incomplete in signing validation v1")
     roster_after = len(roster) + roster_delta
     roster_issue_list = roster_issues(roster_after)
     issues.extend(roster_issue_list)
@@ -391,6 +470,8 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     restrictions = cba_restrictions(state_with_room, season)
     state["room_under_apron2"] = state["room_apron2"]
     return {"ok": True, "team": team, "season": season,
+            "salary_basis": payroll_proxy_meta()["salary_basis"],
+            "ats_exact": False,
             "steps": trace["steps"], "pay_after": pay_after,
             "pay_before": int(pay_before), "state": state,
             "lines": lines, "lines_projected": lines_projected,
@@ -399,8 +480,14 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "roster_issues": roster_issue_list,
             "hard_cap": hard_cap, "issues": issues, "errors": errors,
             "matching": matching,
+            "signing_validations": signing_validations,
+            "signing_exception_state": exception_state,
+            "blocking_issues": signing_blocking,
+            "advisory_issues": signing_advisory,
             "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con),
                      "requested_season": requested_season,
+                     "signing_validation_version": SIGNING_VALIDATION_VERSION,
+                     "signing_proxy_disclosure": SIGNING_PROXY_DISCLOSURE,
                      **payroll_proxy_meta(),
                      **({"waiver_basis": WAIVER_BASIS,
                          "waiver_timing": waiver_timing}

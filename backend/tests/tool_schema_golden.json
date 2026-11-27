@@ -5525,9 +5525,9 @@
     },
     "product_cap_scenario_eval": {
       "name": "product_cap_scenario_eval",
-      "description": "Evaluate a typed cap scenario (signings, trades, waives, option decisions) for one team and season.",
+      "description": "Evaluate a typed cap scenario (mechanism-aware signings, trades, waives, option decisions) for one team and season; signing validation is a salary-ledger approximation, not exact CBA legality.",
       "args_schema": {
-        "description": "Evaluate a typed cap scenario (signings, trades, waives, option decisions) for one team and season.",
+        "description": "Evaluate a typed cap scenario (mechanism-aware signings, trades, waives, option decisions) for one team and season; signing validation is a salary-ledger approximation, not exact CBA legality.",
         "properties": {
           "payload": {
             "additionalProperties": true,

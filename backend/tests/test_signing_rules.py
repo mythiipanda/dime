@@ -1,0 +1,254 @@
+import pytest
+
+from shared.tools.cap_rules import CAP
+from shared.tools.signing_rules import (
+    consume_signing_exception,
+    initial_exception_state,
+    validate_signing,
+)
+
+
+def validate(payroll, amount, years, mechanism="auto", yos=None, state=None):
+    move = {"player": "Vector Player", "amount": amount,
+            "years": years, "mechanism": mechanism}
+    if yos is not None:
+        move["years_of_service"] = yos
+    return validate_signing(
+        move, team="TST", payroll_before=payroll,
+        exception_state=state or {})
+
+
+def rejection_reasons(out):
+    return {row["mechanism"]: row["reason"] for row in out["rejected_candidates"]}
+
+
+def test_vector_1_max_salary_external_signing_has_no_valid_mechanism():
+    out = validate(195_000_000, 41_240_250, 4, yos=0)
+    assert out["outcome"] == "illegal"
+    assert out["legal"] is False
+    assert out["mechanism_selected"] is None
+    assert out["validation_checks"]["maximum_salary"] == "passed"
+    reasons = rejection_reasons(out)
+    assert "no cap room" in reasons["cap_room"]
+    assert "15044000" in reasons["ntmle"].replace(",", "")
+    assert "6064000" in reasons["tmle"].replace(",", "")
+    assert "5477000" in reasons["bae"].replace(",", "")
+
+
+def test_vector_2_auto_infers_cap_room():
+    out = validate(100_000_000, 14_961_000, 4)
+    assert out["outcome"] == "legal_approximation"
+    assert out["legal"] is True
+    assert out["mechanism_selected"] == "cap_room"
+    assert out["mechanism_inference"] == "least_restrictive_legal"
+    assert out["hard_cap_trigger"] == ""
+    assert out["post_move_payroll"] == 114_961_000
+    assert out["validation_checks"]["maximum_salary"] == "unknown"
+
+
+def test_vector_3_cap_room_equality_is_legal():
+    out = validate(150_000_000, 14_961_000, 1, "cap_room")
+    assert out["outcome"] == "legal_approximation"
+    assert out["mechanism_selected"] == "cap_room"
+    assert out["post_move_payroll"] == CAP["cap"]
+
+
+def test_vector_4_cap_room_one_dollar_over_is_illegal_without_rescue():
+    out = validate(150_000_000, 14_961_001, 1, "cap_room")
+    assert out["outcome"] == "illegal"
+    assert out["mechanism_selected"] is None
+    assert "cap room" in out["blocking_issues"][0]
+    assert out["hard_cap_trigger"] == ""
+
+
+def test_vector_5_ntmle_boundary_amount_and_term_are_legal_approximation():
+    out = validate(190_000_000, 15_044_000, 4, "ntmle")
+    assert out["outcome"] == "legal_approximation"
+    assert out["mechanism_selected"] == "ntmle"
+    assert out["hard_cap_trigger"] == "first apron"
+    assert out["hard_cap_violations"] == []
+    assert out["exception_remaining"] == 0
+    assert "exception_use_ledger" in out["missing_inputs"]
+    assert out["legality_confidence"] == "approximation"
+
+
+def test_vector_6_ntmle_one_dollar_over_amount_is_illegal():
+    out = validate(190_000_000, 15_044_001, 4, "ntmle")
+    assert out["outcome"] == "illegal"
+    assert "exceeds the non-taxpayer mid-level exception ceiling" in out["blocking_issues"][0]
+
+
+def test_vector_7_ntmle_five_years_is_illegal():
+    out = validate(190_000_000, 10_000_000, 5, "ntmle")
+    assert out["outcome"] == "illegal"
+    assert "four seasons" in out["blocking_issues"][0]
+
+
+def test_vector_8_ntmle_can_finish_exactly_at_first_apron():
+    out = validate(203_500_000, 5_515_000, 2, "ntmle")
+    assert out["outcome"] == "legal_approximation"
+    assert out["post_move_payroll"] == CAP["apron1"]
+    assert out["post_move_apron_room"] == 0
+    assert out["hard_cap_violations"] == []
+
+
+def test_vector_9_ntmle_cannot_finish_one_thousand_over_first_apron():
+    out = validate(203_500_000, 5_516_000, 2, "ntmle")
+    assert out["outcome"] == "illegal"
+    assert out["post_move_payroll"] == CAP["apron1"] + 1_000
+    assert out["hard_cap_violations"] == ["first apron"]
+    assert "signing is prohibited" in out["blocking_issues"][0]
+
+
+def test_vector_10_tmle_can_finish_exactly_at_second_apron():
+    out = validate(216_000_000, 5_686_000, 2, "tmle")
+    assert out["outcome"] == "legal_approximation"
+    assert out["mechanism_selected"] == "tmle"
+    assert out["post_move_payroll"] == CAP["apron2"]
+    assert out["post_move_apron_room"] == 0
+    assert out["hard_cap_trigger"] == "second apron"
+    assert out["hard_cap_violations"] == []
+
+
+def test_vector_11_tmle_cannot_finish_one_thousand_over_second_apron():
+    out = validate(216_000_000, 5_687_000, 2, "tmle")
+    assert out["outcome"] == "illegal"
+    assert out["post_move_payroll"] == CAP["apron2"] + 1_000
+    assert out["hard_cap_violations"] == ["second apron"]
+
+
+def test_vector_12_bae_boundary_is_legal_approximation():
+    out = validate(190_000_000, 5_477_000, 2, "bae")
+    assert out["outcome"] == "legal_approximation"
+    assert out["mechanism_selected"] == "bae"
+    assert out["hard_cap_trigger"] == "first apron"
+    assert out["exception_remaining"] == 0
+
+
+def test_vector_13_bae_prior_year_use_is_illegal():
+    state = {"bae_used_prior_cap_year": True}
+    out = validate(190_000_000, 5_477_000, 2, "bae", state=state)
+    assert out["outcome"] == "illegal"
+    assert "consecutive" in out["blocking_issues"][0]
+
+
+def test_vector_14_minimum_exception_is_legal_above_second_apron():
+    out = validate(225_000_000, 1_357_763, 2, "minimum", yos=0)
+    assert out["outcome"] == "legal_approximation"
+    assert out["mechanism_selected"] == "minimum"
+    assert out["hard_cap_trigger"] == ""
+    assert out["post_move_payroll"] == 226_357_763
+    assert out["validation_checks"]["minimum_salary"] == "passed"
+
+
+def test_vector_15_minimum_exception_three_years_is_illegal():
+    out = validate(225_000_000, 1_357_763, 3, "minimum", yos=0)
+    assert out["outcome"] == "illegal"
+    assert "two seasons" in out["blocking_issues"][0]
+
+
+def test_auto_does_not_infer_exceptions_when_below_cap_operating_mode_unknown():
+    out = validate(150_000_000, 15_000_000, 1)
+    assert out["outcome"] == "unknown"
+    assert out["legal"] is False
+    assert out["mechanism_selected"] is None
+    assert out["mechanism_inference"] == "explicit_required"
+    assert any("operating mode" in issue for issue in out["blocking_issues"])
+
+
+def test_auto_infers_single_unambiguous_hard_capped_mechanism():
+    out = validate(190_000_000, 15_044_000, 4)
+    assert out["outcome"] == "legal_approximation"
+    assert out["mechanism_selected"] == "ntmle"
+    assert out["mechanism_inference"] == "least_restrictive_legal"
+
+
+def test_auto_prefers_minimum_over_cap_room_when_exact_minimum():
+    out = validate(100_000_000, 1_357_763, 2, yos=0)
+    assert out["outcome"] == "legal_approximation"
+    assert out["mechanism_selected"] == "minimum"
+    assert "cap_room" in out["legal_candidates"]
+
+
+def test_exception_consumption_is_cumulative_across_signings():
+    state = initial_exception_state()
+    first = validate(190_000_000, 8_000_000, 1, "ntmle", state=state)
+    assert first["legal"] is True
+    state = consume_signing_exception(state, first)
+    assert state["ntmle_used"] == 8_000_000
+    second = validate(198_000_000, 8_000_000, 1, "ntmle", state=state)
+    assert second["outcome"] == "illegal"
+    assert "remaining" in second["blocking_issues"][0]
+    assert second["exception_remaining"] == 7_044_000
+
+
+def test_active_hard_cap_restricts_later_minimum_signing():
+    out = validate_signing(
+        {"player": "Minimum Player", "amount": 1_357_763,
+         "years": 1, "mechanism": "minimum", "years_of_service": 0},
+        team="TST", payroll_before=CAP["apron1"],
+        active_hard_caps=["first apron"])
+    assert out["outcome"] == "illegal"
+    assert "active first apron hard cap" in out["blocking_issues"][0]
+
+
+def test_every_conclusion_carries_ats_proxy_metadata():
+    out = validate(190_000_000, 5_477_000, 2, "bae")
+    assert out["salary_basis"] == "approximate_salary_ledger_not_exact_apron_team_salary"
+    assert out["ats_exact"] is False
+    assert "exact_apron_team_salary" in out["missing_inputs"]
+    assert "Approximation, not exact CBA signing legality" in out["signing_proxy_disclosure"]
+
+
+def test_unknown_mechanism_is_an_input_error():
+    out = validate_signing(
+        {"player": "Bad Mechanism", "amount": 1_000_000,
+         "years": 1, "mechanism": "mle"},
+        team="TST", payroll_before=100_000_000)
+    assert out["input_errors"]
+    assert "unknown signing mechanism" in out["input_errors"][0]
+
+
+def test_legacy_string_signings_use_auto_one_year_compatibility_shim():
+    from shared.tools.league.cap_scenario import _validate_legacy_signings
+    moves = [{"kind": "signing", "amount": 8_000_000, "player": "Legacy Player"}]
+    out = _validate_legacy_signings("TST", moves, 190_000_000)
+    validation = out["validations"][0]
+    assert validation["mechanism_input"] == "auto"
+    assert validation["years"] == 1
+    assert validation["mechanism_selected"] == "ntmle"
+    assert any("grouped compatibility inputs" in issue for issue in out["advisory"])
+    assert moves[0]["validation"] is validation
+
+
+def test_typed_scenario_tracks_signing_validation_and_exception_consumption():
+    import duckdb
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
+            "PLAYER_ID BIGINT, GUARANTEED BIGINT, SALARY_2026_27 BIGINT)")
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?)",
+            [(f"Roster {i}", "TST", i, 19_000_000, 19_000_000)
+             for i in range(1, 11)])
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2026-27",
+            "moves": [
+                {"kind": "signing", "player": "First", "amount": 8_000_000,
+                 "years": 1, "mechanism": "ntmle"},
+                {"kind": "signing", "player": "Second", "amount": 8_000_000,
+                 "years": 1, "mechanism": "ntmle"},
+            ]})
+    finally:
+        con.close()
+    assert out["ok"] is True
+    validations = out["signing_validations"]
+    assert validations[0]["outcome"] == "legal_approximation"
+    assert validations[1]["outcome"] == "illegal"
+    assert "remaining" in validations[1]["blocking_issues"][0]
+    signing_steps = [step for step in out["steps"] if step["kind"] == "signing"]
+    assert signing_steps[0]["validation"]["mechanism_selected"] == "ntmle"
+    assert out["meta"]["signing_validation_version"] == "v1"
+    assert out["meta"]["ats_exact"] is False

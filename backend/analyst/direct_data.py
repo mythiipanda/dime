@@ -217,7 +217,7 @@ def product_cap_sheet(team: str, season: str = '2026-27') -> dict:
     finally:
         con.close()
 
-@tool(description='Evaluate a typed cap scenario (signings, trades, waives, option decisions) for one team and season.')
+@tool(description='Evaluate a typed cap scenario (mechanism-aware signings, trades, waives, option decisions) for one team and season; signing validation is a salary-ledger approximation, not exact CBA legality.')
 def product_cap_scenario_eval(payload: dict) -> dict:
     from shared import store
     from shared.contracts import canonical_team_abbr
