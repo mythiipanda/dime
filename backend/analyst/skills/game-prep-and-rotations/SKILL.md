@@ -7,8 +7,9 @@ description: Scout an opponent's next game — lineup and rotation analysis, on/
 
 Guidance for reasoning about an upcoming game, an opponent's rotation, or
 how a team actually functions — not a fixed procedure. Use whichever tools
-answer the question. Tools cite their own sources, and some can use live
-data at question time — disclose that provenance when it happens.
+answer the question. Provenance varies by tool, and some can use live
+data at question time — disclose the provenance a tool response exposes,
+and say when it exposes none.
 
 ## 1. Tools and when they matter
 
@@ -78,9 +79,12 @@ The in-progress 2026-27 season is the standing case study: tools now
 return early-season rows with real provenance, but the sample is small.
 
 - **Always attach the sample.** Every early-season number gets its
-  qualifier: games played, minutes for lineups, minutes or possessions for
-  on/off, attempts for shot zones. "Top-5 defense" in November is ~15
-  games, not a season.
+  qualifier: games played, minutes for lineups, possessions for on/off,
+  attempts for shot zones. Cached `get_on_off` rows can omit the volume
+  row; when volume matters, take it from `get_on_off_leaders`
+  (stint-derived) or a `get_wowy` result whose rows report possessions, or
+  explicitly label the `get_on_off` volume unavailable. "Top-5 defense" in
+  November is ~15 games, not a season.
 - **Thresholds exist for a reason.** `get_lineup_leaders`' `min_minutes`
   floor and `get_shot_zones`' `min_attempts` floor are the sample guards —
   don't lower them to manufacture coverage; if a player's zone profile is
@@ -127,6 +131,7 @@ points-per-game list.
   (four factors / shot zones), then availability caveats.
 - Every early-season stat carries its sample (games, minutes, attempts);
   label volatile conclusions once instead of repeating caveats.
-- Cite each tool's `meta.source`/per-row source; disclose that on/off
-  and lineup figures are per-100-possessions and which season_type they
-  cover.
+- Cite `meta.source` when present; otherwise cite section/row `_source`
+  fields or table/coverage metadata. If neither exists, say that the tool
+  exposes no machine-readable provenance. Disclose that on/off and lineup
+  figures are per-100-possessions and which season_type they cover.
