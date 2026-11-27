@@ -158,7 +158,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
     }
     const seq = ++checkSeq.current;
     setCheck({ state: "loading" });
-    if (!multi) {
+    if (!multi && inventory.length === 0) {
       fetch(`${BACKEND}${apiPath("/trade/check")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -211,7 +211,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       .catch(() => {
         if (checkSeq.current === seq) setCheck({ state: "error", error: "Could not reach the backend" });
       });
-  }, [pkgs, teams, multi]);
+  }, [pkgs, teams, multi, inventory]);
 
   const setPkgAt = useCallback((index: number, next: (previous: Package) => Package) => {
     setPkgs(previous => previous.map((pkg, i) => (i === index ? next(pkg) : pkg)));
@@ -578,7 +578,13 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             {payroll.tpeCreation && (
               <div className="mt-1 rounded-[6px] border border-line bg-field px-2 py-1 text-[11px] leading-snug text-ink-2">
                 <span className="font-mono text-[10px] uppercase tracking-wider text-accent">trade exception</span>{" "}
-                {payroll.tpeCreation.copy}
+                {payroll.tpeCreation.copy}{" "}
+                <button
+                  className="font-mono text-[10px] text-accent underline underline-offset-2 hover:text-ink"
+                  onClick={() => setInventory(rows => [...rows, { team: abbr, amount: payroll.tpeCreation!.amount, kind: "ordinary", exactness: "scenario_derived" }])}
+                >
+                  carry into inventory
+                </button>
               </div>
             )}
           </div>
@@ -600,7 +606,13 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             {leg.tpe_creation && (
               <div className="mt-1 rounded-[6px] border border-line bg-field px-2 py-1 text-[11px] leading-snug text-ink-2">
                 <span className="font-mono text-[10px] uppercase tracking-wider text-accent">trade exception</span>{" "}
-                {leg.tpe_creation.copy}
+                {leg.tpe_creation.copy}{" "}
+                <button
+                  className="font-mono text-[10px] text-accent underline underline-offset-2 hover:text-ink"
+                  onClick={() => setInventory(rows => [...rows, { team: abbr, amount: leg.tpe_creation!.amount, kind: "ordinary", exactness: "scenario_derived" }])}
+                >
+                  carry into inventory
+                </button>
               </div>
             )}
           </div>
