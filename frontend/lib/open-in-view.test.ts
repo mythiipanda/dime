@@ -55,6 +55,23 @@ describe("viewTargetForArtifact", () => {
     assert.equal(target?.team, undefined);
   });
 
+  it("maps matchup/scout tools to their views with team", () => {
+    const matchup = viewTargetForArtifact(tableArtifact("get_matchup_preview", "DEN at MIN preview"));
+    assert.equal(matchup?.tab, "matchups");
+    assert.equal(matchup?.team, "DEN");
+    const scout = viewTargetForArtifact(tableArtifact("get_scout_pack", "Scout pack: PHI"));
+    assert.equal(scout?.tab, "scout");
+    assert.equal(scout?.team, "PHI");
+  });
+
+  it("maps award and compare tools without a team", () => {
+    const awards = viewTargetForArtifact(tableArtifact("get_award_race", "MVP race"));
+    assert.equal(awards?.tab, "awards");
+    assert.equal(awards?.team, undefined);
+    const compare = viewTargetForArtifact(tableArtifact("get_comps", "Comps for player"));
+    assert.equal(compare?.tab, "compare");
+  });
+
   it("uses the team_card name when present", () => {
     const card: DimeArtifact = {
       kind: "team_card",

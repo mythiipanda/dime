@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -200,7 +201,16 @@ export default function MatchupsView() {
         } else {
           setData(value);
           setError(null);
-          setActiveId((current) => current || value.games?.[0]?.id || "");
+          setActiveId((current) => {
+            if (current) return current;
+            const seeded = initialTeamParam();
+            if (seeded) {
+              const hit = value.games?.find((g) =>
+                g.home?.abbr === seeded || g.away?.abbr === seeded);
+              if (hit) return hit.id;
+            }
+            return value.games?.[0]?.id || "";
+          });
         }
         setLoading(false);
       })

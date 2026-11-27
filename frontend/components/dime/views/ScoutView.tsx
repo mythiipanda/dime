@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { initialTeamParam } from "@/lib/open-in-view";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -52,8 +53,11 @@ function pct1(v: number) {
 }
 
 export default function ScoutView() {
-  const [team, setTeam] = useState("BOS");
-  const [opponent, setOpponent] = useState("NYK");
+  const [team, setTeam] = useState(() => initialTeamParam() ?? "BOS");
+  const [opponent, setOpponent] = useState(() => {
+    const seeded = initialTeamParam();
+    return seeded === "NYK" ? "BOS" : "NYK";
+  });
   const [data, setData] = useState<Dossier | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
