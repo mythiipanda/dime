@@ -178,6 +178,19 @@ def test_trade_legality_snt_four_years_remain_valid(monkeypatch, tmp_path):
     assert out["legal"] is True, out["issues"]
 
 
+def test_trade_legality_snt_discloses_unvalidated_first_year_guarantee(
+        monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 3)
+    disclosure = ("first-season full guarantee required by 2023 CBA Art. VII "
+                  "sec. 8(e)(1) is not validated")
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    snt_check = next(check for check in out["checks"]
+                     if check["rule"] == "sign-and-trade")
+    assert disclosure in snt_check["note"]
+    assert disclosure in out["meta"]["disclaimer"]
+
+
 @pytest.mark.parametrize(("payload", "message"), [
     ('[]', "JSON object"),
     ('{"player":"Alpha One","years":3}', "missing new_salary"),

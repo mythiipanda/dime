@@ -34,6 +34,12 @@ _TPE_KINDS = {
     "snt": "sign_and_trade",
     "snt_generated": "sign_and_trade",
 }
+_SNT_GUARANTEE_DISCLOSURE = (
+    "first-season full guarantee required by 2023 CBA Art. VII sec. 8(e)(1) "
+    "is not validated")
+_SNT_OPTION_YEAR_DISCLOSURE = (
+    "years is treated as total declared seasons; non-option seasons cannot be "
+    "distinguished, so option-year treatment is unsupported")
 
 
 def _parse_json_arg(text: str, label: str) -> tuple[Any, str | None]:
@@ -682,14 +688,15 @@ def _snt_result(snt: dict[str, Any] | None,
         issues.append("sign-and-trade contracts must run at least 3 seasons")
     if snt["years"] > 4:
         issues.append("sign-and-trade contracts cannot exceed 4 seasons")
-    eligibility_note = "prior-team and preseason eligibility not modeled"
+    unvalidated_note = (f"{_SNT_GUARANTEE_DISCLOSURE}; prior-team and "
+                        "preseason eligibility not modeled")
     if receiver:
         note = (f"{snt['player']} to {receiver}; {receiver} is "
                 "hard-capped at the first apron; "
-                f"{eligibility_note}")
+                f"{unvalidated_note}")
     else:
         note = (f"{snt['player']} is not moving teams; "
-                f"{eligibility_note}")
+                f"{unvalidated_note}")
     return issues, {"rule": "sign-and-trade", "checked": True, "note": note}
 
 
@@ -771,8 +778,10 @@ def _build_checks(team_rows: dict[str, Any],
     '[{"from":"BOS","to":"DEN","players":"Jayson Tatum, Sam Hauser",'
     '"picks":[{"year":2028,"round":1,"protection":"top-4"},{"year":2030,"round":1,"swap":true}]}].\n'
     'Optional "sign_and_trade" = {"player":"...","new_salary":15000000,"years":3} '
-    '(positive salary, 3-4 season term, BYC handled; prior-team and '
-    'preseason eligibility not modeled), '
+    '(positive salary, 3-4 season term, BYC handled; '
+    + _SNT_GUARANTEE_DISCLOSURE
+    + '; prior-team and preseason eligibility not modeled; '
+    + _SNT_OPTION_YEAR_DISCLOSURE + '), '
     '"cash" = [{"from","to","amount"}] with positive integer amounts '
     'between trade parties, '
     '"tpe" = [{"team","amount","kind":"ordinary|sign_and_trade",'
@@ -857,7 +866,8 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                      "aggregation, hard caps, typed TPE restrictions, cash "
                      "bans, sign-and-trade terms/BYC, Stepien and "
                      "frozen-pick rules. Skips "
-                     "no-trade clauses, trade kickers, poison-pill, "
-                     "minimum-salary exceptions, and sign-and-trade "
-                     "prior-team/preseason eligibility. Confirm with a cap "
+                     "no-trade clauses, trade kickers, poison-pill, and "
+                     "minimum-salary exceptions; sign-and-trade "
+                     f"{_SNT_GUARANTEE_DISCLOSURE}; prior-team/preseason "
+                     "eligibility not modeled. Confirm with a cap "
                      "specialist."}}
