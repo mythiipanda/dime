@@ -290,14 +290,25 @@ export function createProductServer(options: {
             throw new HttpError(403, "owner token rejected");
         return value;
     };
+    const stampThreadGrant = async (owner: string, payload: unknown) => {
+        const shape = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+        const thread = typeof shape.thread === "string" ? shape.thread.trim().slice(0, 120) : "";
+        if (!thread)
+            throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], "thread grant payload requires a thread id", null)]);
+        const runs = await data.call("product_runs", { thread, owner });
+        if (!Array.isArray(runs.runs) || runs.runs.length === 0)
+            throw new HttpError(422, [validationDetail("thread_not_owned", ["body", "payload", "thread"], "thread has no runs for this owner", null)]);
+        return { thread, owner, granted_before: new Date().toISOString() };
+    };
     route("POST", /^\/api\/objects$/, async ({ req, res }) => {
         objectWriteRate(req);
         const owner = objectOwner(req);
         const input = parseBody(objectCreate, await body(req));
-        const invalid = validateObjectPayload(input.kind, input.payload);
+        const payload = input.kind === "thread_grant" ? await stampThreadGrant(owner, input.payload) : input.payload;
+        const invalid = validateObjectPayload(input.kind, payload);
         if (invalid)
             throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], invalid, null)]);
-        const created = objects.create({ kind: input.kind as ObjectKind, owner, title: input.title, payload: input.payload });
+        const created = objects.create({ kind: input.kind as ObjectKind, owner, title: input.title, payload });
         const value = objects.get(created.object_id);
         if (!value)
             throw new Error("object create lost");
@@ -316,6 +327,8 @@ export function createProductServer(options: {
         const value = authorizedObject(req, params[0]);
         const input = parseBody(objectPatch, await body(req));
         if (input.payload !== undefined) {
+            if (value.kind === "thread_grant")
+                throw new HttpError(422, [validationDetail("payload_immutable", ["body", "payload"], "thread grant payloads are immutable — archive and re-grant instead", null)]);
             const invalid = validateObjectPayload(value.kind, input.payload);
             if (invalid)
                 throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], invalid, null)]);
@@ -331,13 +344,44 @@ export function createProductServer(options: {
         const value = authorizedObject(req, params[0]);
         json(res, { object_id: value.object_id, read_token: objects.rotateShare(value) });
     });
+    const resolveThreadTranscript = async (payload: unknown) => {
+        const shape = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+        const thread = typeof shape.thread === "string" ? shape.thread : "";
+        const owner = typeof shape.owner === "string" ? shape.owner : "";
+        const grantedBefore = typeof shape.granted_before === "string" ? shape.granted_before : "";
+        if (!thread || !owner || !grantedBefore)
+            return [];
+        const result = await data.call("product_runs", { thread, owner }).catch(() => null);
+        const runs = result && Array.isArray(result.runs) ? result.runs : [];
+        return runs
+            .filter((run: unknown) => {
+                const row = objectValue(run);
+                return row && typeof row.created_at === "string" && row.created_at <= grantedBefore;
+            })
+            .slice(0, 50)
+            .map((run: unknown) => {
+                const row = objectValue(run);
+                return {
+                    question: typeof row?.question === "string" ? row.question : "",
+                    answer: typeof row?.answer === "string" ? row.answer : "",
+                    tables: Array.isArray(row?.tables) ? row.tables : [],
+                    created_at: typeof row?.created_at === "string" ? row.created_at : ""
+                };
+            });
+    };
     route("GET", /^\/s\/([^/]+)$/, async ({ res, params }) => {
         if (!readTokenShape.test(params[0]))
             throw new HttpError(422, [validationDetail("read_token_format", ["params", "read_token"], "Invalid share token", params[0])]);
         const value = objects.getByReadToken(params[0]);
         if (!value)
             throw new HttpError(404, "not found");
-        json(res, publicObject(value));
+        const shared = publicObject(value);
+        if (value.kind === "thread_grant" && !value.archived) {
+            const transcript = await resolveThreadTranscript(value.payload);
+            json(res, { ...shared, payload: { thread: true }, transcript });
+            return;
+        }
+        json(res, shared);
     });
     route("POST", /^\/api\/sql\/rerun$/, async ({ req, res }) => {
         const input = parseBody(Type.Object({ sql: Type.Optional(Type.String()) }, { additionalProperties: false }), await body(req));
@@ -460,7 +504,7 @@ export function createProductServer(options: {
         let heartbeat: ReturnType<typeof setTimeout> | undefined;
         const resetHeartbeat = () => { clearTimeout(heartbeat); heartbeat = setTimeout(() => { res.write(encodeEvent({ type: "ping", data: { ok: true } })); resetHeartbeat(); }, 15000); };
         resetHeartbeat();
-        res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "x-dime-run-id": run });
+        res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "x-dime-run-id": run, "x-dime-run-timeout-ms": String(timeoutMs) });
         try {
             for await (const event of analyst.stream(input, controller.signal, run, { runTimeoutMs: timeoutMs })) {
                 res.write(encodeEvent(event));
