@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 import duckdb
 import pytest
@@ -774,6 +775,88 @@ def test_legacy_amount_only_tpe_defaults_to_current_ordinary(
     assert detail["origin_year"] == 2026
     assert detail["status"] == "current_year"
     assert detail["legacy_defaults"] is True
+    assert detail["timing_basis"] == "season_approximate"
+    assert detail["expiry_date"] is None
+    note = next(row["note"] for row in out["checks"]
+                if row["rule"] == "traded player exceptions")
+    assert "approximate legacy season bins" in note
+
+
+def _dated_tpe_out(monkeypatch, tmp_path, row):
+    from shared.tools import get_trade_legality
+    import shared.tools.league.trade_legality as trade_legality_module
+
+    monkeypatch.setattr(trade_legality_module, "_today",
+                        lambda: date(2026, 10, 1))
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 170_000_000, [])
+          + _roster("MIA", 150_000_000, [("Alpha One", 8_000_000)]))
+    return get_trade_legality.invoke({
+        "legs": '[{"from":"MIA","to":"BOS","players":"Alpha One"}]',
+        "tpe": json.dumps([row]),
+        "season": "2026-27",
+    })
+
+
+def test_exact_date_prior_year_tpe_active_before_expiry(
+        monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-12-15", "expiry_date": "2026-12-15",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "prior_year"
+    assert detail["timing_basis"] == "exact_date"
+    assert detail["as_of_date"] == "2026-10-01"
+    assert detail["origin_year"] == 2025
+    assert detail["origin_season"] == "2025-26"
+    assert detail["expiry_date"] == "2026-12-15"
+    assert detail["expiry_date_derived"] is False
+
+
+def test_exact_expiry_date_expires_prior_year_tpe_on_as_of_date(
+        monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_season": "2025-26", "expiry_date": "2026-10-01",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is False
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "expired"
+    assert detail["timing_basis"] == "exact_date"
+    assert detail["expiry_date"] == "2026-10-01"
+    assert any("expiry date 2026-10-01" in issue
+               and "2026-10-01 evaluation date" in issue
+               for issue in out["issues"])
+
+
+def test_origin_date_derives_exact_one_year_expiry(monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-09-15",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is False
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "expired"
+    assert detail["expiry_date"] == "2026-09-15"
+    assert detail["expiry_date_derived"] is True
+
+
+def test_future_origin_date_makes_tpe_unavailable(monkeypatch, tmp_path):
+    out = _dated_tpe_out(monkeypatch, tmp_path, {
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2026-12-01",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is False
+    detail = _team_rows(out)["BOS"]["tpe_details"][0]
+    assert detail["status"] == "future"
+    assert detail["timing_basis"] == "exact_date"
+    assert any("not yet available" in issue for issue in out["issues"])
 
 
 def test_tpe_rejects_unknown_kind():
@@ -824,7 +907,8 @@ def test_tpe_rejects_non_integer_numeric_values(row):
 
 
 @pytest.mark.parametrize("key", [
-    "amount", "kind", "origin_year", "origin_season",
+    "amount", "kind", "origin_year", "origin_season", "origin_date",
+    "expiry_date",
 ])
 def test_tpe_rejects_explicit_null_typed_keys(key):
     row = {"team": "BOS", "amount": 8_000_000, "kind": "ordinary",
@@ -832,6 +916,38 @@ def test_tpe_rejects_explicit_null_typed_keys(key):
     out = _tpe_validation_out(row)
     assert out["ok"] is False
     assert "explicit null" in out["error"]
+
+
+@pytest.mark.parametrize("key,value", [
+    ("origin_date", "12/15/2025"),
+    ("origin_date", "2025-02-30"),
+    ("expiry_date", "2026-02-30"),
+    ("expiry_date", 20261215),
+])
+def test_tpe_rejects_malformed_exact_dates(key, value):
+    row = {"team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+           "origin_season": "2025-26", key: value}
+    out = _tpe_validation_out(row)
+    assert out["ok"] is False
+    assert f"{key} must be YYYY-MM-DD" in out["error"]
+
+
+def test_tpe_rejects_expiry_before_origin():
+    out = _tpe_validation_out({
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_date": "2025-12-15", "expiry_date": "2025-12-15",
+    })
+    assert out["ok"] is False
+    assert "expiry_date must be after origin_date" in out["error"]
+
+
+def test_tpe_rejects_origin_date_mismatched_with_origin_season():
+    out = _tpe_validation_out({
+        "team": "BOS", "amount": 8_000_000, "kind": "ordinary",
+        "origin_season": "2026-27", "origin_date": "2025-12-15",
+    })
+    assert out["ok"] is False
+    assert "origin_date does not match origin_year/origin_season" in out["error"]
 
 
 def test_cap_scenario_crossing_first_apron_uses_post_move_strict_matching(
