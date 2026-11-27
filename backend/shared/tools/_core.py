@@ -42,6 +42,29 @@ def last_completed_season_cache_clear() -> None:
     _LAST_SEASON_KEY = None
     _LAST_SEASON_VALUE = None
 
+_DATA_SEASON_KEY: tuple | None = None
+_DATA_SEASON_VALUE: str | None = None
+
+def warehouse_max_season() -> str | None:
+    global _DATA_SEASON_KEY, _DATA_SEASON_VALUE
+    try:
+        stat = store.DB_PATH.stat()
+        key = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+    if _DATA_SEASON_KEY == key:
+        return _DATA_SEASON_VALUE
+    try:
+        seasons = store.completed_seasons_across_tables()
+    except Exception:
+        return None
+    if not seasons:
+        return None
+    value = seasons[-1]
+    _DATA_SEASON_KEY = key
+    _DATA_SEASON_VALUE = value
+    return value
+
 def completed_season_for_date(day: object) -> str | None:
     try:
         year = int(day.year)
@@ -96,7 +119,7 @@ def resolve_season(season: object | None = None,
     return last_completed_season()
 
 def coverage_end() -> str:
-    return last_completed_season() or COVERAGE_START
+    return warehouse_max_season() or last_completed_season() or COVERAGE_START
 
 class InvalidSeasonError(Exception):
 
@@ -104,7 +127,7 @@ class InvalidSeasonError(Exception):
                  coverage_end: str | None = None,
                  nearest: str | None = None) -> None:
         if coverage_end is None:
-            coverage_end = last_completed_season() or coverage_start
+            coverage_end = warehouse_max_season() or last_completed_season() or coverage_start
         self.requested = "" if requested is None else str(requested)
         self.coverage_start = coverage_start
         self.coverage_end = coverage_end
@@ -116,7 +139,7 @@ def season_error_message(requested: object, nearest: str | None = None,
                          coverage_start: str = COVERAGE_START,
                          coverage_end: str | None = None) -> str:
     if coverage_end is None:
-        coverage_end = last_completed_season() or coverage_start
+        coverage_end = warehouse_max_season() or last_completed_season() or coverage_start
     raw = "" if requested is None else str(requested).strip()
     shown = raw or "that"
     if nearest is None:
@@ -144,7 +167,7 @@ def _bare_year_slug(text: str) -> str | None:
 def clamp_season(season: object, coverage_start: str = COVERAGE_START,
                  coverage_end: str | None = None) -> str:
     if coverage_end is None:
-        coverage_end = last_completed_season() or coverage_start
+        coverage_end = warehouse_max_season() or last_completed_season() or coverage_start
     if season is None:
         derived = last_completed_season()
         if derived is None:

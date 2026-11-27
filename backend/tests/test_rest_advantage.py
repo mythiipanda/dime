@@ -260,8 +260,9 @@ def test_bad_season_type_rejected():
     assert "season_type" in res["error"]
 
 def test_team_name_resolution():
-    abbr = get_rest_advantage.invoke({"team": "LAL"})
-    full = get_rest_advantage.invoke({"team": "Los Angeles Lakers"})
+    abbr = get_rest_advantage.invoke({"team": "LAL", "season": "2025-26"})
+    full = get_rest_advantage.invoke({"team": "Los Angeles Lakers",
+                                      "season": "2025-26"})
     if not abbr["ok"] and "silver_scoreboard missing" in abbr.get("error", ""):
         pytest.skip("release pack does not admit silver_scoreboard")
     assert abbr["ok"] is True
