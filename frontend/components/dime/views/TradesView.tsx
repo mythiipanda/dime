@@ -591,7 +591,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             className="w-full rounded-[7px] border border-line bg-surface px-3 py-1.5 text-left text-[11.5px] text-ink-2 shadow-hairline hover:bg-field"
             onClick={() => sendToCapSheet(side)}
           >
-            Open {abbr} in the cap sheet → post-trade roster as scenario moves
+            Send {abbr} to the working scenario → cap sheet & planner
           </button>
         )}
       </div>
