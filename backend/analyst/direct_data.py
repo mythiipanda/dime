@@ -992,29 +992,118 @@ def _draft_board(con, tables: set, season: str) -> dict:
             "rows": board, "provenance": cite,
             **({"error": "no board rows for season"} if not board else {})}
 
-def _draft_free_agents(con, tables: set) -> dict:
+def _draft_hold_payload(con):
+    try:
+        row = con.execute("SELECT MAX(FA_YEAR) FROM silver_free_agents").fetchone()
+        if not row or row[0] is None:
+            return None
+        from shared.tools.league.cap_hold_derivation import derive_cap_holds
+        return derive_cap_holds(con, int(row[0]), "")
+    except Exception:
+        return None
+
+
+def _draft_holds_by_team(payload: dict | None) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
+    for row in (payload or {}).get("rows") or []:
+        team = str(row.get("TEAM") or "").upper()
+        entry = out.setdefault(team, {"total": 0, "active": 0, "active_count": 0})
+        amount = row.get("cap_hold")
+        if amount is None:
+            continue
+        entry["total"] += int(amount)
+        if row.get("active_in_baseline"):
+            entry["active"] += int(amount)
+            if int(amount) > 0:
+                entry["active_count"] += 1
+    return out
+
+
+def _draft_free_agents(con, tables: set, payload=None) -> dict:
     if "silver_free_agents" not in tables:
         return {"ok": False, "error": "silver_free_agents not in warehouse",
                 "provenance": {"table": "silver_free_agents", "as_of": None}}
-    rows = con.execute(
-        "SELECT PLAYER_NAME, TEAM, FA_TYPE, PRIOR_SALARY, CAP_HOLD_EST FROM silver_free_agents "
-        "ORDER BY PRIOR_SALARY DESC LIMIT 40").fetchall()
-    agents = [{"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3], "cap_hold": r[4]}
-              for r in rows]
+    payload = payload if payload is not None else _draft_hold_payload(con)
+    hold_rows = sorted(list((payload or {}).get("rows") or []),
+                       key=lambda row: int(row.get("PRIOR_SALARY") or 0), reverse=True)[:40]
+    if hold_rows:
+        agents = [{"name": str(r.get("PLAYER_NAME")), "team": r.get("TEAM"),
+                   "fa_type": r.get("FA_TYPE"), "prior_salary": r.get("PRIOR_SALARY"),
+                   "cap_hold": r.get("cap_hold"),
+                   "legacy_cap_hold_est": r.get("legacy_cap_hold_est"),
+                   "money_unit": "usd_dollars",
+                   "provenance_class": r.get("provenance_class"),
+                   "scenario_dependency": r.get("scenario_dependency"),
+                   "active_in_baseline": r.get("active_in_baseline"),
+                   "hold_exactness": r.get("hold_exactness")}
+                  for r in hold_rows]
+    else:
+        rows = con.execute(
+            "SELECT PLAYER_NAME, TEAM, FA_TYPE, PRIOR_SALARY, CAP_HOLD_EST FROM silver_free_agents "
+            "ORDER BY PRIOR_SALARY DESC LIMIT 40").fetchall()
+        agents = [{"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3], "cap_hold": r[4],
+                   "money_unit": "usd_dollars", "provenance_class": "legacy_seed_estimate"}
+                  for r in rows]
     return {"ok": bool(agents), "rows": agents,
             "provenance": {"table": "silver_free_agents", "as_of": _draft_as_of(con, "silver_free_agents")},
+            "cap_hold_derivation": (payload or {}).get("meta") or {},
             **({"error": "no free agent rows"} if not agents else {})}
 
-def _draft_cap_room(con, tables: set) -> dict:
+def _draft_cap_room_rows(con, team: str = "") -> list[dict]:
+    have = {r[1] for r in con.execute("PRAGMA table_info(silver_cap_room)").fetchall()}
+    wanted = ["TEAM", "COMMITTED_SALARY", "PENDING_OPTION_SALARY", "FA_HOLDS_EST",
+              "INCOMPLETE_ROSTER_CHARGES", "PROJECTED_ROOM", "PROJECTED_CAP",
+              "PLAYERS_UNDER_CONTRACT", "ROSTER_CHARGE_MINIMUM"]
+    pick = [c for c in wanted if c in have]
+    sql = "SELECT " + ", ".join(pick) + " FROM silver_cap_room"
+    params = []
+    if team:
+        sql += " WHERE TEAM = ?"
+        params.append(team)
+    elif "PROJECTED_ROOM" in pick:
+        sql += " ORDER BY PROJECTED_ROOM DESC"
+    rows = con.execute(sql, params).fetchall()
+    return [dict(zip(pick, row)) for row in rows]
+
+
+def _corrected_room_values(row: dict, derived: dict, has_derived: bool) -> tuple[int, int]:
+    if not has_derived:
+        return int(row.get("INCOMPLETE_ROSTER_CHARGES") or 0), int(row.get("PROJECTED_ROOM") or 0)
+    minimum = int(row.get("ROSTER_CHARGE_MINIMUM") or 1_493_539)
+    players = int(row.get("PLAYERS_UNDER_CONTRACT") or 0)
+    active_count = int(derived.get("active_count", 0))
+    charges = max(0, 12 - players - active_count) * minimum
+    room = (int(row.get("PROJECTED_CAP") or 0) - int(row.get("COMMITTED_SALARY") or 0)
+            - int(row.get("PENDING_OPTION_SALARY") or 0) - charges)
+    return charges, room
+
+
+def _draft_cap_room(con, tables: set, payload=None) -> dict:
     if "silver_cap_room" not in tables:
         return {"ok": False, "error": "silver_cap_room not in warehouse",
                 "provenance": {"table": "silver_cap_room", "as_of": None}}
-    rows = con.execute(
-        "SELECT TEAM, COMMITTED_SALARY, PENDING_OPTION_SALARY, FA_HOLDS_EST, "
-        "INCOMPLETE_ROSTER_CHARGES, PROJECTED_ROOM FROM silver_cap_room ORDER BY PROJECTED_ROOM DESC").fetchall()
-    room = [{"team": str(r[0]), "committed": r[1], "option_salary": r[2],
-             "fa_holds": r[3], "roster_charges": r[4], "projected_room": r[5]}
-            for r in rows]
+    rows = _draft_cap_room_rows(con)
+    payload = payload if payload is not None else _draft_hold_payload(con)
+    hold_totals = _draft_holds_by_team(payload)
+    has_derived = bool((payload or {}).get("rows"))
+    room = []
+    for row in rows:
+        team = str(row.get("TEAM") or "")
+        derived = hold_totals.get(team.upper(), {})
+        roster_charges, projected_room = _corrected_room_values(row, derived, has_derived)
+        legacy_holds = int(row.get("FA_HOLDS_EST") or 0)
+        room.append({"team": team, "committed": row.get("COMMITTED_SALARY"),
+                     "option_salary": row.get("PENDING_OPTION_SALARY"),
+                     "fa_holds": derived.get("active", legacy_holds),
+                     "fa_holds_potential": derived.get("total", legacy_holds),
+                     "legacy_fa_holds_est": row.get("FA_HOLDS_EST"),
+                     "money_unit": "usd_dollars",
+                     "roster_charges": roster_charges,
+                     "legacy_roster_charges": row.get("INCOMPLETE_ROSTER_CHARGES"),
+                     "projected_room": projected_room,
+                     "legacy_projected_room": row.get("PROJECTED_ROOM"),
+                     "projected_room_semantics": "before_active_cap_holds"})
+    room.sort(key=lambda row: int(row["projected_room"]), reverse=True)
     return {"ok": bool(room), "rows": room,
             "provenance": {"table": "silver_cap_room", "as_of": _draft_as_of(con, "silver_cap_room")},
             **({"error": "no cap room rows"} if not room else {})}
@@ -1031,7 +1120,7 @@ _DRAFT_GAP_STAT = {
     "shooting": "s.FG3_PCT", "ball_security": "s.APG",
 }
 
-def _draft_fit(con, tables: set, abbr: str) -> dict:
+def _draft_fit(con, tables: set, abbr: str, hold_payload=None) -> dict:
     errors = []
     gaps = []
     ratings_as_of = None
@@ -1059,11 +1148,24 @@ def _draft_fit(con, tables: set, abbr: str) -> dict:
         errors.append("silver_team_ratings not in warehouse")
     cap = None
     if "silver_cap_room" in tables:
-        crow = con.execute(
-            "SELECT COMMITTED_SALARY, PENDING_OPTION_SALARY, FA_HOLDS_EST, PROJECTED_ROOM "
-            "FROM silver_cap_room WHERE TEAM = ? LIMIT 1", [abbr]).fetchone()
+        rows = _draft_cap_room_rows(con, abbr)
+        crow = rows[0] if rows else None
         if crow:
-            cap = {"committed": crow[0], "option_salary": crow[1], "fa_holds": crow[2], "projected_room": crow[3]}
+            hold_totals = _draft_holds_by_team(hold_payload)
+            derived = hold_totals.get(abbr.upper(), {})
+            roster_charges, projected_room = _corrected_room_values(
+                crow, derived, bool((hold_payload or {}).get("rows")))
+            legacy_holds = int(crow.get("FA_HOLDS_EST") or 0)
+            cap = {"committed": crow.get("COMMITTED_SALARY"),
+                   "option_salary": crow.get("PENDING_OPTION_SALARY"),
+                   "fa_holds": derived.get("active", legacy_holds),
+                   "fa_holds_potential": derived.get("total", legacy_holds),
+                   "legacy_fa_holds_est": crow.get("FA_HOLDS_EST"),
+                   "money_unit": "usd_dollars",
+                   "roster_charges": roster_charges,
+                   "projected_room": projected_room,
+                   "legacy_projected_room": crow.get("PROJECTED_ROOM"),
+                   "projected_room_semantics": "before_active_cap_holds"}
         else:
             errors.append("no cap room row")
     else:
@@ -1078,9 +1180,20 @@ def _draft_fit(con, tables: set, abbr: str) -> dict:
             f"FROM silver_free_agents f JOIN silver_player_season s "
             f"ON lower(s.PLAYER) = lower(f.PLAYER_NAME) AND s._season = ? "
             f"ORDER BY ({metric}) DESC NULLS LAST LIMIT 12", [latest]).fetchall()
-        targets = [{"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3],
-                    "cap_hold": r[4], "ppg": r[5], "rpg": r[6], "apg": r[7],
-                    "spg": r[8], "bpg": r[9], "fg3_pct": r[10], "gp": r[11]} for r in rows]
+        payload = hold_payload if hold_payload is not None else _draft_hold_payload(con)
+        hold_rows = {str(row.get("PLAYER_NAME") or "").lower(): row
+                     for row in (payload or {}).get("rows") or []}
+        targets = []
+        for r in rows:
+            hold_row = hold_rows.get(str(r[0]).lower(), {})
+            targets.append({"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3],
+                            "cap_hold": hold_row.get("cap_hold", r[4]),
+                            "legacy_cap_hold_est": r[4], "money_unit": "usd_dollars",
+                            "provenance_class": hold_row.get("provenance_class", "legacy_seed_estimate"),
+                            "scenario_dependency": hold_row.get("scenario_dependency"),
+                            "active_in_baseline": hold_row.get("active_in_baseline"),
+                            "ppg": r[5], "rpg": r[6], "apg": r[7],
+                            "spg": r[8], "bpg": r[9], "fg3_pct": r[10], "gp": r[11]})
         if not targets:
             errors.append("no free agent rows joined to current season")
     elif "silver_free_agents" not in tables:
@@ -1103,11 +1216,12 @@ def product_draft(team: str, season: str = '') -> dict:
         return {"ok": False, "error": "warehouse unreachable"}
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        hold_payload = _draft_hold_payload(con) if "silver_free_agents" in tables else None
         blocks = {
             "board": _draft_board(con, tables, str(season or '').strip()),
-            "free_agents": _draft_free_agents(con, tables),
-            "cap_room": _draft_cap_room(con, tables),
-            "fit": _draft_fit(con, tables, abbr) if abbr else {"ok": False, "error": "team needed",
+            "free_agents": _draft_free_agents(con, tables, hold_payload),
+            "cap_room": _draft_cap_room(con, tables, hold_payload),
+            "fit": _draft_fit(con, tables, abbr, hold_payload) if abbr else {"ok": False, "error": "team needed",
                 "gaps": [], "cap": None, "targets": [], "errors": ["team needed"],
                 "provenance": {"table": "", "as_of": None}},
         }

@@ -15,6 +15,8 @@ from ..cap_rules import (
     used_expanded_matching,
 )
 from ..cap_sheet import option_column, season_column, unroll_team_sheet
+from ...contracts import normalize_name
+from .cap_hold_derivation import derive_cap_holds, hold_amount
 from .cba_cap import (
     _locate_player_team,
     _match_trade_players,
@@ -120,7 +122,8 @@ def _option_decline_move(con, team: str, season: str, player: str) -> tuple[dict
     if not isinstance(amount, int) or amount <= 0:
         return None, f"{matched[0]} has no salary scheduled for {season}"
     detail = f"decline {matched[0]} {year['option']} option ({season})"
-    return {"kind": "trade_out", "detail": detail, "amount": amount}, None
+    return {"kind": "trade_out", "detail": detail, "amount": amount,
+            "player": matched[0]}, None
 
 
 
@@ -162,6 +165,61 @@ def cap_lines_for_season(con, season: str) -> tuple[dict[str, Any], bool]:
     return {k: int(round(v * factor)) for k, v in base.items()}, steps > 0
 
 
+def _cap_hold_payload(con, team: str, season: str) -> dict[str, Any]:
+    match = _re.match(r"(\d{4})-\d{2}$", str(season or ""))
+    if not match:
+        return {"rows": [], "total": 0, "active_total": 0, "unknown_count": 0,
+                "money_unit": "usd_dollars", "meta": {}}
+    try:
+        return derive_cap_holds(con, int(match.group(1)), team)
+    except Exception as exc:
+        return {"rows": [], "total": 0, "active_total": 0, "unknown_count": 0,
+                "money_unit": "usd_dollars",
+                "meta": {"derivation_status": "error", "error": str(exc)[:200]}}
+
+
+def _positive_hold_count(rows: list[dict[str, Any]]) -> int:
+    return sum(1 for row in rows if hold_amount(row) > 0)
+
+
+def _cap_room_charge_inputs(con, team: str, season: str) -> dict[str, Any]:
+    fallback = {"players_under_contract": None, "minimum": 1_493_539,
+                "minimum_source": "unavailable", "stored_charges": 0,
+                "available": False}
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    except Exception:
+        return fallback
+    if "silver_cap_room" not in tables:
+        return fallback
+    try:
+        cols = {r[1] for r in con.execute("PRAGMA table_info(silver_cap_room)").fetchall()}
+        wanted = ["PLAYERS_UNDER_CONTRACT", "ROSTER_CHARGE_MINIMUM",
+                  "INCOMPLETE_ROSTER_CHARGES"]
+        pick = [c for c in wanted if c in cols]
+        if not pick:
+            return fallback
+        row = con.execute(
+            "SELECT " + ", ".join(pick) + " FROM silver_cap_room "
+            "WHERE UPPER(TEAM) = UPPER(?) AND CAP_SEASON = ? LIMIT 1",
+            [team, season]).fetchone()
+    except Exception:
+        return fallback
+    if not row:
+        return fallback
+    data = dict(zip(pick, row))
+    minimum = data.get("ROSTER_CHARGE_MINIMUM")
+    return {"players_under_contract": data.get("PLAYERS_UNDER_CONTRACT"),
+            "minimum": int(minimum) if minimum else 1_493_539,
+            "minimum_source": "warehouse" if minimum else "legacy_approximation",
+            "stored_charges": int(data.get("INCOMPLETE_ROSTER_CHARGES") or 0),
+            "available": True}
+
+
+def _roster_charge(players: int, hold_count: int, minimum: int) -> int:
+    return max(0, 12 - int(players) - int(hold_count)) * int(minimum)
+
+
 def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
     tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     if "silver_salaries" not in tables:
@@ -196,7 +254,11 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                          "pending_option": base["pending_option"],
                          "dead_money": 0, "cap_holds": 0,
                          "incomplete_roster_charges": 0}
-    holds_note = "cap_holds and incomplete_roster_charges populate only when silver_cap_room covers the season"
+    holds_note = ("cap_holds are active expired-contract holds; option-dependent "
+                  "potential holds are detailed but excluded until an explicit "
+                  "option decline, and incomplete_roster_charges count positive "
+                  "active holds as occupied roster spots")
+    hold_payloads: dict[str, dict[str, Any]] = {}
     if "silver_cap_room" in tables:
         try:
             holds = con.execute(
@@ -204,8 +266,24 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                 "FROM silver_cap_room WHERE UPPER(TEAM) = UPPER(?)", [team]).fetchall()
             for r in holds:
                 label = str(r[0])
-                if label in totals:
+                if label not in totals:
+                    continue
+                payload = _cap_hold_payload(con, team, label)
+                hold_payloads[label] = payload
+                rows_for_label = list(payload.get("rows") or [])
+                if rows_for_label or payload.get("meta", {}).get("derivation_status"):
+                    totals[label]["cap_holds"] = int(payload.get("active_total") or 0)
+                else:
                     totals[label]["cap_holds"] = int(r[1] or 0)
+                charge_inputs = _cap_room_charge_inputs(con, team, label)
+                players = charge_inputs.get("players_under_contract")
+                active_rows = [item for item in rows_for_label
+                               if item.get("active_in_baseline")]
+                if players is not None:
+                    totals[label]["incomplete_roster_charges"] = _roster_charge(
+                        int(players), _positive_hold_count(active_rows),
+                        int(charge_inputs["minimum"]))
+                else:
                     totals[label]["incomplete_roster_charges"] = int(r[2] or 0)
         except Exception:
             pass
@@ -223,11 +301,100 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
     return {"ok": True, "team": str(team).upper(), "season": season,
             "lines": lines_by_season, "lines_projected": projected,
             "players": sheet["players"], "totals": totals,
+            "cap_hold_details": (hold_payloads.get(season) or {}).get("rows", []),
+            "cap_hold_money_unit": "usd_dollars",
             "state": state,
             "meta": {"holds_note": holds_note, "season_columns": sheet["seasons"],
                      "unrolling": "shared.tools.cap_sheet",
                      "source": _payroll_source(con), "salary_date": _salary_date(con),
-                     "season": season, **payroll_proxy_meta()}}
+                     "season": season,
+                     "cap_hold_derivation": (hold_payloads.get(season) or {}).get("meta", {}),
+                     **payroll_proxy_meta()}}
+
+
+def _hold_index(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {normalize_name(row.get("player") or row.get("PLAYER_NAME")): row
+            for row in rows if row.get("player") or row.get("PLAYER_NAME")}
+
+
+def _match_hold(index: dict[str, dict[str, Any]], name: object) -> dict[str, Any] | None:
+    return index.get(normalize_name(name))
+
+
+def _option_dependency_error(hold: dict[str, Any] | None, declined: set[str],
+                             action: str) -> str | None:
+    if hold is None:
+        return None
+    key = normalize_name(hold.get("player"))
+    if (hold.get("scenario_dependency") == "option_decision_required"
+            and key not in declined):
+        return (f"{action} {hold.get('player')} requires a prior option decision decline; "
+                "the option salary is still committed")
+    return None
+
+
+def _signing_move(raw: dict[str, Any], hold_index: dict[str, dict[str, Any]],
+                  declined_holds: set[str], extinguished_holds: set[str],
+                  cap_hold_events: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str | None]:
+    amount = raw.get("amount")
+    if not isinstance(amount, (int, float)) or amount <= 0:
+        return None, "signing needs a positive amount"
+    label = str(raw.get("label") or f"${amount / 1_000_000:g}M signing")
+    hold_match = _match_hold(hold_index, raw.get("player") or label)
+    option_error = _option_dependency_error(hold_match, declined_holds, "signing")
+    if option_error is not None:
+        return None, option_error
+    if hold_match is not None:
+        key = normalize_name(hold_match.get("player"))
+        extinguished_holds.add(key)
+        cap_hold_events.append({"kind": "signed", "player": hold_match.get("player"),
+                                "amount": hold_match.get("cap_hold"),
+                                "money_unit": "usd_dollars"})
+    return {"kind": "signing", "detail": f"sign {label}",
+            "amount": int(amount)}, None
+
+
+def _renounce_error(team: str, raw: dict[str, Any], hold_index: dict[str, dict[str, Any]],
+                    declined_holds: set[str], extinguished_holds: set[str],
+                    cap_hold_events: list[dict[str, Any]]) -> str | None:
+    player = str(raw.get("player") or raw.get("label") or "").strip()
+    if not player:
+        return "renounce needs a player"
+    hold_match = _match_hold(hold_index, player)
+    if hold_match is None:
+        return f"no {team} free-agent cap hold found for {player}"
+    key = normalize_name(hold_match.get("player"))
+    option_error = _option_dependency_error(hold_match, declined_holds, "renouncing")
+    if option_error is not None:
+        return option_error
+    extinguished_holds.add(key)
+    cap_hold_events.append({"kind": "renounced", "player": hold_match.get("player"),
+                            "amount": hold_match.get("cap_hold"),
+                            "money_unit": "usd_dollars",
+                            "scenario_dependency": hold_match.get("scenario_dependency")})
+    return None
+
+
+def _hold_inclusion(rows: list[dict[str, Any]], declined: set[str],
+                    extinguished: set[str]) -> tuple[list[dict[str, Any]], int, int]:
+    detailed = []
+    total = 0
+    for row in rows:
+        key = normalize_name(row.get("player") or row.get("PLAYER_NAME"))
+        active = bool(row.get("active_in_baseline"))
+        include = ((active or key in declined) and key not in extinguished
+                   and row.get("cap_hold") is not None)
+        amount = hold_amount(row) if include else 0
+        total += amount
+        detailed.append({**row, "included_in_team_salary": include,
+                         "included_amount": amount,
+                         "included_money_unit": "usd_dollars"})
+    return detailed, total, _positive_hold_count([r for r in detailed if r["included_in_team_salary"]])
+
+
+def _charge_players(room_inputs: dict[str, Any], roster_count: int) -> int:
+    value = room_inputs.get("players_under_contract")
+    return int(value) if value is not None else int(roster_count)
 
 
 def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
@@ -248,6 +415,12 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         pay_before, roster = _payroll(team, con, season)
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:200]}
+    hold_payload = _cap_hold_payload(con, team, season)
+    hold_rows = list(hold_payload.get("rows") or [])
+    hold_index = _hold_index(hold_rows)
+    declined_holds: set[str] = set()
+    extinguished_holds: set[str] = set()
+    cap_hold_events: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = [
         {"move": str(i), "error": error}
         for i, error in sorted(rejected_options.items())]
@@ -264,13 +437,12 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             continue
         kind = str(raw.get("kind") or "").strip()
         if kind == "signing":
-            amount = raw.get("amount")
-            if not isinstance(amount, (int, float)) or amount <= 0:
-                errors.append({"move": str(i), "error": "signing needs a positive amount"})
+            move, error = _signing_move(raw, hold_index, declined_holds,
+                                        extinguished_holds, cap_hold_events)
+            if error:
+                errors.append({"move": str(i), "error": error})
                 continue
-            label = str(raw.get("label") or f"${amount / 1_000_000:g}M signing")
-            moves.append({"kind": "signing", "detail": f"sign {label}",
-                          "amount": int(amount)})
+            moves.append(move)
             sign_count += 1
             roster_delta += 1
         elif kind == "trade_out":
@@ -323,6 +495,11 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             moves.append(waiver_move(con, team, matched[0], amount, season, stretch,
                                      timing=waiver_timing))
             roster_delta -= 1
+        elif kind == "renounce":
+            error = _renounce_error(team, raw, hold_index, declined_holds,
+                                    extinguished_holds, cap_hold_events)
+            if error:
+                errors.append({"move": str(i), "error": error})
         elif kind == "option_decision":
             player = str(raw.get("player") or "").strip()
             exercise = bool(raw.get("exercise", True))
@@ -340,16 +517,43 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 errors.append({"move": str(i), "error": error})
                 continue
             moves.append(move)
+            hold_match = _match_hold(hold_index, move.get("player"))
+            if hold_match is not None:
+                key = normalize_name(hold_match.get("player"))
+                declined_holds.add(key)
+                cap_hold_events.append({"kind": "option_declined",
+                                        "player": hold_match.get("player"),
+                                        "amount": hold_match.get("cap_hold"),
+                                        "money_unit": "usd_dollars"})
             roster_delta -= 1
         else:
             errors.append({"move": str(i), "error": f"unknown move kind '{kind}'"})
     trace = scenario_trace(pay_before, moves, f"{team} committed payroll")
     pay_after = int(trace["pay_after"])
     state = apron_state(pay_after, lines)
+    holds_before_detail, cap_holds_before, hold_count_before = _hold_inclusion(
+        hold_rows, set(), set())
+    holds_after_detail, cap_holds_after, hold_count_after = _hold_inclusion(
+        hold_rows, declined_holds, extinguished_holds)
+    charge_inputs = _cap_room_charge_inputs(con, team, season)
+    players_charge_before = _charge_players(charge_inputs, len(roster))
+    players_charge_after = players_charge_before + roster_delta
+    if charge_inputs.get("available"):
+        roster_charges_before = _roster_charge(
+            players_charge_before, hold_count_before, int(charge_inputs["minimum"]))
+        roster_charges_after = _roster_charge(
+            players_charge_after, hold_count_after, int(charge_inputs["minimum"]))
+    else:
+        roster_charges_before = 0
+        roster_charges_after = 0
+    team_salary_before = int(pay_before) + cap_holds_before + roster_charges_before
+    team_salary_after = pay_after + cap_holds_after + roster_charges_after
+    cap_room_before = lines["cap"] - team_salary_before
+    cap_room_after = lines["cap"] - team_salary_after
     issues: list[str] = []
     matching: dict[str, Any] | None = None
     hard_cap = ""
-    room_before = max(0, lines["cap"] - pay_before)
+    room_before = max(0, cap_room_before)
     if out_names and in_names:
         aggregates = len(out_names) > 1
         cushion = 0 if state["over_apron1"] else 250_000
@@ -387,12 +591,38 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     roster_after = len(roster) + roster_delta
     roster_issue_list = roster_issues(roster_after)
     issues.extend(roster_issue_list)
-    state_with_room = {**state, "cap_room": lines["cap"] - pay_after}
+    state_with_room = {**state, "cap_room": cap_room_after}
     restrictions = cba_restrictions(state_with_room, season)
     state["room_under_apron2"] = state["room_apron2"]
+    before_by_name = {normalize_name(row.get("player")): row
+                      for row in holds_before_detail}
+    cap_hold_details = []
+    for row in holds_after_detail:
+        before = before_by_name.get(normalize_name(row.get("player"))) or {}
+        cap_hold_details.append({
+            **row,
+            "included_in_team_salary_before": before.get("included_in_team_salary", False),
+            "included_amount_before": before.get("included_amount", 0),
+            "included_in_team_salary_after": row.get("included_in_team_salary", False),
+            "included_amount_after": row.get("included_amount", 0)})
     return {"ok": True, "team": team, "season": season,
             "steps": trace["steps"], "pay_after": pay_after,
-            "pay_before": int(pay_before), "state": state,
+            "pay_before": int(pay_before),
+            "team_salary_before": team_salary_before,
+            "team_salary_after": team_salary_after,
+            "cap_room_before": cap_room_before,
+            "cap_room_after": cap_room_after,
+            "team_salary_unit": "usd_dollars",
+            "cap_room_unit": "usd_dollars",
+            "cap_holds_before": cap_holds_before,
+            "cap_holds_after": cap_holds_after,
+            "cap_hold_money_unit": "usd_dollars",
+            "roster_charges_before": roster_charges_before,
+            "roster_charges_after": roster_charges_after,
+            "roster_charge_money_unit": "usd_dollars",
+            "cap_hold_details": cap_hold_details,
+            "cap_hold_events": cap_hold_events,
+            "state": state,
             "lines": lines, "lines_projected": lines_projected,
             "restrictions": restrictions,
             "roster_before": len(roster), "roster_after": roster_after,
@@ -401,6 +631,10 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "matching": matching,
             "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con),
                      "requested_season": requested_season,
+                     "cap_hold_derivation": hold_payload.get("meta") or {},
+                     "team_salary_note": "team_salary and cap_room include active cap holds plus dynamic incomplete-roster charges; pay_before/pay_after remain committed payroll proxies used for tax/apron comparisons",
+                     "roster_charge_note": "positive included cap holds count as occupied roster spots; renouncing or signing a hold opens a spot and increases the incomplete-roster charge, while declining an option can activate its disclosed potential hold",
+                     "roster_charge_minimum_source": charge_inputs.get("minimum_source"),
                      **payroll_proxy_meta(),
                      **({"waiver_basis": WAIVER_BASIS,
                          "waiver_timing": waiver_timing}
