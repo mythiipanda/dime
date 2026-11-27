@@ -522,7 +522,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
     if (multi || side > 1) return null;
     const needs = check.state === "ok" ? (side === 0 ? check.rows.team_a : check.rows.team_b).outgoing_needed : 0;
     const active = fillers.state !== "idle" && fillers.side === side;
-    if (needs <= 0 && !active) return null;
+    if (needs <= 0) return null;
     return (
       <div className="space-y-1">
         {needs > 0 && !active && (
