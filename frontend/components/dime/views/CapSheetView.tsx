@@ -6,6 +6,7 @@ import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { DataState } from "@/components/ds/DataState";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
+import { getClientId } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 import {
   capSheetFixture,
@@ -57,6 +58,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const [saveState, setSaveState] = useState<string | null>(null);
+  const [share, setShare] = useState<{ phase: "idle" } | { phase: "minting" } | { phase: "minted"; link: string; copied: boolean } | { phase: "error" }>({ phase: "idle" });
   const [signingAmount, setSigningAmount] = useState("");
   const [signingLabel, setSigningLabel] = useState("");
   const fixture = useFixture();
@@ -198,6 +200,43 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
     return `Cap scenario for ${sheet?.team ?? team} (${evaluationSeason}):\n${lines.join("\n")}\nPost-scenario payroll: ${scenario ? money(scenario.pay_after) : "not evaluated"}. Analyze this scenario: what restrictions trigger, what is the apron exposure, and what are the basketball consequences?`;
   }
 
+  function mintShare() {
+    if (moves.length === 0 || share.phase === "minting") return;
+    setShare({ phase: "minting" });
+    fetch(`${BACKEND}/api/objects`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-dime-owner": getClientId() },
+      body: JSON.stringify({
+        kind: "cap_scenario",
+        title: `${team} scenario · ${scenarioSeason ?? DEFAULT_SCENARIO_SEASON}`,
+        payload: {
+          team,
+          season: scenarioSeason ?? DEFAULT_SCENARIO_SEASON,
+          moves,
+        },
+      }),
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok || !body?.read_token || !body?.object_id) throw new Error("mint failed");
+        return body as { object_id: string; read_token: string; owner_token: string };
+      })
+      .then((created) => {
+        try {
+          window.localStorage.setItem(`dime_object_token:${created.object_id}`, created.owner_token);
+        } catch {}
+        setShare({ phase: "minted", link: `${window.location.origin}/s/${created.read_token}`, copied: false });
+      })
+      .catch(() => setShare({ phase: "error" }));
+  }
+  function copyShareLink(link: string) {
+    const done = () => setShare((current) => current.phase === "minted" ? { ...current, copied: true } : current);
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(link).then(done, done);
+    } else {
+      done();
+    }
+  }
   function saveToBoard() {
     const boards = listBoards();
     const board = boards[0];
@@ -457,6 +496,15 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   >
                     Save to board
                   </button>
+                  {share.phase !== "minted" && (
+                    <button
+                      className="h-7 rounded-[7px] border border-line px-2 text-[11.5px] text-ink-2 hover:bg-field disabled:opacity-50"
+                      onClick={mintShare}
+                      disabled={share.phase === "minting"}
+                    >
+                      {share.phase === "minting" ? "Sharing…" : "Share"}
+                    </button>
+                  )}
                   <button
                     className="h-7 rounded-[7px] border border-line px-2 text-[11.5px] text-ink-2 hover:bg-field"
                     onClick={loadFromBoard}
@@ -464,6 +512,33 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                     Load saved
                   </button>
                   {saveState && <span className="w-full text-[11px] text-ink-2">{saveState}</span>}
+                  {share.phase === "minted" && (
+                    <div className="w-full rounded-[7px] border border-line bg-field p-2">
+                      <p className="text-[11px] leading-[1.45] text-ink-2">
+                        Snapshot link minted — recipients see these moves evaluated live. Editing the scenario here won't change it; share again for a new link.
+                      </p>
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <input
+                          readOnly
+                          value={share.link}
+                          aria-label="share link"
+                          onFocus={(e) => e.currentTarget.select()}
+                          className="h-7 w-0 flex-1 rounded-[7px] border border-line bg-surface px-2 font-mono text-[11px] text-ink"
+                        />
+                        <button
+                          className="h-7 shrink-0 rounded-[7px] bg-[var(--accent)] px-2.5 text-[11.5px] font-medium text-white hover:opacity-90"
+                          onClick={() => copyShareLink(share.link)}
+                        >
+                          {share.copied ? "Copied" : "Copy link"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {share.phase === "error" && (
+                    <p className="w-full text-[11px] leading-[1.45] text-red">
+                      The scenario couldn't be shared — the backend didn't accept the mint. Your moves are untouched; try again.
+                    </p>
+                  )}
                 </div>
               )}
               <form
