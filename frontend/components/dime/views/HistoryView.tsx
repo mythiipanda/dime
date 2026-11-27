@@ -286,6 +286,25 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     setPlayer(name);
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlPlayer = params.get("player");
+      const urlSeason = params.get("season");
+      if (urlPlayer && urlPlayer !== player) {
+        setQuery(urlPlayer);
+        setPendingSeason(urlSeason);
+        setPlayer(urlPlayer);
+      } else if (urlSeason && urlSeason !== selectedSeason) {
+        setSelectedSeason(urlSeason);
+        setComps(null);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [player, selectedSeason]);
+
   const arc = career?.rows ?? [];
   const chartSeasons = arc.map((s) => s.season);
   const series = [
