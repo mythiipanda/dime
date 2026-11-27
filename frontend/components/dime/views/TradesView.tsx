@@ -386,7 +386,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
       team,
       season,
       moves,
-      source: `${teams.join(" ↔ ")} · ${outgoing.length + incoming.length} players`,
+      source: `${teams.join(" ↔ ")} · ${pkgs.reduce((total, pkg) => total + pkg.players.length, 0)} players in the trade`,
     });
     navigateToCap();
   }
