@@ -9,6 +9,7 @@ import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
 import { consumeCapHandoff } from "@/lib/cap-handoff";
 import { syncCapDraft, loadCapDraft } from "@/lib/cap-draft";
+import { toast } from "sonner";
 import { pruneGroups, type MoveGroupsMap } from "@/lib/move-groups";
 import ScenarioMoveList from "@/components/dime/ScenarioMoveList";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
@@ -115,7 +116,14 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     if (!settledDrafts.current.has(draftKey)) return;
     const currentSeason = scenarioSeason ?? DEFAULT_SCENARIO_SEASON;
     const timer = setTimeout(() => {
-      void syncCapDraft(team, currentSeason, moves, pruneGroups(moves, groups));
+      void syncCapDraft(team, currentSeason, moves, pruneGroups(moves, groups)).then((ok) => {
+        if (!ok) {
+          toast.error("Scenario changes aren't saving", {
+            id: `cap-sync-${draftKey}`,
+            description: "The working scenario could not be written to the object store. It retries as you keep editing.",
+          });
+        }
+      });
     }, 800);
     return () => clearTimeout(timer);
   }, [draftKey, draftSettled, team, scenarioSeason, moves, groups]);
