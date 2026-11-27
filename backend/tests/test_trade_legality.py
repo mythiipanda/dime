@@ -2,7 +2,36 @@ import duckdb
 import pytest
 
 
-def _seed(monkeypatch, tmp_path, salaries, picks=None):
+def _write_vintaged_picks(con, picks):
+    con.execute(
+        "CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, "
+        "ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, "
+        "HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED BOOLEAN, "
+        "CONDITIONAL BOOLEAN, SUMMARY VARCHAR, LAST_EDITED VARCHAR, "
+        "_source VARCHAR, _season VARCHAR, _fetched_at VARCHAR, "
+        "_entity VARCHAR)")
+    for row in picks:
+        season = row[5] if len(row) > 5 else "2026-27"
+        con.execute(
+            "INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?, "
+            "'', false, false, '', '', 'thedraftday:picks', ?, "
+            "'2026-10-01T00:00:00+00:00', '')",
+            list(row[:5]) + [season])
+
+
+def _write_legacy_picks(con, picks):
+    con.execute(
+        "CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, "
+        "ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, "
+        "HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED BOOLEAN, "
+        "CONDITIONAL BOOLEAN, SUMMARY VARCHAR, LAST_EDITED VARCHAR)")
+    for row in picks:
+        con.execute(
+            "INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?, "
+            "'', false, false, '', '')", list(row[:5]))
+
+
+def _seed(monkeypatch, tmp_path, salaries, picks=None, legacy_picks=False):
     from shared import store
 
     path = tmp_path / "legality.duckdb"
@@ -17,17 +46,10 @@ def _seed(monkeypatch, tmp_path, salaries, picks=None):
                 "INSERT INTO silver_salaries VALUES (?, ?, ?, '2026-27', "
                 "'2026-10-01')", [name, team, salary])
         if picks is not None:
-            con.execute(
-                "CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, "
-                "ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, "
-                "HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED VARCHAR, "
-                "CONDITIONAL VARCHAR, SUMMARY VARCHAR, LAST_EDITED VARCHAR, "
-                "_season VARCHAR)")
-            for row in picks:
-                season = row[5] if len(row) > 5 else "2026-27"
-                con.execute(
-                    "INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?, "
-                    "'', '', '', '', '', ?)", list(row[:5]) + [season])
+            if legacy_picks:
+                _write_legacy_picks(con, picks)
+            else:
+                _write_vintaged_picks(con, picks)
     finally:
         con.close()
     monkeypatch.setattr(store, "DB_PATH", path)
@@ -96,12 +118,12 @@ def test_trade_legality_stepien_consecutive_firsts(monkeypatch, tmp_path):
 
 
 def _balanced_pick_trade(monkeypatch, tmp_path, picks, declared_picks,
-                         pick_sender="BOS"):
+                         pick_sender="BOS", legacy_picks=False):
     from shared.tools import get_trade_legality
     _seed(monkeypatch, tmp_path,
           _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
-          picks=picks)
+          picks=picks, legacy_picks=legacy_picks)
     if pick_sender == "BOS":
         legs = ('[{"from":"BOS","to":"MIA","players":"Alpha One",'
                 f'"picks":{declared_picks}}},'
@@ -132,6 +154,19 @@ def test_trade_legality_owned_pick_remains_valid(monkeypatch, tmp_path):
     assert limitation in check["note"]
     assert "pooled/conditional picks are not modeled" in out["meta"]["disclaimer"]
     assert limitation in out["meta"]["disclaimer"]
+    assert out["meta"]["pick_vintage_basis"] == "warehouse_vintage"
+    assert out["meta"]["pick_vintage_season"] == "2026-27"
+
+
+def test_trade_legality_unvintaged_pick_inventory_falls_back(
+        monkeypatch, tmp_path):
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, _all_firsts("BOS") + _all_firsts("MIA"),
+        '[{"year":2028,"round":1}]', legacy_picks=True)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    assert out["meta"]["pick_vintage_basis"] == "unvintaged_fallback"
+    assert "pick_vintage_season" not in out["meta"]
 
 
 def test_trade_legality_rejects_pick_team_does_not_own(

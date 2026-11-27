@@ -360,8 +360,8 @@ def test_product_trade_assets_canonicalizes_pick_holders(monkeypatch):
     con = duckdb.connect(':memory:')
     try:
         _seed_partner_salaries(con)
-        con.execute('CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, ROUND INTEGER, ORIG_TEAM VARCHAR, PROTECTION VARCHAR, CONDITIONAL BOOLEAN, SUMMARY VARCHAR, HELD_BY VARCHAR)')
-        con.execute("INSERT INTO silver_future_picks VALUES (2028, 1, 'BRK', NULL, false, 'incoming pick', 'BRK')")
+        con.execute('CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED BOOLEAN, CONDITIONAL BOOLEAN, SUMMARY VARCHAR, LAST_EDITED VARCHAR, _source VARCHAR, _season VARCHAR, _fetched_at VARCHAR, _entity VARCHAR)')
+        con.execute("INSERT INTO silver_future_picks VALUES (2028, 1, 'BRK', 'own', 'BRK', NULL, false, false, 'incoming pick', '', 'thedraftday:picks', '2026-27', '2026-10-01T00:00:00+00:00', '')")
         _install_in_memory_warehouse(monkeypatch, con)
         canonical = product_trade_assets.invoke({'team': 'BKN', 'season': '2026-27'})
         raw = product_trade_assets.invoke({'team': 'BRK', 'season': '2026-27'})
@@ -379,8 +379,8 @@ def test_product_trade_assets_canonicalizes_whitespace_multi_holders(monkeypatch
     con = duckdb.connect(':memory:')
     try:
         _seed_partner_salaries(con)
-        con.execute('CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, ROUND INTEGER, ORIG_TEAM VARCHAR, PROTECTION VARCHAR, CONDITIONAL BOOLEAN, SUMMARY VARCHAR, HELD_BY VARCHAR)')
-        con.execute("INSERT INTO silver_future_picks VALUES (2028, 1, 'BRK', NULL, false, 'multi-holder pick', ' BRK ; BOS ')")
+        con.execute('CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED BOOLEAN, CONDITIONAL BOOLEAN, SUMMARY VARCHAR, LAST_EDITED VARCHAR, _source VARCHAR, _season VARCHAR, _fetched_at VARCHAR, _entity VARCHAR)')
+        con.execute("INSERT INTO silver_future_picks VALUES (2028, 1, 'BRK', 'traded', ' BRK ; BOS ', NULL, false, false, 'multi-holder pick', '', 'thedraftday:picks', '2026-27', '2026-10-01T00:00:00+00:00', '')")
         _install_in_memory_warehouse(monkeypatch, con)
         canonical = product_trade_assets.invoke({'team': 'BKN', 'season': '2026-27'})
         raw = product_trade_assets.invoke({'team': 'BRK', 'season': '2026-27'})
@@ -398,12 +398,15 @@ def _seed_legality_alias_warehouse(con, status='own', held_by='BRK'):
         ('Alpha Example', 'BRK', 30_000_000, '2026-27', '2026-10-01'),
         ('Beta Example', 'BOS', 30_000_000, '2026-27', '2026-10-01'),
     ])
-    con.execute('CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, HELD_BY VARCHAR)')
+    con.execute('CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED BOOLEAN, CONDITIONAL BOOLEAN, SUMMARY VARCHAR, LAST_EDITED VARCHAR, _source VARCHAR, _season VARCHAR, _fetched_at VARCHAR, _entity VARCHAR)')
     rows = []
     for year in range(2027, 2034):
         rows.append((year, 1, 'BRK', status, held_by))
         rows.append((year, 1, 'BOS', 'own', 'BOS'))
-    con.executemany('INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?)', rows)
+    con.executemany(
+        'INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [row + (None, False, False, '', '', 'thedraftday:picks', '2026-27',
+                '2026-10-01T00:00:00+00:00', '') for row in rows])
 
 
 def _legality_alias_results(monkeypatch, con):

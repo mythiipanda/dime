@@ -104,13 +104,14 @@ def _seed_audit(monkeypatch, tmp_path):
         "CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, "
         "ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, HELD_BY VARCHAR, "
         "PROTECTION VARCHAR, POOLED BOOLEAN, CONDITIONAL BOOLEAN, "
-        "SUMMARY VARCHAR, LAST_EDITED VARCHAR, _season VARCHAR, "
-        "_fetched_at TIMESTAMP)")
+        "SUMMARY VARCHAR, LAST_EDITED VARCHAR, _source VARCHAR, "
+        "_season VARCHAR, _fetched_at VARCHAR, _entity VARCHAR)")
     for p in _PICKS:
         con.execute(
             "INSERT INTO silver_future_picks VALUES "
-            "(?,?,?,?,?,?,?,?,?,?,?,now())",
-            list(p) + ["2026-27"])
+            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            list(p) + ["thedraftday:picks", "2026-27",
+                       "2026-10-01T00:00:00+00:00", ""])
     con.execute(
         "CREATE TABLE silver_leaders_pts (TEAM_ID INTEGER, TEAM VARCHAR, "
         "_season VARCHAR, _fetched_at TIMESTAMP)")

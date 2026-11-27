@@ -305,20 +305,39 @@ def _parse_snt(value: Any) -> tuple[dict[str, Any] | None, str | None]:
             "years": years}, None
 
 
-def _picks_season(con) -> str:
+def _picks_season(con, cols: set[str] | None = None) -> str:
+    if cols is None:
+        cols = {r[1] for r in con.execute(
+            "PRAGMA table_info(silver_future_picks)").fetchall()}
+    if "_season" not in cols:
+        return ""
     row = con.execute("select max(_season) from silver_future_picks").fetchone()
     return row[0] if row and row[0] else (_pkg().current_season() or "")
 
 
-def _pick_inventory(con, season_start: int) -> dict[str, set[int]] | None:
+def _picks_vintage(con) -> tuple[str, str]:
+    cols = {r[1] for r in con.execute(
+        "PRAGMA table_info(silver_future_picks)").fetchall()}
+    if "_season" not in cols:
+        return "", "unvintaged_fallback"
+    return _picks_season(con, cols), "warehouse_vintage"
+
+
+def _pick_inventory(con, season_start: int
+                    ) -> tuple[dict[str, set[int]] | None,
+                               dict[str, str] | None]:
     tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     if "silver_future_picks" not in tables:
-        return None
+        return None, None
     held: dict[str, set[int]] = {}
-    rows = con.execute(
-        "select DRAFT_YEAR, ROUND, ORIG_TEAM, STATUS, HELD_BY "
-        "from silver_future_picks where ROUND = 1 and _season = ?",
-        [_picks_season(con)]).fetchall()
+    season, basis = _picks_vintage(con)
+    sql = ("select DRAFT_YEAR, ROUND, ORIG_TEAM, STATUS, HELD_BY "
+           "from silver_future_picks where ROUND = 1")
+    params: list[str] = []
+    if basis == "warehouse_vintage":
+        sql += " and _season = ?"
+        params.append(season)
+    rows = con.execute(sql, params).fetchall()
     for year, _rnd, orig, status, held_by in rows:
         y = int(year)
         if not (season_start < y <= season_start + _STEPIEN_WINDOW):
@@ -335,7 +354,7 @@ def _pick_inventory(con, season_start: int) -> dict[str, set[int]] | None:
                     owners.add(holder_code)
         for team in owners:
             held.setdefault(team, set()).add(y)
-    return held
+    return held, {"season": season, "basis": basis}
 
 
 def _outgoing_firsts(moves: list[dict[str, Any]]
@@ -535,7 +554,10 @@ def _load_trade_state(con: Any, moves: list[dict[str, Any]], season: str | None,
     season_start = _salary_season_start(resolved_season)
     if tpe_rows and season_start is None:
         return None, _trade_error("season must be YYYY-YY when tpe is used")
-    pick_held = _pick_inventory(con, season_start) if season_start else None
+    pick_held = None
+    pick_vintage = None
+    if season_start:
+        pick_held, pick_vintage = _pick_inventory(con, season_start)
     snt_salary_prior = 0
     if snt:
         hit = _locate_player_team(snt["player"], con, resolved_season)
@@ -545,6 +567,7 @@ def _load_trade_state(con: Any, moves: list[dict[str, Any]], season: str | None,
             "salary_date": _salary_date(con),
             "source": _payroll_source(con),
             "season_start": season_start, "pick_held": pick_held,
+            "pick_vintage": pick_vintage,
             "snt_salary_prior": snt_salary_prior}, None
 
 
@@ -926,22 +949,28 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
     checks = _build_checks(
         team_rows, snt_check, pick_check, stepien_check, legacy_tpes)
 
+    meta: dict[str, Any] = {
+        "source": state["source"], "rules": "v2-2023cba-full",
+        "salary_date": state["salary_date"],
+        "season": state["season"],
+        "disclaimer": "Estimate only. Covers matching, apron "
+        "aggregation, hard caps, typed TPE restrictions, cash "
+        "bans, sign-and-trade terms/BYC, year-grain pick "
+        "ownership, Stepien and frozen-pick rules. Skips "
+        "no-trade clauses, trade kickers, poison-pill, and "
+        "minimum-salary exceptions; "
+        f"{_PICK_OWNERSHIP_LIMITATIONS}; sign-and-trade "
+        f"{_SNT_GUARANTEE_DISCLOSURE}; prior-team/preseason "
+        "eligibility not modeled. Confirm with a cap "
+        "specialist."}
+    if state["pick_vintage"]:
+        meta["pick_vintage_basis"] = state["pick_vintage"]["basis"]
+        if state["pick_vintage"]["season"]:
+            meta["pick_vintage_season"] = state["pick_vintage"]["season"]
     return {"tool": "get_trade_legality", "ok": True,
             "rows": [team_rows[team] for team in sorted(team_rows)],
             "legal": not issues,
             "issues": issues,
             "checks": checks,
             "salary_date": state["salary_date"],
-            "meta": {"source": state["source"], "rules": "v2-2023cba-full",
-                     "salary_date": state["salary_date"],
-                     "season": state["season"],
-                     "disclaimer": "Estimate only. Covers matching, apron "
-                     "aggregation, hard caps, typed TPE restrictions, cash "
-                     "bans, sign-and-trade terms/BYC, year-grain pick "
-                     "ownership, Stepien and frozen-pick rules. Skips "
-                     "no-trade clauses, trade kickers, poison-pill, and "
-                     "minimum-salary exceptions; "
-                     f"{_PICK_OWNERSHIP_LIMITATIONS}; sign-and-trade "
-                     f"{_SNT_GUARANTEE_DISCLOSURE}; prior-team/preseason "
-                     "eligibility not modeled. Confirm with a cap "
-                     "specialist."}}
+            "meta": meta}
