@@ -82,3 +82,15 @@ test("failed run renders a Try again button that resubmits without duplicating t
     env.restore();
   }
 });
+
+test("reconcileRetryRuns drops a failed run superseded by an identical-question retry, keeps honest history otherwise", async () => {
+  const { reconcileRetryRuns } = await import("./lib/chat-persistence");
+  const fail = (q: string) => ({ question: q, snapshot: { failed: { kind: "connection", message: "x" } } as never });
+  const ok = (q: string) => ({ question: q, snapshot: { failed: null } as never });
+  assert.deepEqual(reconcileRetryRuns([fail("a"), ok("a")]).map(r => r.question), ["a"], "failed run superseded by adjacent identical retry is dropped");
+  assert.equal(reconcileRetryRuns([fail("a"), ok("a")]).length, 1);
+  assert.deepEqual(reconcileRetryRuns([fail("a"), ok("b")]).map(r => r.question), ["a", "b"], "different follow-up question keeps the failure");
+  assert.deepEqual(reconcileRetryRuns([ok("a"), fail("b")]).map(r => r.question), ["a", "b"], "trailing failure with no retry survives");
+  assert.deepEqual(reconcileRetryRuns([fail("a"), fail("a"), ok("a")]).map(r => r.question), ["a"], "a chain of retries collapses to the final run");
+  assert.deepEqual(reconcileRetryRuns([ok("a"), ok("a")]).map(r => r.question), ["a", "a"], "successful duplicates are never collapsed");
+});
