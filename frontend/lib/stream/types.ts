@@ -104,6 +104,7 @@ export interface ChartSeriesPayload {
   name: string;
   values: (number | null)[];
   tone?: ChartTone;
+  unit?: string;
 }
 
 export interface ChartMark {

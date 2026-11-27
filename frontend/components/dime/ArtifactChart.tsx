@@ -37,8 +37,8 @@ export default function ArtifactChart({ series, height = 220, footnote, unit, xL
   return <figure className="min-w-0 p-4" aria-label={title}>
     {subtitle && <p className="mb-2 break-words text-xs text-ink-3">{subtitle}</p>}
     <figcaption className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-2">
-      {series.map((s, i) => <span key={i} className="inline-flex min-w-0 items-center gap-2 break-words"><span aria-hidden="true" className="w-4 shrink-0 border-t-2" style={{ borderColor: toneColor[s.tone ?? (i === 0 ? "ink" : "muted")], borderTopStyle: i % 2 ? "dashed" : "solid" }} />{s.name}</span>)}
-      {unit ? <span className="text-ink-3">{unit}</span> : null}
+      {series.map((s, i) => <span key={i} className="inline-flex min-w-0 items-center gap-2 break-words"><span aria-hidden="true" className="w-4 shrink-0 border-t-2" style={{ borderColor: toneColor[s.tone ?? (i === 0 ? "ink" : "muted")], borderTopStyle: i % 2 ? "dashed" : "solid" }} />{s.name}{s.unit ? <span className="text-ink-3">({s.unit})</span> : null}</span>)}
+      {!series.some(s => s.unit) && unit ? <span className="text-ink-3">{unit}</span> : null}
     </figcaption>
     <ResponsiveContainer width="100%" height={chartHeight} minWidth={0} initialDimension={{ width: 640, height: chartHeight }}>
       {variant === "bar"
@@ -68,7 +68,7 @@ export default function ArtifactChart({ series, height = 220, footnote, unit, xL
     </ul>}
     {footnote && <p className="mt-2 break-words text-xs leading-relaxed text-ink-3">{footnote}</p>}
     <details className="mt-3 text-xs text-ink-2"><summary className="cursor-pointer py-2">View chart data</summary>
-      <ArtifactTable title={`${title} data`} columns={[{ key: "label", label: "Observation" }, ...series.map((s, i) => ({ key: `series${i}`, label: `${s.name}${unit ? ` (${unit})` : ""}`, numeric: true }))]} rows={data.map(row => [String(row.label), ...series.map((_, i) => row[`series${i}`] as number | null)])} />
+      <ArtifactTable title={`${title} data`} columns={[{ key: "label", label: "Observation" }, ...series.map((s, i) => ({ key: `series${i}`, label: `${s.name}${s.unit ? ` (${s.unit})` : unit ? ` (${unit})` : ""}`, numeric: true }))]} rows={data.map(row => [String(row.label), ...series.map((_, i) => row[`series${i}`] as number | null)])} />
     </details>
   </figure>;
 }
