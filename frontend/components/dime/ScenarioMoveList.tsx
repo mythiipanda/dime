@@ -1,8 +1,10 @@
 "use client";
 
+import { motion, MotionConfig } from "motion/react";
+
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
 import { describeScenarioMove } from "@/lib/capsheet-fixture";
-import { unitizeMoves, removeUnitAt, ungroupAt, moveUnit, type MoveGroupsMap } from "@/lib/move-groups";
+import { unitizeMoves, removeUnitAt, ungroupAt, moveUnit, type MoveGroupsMap, type MoveUnit } from "@/lib/move-groups";
 
 export type MoveListLabels = {
   describe: (move: ScenarioMove) => string;
@@ -29,8 +31,9 @@ export default function ScenarioMoveList({
   readOnly?: boolean;
 }) {
   const units = unitizeMoves(moves);
+  const unitKeys = stableUnitKeys(units);
   return (
-    <>
+    <MotionConfig reducedMotion="user">
       {units.map((unit, unitIndex) => {
         const reorder = reorderable && (
           <span className="flex shrink-0 flex-col leading-none">
@@ -57,7 +60,7 @@ export default function ScenarioMoveList({
           const outCount = unit.entries.filter((entry) => entry.move.kind === "trade_out").length;
           const inCount = unit.entries.filter((entry) => entry.move.kind === "trade_in").length;
           return (
-            <div key={unit.group} className="rounded-[8px] border border-line px-2.5 py-2">
+            <motion.div layout key={unitKeys[unitIndex]} className="rounded-[8px] border border-line px-2.5 py-2">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3">
                   {numbered && <span className="mr-1.5 font-mono normal-case tracking-normal">{unitIndex + 1}</span>}Trade{meta?.partner ? ` with ${meta.partner}` : ""} — {outCount} out / {inCount} in
@@ -94,13 +97,13 @@ export default function ScenarioMoveList({
                   </span>
                 )}
               </div>
-            </div>
+            </motion.div>
           );
         }
         const entry = unit.entries[0];
         const basis = labels.waiverBasis?.(entry.move);
         return (
-          <div key={entry.index} className="flex items-baseline justify-between gap-2 text-[12px]">
+          <motion.div layout key={unitKeys[unitIndex]} className="flex items-baseline justify-between gap-2 text-[12px]">
             <div className="min-w-0">
               <span className="text-ink-2">{numbered && <span className="mr-2 font-mono text-[10.5px] text-ink-3">{unitIndex + 1}</span>}{labels.describe(entry.move)}</span>
               {basis && (
@@ -115,11 +118,27 @@ export default function ScenarioMoveList({
                 </button>
               </span>
             )}
-          </div>
+          </motion.div>
         );
       })}
-    </>
+    </MotionConfig>
   );
+}
+
+
+function moveFingerprint(move: ScenarioMove): string {
+  return [move.kind, move.player ?? "", move.season ?? "", move.label ?? "", String(move.amount ?? "")].join("|");
+}
+
+function stableUnitKeys(units: MoveUnit[]): (string | undefined)[] {
+  const seen = new Map<string, number>();
+  return units.map((unit) => {
+    if (unit.group) return unit.group;
+    const base = moveFingerprint(unit.entries[0].move);
+    const occurrence = seen.get(base) ?? 0;
+    seen.set(base, occurrence + 1);
+    return occurrence === 0 ? base : `${base}#${occurrence}`;
+  });
 }
 
 export function ReadOnlyMoveList({ moves, groups }: { moves: ScenarioMove[]; groups: MoveGroupsMap }) {
