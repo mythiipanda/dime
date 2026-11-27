@@ -4,7 +4,7 @@ from langchain_core.tools import tool
 
 from ._helpers import (_cap_season_for_fa_year, _owned_connection, _pkg,
                        _warehouse_tables)
-from .cap_hold_derivation import derive_cap_holds, hold_amount
+from .cap_hold_derivation import CAP_HOLD_CONTRACT, derive_cap_holds, hold_amount
 from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
 
@@ -41,6 +41,19 @@ def _cap_room_rows(con, abbr: str, cap_season: str) -> list[dict]:
     if not abbr and "PROJECTED_ROOM" in have:
         sql += " ORDER BY PROJECTED_ROOM DESC"
     return _rows(con, sql, params, pick)
+
+
+def _normalize_hold_rows(rows: list[dict]) -> None:
+    for row in rows:
+        if "cap_hold" in row:
+            row["cap_hold_est"] = row.get("cap_hold")
+            continue
+        seed = row.get("CAP_HOLD_EST")
+        row["cap_hold"] = seed
+        row["cap_hold_est"] = seed
+        row["legacy_cap_hold_est"] = seed
+        row["provenance_class"] = "legacy_seed_estimate"
+        row["money_unit"] = "usd_dollars"
 
 
 def _enrich_cap_room(cap_room: list[dict], hold_rows: list[dict]) -> None:
@@ -119,6 +132,7 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
     except FileNotFoundError:
         return {"tool": "get_free_agents", "ok": False,
                 "error": "warehouse absent; run seed_free_agents.py first."}
+    _normalize_hold_rows(fa)
     return {
         "tool": "get_free_agents",
         "ok": True,
@@ -133,6 +147,7 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                        "cap_room": "silver_cap_room"},
             "sources": ["bref_contracts", "nba_cba"],
             "estimated": True,
+            "cap_hold_contract": CAP_HOLD_CONTRACT,
             "cap_hold_derivation": hold_payload.get("meta") or {},
         },
     }

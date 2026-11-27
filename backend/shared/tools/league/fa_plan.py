@@ -4,7 +4,7 @@ from langchain_core.tools import tool
 
 from ._helpers import (_cap_season_for_fa_year, _owned_connection, _pkg,
                        _warehouse_tables)
-from .cap_hold_derivation import derive_cap_holds, hold_amount
+from .cap_hold_derivation import CAP_HOLD_CONTRACT, derive_cap_holds, hold_amount
 from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
 
@@ -78,6 +78,36 @@ def _scenarios(room: dict, fa: list[dict]) -> list[dict]:
     return out
 
 
+def _fa_plan_row(f: dict[str, Any], cap: int) -> dict[str, Any]:
+    computed = f.get("cap_hold")
+    if computed is None and "cap_hold" not in f:
+        computed = f.get("CAP_HOLD_EST")
+    hold = int(computed) if computed is not None else None
+    return {
+        "player": f.get("PLAYER_NAME"),
+        "fa_type": f.get("FA_TYPE"),
+        "prior_salary": f.get("PRIOR_SALARY"),
+        "cap_hold_est": hold,
+        "cap_hold": computed,
+        "legacy_cap_hold_est": f.get("legacy_cap_hold_est",
+                                     f.get("CAP_HOLD_EST")),
+        "money_unit": f.get("money_unit", "usd_dollars"),
+        "scenario_dependency": f.get("scenario_dependency",
+                                     "active_expired_contract"),
+        "active_in_baseline": f.get("active_in_baseline", True),
+        "rights_classification": f.get("rights_classification"),
+        "rookie_scale_status": f.get("rookie_scale_status"),
+        "hold_rule": f.get("hold_rule"),
+        "hold_exactness": f.get("hold_exactness"),
+        "provenance_class": f.get("provenance_class"),
+        "input_exactness": f.get("input_exactness") or {},
+        "input_provenance": f.get("input_provenance") or {},
+        "uncertainty": f.get("uncertainty") or [],
+        "hold_share": round(hold / cap, 4) if hold is not None and cap else None,
+        "extension_eligible": str(f.get("FA_TYPE") or "")
+        in _EXTENSION_ELIGIBLE}
+
+
 @tool(description=(
     "Free-agent / extension planning for one team's upcoming FA class: "
     "per-FA rows (type, prior salary, estimated cap hold, extension "
@@ -147,33 +177,7 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
         return {"tool": "get_fa_plan", "ok": False,
                 "error": "warehouse absent; run seed_free_agents.py first."}
     cap = int(room.get("PROJECTED_CAP") or 0) if room else 0
-    fa_rows = []
-    for f in fa:
-        computed = f.get("cap_hold")
-        hold = int(computed) if computed is not None else 0
-        fa_rows.append({
-            "player": f.get("PLAYER_NAME"),
-            "fa_type": f.get("FA_TYPE"),
-            "prior_salary": f.get("PRIOR_SALARY"),
-            "cap_hold_est": hold,
-            "cap_hold": computed,
-            "legacy_cap_hold_est": f.get("legacy_cap_hold_est",
-                                         f.get("CAP_HOLD_EST")),
-            "money_unit": f.get("money_unit", "usd_dollars"),
-            "scenario_dependency": f.get("scenario_dependency",
-                                         "active_expired_contract"),
-            "active_in_baseline": f.get("active_in_baseline", True),
-            "rights_classification": f.get("rights_classification"),
-            "rookie_scale_status": f.get("rookie_scale_status"),
-            "hold_rule": f.get("hold_rule"),
-            "hold_exactness": f.get("hold_exactness"),
-            "provenance_class": f.get("provenance_class"),
-            "input_exactness": f.get("input_exactness") or {},
-            "input_provenance": f.get("input_provenance") or {},
-            "uncertainty": f.get("uncertainty") or [],
-            "hold_share": round(hold / cap, 4) if cap else None,
-            "extension_eligible": str(f.get("FA_TYPE") or "")
-            in _EXTENSION_ELIGIBLE})
+    fa_rows = [_fa_plan_row(f, cap) for f in fa]
     scenarios = _scenarios(room, fa) if room else []
     active_holds = sum(hold_amount(f) for f in fa if f.get("active_in_baseline", True))
     potential_holds = sum(hold_amount(f) for f in fa)
@@ -247,6 +251,7 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                "projected_apron2": room.get("PROJECTED_APRON2")
                if room else None},
            "meta": {"source": "warehouse", "estimated": True,
+                    "cap_hold_contract": CAP_HOLD_CONTRACT,
                     "tables": {"free_agents": "silver_free_agents",
                                "cap_room": "silver_cap_room"},
                     "formula": "scenario room = PROJECTED_ROOM - retained "

@@ -321,6 +321,18 @@ def _match_hold(index: dict[str, dict[str, Any]], name: object) -> dict[str, Any
     return index.get(normalize_name(name))
 
 
+def _option_dependency_error(hold: dict[str, Any] | None, declined: set[str],
+                             action: str) -> str | None:
+    if hold is None:
+        return None
+    key = normalize_name(hold.get("player"))
+    if (hold.get("scenario_dependency") == "option_decision_required"
+            and key not in declined):
+        return (f"{action} {hold.get('player')} requires a prior option decision decline; "
+                "the option salary is still committed")
+    return None
+
+
 def _hold_inclusion(rows: list[dict[str, Any]], declined: set[str],
                     extinguished: set[str]) -> tuple[list[dict[str, Any]], int, int]:
     detailed = []
@@ -388,9 +400,13 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 errors.append({"move": str(i), "error": "signing needs a positive amount"})
                 continue
             label = str(raw.get("label") or f"${amount / 1_000_000:g}M signing")
+            hold_match = _match_hold(hold_index, raw.get("player") or label)
+            option_error = _option_dependency_error(hold_match, declined_holds, "signing")
+            if option_error is not None:
+                errors.append({"move": str(i), "error": option_error})
+                continue
             moves.append({"kind": "signing", "detail": f"sign {label}",
                           "amount": int(amount)})
-            hold_match = _match_hold(hold_index, raw.get("player") or label)
             if hold_match is not None:
                 key = normalize_name(hold_match.get("player"))
                 extinguished_holds.add(key)
@@ -460,6 +476,10 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                                "error": f"no {team} free-agent cap hold found for {player}"})
                 continue
             key = normalize_name(hold_match.get("player"))
+            option_error = _option_dependency_error(hold_match, declined_holds, "renouncing")
+            if option_error is not None:
+                errors.append({"move": str(i), "error": option_error})
+                continue
             extinguished_holds.add(key)
             cap_hold_events.append({"kind": "renounced", "player": hold_match.get("player"),
                                     "amount": hold_match.get("cap_hold"),

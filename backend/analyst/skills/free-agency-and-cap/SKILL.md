@@ -54,6 +54,7 @@ Pin the `CAP_SEASON` filter to the asked cap season; the subquery form is only f
 
 - A team's usable room is `PROJECTED_ROOM` from `silver_cap_room` minus the cap holds the scenario keeps and any signing you add; `PROJECTED_ROOM` is already net of incomplete-roster charges. Report the components, not just the headline room.
 - Cap holds block room until renounced: a team "keeping" a free agent can't count the hold toward new signings. State whether the scenario assumes holds kept or renounced.
+- Cap-hold field contract: `cap_hold` is the effective planning estimate used in arithmetic and `cap_hold_est` is its compatibility alias; both are null when the hold is unknown, never zero-filled. `legacy_cap_hold_est` and raw `CAP_HOLD_EST` are the unvalidated warehouse seed estimate retained for comparison. When derivation inputs are unavailable, the effective estimate may be a clearly labeled legacy-seed fallback rather than a calculator-derived value.
 - Over-the-cap paths differ qualitatively: exceptions (MLE, room exception, bi-annual where applicable) and Bird rights signings are different mechanisms than cap room — say which mechanism the offer uses, and note the apron consequence (hard-cap triggers where they apply).
 
 ## 2. Aprons Are Boundaries, Not Lines

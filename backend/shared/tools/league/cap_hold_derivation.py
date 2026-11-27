@@ -18,6 +18,12 @@ from ..cap_holds import (
 )
 
 _MONEY_UNIT = "usd_dollars"
+CAP_HOLD_CONTRACT = {
+    "cap_hold": "effective planning estimate used in scenario arithmetic; null when unknown and never zero-filled",
+    "cap_hold_est": "compatibility alias for the same effective estimate as cap_hold; null when unknown",
+    "legacy_cap_hold_est": "unvalidated silver_free_agents.CAP_HOLD_EST seed retained for comparison",
+    "legacy_fallback": "when derivation inputs are unavailable, the effective estimate is the labeled legacy seed rather than a calculator-derived value",
+}
 _CAP_2026_27 = 164_961_000
 _EAPS_2026_27 = 15_163_000
 _MINIMUM_SCALE_2026_27 = [
@@ -81,6 +87,7 @@ def _legacy_row(row: dict[str, Any], reason: str) -> dict[str, Any]:
         "fa_type": row.get("FA_TYPE"),
         "prior_salary": row.get("PRIOR_SALARY"),
         "cap_hold": amount,
+        "cap_hold_est": amount,
         "legacy_cap_hold_est": amount,
         "money_unit": _MONEY_UNIT,
         "scenario_dependency": dependency,
@@ -140,7 +147,18 @@ def _season_end_from_date(value: object) -> int | None:
 def _static_team_ids() -> dict[int, str]:
     try:
         from nba_api.stats.static import teams as static_teams
-        return {int(t["id"]): str(t["abbreviation"]) for t in static_teams.get_teams()}
+        return {int(t["id"]): str(t["abbreviation"]).upper()
+                for t in static_teams.get_teams()}
+    except Exception:
+        return {}
+
+
+@lru_cache(maxsize=1)
+def _static_team_names() -> dict[str, str]:
+    try:
+        from nba_api.stats.static import teams as static_teams
+        return {str(t["abbreviation"]).upper(): str(t["full_name"]).lower()
+                for t in static_teams.get_teams()}
     except Exception:
         return {}
 
@@ -291,6 +309,8 @@ def _rights_from_transactions(txns: list[dict[str, Any]], prior_end: int,
     start = None
     current = 0
     reset_next_signing = False
+    explicit_start = False
+    open_chain = False
     latest_date = None
     for txn in txns:
         end = _season_end_from_date(txn.get("date"))
@@ -300,20 +320,26 @@ def _rights_from_transactions(txns: list[dict[str, Any]], prior_end: int,
             continue
         latest_date = str(txn.get("date") or "")
         if kind in {"Trade", "AwardOnWaivers"}:
-            if start is None or current == 0:
-                start = end
+            if start is None and current == 0:
+                open_chain = True
             current = tid
             reset_next_signing = False
         elif kind == "Waive" and (current == 0 or current == tid):
+            start = None
             current = 0
             reset_next_signing = True
+            explicit_start = False
+            open_chain = False
         elif kind in {"Signing", "ContractConverted"}:
-            if start is None or current == 0 or reset_next_signing or current != tid:
+            if current == 0 or reset_next_signing or current != tid:
+                explicit_start = bool(reset_next_signing or (current != 0 and current != tid))
                 start = end
+                open_chain = False
             current = tid
             reset_next_signing = False
     if start is None:
-        return {"rights": None, "start": None, "latest_date": latest_date, "conflict": False}
+        return {"rights": None, "start": None, "latest_date": latest_date,
+                "conflict": False, "explicit_start": False, "open_chain": open_chain}
     seasons = prior_end - int(start) + 1
     if seasons >= 3:
         rights = RIGHTS_QUALIFYING
@@ -326,14 +352,69 @@ def _rights_from_transactions(txns: list[dict[str, Any]], prior_end: int,
     current_abbr = team_ids.get(current, "")
     conflict = bool(current_abbr and current_abbr != target_team)
     return {"rights": rights, "start": int(start), "latest_date": latest_date,
-            "conflict": conflict, "current_abbr": current_abbr, "seasons": seasons}
+            "conflict": conflict, "current_abbr": current_abbr, "seasons": seasons,
+            "explicit_start": explicit_start, "open_chain": open_chain}
 
 
-def _rights_from_seasons(con, tables: set[str], player_id: int | None,
-                         prior_end: int, target_team: str) -> dict[str, Any] | None:
-    if not player_id or not ({"silver_hist_player_seasons", "silver_player_season"} & tables):
-        return None
-    rows = []
+def _trade_matches_prior_team(txn: dict[str, Any], prior_team: str) -> bool:
+    source = _static_team_names().get(prior_team)
+    detail = str(txn.get("detail") or "").lower()
+    return bool(source and f"from {source}" in detail)
+
+
+def _latest_waiver_reset(txns: list[dict[str, Any]], prior_end: int) -> tuple[int | None, bool]:
+    latest_date = ""
+    latest_end = None
+    for txn in txns:
+        end = _season_end_from_date(txn.get("date"))
+        date = str(txn.get("date") or "")
+        if txn.get("type") == "Waive" and end and end <= prior_end and date >= latest_date:
+            latest_date = date
+            latest_end = end
+    if latest_end is None:
+        return None, False
+    restarted = any(
+        txn.get("type") in {"Signing", "ContractConverted"}
+        and str(txn.get("date") or "") > latest_date
+        and (_season_end_from_date(txn.get("date")) or prior_end + 1) <= prior_end
+        for txn in txns)
+    return latest_end, restarted
+
+
+def _team_transition_evidence(txns: list[dict[str, Any]], team_ids: dict[int, str],
+                              prior_team: str, current_team: str,
+                              season_end: int) -> str:
+    events = []
+    for txn in txns:
+        end = _season_end_from_date(txn.get("date"))
+        abbr = team_ids.get(int(txn.get("team_id") or 0), "")
+        if end == season_end and abbr:
+            events.append({**txn, "end": end, "abbr": abbr})
+    carry = None
+    for txn in events:
+        if txn["abbr"] == current_team and txn["type"] in {"Trade", "AwardOnWaivers"}:
+            carry = txn
+            break
+    if carry is not None:
+        if not _trade_matches_prior_team(carry, prior_team):
+            return "unknown"
+        carry_date = str(carry.get("date") or "")
+        prior_reset = any(
+            str(txn.get("date") or "") < carry_date
+            and txn["type"] in {"Signing", "ContractConverted"}
+            and txn["abbr"] != prior_team
+            for txn in events)
+        return "reset" if prior_reset else "carry"
+    if any(txn["abbr"] == current_team
+           and txn["type"] in {"Signing", "ContractConverted"}
+           for txn in events):
+        return "reset"
+    return "unknown"
+
+
+def _season_teams_by_year(con, tables: set[str], player_id: int,
+                          prior_end: int) -> dict[int, str]:
+    by_year = {}
     if "silver_hist_player_seasons" in tables:
         try:
             rows = con.execute(
@@ -342,11 +423,10 @@ def _rights_from_seasons(con, tables: set[str], player_id: int | None,
                 [player_id, prior_end]).fetchall()
         except Exception:
             rows = []
-    by_year = {}
-    for season, team in rows:
-        year = int(season or 0)
-        if year and year not in by_year:
-            by_year[year] = str(team or "").upper()
+        for season, team in rows:
+            year = int(season or 0)
+            if year and year not in by_year:
+                by_year[year] = str(team or "").upper()
     if "silver_player_season" in tables:
         try:
             current_rows = con.execute(
@@ -358,20 +438,63 @@ def _rights_from_seasons(con, tables: set[str], player_id: int | None,
                     by_year[year] = str(team or "").upper()
         except Exception:
             pass
-    count = 0
-    year = prior_end
-    while by_year.get(year) == target_team:
-        count += 1
-        year -= 1
-    if count >= 3:
-        rights = RIGHTS_QUALIFYING
-    elif count == 2:
-        rights = RIGHTS_EARLY_QUALIFYING
-    elif count == 1:
-        rights = RIGHTS_NON_QUALIFYING
-    else:
+    return by_year
+
+
+def _rights_from_seasons(con, tables: set[str], player_id: int | None,
+                         prior_end: int, target_team: str,
+                         txns: list[dict[str, Any]],
+                         team_ids: dict[int, str]) -> dict[str, Any] | None:
+    if not player_id or not ({"silver_hist_player_seasons", "silver_player_season"} & tables):
         return None
-    return {"rights": rights, "seasons": count, "source": "season continuity"}
+    by_year = _season_teams_by_year(con, tables, player_id, prior_end)
+    if by_year.get(prior_end) != target_team:
+        return None
+    count = 1
+    exact_start = False
+    unresolved = False
+    first_observed_year = min(by_year) if by_year else prior_end
+    waiver_end, waiver_restarted = _latest_waiver_reset(txns, prior_end)
+    year = prior_end - 1
+    while count < 3:
+        if waiver_end is not None and year < waiver_end <= year + 1:
+            exact_start = waiver_restarted
+            unresolved = not exact_start
+            break
+        if year not in by_year:
+            exact_start = not (year + 1 == first_observed_year
+                               and first_observed_year <= 1997)
+            unresolved = not exact_start
+            break
+        prior_team = by_year[year]
+        current_team = by_year[year + 1]
+        if prior_team == current_team:
+            count += 1
+            year -= 1
+            continue
+        transition = _team_transition_evidence(
+            txns, team_ids, prior_team, current_team, year + 1)
+        if transition == "carry":
+            count += 1
+            year -= 1
+            continue
+        if transition == "reset":
+            exact_start = True
+            break
+        unresolved = True
+        break
+    if count >= 3:
+        return {"rights": RIGHTS_QUALIFYING, "seasons": 3,
+                "source": "season continuity with trade carryover"}
+    if exact_start:
+        rights = (RIGHTS_EARLY_QUALIFYING if count == 2
+                  else RIGHTS_NON_QUALIFYING)
+        return {"rights": rights, "seasons": count,
+                "source": "season continuity with a proven service-chain start"}
+    if unresolved:
+        return {"rights": RIGHTS_UNKNOWN, "seasons": count,
+                "source": "season continuity reaches a team change without proof of trade carryover or a service-chain reset"}
+    return None
 
 
 def _infer_rights(con, tables: set[str], row: dict[str, Any], salary: dict[str, Any],
@@ -379,18 +502,32 @@ def _infer_rights(con, tables: set[str], row: dict[str, Any], salary: dict[str, 
     player_id = salary.get("PLAYER_ID")
     player_id = int(player_id) if player_id else None
     txns = _fetch_transactions(con, tables, player_id, row.get("PLAYER_NAME"))
-    chain = _rights_from_transactions(txns, prior_end, _static_team_ids(), target_team)
-    if chain.get("rights") and not chain.get("conflict"):
+    team_ids = _static_team_ids()
+    chain = _rights_from_transactions(txns, prior_end, team_ids, target_team)
+    chain_usable = bool(chain.get("rights") and not chain.get("conflict")
+                        and (chain.get("seasons", 0) >= 3 or chain.get("explicit_start")))
+    if chain_usable:
         seasons = chain.get("seasons")
         rule = (f"inference:silver_transactions continuous signing/trade chain reaches {seasons} "
                 f"season(s) with {target_team} through {prior_end}; trades preserve the chain and waivers reset it")
         return str(chain["rights"]), rule
-    fallback = _rights_from_seasons(con, tables, player_id, prior_end, target_team)
-    if fallback:
+    fallback = _rights_from_seasons(con, tables, player_id, prior_end, target_team,
+                                    txns, team_ids)
+    if fallback and fallback.get("rights") != RIGHTS_UNKNOWN:
         rule = (f"inference:silver_hist_player_seasons/silver_player_season shows {fallback['seasons']} consecutive "
-                f"season(s) with {target_team} through {prior_end}; transaction-chain evidence unavailable or conflicting")
+                f"season(s) in the rights chain through {prior_end}; {fallback['source']}")
         return str(fallback["rights"]), rule
-    rule = "inference insufficient: no reliable silver_transactions chain or same-team season continuity"
+    if chain.get("open_chain"):
+        reason = ("first observed transaction is a trade or waiver award, so prior-team service "
+                  "cannot be established from the transaction feed")
+    elif chain.get("rights") and not chain.get("explicit_start"):
+        reason = ("observed signing may be a re-signing that preserves earlier service; "
+                  "the transaction feed cannot prove the chain start")
+    elif fallback and fallback.get("source"):
+        reason = str(fallback["source"])
+    else:
+        reason = "no reliable silver_transactions chain or continuous-season evidence"
+    rule = f"inference insufficient: {reason}; no Bird-rights classification is guessed"
     return RIGHTS_UNKNOWN, rule
 
 
@@ -453,9 +590,9 @@ def _metadata(prior_salary: int, years: int | None, rights: str, rights_rule: st
         "max_player_tier": "ordinary years-of-service max tier; higher-max award/designated-player criteria not available in warehouse",
         "completed_two_way_contract": "silver_free_agents FA_TYPE plus silver_contracts TWO_WAY evidence; historical conversion coverage incomplete",
         "restricted_free_agent": "silver_free_agents FA_TYPE only; qualifying-offer existence and amounts unavailable",
-        "prior_salary": "silver_free_agents.PRIOR_SALARY joined to silver_salaries schedule evidence",
+        "prior_salary": "silver_free_agents.PRIOR_SALARY direct seed value; no salary-schedule join supplies this amount",
         "final_prior_contract_salary": "proxy: prior-season salary reused as final prior-contract salary because complete multi-year contract schedules are unreliable",
-        "target_salary_cap": "silver_cap_room.PROJECTED_CAP for the target cap season",
+        "target_salary_cap": "silver_cap_room.PROJECTED_CAP for the target cap season; exact seed projection value, not a rounded public millions figure",
         "prior_year_eaps": eaps_source,
         "applicable_minimum": "2026-27 minimum scale scaled by target-cap growth; projection convention disclosed",
         "target_unreimbursed_minimum": "2026-27 two-year unreimbursed minimum scaled by target-cap growth for veterans; projection convention disclosed",
@@ -553,6 +690,7 @@ def _compute_row(con, tables: set[str], row: dict[str, Any], salary_index: dict,
         "fa_type": row.get("FA_TYPE"),
         "prior_salary": prior_salary,
         "cap_hold": result.get("amount"),
+        "cap_hold_est": result.get("amount"),
         "legacy_cap_hold_est": legacy,
         "money_unit": _MONEY_UNIT,
         "scenario_dependency": dependency,
@@ -625,11 +763,28 @@ def derive_cap_holds(con, fa_year: object, team: str = "") -> dict[str, Any]:
     derived = [_compute_row(con, tables, row, salary_index, draft_index,
                             contract_types, year, cap_season, target_cap)
                for row in rows]
-    return _result(derived, cap_season, "calculator_derived", "")
+    return _result(derived, cap_season, "calculator_derived", "", target_cap)
+
+
+def _cap_projection_meta(cap_season: str, target_cap: int | None) -> dict[str, Any]:
+    if target_cap is None:
+        return {}
+    derivation = "silver_cap_room seed projection marked ESTIMATED; exact dollar value is used"
+    if cap_season == "2027-28" and target_cap == 181_457_100:
+        derivation = ("seed_free_agents derives the exact projection as official 2026-27 cap "
+                      "164,961,000 × 1.10 = 181,457,100; rounded references to 181.5M are display rounding, "
+                      "and the projection is estimated rather than league-official")
+    elif cap_season == "2027-28" and target_cap == 181_500_000:
+        derivation = ("warehouse seed uses rounded projection 181,500,000; the exact 10% growth derivation "
+                      "from official 2026-27 cap 164,961,000 is 181,457,100, a 42,900 difference; "
+                      "the exact stored row value is used")
+    return {"cap_season": cap_season, "projected_cap": target_cap,
+            "money_unit": _MONEY_UNIT, "exactness": EXACTNESS_ESTIMATED,
+            "derivation": derivation}
 
 
 def _result(rows: list[dict[str, Any]], cap_season: str, status: str,
-            note: str) -> dict[str, Any]:
+            note: str, target_cap: int | None = None) -> dict[str, Any]:
     amounts = [int(r["cap_hold"]) for r in rows if r.get("cap_hold") is not None]
     active_amounts = [int(r["cap_hold"]) for r in rows
                       if r.get("cap_hold") is not None and r.get("active_in_baseline")]
@@ -644,6 +799,8 @@ def _result(rows: list[dict[str, Any]], cap_season: str, status: str,
             "derivation_status": status,
             "cap_season": cap_season,
             "money_unit": _MONEY_UNIT,
+            "cap_hold_contract": CAP_HOLD_CONTRACT,
+            "cap_projection": _cap_projection_meta(cap_season, target_cap),
             "derivation_source_pin": _pin_table(),
             "uncertainty_rules": {
                 "warehouse_facts": "warehouse-derived inputs are marked estimated and carry table/column provenance",

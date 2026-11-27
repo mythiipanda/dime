@@ -76,6 +76,19 @@ def wiring_con():
     return con
 
 
+def add_transaction_case(con, player, slug, player_id, txns):
+    con.execute("INSERT INTO silver_free_agents VALUES (?,?,?,?,?,?,?)",
+                [player, "BOS", slug, 2027, "ufa", 20_000_000, 30_000_000])
+    con.execute("INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+                [player, "BOS", player_id, slug, 20_000_000,
+                 20_000_000, None, None, None])
+    con.executemany(
+        "INSERT INTO silver_hist_player_seasons VALUES (?,?,?,?)",
+        [(player_id, player, team, year)
+         for year, team in [(2024, "ATL"), (2025, "ATL"), (2026, "BOS"), (2027, "BOS")]])
+    con.executemany("INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?)", txns)
+
+
 def test_derivation_uses_rookie_scale_and_discloses_unknowns():
     con = wiring_con()
     try:
@@ -98,6 +111,36 @@ def test_derivation_uses_rookie_scale_and_discloses_unknowns():
     assert "silver_transactions" in payload["meta"]["derivation_source_pin"]["rights_inference"]
     assert payload["active_total"] == 60_000_000
     assert payload["unknown_count"] == 1
+
+
+def test_transaction_evidence_models_carryover_reset_or_unknown():
+    con = wiring_con()
+    try:
+        add_transaction_case(con, "Traded Carry", "traca01", 101, [
+            ("2025-07-06", "Trade", "traded-carry", 101, "celtics", 1610612738,
+             "Boston Celtics received guard Traded Carry from Atlanta Hawks."),
+        ])
+        add_transaction_case(con, "Unproven Traded", "unptr01", 102, [
+            ("2025-07-06", "Trade", "unproven-traded", 102, "celtics", 1610612738, ""),
+        ])
+        add_transaction_case(con, "Signed Reset", "signr01", 103, [
+            ("2025-07-06", "Signing", "signed-reset", 103, "celtics", 1610612738,
+             "Boston Celtics signed guard Signed Reset to a Contract."),
+        ])
+        payload = derive_cap_holds(con, 2027, "BOS")
+    finally:
+        con.close()
+    rows = {row["player"]: row for row in payload["rows"]}
+    assert rows["Traded Carry"]["rights_classification"] == "qualifying"
+    assert rows["Traded Carry"]["cap_hold"] == 30_000_000
+    assert rows["Traded Carry"]["hold_rule"] == "qualifying_veteran_150_percent"
+    assert "trade carryover" in rows["Traded Carry"]["input_provenance"]["rights_classification"]
+    assert rows["Unproven Traded"]["rights_classification"] == "unknown"
+    assert rows["Unproven Traded"]["cap_hold"] is None
+    assert rows["Unproven Traded"]["hold_rule"] == "unknown_rights_classification"
+    assert rows["Signed Reset"]["rights_classification"] == "early_qualifying"
+    assert rows["Signed Reset"]["cap_hold"] == 26_000_000
+    assert rows["Signed Reset"]["hold_rule"] == "early_qualifying_veteran_130_percent"
 
 
 def test_scenario_renounce_removes_hold_and_opens_roster_spot():
@@ -165,3 +208,37 @@ def test_signing_own_free_agent_extinguishes_hold():
     assert out["team_salary_after"] - out["team_salary_before"] == -18_000_000
     assert any(event["kind"] == "signed" and event["player"] == "Veteran FA"
                for event in out["cap_hold_events"])
+
+
+def test_option_player_sign_or_renounce_requires_prior_decline():
+    con = wiring_con()
+    try:
+        sign = evaluate_cap_scenario(con, {
+            "team": "BOS", "season": "2027-28",
+            "moves": [{"kind": "signing", "player": "Option Rookie",
+                       "label": "Option Rookie", "amount": 12_000_000}]})
+        renounce = evaluate_cap_scenario(con, {
+            "team": "BOS", "season": "2027-28",
+            "moves": [{"kind": "renounce", "player": "Option Rookie"}]})
+        sequence = evaluate_cap_scenario(con, {
+            "team": "BOS", "season": "2027-28",
+            "moves": [{"kind": "option_decision", "player": "Option Rookie",
+                       "exercise": False},
+                      {"kind": "signing", "player": "Option Rookie",
+                       "label": "Option Rookie", "amount": 12_000_000}]})
+    finally:
+        con.close()
+    assert sign["pay_after"] == sign["pay_before"]
+    assert any("prior option decision decline" in error["error"]
+               for error in sign["errors"])
+    assert not any(event["kind"] == "signed" and event["player"] == "Option Rookie"
+                   for event in sign["cap_hold_events"])
+    assert renounce["cap_holds_after"] == renounce["cap_holds_before"]
+    assert any("prior option decision decline" in error["error"]
+               for error in renounce["errors"])
+    assert not any(event["kind"] == "renounced" and event["player"] == "Option Rookie"
+                   for event in renounce["cap_hold_events"])
+    assert sequence["errors"] == []
+    assert sequence["pay_after"] == 52_000_000
+    assert [event["kind"] for event in sequence["cap_hold_events"]][:2] \
+        == ["option_declined", "signed"]

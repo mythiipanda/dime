@@ -128,6 +128,33 @@ def test_fa_rows_and_flags(monkeypatch, tmp_path):
     assert res["exceptions"]["room"] == 10_302_600
 
 
+def test_unknown_hold_is_null_not_zero(monkeypatch, tmp_path):
+    path = _seed(monkeypatch, tmp_path)
+    _load(path, _okc_fa(), [_okc_room()])
+
+    def unknown_derivation(con, fa_year, team):
+        return {"rows": [{
+            "PLAYER_NAME": "Unknown Wing", "TEAM": "OKC", "FA_TYPE": "ufa",
+            "PRIOR_SALARY": 10_000_000, "CAP_HOLD_EST": 15_000_000,
+            "cap_hold": None, "cap_hold_est": None,
+            "legacy_cap_hold_est": 15_000_000,
+            "money_unit": "usd_dollars", "scenario_dependency": "active_expired_contract",
+            "active_in_baseline": True, "provenance_class": "uncomputed_unknown_inputs",
+            "input_exactness": {}, "input_provenance": {}, "uncertainty": [],
+        }], "meta": {"derivation_status": "calculator_derived"}}
+
+    monkeypatch.setattr("shared.tools.league.fa_plan.derive_cap_holds",
+                        unknown_derivation)
+    res = get_fa_plan.invoke({"team": "OKC", "fa_year": "2027"})
+    row = res["rows"][0]
+    assert row["cap_hold"] is None
+    assert row["cap_hold_est"] is None
+    assert row["hold_share"] is None
+    assert row["legacy_cap_hold_est"] == 15_000_000
+    assert res["context"]["fa_holds_unknown_count"] == 1
+    assert res["meta"]["cap_hold_contract"]["cap_hold_est"].endswith("null when unknown")
+
+
 def test_scenario_arithmetic(monkeypatch, tmp_path):
     path = _seed(monkeypatch, tmp_path)
     _load(path, _okc_fa(), [_okc_room()])
