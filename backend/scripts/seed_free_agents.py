@@ -28,8 +28,8 @@ FA_COLS = ["PLAYER_NAME", "TEAM", "BREF_SLUG", "FA_YEAR", "FA_TYPE",
            "PRIOR_SALARY", "CAP_HOLD_EST"]
 ROOM_COLS = ["TEAM", "CAP_SEASON", "COMMITTED_SALARY",
              "PENDING_OPTION_SALARY", "FA_HOLDS_EST",
-             "INCOMPLETE_ROSTER_CHARGES", "PROJECTED_ROOM",
-             "MAX_ROOM",
+             "INCOMPLETE_ROSTER_CHARGES", "ROSTER_CHARGE_MINIMUM",
+             "PROJECTED_ROOM", "MAX_ROOM",
              "PROJECTED_CAP", "PROJECTED_TAX", "PROJECTED_APRON1",
              "PROJECTED_APRON2", "NTMLE_EST", "BAE_EST", "ROOM_EST",
              "TMLE_EST", "PLAYERS_UNDER_CONTRACT", "PENDING_OPTIONS",
@@ -121,7 +121,8 @@ def build_frames(frame: pl.DataFrame, fa_season_key: str,
                 "FA_TYPE": fa_type, "PRIOR_SALARY": prior,
                 "CAP_HOLD_EST": hold})
             entry["holds"] += hold
-            entry["hold_count"] += 1
+            if hold > 0:
+                entry["hold_count"] += 1
     room_rows = []
     cap = int(CAP_2026_27["cap"] * CAP_GROWTH)
     for team, e in sorted(room.items()):
@@ -137,6 +138,7 @@ def build_frames(frame: pl.DataFrame, fa_season_key: str,
             "PENDING_OPTION_SALARY": e["option_salary"],
             "FA_HOLDS_EST": e["holds"],
             "INCOMPLETE_ROSTER_CHARGES": roster_charges,
+            "ROSTER_CHARGE_MINIMUM": MIN_SALARY,
             "PROJECTED_ROOM": cap - e["committed"] - e["option_salary"]
             - roster_charges,
             "MAX_ROOM": cap - e["committed"] - declined_charges,
