@@ -394,6 +394,30 @@ def _sequence_money_state(sequence: dict[str, Any]) -> dict[str, Any]:
                         sequence["extinguished_holds"])
 
 
+def _signing_validation_team_salary(sequence: dict[str, Any],
+                                    money_before: dict[str, Any],
+                                    hold_match: dict[str, Any] | None) -> int:
+    validation_team_salary = int(money_before["team_salary"])
+    hold_count_after = int(money_before["hold_count"])
+    if hold_match is not None:
+        key = normalize_name(hold_match.get("player"))
+        detail = next((row for row in money_before["details"]
+                       if normalize_name(row.get("player")) == key), None)
+        if detail is not None and detail.get("included_in_team_salary"):
+            validation_team_salary -= int(detail.get("included_amount") or 0)
+            if hold_amount(detail) > 0:
+                hold_count_after -= 1
+    if sequence["charge_inputs"].get("available"):
+        minimum = int(sequence["charge_inputs"]["minimum"])
+        players_before = int(money_before["charge_players"])
+        charge_before = _roster_charge(
+            players_before, int(money_before["hold_count"]), minimum)
+        charge_after = _roster_charge(
+            players_before + 1, hold_count_after, minimum)
+        validation_team_salary += charge_after - charge_before
+    return validation_team_salary
+
+
 def _baseline_money_state(sequence: dict[str, Any], pay_before: int) -> dict[str, Any]:
     return _money_state(sequence, int(pay_before), 0, set(), set())
 
@@ -496,6 +520,9 @@ def _initial_sequence_state(payload: dict[str, Any], pay_before: int,
         "signing_validations": [],
         "signing_blocking": [],
         "signing_advisory": [],
+        "signed_players": set(),
+        "illegal_move_indices": [],
+        "unvalidated_move_indices": [],
         "matching": None,
         "trade_group": None,
     }
@@ -591,6 +618,9 @@ def _close_trade_group(sequence: dict[str, Any], team: str,
     issues.extend(matching_issues)
     sequence["issues"].extend(issues)
     sequence["matching"] = matching
+    if active_failure or consequence["violations"] or not matching.get("legal"):
+        sequence["illegal_move_indices"].extend(
+            range(int(group["start_index"]), int(group["end_index"]) + 1))
     activated = bool(consequence["hard_cap"] and not consequence["violations"]
                      and not active_failure and matching.get("legal"))
     _record_hard_cap_trigger(sequence, "trade", int(group["end_index"]),
@@ -647,9 +677,8 @@ def _process_signing(raw: dict[str, Any], move_index: int, team: str,
         _add_move_error(sequence, move_index, option_error)
         return
     money_before = _sequence_money_state(sequence)
-    validation_team_salary = int(money_before["team_salary"])
-    if hold_match is not None:
-        validation_team_salary -= int(hold_match.get("cap_hold") or 0)
+    validation_team_salary = _signing_validation_team_salary(
+        sequence, money_before, hold_match)
     validation_raw, exception_state_invalid = _prepare_signing_exception_state(
         raw, move_index, sequence)
     if exception_state_invalid:
@@ -671,6 +700,11 @@ def _process_signing(raw: dict[str, Any], move_index: int, team: str,
     sequence["moves"].append(move)
     sequence["signing_validations"].append(validation)
     player = str(validation.get("player") or "signing")
+    sequence["signed_players"].add(normalize_name(player))
+    if validation["outcome"] == "illegal":
+        sequence["illegal_move_indices"].append(move_index)
+    elif not validation["legal"]:
+        sequence["unvalidated_move_indices"].append(move_index)
     blocking = [f"{player}: {issue}" for issue in validation["blocking_issues"]]
     sequence["signing_blocking"].extend(blocking)
     sequence["issues"].extend(blocking)
@@ -696,6 +730,13 @@ def _process_trade_out(con, raw: dict[str, Any], move_index: int, team: str,
     player = str(raw.get("player") or "").strip()
     if not player:
         _add_move_error(sequence, move_index, "trade_out needs a player")
+        return
+    if normalize_name(player) in sequence["signed_players"]:
+        _add_move_error(
+            sequence, move_index,
+            f"trade_out of {player} after a same-scenario signing is unsupported "
+            "sign-and-trade sequencing; atomic sign-and-trade, BYC, and coupled "
+            "hard-cap treatment are outside cap scenario validation v1")
         return
     _total, matched, unknown = _match_trade_players(team, player, con, season)
     if unknown or not matched:
@@ -866,6 +907,10 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
     roster_after = len(roster) + int(sequence["roster_delta"])
     roster_issue_list = roster_issues(roster_after)
     issues = list(roster_issue_list) + list(sequence["issues"])
+    illegal_move_indices = sorted(set(sequence["illegal_move_indices"]))
+    unvalidated_move_indices = sorted(set(sequence["unvalidated_move_indices"]))
+    includes_illegal_moves = bool(illegal_move_indices)
+    includes_unvalidated_moves = bool(unvalidated_move_indices)
     hard_cap = _merge_hard_cap_labels(*sequence["active_hard_caps"])
     trigger_events = [dict(event) for event in sequence["hard_cap_trigger_events"]]
     would_be_triggers = [dict(event) for event in trigger_events
@@ -908,6 +953,10 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
             "restrictions": restrictions,
             "roster_before": len(roster), "roster_after": roster_after,
             "roster_issues": roster_issue_list,
+            "includes_illegal_moves": includes_illegal_moves,
+            "illegal_move_indices": illegal_move_indices,
+            "includes_unvalidated_moves": includes_unvalidated_moves,
+            "unvalidated_move_indices": unvalidated_move_indices,
             "hard_cap": hard_cap,
             "active_hard_caps": list(sequence["active_hard_caps"]),
             "hard_cap_triggers": trigger_events,
@@ -925,6 +974,8 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
                      "signing_proxy_disclosure": SIGNING_PROXY_DISCLOSURE,
                      "hard_cap_state_basis": "caller-order scenario sequence",
                      "cap_hold_derivation": sequence.get("cap_hold_meta") or {},
+                     "illegal_move_state_disclosure": "payroll, roster, cap-hold, team-salary, and cap-room state chronologically applies syntactically valid moves even when validation rejects them as illegal, cannot establish their legality, or a trade is prohibited; includes_illegal_moves/illegal_move_indices and includes_unvalidated_moves/unvalidated_move_indices disclose that state contamination, while input errors are rejected before mutation",
+                     "sign_and_trade_scope": "a signing followed by trade_out of that player in the same scenario is explicitly rejected as unsupported sign-and-trade sequencing; atomic sign-and-trade, BYC, and coupled hard-cap treatment are outside validation v1",
                      "team_salary_note": "team_salary and cap_room include active cap holds plus dynamic incomplete-roster charges; pay_before/pay_after remain committed payroll proxies used for tax/apron comparisons",
                      "roster_charge_note": "positive included cap holds count as occupied roster spots; renouncing or signing a hold opens a spot and increases the incomplete-roster charge, while declining an option can activate its disclosed potential hold",
                      "roster_charge_minimum_source": sequence["charge_inputs"].get("minimum_source"),

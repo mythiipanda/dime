@@ -105,10 +105,16 @@ export type ScenarioResponse = {
   hard_cap_triggers?: { transaction: string; move_index: number; apron: string; status: "active" | "prohibited" }[];
   would_be_hard_cap_triggers?: { transaction: string; move_index: number; apron: string; status: "active" | "prohibited" }[];
   signing_exception_state?: SigningExceptionState;
+  includes_illegal_moves?: boolean;
+  illegal_move_indices?: number[];
+  includes_unvalidated_moves?: boolean;
+  unvalidated_move_indices?: number[];
   errors: (string | { move: string; error: string })[];
   meta?: {
     waiver_basis?: string;
     waiver_timing?: { window: "pre_sep1" | "post_sep1"; date: string | null; defaulted: boolean };
+    illegal_move_state_disclosure?: string;
+    sign_and_trade_scope?: string;
   };
 };
 
