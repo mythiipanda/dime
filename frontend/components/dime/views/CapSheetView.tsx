@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { BACKEND } from "@/lib/chat";
 import {
   capSheetFixture,
@@ -33,7 +34,7 @@ function useFixture(): boolean {
     && new URLSearchParams(window.location.search).get("fixture") === "cap";
 }
 
-export default function CapSheetView() {
+export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void }) {
   const [team, setTeam] = useState("BOS");
   const [sheet, setSheet] = useState<CapSheetResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +44,7 @@ export default function CapSheetView() {
   const [scenario, setScenario] = useState<ScenarioResponse | null>(null);
   const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
+  const [saveState, setSaveState] = useState<string | null>(null);
   const [signingAmount, setSigningAmount] = useState("");
   const [signingLabel, setSigningLabel] = useState("");
   const fixture = useFixture();
@@ -162,6 +164,55 @@ export default function CapSheetView() {
   }
 
   const state = scenario?.state ?? sheet?.state;
+
+  function serializeScenario(): string {
+    const lines = moves.map((move) => {
+      if (move.kind === "signing") return `- sign ${move.label} at ${money(move.amount)}/yr`;
+      if (move.kind === "option_decision") return `- ${move.exercise ? "exercise" : "decline"} ${move.player}'s ${move.season} ${move.exercise ? "option" : "option"}`;
+      if (move.kind === "waive") return `- waive ${move.player}${move.stretch ? " using the stretch provision" : ""}`;
+      if (move.kind === "trade_out") return `- trade out ${move.player}`;
+      return `- trade in ${move.player}`;
+    });
+    return `Cap scenario for ${sheet?.team ?? team} (2026-27):\n${lines.join("\n")}\nPost-scenario payroll: ${scenario ? money(scenario.pay_after) : "not evaluated"}. Analyze this scenario: what restrictions trigger, what is the apron exposure, and what are the basketball consequences?`;
+  }
+
+  function saveToBoard() {
+    const boards = listBoards();
+    const board = boards[0];
+    if (!board) {
+      setSaveState("no board exists yet — create one in Boards first");
+      return;
+    }
+    const artifact = {
+      kind: "cap_scenario",
+      title: `${sheet?.team ?? team} cap scenario — ${moves.length} move${moves.length === 1 ? "" : "s"}`,
+      team: sheet?.team ?? team,
+      season: sheet?.season ?? "2026-27",
+      moves,
+      pay_after: scenario?.pay_after ?? null,
+      pinned_from: "cap_sheet_view",
+    };
+    const next = pinArtifact(board, artifact as never);
+    saveBoard(next);
+    setSaveState(`saved to "${board.title}"`);
+  }
+
+  function loadFromBoard() {
+    const boards = listBoards();
+    for (const board of boards) {
+      const pin = (board.pins ?? []).filter((p) => (p.artifact as { kind?: string }).kind === "cap_scenario").pop();
+      if (pin) {
+        const artifact = pin.artifact as { team?: string; moves?: ScenarioMove[] };
+        if (artifact.team && Array.isArray(artifact.moves)) {
+          setTeam(artifact.team);
+          setMoves(artifact.moves);
+          setSaveState(`loaded scenario from "${board.title}"`);
+          return;
+        }
+      }
+    }
+    setSaveState("no saved cap scenario found on any board");
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1100px] px-4 py-6 sm:px-8">
@@ -340,6 +391,31 @@ export default function CapSheetView() {
                       payroll after: {money(scenario.pay_after)}
                     </p>
                   )}
+                </div>
+              )}
+              {moves.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
+                  {onAsk && (
+                    <button
+                      className="h-7 rounded-[7px] bg-[var(--accent)] px-2.5 text-[11.5px] font-medium text-white hover:opacity-90"
+                      onClick={() => onAsk(serializeScenario())}
+                    >
+                      Ask about this scenario
+                    </button>
+                  )}
+                  <button
+                    className="h-7 rounded-[7px] border border-line px-2 text-[11.5px] text-ink-2 hover:bg-field"
+                    onClick={saveToBoard}
+                  >
+                    Save to board
+                  </button>
+                  <button
+                    className="h-7 rounded-[7px] border border-line px-2 text-[11.5px] text-ink-2 hover:bg-field"
+                    onClick={loadFromBoard}
+                  >
+                    Load saved
+                  </button>
+                  {saveState && <span className="w-full font-mono text-[10px] text-ink-3">{saveState}</span>}
                 </div>
               )}
               <form
