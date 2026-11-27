@@ -285,7 +285,10 @@ export function createProductServer(options: {
         const input = parseBody(partnersSchema, await body(req));
         const teams = (value: string | string[] | undefined) => Array.isArray(value) ? value.map(s => s.trim()).filter(Boolean).join(", ") : value ?? "";
         const result = await data.call("product_trade_partners", { player: input.player ?? "", season: input.season ?? "2026-27", teams: teams(input.teams), max_packages: input.max_packages ?? 3 });
-route("POST", /^\/api\/trade\/legs$/, async ({ req, res }) => { const input = parseBody(tradeLegsSchema, await body(req)); const result = await data.call("product_trade_legs", { legs: JSON.stringify(input.legs), season: input.season ?? "2026-27" }); json(res, result, result.ok === false ? 422 : 200); });
+route("POST", /^\/api\/trade\/legs$/, async ({ req, res }) => { const input = parseBody(tradeLegsSchema, await body(req)); const result = await data.call("product_trade_legs", { legs: JSON.stringify(input.legs), season: input.season ?? "2026-27" }); route("GET", /^\/api\/history\/career$/, async ({ res, url }) => { const result = await data.call("product_history_career", { player: (url.searchParams.get("player") ?? "").slice(0, 80) }); json(res, result, result.ok === false ? 422 : 200); });
+        route("GET", /^\/api\/history\/era-comps$/, async ({ res, url }) => { const result = await data.call("product_history_era_comps", { player_id: Number(url.searchParams.get("player_id") ?? 0), season: url.searchParams.get("season") ?? "", k: Number(url.searchParams.get("k") ?? 8), player: url.searchParams.get("player") ?? "", start_season: url.searchParams.get("start") ?? "", end_season: url.searchParams.get("end") ?? "" }); json(res, result, result.ok === false ? 422 : 200); });
+        route("GET", /^\/api\/history\/leaders$/, async ({ res, url }) => { const result = await data.call("product_history_leaders", { season: url.searchParams.get("season") ?? "", category: url.searchParams.get("category") ?? "pts" }); json(res, result, result.ok === false ? 422 : 200); });
+        json(res, result, result.ok === false ? 422 : 200); });
                 json(res, result, result.ok === false ? 422 : 200);
     });
     route("GET", /^\/api\/morning$/, async ({ res, url }) => {
