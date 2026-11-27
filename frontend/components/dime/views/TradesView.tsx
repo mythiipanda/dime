@@ -435,7 +435,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
           <div className="px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-ink-3">
             {abbr} roster {roster?.state === "ready" ? `· ${roster.season}` : ""}
           </div>
-          <div className="max-h-72 overflow-y-auto divide-y divide-line border-t border-line">
+          <div className="max-h-[max(18rem,52vh)] overflow-y-auto divide-y divide-line border-t border-line">
             {roster?.state === "loading" && <div className="px-3 py-2 text-xs text-ink-3">Loading roster…</div>}
             {roster?.state === "error" && (
               <div className="px-3 py-2 text-xs text-red">
