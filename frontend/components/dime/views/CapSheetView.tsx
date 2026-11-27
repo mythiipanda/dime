@@ -297,7 +297,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
               </label>
             </div>
             <div className="overflow-x-auto p-3">
-              <table className="w-full min-w-[760px] border-separate border-spacing-0 text-[12px]">
+              <table className="w-full min-w-[640px] border-separate border-spacing-0 text-[12px]">
                 <thead>
                   <tr>
                     <th className="sticky left-0 z-10 bg-surface px-2 py-1.5 text-left font-mono text-[10px] font-normal uppercase tracking-wide text-ink-3">
