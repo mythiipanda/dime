@@ -46,7 +46,7 @@ test("boardIntent strips evaluated output and display caching, keeping pure inte
 
 test("syncBoardObject creates a server object and retains the mapping + owner token", async () => {
   freshDom();
-  const posts: { body: { kind: string; payload: unknown }; headers: Record<string, string> }[] = [];
+  const posts: { body: { kind: string; payload: { template_id?: string } }; headers: Record<string, string> }[] = [];
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const url = String(input);

@@ -156,7 +156,7 @@ test("loadSharedScenario maps backend responses into the view states", async () 
     "archived",
   );
   assert.equal(
-    (await withFetch(async () => Response.json({ ...sharedObject, kind: "trade_scenario" }))).status,
+    (await withFetch(async () => Response.json({ ...sharedObject, kind: "board" }))).status,
     "unsupported",
   );
   const evalFailed = await withFetch(async (url) => {
@@ -165,4 +165,149 @@ test("loadSharedScenario maps backend responses into the view states", async () 
   });
   assert.equal(evalFailed.status, "ok");
   if (evalFailed.status === "ok") assert.equal(evalFailed.evaluation, null);
+});
+const tradeObject = {
+  kind: "trade_scenario",
+  title: "DAL/NYK construction",
+  payload: {
+    legs: [
+      { from: "DAL", to: "NYK", players: "Daniel Gafford", picks: [{ year: 2027, round: 1 }] },
+      { from: "NYK", to: "DAL", players: "Mitchell Robinson" },
+    ],
+    season: "2026-27",
+  },
+  schema_version: 1,
+  updated_at: "2026-11-27T12:00:00.000Z",
+  archived: false,
+};
+
+const tradeEvaluation = {
+  rows: [
+    { team: "DAL", incoming: 5400000, outgoing: 12400000, matching_ok: true, match_rule: "over cap: incoming within 125% + 100k", allowed_incoming: 15600000, over_apron1: false, over_apron2: false, hard_cap: null, issues: [] },
+    { team: "NYK", incoming: 12400000, outgoing: 5400000, matching_ok: false, match_rule: "apron team: exact matching required", allowed_incoming: 5400000, over_apron1: true, over_apron2: false, hard_cap: "apron1", issues: ["incoming salary exceeds apron matching"] },
+  ],
+  meta: { disclaimer: "Salary data as of snapshot", salary_date: "2026-06-15" },
+};
+
+test("shared trade construction renders legs, verdict, matching math and apron state read-only", async () => {
+  const { SharedTradeView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedTradeView object={tradeObject} evaluation={tradeEvaluation} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /DAL\/NYK construction/);
+    assert.match(text, /Daniel Gafford/);
+    assert.match(text, /Mitchell Robinson/);
+    assert.match(text, /Not legal as constructed/);
+    assert.match(text, /out \$12\.4M/);
+    assert.match(text, /in \$5\.4M/);
+    assert.match(text, /incoming salary exceeds apron matching/);
+    assert.match(text, /hard cap/);
+    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("shared trade construction without evaluation shows legs honestly labeled", async () => {
+  const { SharedTradeView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedTradeView object={tradeObject} evaluation={null} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /Daniel Gafford/);
+    assert.match(text, /without a legality verdict/);
+    assert.doesNotMatch(text, /Legal under current/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("loadSharedScenario dispatches trade_scenario to the legs evaluator with the stored legs", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const seen: string[] = [];
+  const result = await loadSharedScenario("http://backend", "tok", async (input, init) => {
+    const url = String(input);
+    seen.push(url);
+    if (url.includes("/api/trade/legs")) {
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.legs.length, 2);
+      assert.equal(body.legs[0].from, "DAL");
+      assert.equal(body.season, "2026-27");
+      return Response.json(tradeEvaluation);
+    }
+    return Response.json(tradeObject);
+  });
+  assert.equal(result.status, "ok-trade");
+  if (result.status === "ok-trade") {
+    assert.equal(result.object.payload.legs.length, 2);
+    assert.equal(result.evaluation?.rows?.length, 2);
+  }
+  assert.ok(seen.some((url) => url.endsWith("/s/tok")));
+});
+
+test("loadSharedScenario treats malformed trade payloads as unavailable", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const malformed = { ...tradeObject, payload: { legs: [{ from: "DAL" }], season: "2026-27" } };
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(malformed));
+  assert.equal(result.status, "unavailable");
+});
+const threadShared = {
+  kind: "thread_grant",
+  title: "shared analysis",
+  payload: { thread: true },
+  transcript: [
+    { question: "Who won the MVP race?", answer: "The case for the frontrunner rests on\nefficiency and team success.", tables: [{ tool: "get_awards", meta: { source: "warehouse", season: "2025-26" } }], created_at: "2026-11-27T10:00:00.000Z" },
+    { question: "Compare their shooting", answer: "Shot profiles diverge at the rim.", tables: [], created_at: "2026-11-27T10:05:00.000Z" },
+  ],
+  schema_version: 1,
+  updated_at: "2026-11-27T12:00:00.000Z",
+  archived: false,
+};
+
+test("shared thread renders transcript read-only with evidence attribution", async () => {
+  const { SharedThreadView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedThreadView object={threadShared} transcript={threadShared.transcript} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /shared analysis/);
+    assert.match(text, /Who won the MVP race\?/);
+    assert.match(text, /efficiency and team success/);
+    assert.match(text, /Compare their shooting/);
+    assert.match(text, /get_awards/);
+    assert.match(text, /snapshot of the thread/);
+    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("shared thread with empty transcript renders honest empty state", async () => {
+  const { SharedThreadView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedThreadView object={threadShared} transcript={[]} />);
+  try {
+    assert.match(mounted.host.textContent!, /no analyses to show/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("loadSharedScenario dispatches thread_grant to the transcript shape", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(threadShared));
+  assert.equal(result.status, "ok-thread");
+  if (result.status === "ok-thread") {
+    assert.equal(result.transcript.length, 2);
+    assert.equal(result.object.title, "shared analysis");
+  }
+});
+
+test("loadSharedScenario filters malformed transcript entries", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const malformed = { ...threadShared, transcript: [...threadShared.transcript, { question: 42 }] };
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(malformed));
+  assert.equal(result.status, "ok-thread");
+  if (result.status === "ok-thread") assert.equal(result.transcript.length, 2);
 });

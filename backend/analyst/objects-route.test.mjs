@@ -24,7 +24,21 @@ function fixture() {
     DIME_WORKSPACE_STORE: join(root, "workspaces.sqlite"),
     DIME_OBJECT_STORE: join(root, "objects.sqlite"),
   };
-  const data = { close: async () => {}, call: async () => ({ ok: true }) };
+  const now = Date.now();
+  const runs = [
+    { question: "older question", answer: "older answer", tables: [{ title: "t" }], suggestions: [], created_at: new Date(now - 10000).toISOString(), run_id: "r1" },
+    { question: "post-grant question", answer: "post-grant answer", tables: [], suggestions: [], created_at: new Date(now + 100000).toISOString(), run_id: "r2" },
+  ];
+  const data = {
+    close: async () => {},
+    call: async (op, args) => {
+      if (op === "product_runs") {
+        if (args.thread === "thread-owned") return { ok: true, runs };
+        return { ok: true, runs: [] };
+      }
+      return { ok: true };
+    },
+  };
   const analyst = createAnalyst({ env, resolveModel: () => { throw new Error("No provider required"); }, saveChat: async () => {}, saveRun: async () => {} });
   const server = createProductServer({ env, data, analyst, manifest: {} });
   return { server, root };
@@ -194,6 +208,57 @@ test("objects route contract: create, ownership, update, share rotation, public 
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+test("objects route contract: thread_grant stamping, ownership, immutability, transcript resolution", async () => {
+  const { server, root } = fixture();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const owner = "client-grant-owner";
+  const post = (path, payload, headers = {}) => fetch(url + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(payload) });
+  const patch = (path, payload, headers = {}) => fetch(url + path, { method: "PATCH", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(payload) });
+  try {
+    const unowned = await post("/api/objects", { kind: "thread_grant", title: "t", payload: { thread: "thread-not-owned" } }, { "x-dime-owner": owner });
+    assert.equal(unowned.status, 422);
+
+    const noThread = await post("/api/objects", { kind: "thread_grant", title: "t", payload: {} }, { "x-dime-owner": owner });
+    assert.equal(noThread.status, 422);
+
+    const created = await post("/api/objects", {
+      kind: "thread_grant",
+      title: "shared analysis",
+      payload: { thread: "thread-owned", owner: "attacker-injected", granted_before: "1999-01-01T00:00:00.000Z" },
+    }, { "x-dime-owner": owner });
+    assert.equal(created.status, 201);
+    const object = await created.json();
+    assert.equal(object.payload.thread, "thread-owned");
+    assert.equal(object.payload.owner, owner);
+    assert.ok(Date.parse(object.payload.granted_before) > Date.now() - 60000);
+
+    const immutable = await patch(`/api/objects/${object.object_id}`, { payload: { thread: "thread-owned", owner, granted_before: object.payload.granted_before } }, { "x-owner-token": object.owner_token });
+    assert.equal(immutable.status, 422);
+
+    const share = await fetch(`${url}/s/${object.read_token}`);
+    assert.equal(share.status, 200);
+    const shared = await share.json();
+    assert.equal(shared.kind, "thread_grant");
+    assert.ok(!("owner" in shared.payload), "public payload must strip owner identity");
+    assert.ok(Array.isArray(shared.transcript));
+    assert.equal(shared.transcript.length, 1, "post-grant runs are excluded");
+    assert.equal(shared.transcript[0].question, "older question");
+    assert.equal(shared.transcript[0].answer, "older answer");
+    assert.ok(!("run_id" in shared.transcript[0]), "run internals stripped");
+    assert.ok(!("owner" in shared.transcript[0]), "owner stripped from transcript rows");
+
+    const capShare = await post("/api/objects", { kind: "cap_scenario", title: "c", payload: scenario }, { "x-dime-owner": owner });
+    const capObject = await capShare.json();
+    const capShared = await (await fetch(`${url}/s/${capObject.read_token}`)).json();
+    assert.equal(capShared.kind, "cap_scenario");
+    assert.ok(!("transcript" in capShared), "non-grant kinds carry no transcript");
+  }
+  finally {
+    server.close();
     rmSync(root, { recursive: true, force: true });
   }
 });

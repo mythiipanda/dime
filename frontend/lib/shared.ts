@@ -16,16 +16,47 @@ export type SharedObject = {
   archived: boolean;
 };
 
-export type SharedScenarioState =
-  | { status: "ok"; object: SharedObject; evaluation: ScenarioResponse | null }
-  | { status: "archived"; object: SharedObject }
-  | { status: "not_found" }
-  | { status: "invalid" }
-  | { status: "unsupported"; kind: string }
-  | { status: "unavailable" };
+export type SharedTradeLeg = {
+  from: string;
+  to: string;
+  players?: string | string[];
+  picks?: Record<string, unknown>[];
+};
+
+export type SharedTradeObject = {
+  kind: string;
+  title: string;
+  payload: {
+    legs: SharedTradeLeg[];
+    season: string;
+  };
+  schema_version: number;
+  updated_at: string;
+  archived: boolean;
+};
+
+export type TradeLegTeamRow = {
+  team: string;
+  incoming?: number;
+  outgoing?: number;
+  matching_ok?: boolean;
+  match_rule?: string;
+  allowed_incoming?: number;
+  over_apron1?: boolean;
+  over_apron2?: boolean;
+  hard_cap?: string | null;
+  issues?: string[];
+};
+
+export type TradeLegsEvaluation = {
+  rows?: TradeLegTeamRow[];
+  meta?: { disclaimer?: string; salary_date?: string };
+  ok?: boolean;
+  error?: string;
+};
 
 export type SharedBoardObject = {
-  kind: "board";
+  kind: string;
   title: string;
   payload: {
     season: string;
@@ -38,59 +69,97 @@ export type SharedBoardObject = {
   archived: boolean;
 };
 
-export type SharedBoardState =
-  | { status: "ok"; object: SharedBoardObject; board: Board | null; metrics: BoardMetric[] }
-  | { status: "archived"; object: SharedBoardObject }
+function isBoardObject(value: { payload: Record<string, unknown> }): value is SharedBoardObject {
+  const payload = value.payload;
+  return (
+    typeof payload.season === "string"
+    && Array.isArray(payload.rows) && payload.rows.length > 0
+    && payload.rows.every((row) => row && typeof row === "object" && typeof (row as Record<string, unknown>).player_id === "number")
+    && Array.isArray(payload.columns) && payload.columns.length > 0
+    && payload.columns.every((column) => column && typeof column === "object" && typeof (column as Record<string, unknown>).metric_id === "string")
+  );
+}
+
+function isBoardFill(value: unknown): value is BoardFill {
+  return !!value && typeof value === "object" && (value as Record<string, unknown>).ok === true
+    && !!(value as Record<string, unknown>).cells && !!(value as Record<string, unknown>).players;
+}
+
+function isMetricList(value: unknown): value is { ok: true; metrics: BoardMetric[] } {
+  return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).metrics);
+}
+
+export type SharedScenarioState =
+  | { status: "ok"; object: SharedObject; evaluation: ScenarioResponse | null }
+  | { status: "ok-trade"; object: SharedTradeObject; evaluation: TradeLegsEvaluation | null }
+  | { status: "ok-thread"; object: SharedThreadObject; transcript: TranscriptEntry[] }
+  | { status: "ok-board"; object: SharedBoardObject; board: Board | null; metrics: BoardMetric[] }
+  | { status: "archived"; object: { kind: string; title: string } }
   | { status: "not_found" }
   | { status: "invalid" }
+  | { status: "unsupported"; kind: string }
   | { status: "unavailable" };
 
-function isSharedObject(value: unknown): value is SharedObject {
+function isEnvelope(value: unknown): value is { kind: string; title: string; payload: Record<string, unknown>; updated_at: string; archived: boolean } {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
-  const payload = candidate.payload as Record<string, unknown> | undefined;
   return (
     typeof candidate.kind === "string"
     && typeof candidate.title === "string"
     && typeof candidate.updated_at === "string"
     && typeof candidate.archived === "boolean"
-    && !!payload
-    && typeof payload.team === "string"
+    && !!candidate.payload
+    && typeof candidate.payload === "object"
+  );
+}
+
+function isCapObject(value: { payload: Record<string, unknown> }): value is SharedObject {
+  const payload = value.payload;
+  return (
+    typeof payload.team === "string"
     && typeof payload.season === "string"
     && Array.isArray(payload.moves)
   );
 }
 
-type RawShared = { status: number; body: unknown };
-
-const fetchSharedRaw = cache(async function fetchSharedRaw(backend: string, token: string, fetchImpl: typeof fetch = fetch): Promise<RawShared | null> {
-  try {
-    const response = await fetchImpl(`${backend}/s/${encodeURIComponent(token)}`);
-    if (response.status === 404) return { status: 404, body: null };
-    if (response.status === 422) return { status: 422, body: null };
-    if (!response.ok) return { status: response.status, body: null };
-    return { status: 200, body: await response.json() };
-  } catch {
-    return null;
-  }
-});
-
-function isSharedBoardObject(value: unknown): value is SharedBoardObject {
+function isTradeLeg(value: unknown): value is SharedTradeLeg {
   if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  const payload = candidate.payload as Record<string, unknown> | undefined;
+  const leg = value as Record<string, unknown>;
+  return typeof leg.from === "string" && typeof leg.to === "string";
+}
+
+function isTradeObject(value: { payload: Record<string, unknown> }): value is SharedTradeObject {
+  const payload = value.payload;
   return (
-    candidate.kind === "board"
-    && typeof candidate.title === "string"
-    && typeof candidate.updated_at === "string"
-    && typeof candidate.archived === "boolean"
-    && !!payload
-    && typeof payload.season === "string"
-    && Array.isArray(payload.rows)
-    && payload.rows.every((row) => row && typeof row === "object" && typeof (row as Record<string, unknown>).player_id === "number")
-    && Array.isArray(payload.columns)
-    && payload.columns.every((column) => column && typeof column === "object" && typeof (column as Record<string, unknown>).metric_id === "string")
+    typeof payload.season === "string"
+    && Array.isArray(payload.legs)
+    && payload.legs.every(isTradeLeg)
   );
+}
+
+function isTradeEvaluation(value: unknown): value is TradeLegsEvaluation {
+  return !!value && typeof value === "object" && (Array.isArray((value as Record<string, unknown>).rows) || typeof (value as Record<string, unknown>).error === "string");
+}
+
+export type TranscriptEntry = {
+  question: string;
+  answer: string;
+  tables: { tool?: string; meta?: { source?: string; season?: string; fetched_at?: string } }[];
+  created_at: string;
+};
+
+export type SharedThreadObject = {
+  kind: string;
+  title: string;
+  schema_version: number;
+  updated_at: string;
+  archived: boolean;
+};
+
+function isTranscriptEntry(value: unknown): value is TranscriptEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return typeof entry.question === "string" && typeof entry.answer === "string";
 }
 
 function isScenarioResponse(value: unknown): value is ScenarioResponse {
@@ -102,16 +171,100 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
   token: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<SharedScenarioState> {
-  const raw = await fetchSharedRaw(backend, token, fetchImpl);
-  if (!raw) return { status: "unavailable" };
-  if (raw.status === 404) return { status: "not_found" };
-  if (raw.status === 422) return { status: "invalid" };
-  if (raw.status !== 200) return { status: "unavailable" };
-  const envelope = raw.body as Record<string, unknown> | null;
-  if (envelope && typeof envelope.kind === "string" && envelope.kind !== "cap_scenario") return { status: "unsupported", kind: envelope.kind };
-  if (!isSharedObject(raw.body)) return { status: "unavailable" };
-  const object: SharedObject = raw.body;
-  if (object.archived) return { status: "archived", object };
+  let envelope: { kind: string; title: string; payload: Record<string, unknown>; updated_at: string; archived: boolean };
+  try {
+    const response = await fetchImpl(`${backend}/s/${encodeURIComponent(token)}`);
+    if (response.status === 404) return { status: "not_found" };
+    if (response.status === 422) return { status: "invalid" };
+    if (!response.ok) return { status: "unavailable" };
+    const body: unknown = await response.json();
+    if (!isEnvelope(body)) return { status: "unavailable" };
+    envelope = body;
+  } catch {
+    return { status: "unavailable" };
+  }
+  if (envelope.archived) return { status: "archived", object: envelope };
+
+  if (envelope.kind === "trade_scenario") {
+    if (!isTradeObject(envelope)) return { status: "unavailable" };
+    const object = envelope;
+    let evaluation: TradeLegsEvaluation | null = null;
+    try {
+      const response = await fetchImpl(`${backend}/api/trade/legs`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legs: object.payload.legs, season: object.payload.season }),
+        cache: "no-store",
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (isTradeEvaluation(body)) evaluation = body;
+    } catch {
+      evaluation = null;
+    }
+    return { status: "ok-trade", object, evaluation };
+  }
+
+  if (envelope.kind === "thread_grant") {
+    const body2 = envelope as unknown as Record<string, unknown>;
+    const transcript = Array.isArray(body2.transcript) ? body2.transcript.filter(isTranscriptEntry) : [];
+    const object: SharedThreadObject = {
+      kind: envelope.kind,
+      title: envelope.title,
+      schema_version: typeof body2.schema_version === "number" ? body2.schema_version : 1,
+      updated_at: envelope.updated_at,
+      archived: envelope.archived,
+    };
+    return { status: "ok-thread", object, transcript };
+  }
+
+  if (envelope.kind === "board") {
+    if (!isBoardObject(envelope)) return { status: "unavailable" };
+    const object = envelope;
+    let board: Board | null = null;
+    let metrics: BoardMetric[] = [];
+    try {
+      const [fillResponse, metricsResponse] = await Promise.all([
+        fetchImpl(`${backend}/api/boards/fill`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            season: object.payload.season,
+            player_ids: object.payload.rows.map((row) => row.player_id),
+            metric_ids: object.payload.columns.map((column) => column.metric_id),
+          }),
+          cache: "no-store",
+        }),
+        fetchImpl(`${backend}/api/boards/metrics`, { cache: "no-store" }),
+      ]);
+      const fillBody: unknown = await fillResponse.json().catch(() => null);
+      const metricsBody: unknown = await metricsResponse.json().catch(() => null);
+      if (isMetricList(metricsBody)) metrics = metricsBody.metrics;
+      if (isBoardFill(fillBody)) {
+        board = {
+          id: "shared",
+          title: object.title,
+          season: object.payload.season,
+          rows: object.payload.rows.map((row) => ({
+            player_id: row.player_id,
+            name: fillBody.players[String(row.player_id)]?.name || `Player ${row.player_id}`,
+            team: fillBody.players[String(row.player_id)]?.team || "",
+          })),
+          columns: object.payload.columns.map((column) => ({ metric_id: column.metric_id })),
+          cells: fillBody.cells,
+          created_at: object.updated_at,
+          updated_at: object.updated_at,
+          ...(object.payload.template_id ? { template_id: object.payload.template_id } : {}),
+        };
+      }
+    } catch {
+      board = null;
+    }
+    return { status: "ok-board", object, board, metrics };
+  }
+
+  if (envelope.kind !== "cap_scenario") return { status: "unsupported", kind: envelope.kind };
+  if (!isCapObject(envelope)) return { status: "unavailable" };
+  const object = envelope;
 
   let evaluation: ScenarioResponse | null = null;
   try {
@@ -132,70 +285,4 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
     evaluation = null;
   }
   return { status: "ok", object, evaluation };
-});
-
-function isBoardFill(value: unknown): value is BoardFill {
-  return !!value && typeof value === "object" && (value as Record<string, unknown>).ok === true
-    && !!(value as Record<string, unknown>).cells && !!(value as Record<string, unknown>).players;
-}
-
-function isMetricList(value: unknown): value is { ok: true; metrics: BoardMetric[] } {
-  return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).metrics);
-}
-
-export const loadSharedBoard = cache(async function loadSharedBoard(
-  backend: string,
-  token: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<SharedBoardState> {
-  const raw = await fetchSharedRaw(backend, token, fetchImpl);
-  if (!raw) return { status: "unavailable" };
-  if (raw.status === 404) return { status: "not_found" };
-  if (raw.status === 422) return { status: "invalid" };
-  if (raw.status !== 200) return { status: "unavailable" };
-  if (!isSharedBoardObject(raw.body)) return { status: "unavailable" };
-  const object: SharedBoardObject = raw.body;
-  if (object.archived) return { status: "archived", object };
-
-  let board: Board | null = null;
-  let metrics: BoardMetric[] = [];
-  try {
-    const [fillResponse, metricsResponse] = await Promise.all([
-      fetchImpl(`${backend}/api/boards/fill`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          season: object.payload.season,
-          player_ids: object.payload.rows.map((row) => row.player_id),
-          metric_ids: object.payload.columns.map((column) => column.metric_id),
-        }),
-        cache: "no-store",
-      }),
-      fetchImpl(`${backend}/api/boards/metrics`, { cache: "no-store" }),
-    ]);
-    const fillBody: unknown = await fillResponse.json().catch(() => null);
-    const metricsBody: unknown = await metricsResponse.json().catch(() => null);
-    if (isMetricList(metricsBody)) metrics = metricsBody.metrics;
-    if (isBoardFill(fillBody)) {
-      const now = object.updated_at;
-      board = {
-        id: "shared",
-        title: object.title,
-        season: object.payload.season,
-        rows: object.payload.rows.map((row) => ({
-          player_id: row.player_id,
-          name: fillBody.players[String(row.player_id)]?.name || `Player ${row.player_id}`,
-          team: fillBody.players[String(row.player_id)]?.team || "",
-        })),
-        columns: object.payload.columns.map((column) => ({ metric_id: column.metric_id })),
-        cells: fillBody.cells,
-        created_at: now,
-        updated_at: now,
-        ...(object.payload.template_id ? { template_id: object.payload.template_id } : {}),
-      };
-    }
-  } catch {
-    board = null;
-  }
-  return { status: "ok", object, board, metrics };
 });
