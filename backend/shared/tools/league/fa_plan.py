@@ -11,28 +11,33 @@ _FA_COLS = ["PLAYER_NAME", "FA_TYPE", "PRIOR_SALARY", "CAP_HOLD_EST",
             "BREF_SLUG"]
 _ROOM_COLS = ["TEAM", "COMMITTED_SALARY", "PENDING_OPTION_SALARY",
               "FA_HOLDS_EST", "INCOMPLETE_ROSTER_CHARGES",
-              "PROJECTED_ROOM", "MAX_ROOM", "PROJECTED_CAP",
+              "ROSTER_CHARGE_MINIMUM", "PROJECTED_ROOM", "MAX_ROOM",
+              "PROJECTED_CAP",
               "PROJECTED_TAX", "PROJECTED_APRON1", "PROJECTED_APRON2",
               "NTMLE_EST", "BAE_EST", "ROOM_EST", "TMLE_EST",
               "PLAYERS_UNDER_CONTRACT", "PENDING_OPTIONS", "ESTIMATED"]
 
 _EXTENSION_ELIGIBLE = {"ufa", "rfa"}
 _BIRD_HOLD_PCT = 1.5
-_SEED_ROSTER_SPOTS = 15
+_ROSTER_SPOTS = 12
+_FALLBACK_ROSTER_CHARGE_MINIMUM = 1_493_539
 
 
 def _rows(con, sql: str, params: list, cols: list[str]) -> list[dict]:
     return [dict(zip(cols, r)) for r in con.execute(sql, params).fetchall()]
 
 
+def _roster_charge_minimum(room: dict) -> int:
+    value = room.get("ROSTER_CHARGE_MINIMUM")
+    if value is None:
+        return _FALLBACK_ROSTER_CHARGE_MINIMUM
+    return int(value)
+
+
 def _scenario_roster_charge(room: dict, retained_hold_count: int) -> int:
     players = int(room.get("PLAYERS_UNDER_CONTRACT") or 0)
-    base_open = max(0, _SEED_ROSTER_SPOTS - players)
-    base_charge = int(room.get("INCOMPLETE_ROSTER_CHARGES") or 0)
-    if base_open <= 0 or base_charge <= 0:
-        return 0
-    open_spots = max(0, _SEED_ROSTER_SPOTS - players - retained_hold_count)
-    return int(round(base_charge * open_spots / base_open))
+    open_spots = max(0, _ROSTER_SPOTS - players - retained_hold_count)
+    return open_spots * _roster_charge_minimum(room)
 
 
 def _scenario_values(room: dict, retained_holds: int,
@@ -167,9 +172,11 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                  "separate all-options-declined upper bound and per-option "
                  "outcomes are not modeled"},
         {"rule": "roster charges", "checked": True,
-         "note": "scenario charges follow the seeded warehouse's 15-spot "
-                 "incomplete-roster approximation and count each retained "
-                 "positive cap hold as one occupied roster spot"},
+         "note": "scenario charges fill offseason rosters to 12 at the "
+                 "target-season rookie minimum stored in silver_cap_room "
+                 "and count each retained positive cap hold as one "
+                 "occupied roster spot; legacy rows without that column "
+                 "use the 1,493,539 projection as an approximation"},
         {"rule": "rights not modeled", "checked": True,
          "note": "RFA offer-sheet matching, extension deadlines, BYC and "
                  "sign-and-trade mechanics out of scope; "
@@ -195,6 +202,12 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                "roster_charges":
                    room.get("INCOMPLETE_ROSTER_CHARGES")
                if room else None,
+               "roster_charge_minimum": _roster_charge_minimum(room)
+               if room else None,
+               "roster_charge_minimum_source": (
+                   "warehouse"
+                   if room and room.get("ROSTER_CHARGE_MINIMUM") is not None
+                   else "legacy_approximation" if room else None),
                "max_room": room.get("MAX_ROOM") if room else None,
                "players_under_contract":
                    room.get("PLAYERS_UNDER_CONTRACT") if room else None,
@@ -212,9 +225,11 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                     "formula": "scenario room = PROJECTED_ROOM - retained "
                                "cap holds + base roster charges - scenario "
                                "roster charges; pending options stay "
-                               "exercised; scenario charges use the "
-                               "seeder's 15-spot model with retained holds "
-                               "counted as occupied spots; hold = 150% x "
+                               "exercised; scenario charges fill rosters "
+                               "to 12 at ROSTER_CHARGE_MINIMUM when present "
+                               "and otherwise use the 1,493,539 fallback "
+                               "approximation; retained positive holds "
+                               "count as occupied spots; hold = 150% x "
                                "prior salary",
                     "disclaimer": "Planning-grade estimates - hold, room "
                     "and exception figures are CBA-formula estimates, not "
