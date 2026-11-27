@@ -60,6 +60,8 @@ type LegTeamRows = {
   issues?: string[];
 };
 
+type TpeRow = { team: string; amount: number; kind?: string; origin_year?: number; exactness?: string };
+
 type LegsResponse = {
   rows?: LegTeamRows[];
   meta?: { disclaimer?: string; salary_date?: string; rules?: unknown };
@@ -120,6 +122,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
   const [check, setCheck] = useState<CheckState>({ state: "idle" });
   const [fillers, setFillers] = useState<FillersState>({ state: "idle" });
   const [snapshot, setSnapshot] = useState<ScenarioSnapshot | null>(null);
+  const [inventory, setInventory] = useState<TpeRow[]>([]);
   const [loadNote, setLoadNote] = useState<string | null>(null);
   const checkSeq = useRef(0);
 
@@ -155,7 +158,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
     }
     const seq = ++checkSeq.current;
     setCheck({ state: "loading" });
-    if (!multi) {
+    if (!multi && inventory.length === 0) {
       fetch(`${BACKEND}${apiPath("/trade/check")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -184,7 +187,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
     fetch(`${BACKEND}${apiPath("/trade/legs")}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ legs, season: TRADE_SEASON }),
+      body: JSON.stringify({ legs, season: TRADE_SEASON, tpes: inventory.length ? inventory : undefined }),
     })
       .then(response => response.json().then(data => ({ status: response.status, data })))
       .then(({ status, data }: { status: number; data: LegsResponse }) => {
@@ -208,7 +211,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       .catch(() => {
         if (checkSeq.current === seq) setCheck({ state: "error", error: "Could not reach the backend" });
       });
-  }, [pkgs, teams, multi]);
+  }, [pkgs, teams, multi, inventory]);
 
   const setPkgAt = useCallback((index: number, next: (previous: Package) => Package) => {
     setPkgs(previous => previous.map((pkg, i) => (i === index ? next(pkg) : pkg)));
@@ -373,6 +376,8 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       setTeams(artifact.teams.slice());
       setPkgs(artifact.packages.map(pkg => ({ players: (pkg.players ?? []).slice(), picks: (pkg.picks ?? []).slice() })));
       setSnapshot({ teams: artifact.teams.slice(), packages: artifact.packages, season: artifact.season, verdict: artifact.verdict ?? null });
+      const carried = (artifact as unknown as { tpes?: TpeRow[] }).tpes;
+      if (Array.isArray(carried)) setInventory(carried.filter(row => row && typeof row.team === "string" && typeof row.amount === "number"));
       setLoadNote(`loaded "${pin.artifact.title}" from "${board.title}"`);
       return;
     }
@@ -573,7 +578,13 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             {payroll.tpeCreation && (
               <div className="mt-1 rounded-[6px] border border-line bg-field px-2 py-1 text-[11px] leading-snug text-ink-2">
                 <span className="font-mono text-[10px] uppercase tracking-wider text-accent">trade exception</span>{" "}
-                {payroll.tpeCreation.copy}
+                {payroll.tpeCreation.copy}{" "}
+                <button
+                  className="font-mono text-[10px] text-accent underline underline-offset-2 hover:text-ink"
+                  onClick={() => setInventory(rows => [...rows, { team: abbr, amount: payroll.tpeCreation!.amount, kind: "ordinary", exactness: "scenario_derived" }])}
+                >
+                  carry into inventory
+                </button>
               </div>
             )}
           </div>
@@ -595,9 +606,38 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             {leg.tpe_creation && (
               <div className="mt-1 rounded-[6px] border border-line bg-field px-2 py-1 text-[11px] leading-snug text-ink-2">
                 <span className="font-mono text-[10px] uppercase tracking-wider text-accent">trade exception</span>{" "}
-                {leg.tpe_creation.copy}
+                {leg.tpe_creation.copy}{" "}
+                <button
+                  className="font-mono text-[10px] text-accent underline underline-offset-2 hover:text-ink"
+                  onClick={() => setInventory(rows => [...rows, { team: abbr, amount: leg.tpe_creation!.amount, kind: "ordinary", exactness: "scenario_derived" }])}
+                >
+                  carry into inventory
+                </button>
               </div>
             )}
+          </div>
+        )}
+        {inventory.some(row => row.team === abbr) && (
+          <div className="rounded-card border border-line bg-surface px-3 py-2 text-xs shadow-hairline">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-3">exception inventory</span>
+              <span className="font-mono text-[10px] text-ink-3">applied to evaluation</span>
+            </div>
+            <div className="mt-1 space-y-1">
+              {inventory.map((row, index) => row.team === abbr && (
+                <div key={index} className="flex items-center justify-between gap-2 text-[11px] text-ink-2">
+                  <span>
+                    {money(row.amount / 1_000_000)} {row.kind ?? "ordinary"} exception
+                    <span className="ml-1 text-ink-3">{(row.exactness ?? "user_declared").replace(/_/g, " ")}</span>
+                  </span>
+                  <button
+                    className="font-mono text-[10px] text-ink-3 hover:text-red"
+                    onClick={() => setInventory(rows => rows.filter((_, at) => at !== index))}
+                    title="Remove from inventory"
+                  >×</button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {(leg || check.state === "ok") && (

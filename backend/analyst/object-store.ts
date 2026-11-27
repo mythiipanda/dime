@@ -37,7 +37,14 @@ export const tradeScenarioPayloadSchema = Type.Object({
         players: Type.Optional(Type.Union([Type.String({ maxLength: 600 }), Type.Array(Type.String({ minLength: 1, maxLength: 120 }), { maxItems: 12 })])),
         picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 }))
     }, { additionalProperties: false }), { minItems: 1, maxItems: 8 }),
-    season: Type.String({ minLength: 1, maxLength: 12 })
+    season: Type.String({ minLength: 1, maxLength: 12 }),
+    tpes: Type.Optional(Type.Array(Type.Object({
+        team: Type.String({ minLength: 2, maxLength: 4 }),
+        amount: Type.Integer({ minimum: 1 }),
+        kind: Type.Optional(Type.String({ maxLength: 24 })),
+        origin_year: Type.Optional(Type.Integer({ minimum: 2000, maximum: 2100 })),
+        exactness: Type.Optional(Type.String({ maxLength: 32 }))
+    }, { additionalProperties: false }), { maxItems: 30 }))
 }, { additionalProperties: false });
 
 export const artifactRefPayloadSchema = Type.Object({

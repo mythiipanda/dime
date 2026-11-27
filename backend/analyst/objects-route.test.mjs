@@ -69,7 +69,15 @@ test("objects route contract: trade_scenario kind validates legs payload", async
       const response = await post("/api/objects", bad, { "x-dime-owner": owner });
       assert.equal(response.status, 422, JSON.stringify(bad));
     }
-    const created = await post("/api/objects", { kind: "trade_scenario", title: "DAL/NYK construction", payload: trade }, { "x-dime-owner": owner });
+    for (const badTpe of [
+      { kind: "trade_scenario", title: "t", payload: { ...trade, tpes: [{ team: "DAL" }] } },
+      { kind: "trade_scenario", title: "t", payload: { ...trade, tpes: [{ team: "DAL", amount: 0 }] } },
+      { kind: "trade_scenario", title: "t", payload: { ...trade, tpes: [{ team: "DAL", amount: 1000, bogus: 1 }] } },
+    ]) {
+      const response = await post("/api/objects", badTpe, { "x-dime-owner": owner });
+      assert.equal(response.status, 422, JSON.stringify(badTpe));
+    }
+    const created = await post("/api/objects", { kind: "trade_scenario", title: "DAL/NYK construction", payload: { ...trade, tpes: [{ team: "DAL", amount: 10_000_000, kind: "ordinary", exactness: "scenario_derived" }] } }, { "x-dime-owner": owner });
     assert.equal(created.status, 201);
     const object = await created.json();
     assert.ok(object.object_id);
@@ -79,6 +87,9 @@ test("objects route contract: trade_scenario kind validates legs payload", async
     assert.equal(shared.kind, "trade_scenario");
     assert.equal(shared.payload.legs.length, 2);
     assert.equal(shared.payload.season, "2026-27");
+    assert.equal(shared.payload.tpes.length, 1);
+    assert.equal(shared.payload.tpes[0].amount, 10_000_000);
+    assert.equal(shared.payload.tpes[0].exactness, "scenario_derived");
   }
   finally {
     server.close();
