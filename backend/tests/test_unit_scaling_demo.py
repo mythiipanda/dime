@@ -32,12 +32,16 @@ def _draft_con():
     return con
 
 
-def _draft_board_fixture():
+def _run_draft_board(con):
     from analyst.direct_data import _draft_board
+    tables = {r[0] for r in con.execute('SHOW TABLES').fetchall()}
+    return _draft_board(con, tables, '')
+
+
+def _draft_board_fixture():
     con = _draft_con()
     try:
-        tables = {r[0] for r in con.execute('SHOW TABLES').fetchall()}
-        return _draft_board(con, tables, '')
+        return _run_draft_board(con)
     finally:
         con.close()
 
@@ -45,8 +49,11 @@ def _draft_board_fixture():
 def test_draft_board_selects_one_board_and_dedupes_prospect_slugs():
     board = _draft_board_fixture()
     rows = board['rows']
-    assert [(r['pick'], r['name']) for r in rows] == [
+    assert board['board'] == 'big_board'
+    assert board['order_semantics'] == 'rank'
+    assert [(r['board_order'], r['name']) for r in rows] == [
         (1, 'Cam Prospect'), (2, 'Other Wing'), (3, 'Big Board Only')]
+    assert [r['pick'] for r in rows] == [r['board_order'] for r in rows]
     assert 'Mock Only' not in {r['name'] for r in rows}
 
 
@@ -63,3 +70,38 @@ def test_draft_board_stats_use_school_to_break_name_collision():
     wing = next(r for r in board['rows'] if r['name'] == 'Other Wing')
     assert wing['pts'] == 22.1
     assert wing['usg'] == 27.4
+
+
+def test_draft_board_mock_only_fallback_declares_pick_semantics():
+    con = _draft_con()
+    try:
+        con.execute("DELETE FROM silver_draft_boards WHERE BOARD = 'big_board'")
+        board = _run_draft_board(con)
+    finally:
+        con.close()
+    assert board['board'] == 'mock_draft'
+    assert board['order_semantics'] == 'pick'
+    assert [(r['board_order'], r['name']) for r in board['rows']] == [
+        (1, 'Cam Prospect'), (4, 'Mock Only')]
+
+
+def test_draft_board_unresolved_same_name_collision_stays_stats_missing():
+    con = _draft_con()
+    try:
+        con.execute(
+            "UPDATE silver_draft_boards SET SCHOOL = 'Gonzaga' "
+            "WHERE BOARD = 'big_board' AND PLAYER_NAME = 'Other Wing'")
+        board = _run_draft_board(con)
+    finally:
+        con.close()
+    wing = next(r for r in board['rows'] if r['name'] == 'Other Wing')
+    assert wing['pts'] is None
+    assert wing['usg'] is None
+
+
+def test_prospect_usg_column_semantics_declare_percent_point_scale():
+    from shared.tools.league.sql_schema import _column_semantics
+    unit, note = _column_semantics('silver_prospect_stats', 'USG')
+    assert unit == 'pct'
+    assert '0-100' in note
+    assert 'not a 0-1 fraction' in note

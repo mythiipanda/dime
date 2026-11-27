@@ -956,10 +956,12 @@ def _draft_board(con, tables: set, season: str) -> dict:
         s = _match_stats(r[1], r[3])
         stat_values = (s[2], s[3], s[4], s[5], s[6], s[7]) if s else (None,) * 6
         rows.append(tuple(r) + stat_values)
-    board = [{"pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
+    board = [{"board_order": int(r[0]), "pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
               "gp": r[4], "pts": r[5], "reb": r[6], "ast": r[7], "ts_pct": r[8], "usg": r[9]}
              for r in rows]
-    return {"ok": bool(board), "season": use, "rows": board, "provenance": cite,
+    order_semantics = "rank" if board_kind == "big_board" else "pick"
+    return {"ok": bool(board), "season": use, "board": board_kind, "order_semantics": order_semantics,
+            "rows": board, "provenance": cite,
             **({"error": "no board rows for season"} if not board else {})}
 
 def _draft_free_agents(con, tables: set) -> dict:

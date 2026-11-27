@@ -220,9 +220,9 @@ test("Compare view surfaces the backend error", async () => {
 const draftFixture = {
   ok: true, team: "NYK", season: "",
   blocks: {
-    board: { ok: true, season: "2027-28", rows: [
-      { pick: 1, name: "AJ Dybantsa", position: "F", school: "BYU", gp: 30, pts: 24.1, reb: 6.8, ast: 3.2, ts_pct: 0.61, usg: 31.0 },
-      { pick: 2, name: "Darryn Peterson", position: "G", school: "Kansas", gp: 28, pts: 21.4, reb: 4.0, ast: 4.8, ts_pct: 0.58, usg: 28.0 },
+    board: { ok: true, season: "2027-28", board: "big_board" as const, order_semantics: "rank" as const, rows: [
+      { board_order: 1, pick: 1, name: "AJ Dybantsa", position: "F", school: "BYU", gp: 30, pts: 24.1, reb: 6.8, ast: 3.2, ts_pct: 0.61, usg: 31.0 },
+      { board_order: 2, pick: 2, name: "Darryn Peterson", position: "G", school: "Kansas", gp: 28, pts: 21.4, reb: 4.0, ast: 4.8, ts_pct: 0.58, usg: 28.0 },
     ], provenance: { table: "silver_draft_boards + silver_prospect_stats", as_of: "2026-09-10T04:00:00Z" } },
     free_agents: { ok: true, rows: [
       { name: "Trae Young", team: "ATL", fa_type: "ufa", prior_salary: 45999600, cap_hold: 59799480 },
@@ -250,8 +250,12 @@ test("Draft view renders prospect board, free agents, cap room and fit with prov
     }
     return Response.json({ ok: true });
   }, async host => {
+    assert.match(host.textContent!, /Big board · 2027-28/);
+    assert.match(host.textContent!, /Big-board population · order is a talent rank, not team placement/);
+    assert.equal(host.querySelector("th")!.textContent, "Rank");
     assert.match(host.textContent!, /AJ Dybantsa/);
     assert.match(host.textContent!, /BYU/);
+    assert.match(host.textContent!, /61\.0%/);
     assert.match(host.textContent!, /31\.0%/);
     assert.doesNotMatch(host.textContent!, /3100\.0%/);
     assert.match(host.textContent!, /Trae Young/);
@@ -262,6 +266,16 @@ test("Draft view renders prospect board, free agents, cap room and fit with prov
     assert.match(host.textContent!, /silver_free_agents/);
     assert.match(host.textContent!, /silver_cap_room/);
     assert.match(host.textContent!, /silver_team_ratings/);
+  });
+});
+
+test("Draft view labels a mock draft as team-placement picks", async () => {
+  const mockFixture = { ...draftFixture, blocks: { ...draftFixture.blocks,
+    board: { ...draftFixture.blocks.board, board: "mock_draft" as const, order_semantics: "pick" as const } } };
+  await mount(<DraftView initialTeam="NYK" />, async () => Response.json(mockFixture), async host => {
+    assert.match(host.textContent!, /Mock draft · 2027-28/);
+    assert.match(host.textContent!, /Mock-draft population · order is a projected team-placement pick/);
+    assert.equal(host.querySelector("th")!.textContent, "Pick");
   });
 });
 
