@@ -45,7 +45,7 @@ export type CapSheetResponse = {
 };
 
 export type ScenarioMove = {
-  kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision" | "extend";
+  kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision" | "extend" | "renounce";
   label?: string;
   amount?: number;
   player?: string;

@@ -289,3 +289,99 @@ def test_hard_cap_violation_fires_over_first_apron():
     y1 = block(out, "2026-27")
     assert y1["pay_after"] == 233_000_000
     assert "hard-capped at the first apron" in y1["hard_cap_violation"]
+
+
+def memory_con_with_holds(fa_rows):
+    con = memory_con()
+    con.execute(
+        "CREATE TABLE silver_free_agents ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, BREF_SLUG VARCHAR, FA_YEAR BIGINT, "
+        "FA_TYPE VARCHAR, PRIOR_SALARY BIGINT, CAP_HOLD_EST BIGINT)")
+    con.executemany("INSERT INTO silver_free_agents VALUES (?, ?, ?, ?, ?, ?, ?)", fa_rows)
+    return con
+
+
+def test_cap_holds_enter_base_season_payroll_only():
+    con = memory_con_with_holds([("Departed", "TST", "depart01", 2026, "ufa", 15_000_000, 20_000_000)])
+    try:
+        out = project(con, [])
+    finally:
+        con.close()
+    assert out["ok"] is True
+    base = block(out, "2026-27")
+    assert base["pay_before"] == 50_000_000
+    assert base["cap_holds"] == 20_000_000
+    assert base["cap_hold_details"][0]["player"] == "Departed"
+    assert base["cap_hold_details"][0]["amount"] == 20_000_000
+    assert block(out, "2027-28")["pay_before"] == 30_000_000
+    assert "cap_holds" not in block(out, "2027-28")
+    assert any("cap holds are included" in d for d in out["disclosures"])
+
+
+def test_renounce_releases_hold_and_ordering_is_sensitive():
+    con = memory_con_with_holds([("Departed", "TST", "depart01", 2026, "ufa", 15_000_000, 20_000_000)])
+    try:
+        room_before = 164_961_000 - 50_000_000
+        signing = room_before + 10_000_000
+        out = project(con, [
+            {"kind": "renounce", "player": "Departed"},
+            {"kind": "signing", "amount": signing},
+        ])
+        out_reversed = project(con, [
+            {"kind": "signing", "amount": signing},
+            {"kind": "renounce", "player": "Departed"},
+        ])
+    finally:
+        con.close()
+    base = block(out, "2026-27")
+    renounce_effect = next(e for e in base["effects"] if e["kind"] == "renounce")
+    assert renounce_effect["delta"] == -20_000_000
+    assert base["ordering_notes"] == []
+    reversed_base = block(out_reversed, "2026-27")
+    assert len(reversed_base["ordering_notes"]) == 1
+    assert "order-dependent" in reversed_base["ordering_notes"][0]
+
+
+def test_renounce_without_hold_errors_honestly():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "renounce", "player": "Alpha"}])
+    finally:
+        con.close()
+    assert any("no active cap hold" in e["error"] for e in out["errors"])
+
+
+def test_renounce_in_forward_season_applies_where_the_hold_lives():
+    con = memory_con_with_holds([("Departing", "TST", "depart02", 2027, "ufa", 15_000_000, 18_000_000)])
+    try:
+        out = project(con, [{"kind": "renounce", "player": "Departing", "season": "2027-28"}])
+    finally:
+        con.close()
+    forward = block(out, "2027-28")
+    assert forward["pay_before"] == 48_000_000
+    assert forward["cap_holds"] == 18_000_000
+    renounce_effect = next(e for e in forward["effects"] if e["kind"] == "renounce")
+    assert renounce_effect["delta"] == -18_000_000
+    assert forward["pay_after"] == 30_000_000
+    assert out["errors"] == []
+
+
+def test_renounce_in_season_without_a_hold_errors_honestly():
+    con = memory_con_with_holds([("Departed", "TST", "depart01", 2026, "ufa", 15_000_000, 20_000_000)])
+    try:
+        out = project(con, [{"kind": "renounce", "player": "Departed", "season": "2027-28"}])
+    finally:
+        con.close()
+    assert any("no active cap hold" in e["error"] for e in out["errors"])
+
+
+def test_double_renounce_errors():
+    con = memory_con_with_holds([("Departed", "TST", "depart01", 2026, "ufa", 15_000_000, 20_000_000)])
+    try:
+        out = project(con, [
+            {"kind": "renounce", "player": "Departed"},
+            {"kind": "renounce", "player": "Departed"},
+        ])
+    finally:
+        con.close()
+    assert any("already renounced" in e["error"] for e in out["errors"])

@@ -3,6 +3,7 @@ from typing import Any
 
 from ...contracts import canonical_team_abbr, salary_records
 from ..cap_rules import apron_state, payroll_proxy_meta, roster_issues
+from .cap_hold_derivation import derive_cap_holds, hold_amount
 from .cap_sheet import cap_lines_for_season
 from .cba_cap import _locate_player_team, _match_trade_players
 from .waivers import player_contract_tail, waiver_dead_money
@@ -203,6 +204,58 @@ def _extend_effects(raw: dict[str, Any], index: int, target: str,
     return effects, None
 
 
+def _season_start_year(season: str) -> int | None:
+    try:
+        return int(str(season)[:4])
+    except (TypeError, ValueError):
+        return None
+
+
+def _season_holds(con, team: str, season: str) -> dict[str, Any]:
+    year = _season_start_year(season)
+    if year is None:
+        return {"rows": [], "total": 0, "exactness": "unknown", "source": "invalid season"}
+    payload = derive_cap_holds(con, year, team)
+    meta = payload.get("meta") or {}
+    rows = payload.get("rows") or []
+    active = [row for row in rows
+              if str(row.get("dependency") or "") == "active_expired_contract"
+              or str(row.get("dependency") or "") == "active_type_unknown"]
+    if not active:
+        active = rows
+    total = int(payload.get("active_total") or 0)
+    status = str(meta.get("derivation_status") or "unavailable")
+    exactness = "estimated" if status == "calculator_derived" else "unvalidated"
+    if int(payload.get("unknown_count") or 0) > 0:
+        exactness = "partially_unknown"
+    return {"rows": active, "total": total, "exactness": exactness,
+            "source": status,
+            "unknown_count": int(payload.get("unknown_count") or 0)}
+
+
+def _renounce_effect(holds: dict[str, Any], raw: dict[str, Any], index: int) -> tuple[dict[str, Any] | None, str | None]:
+    player = str(raw.get("player") or "").strip().lower()
+    if not player:
+        return None, "renounce needs a player"
+    match = None
+    for row in holds["rows"]:
+        name = str(row.get("PLAYER_NAME") or row.get("player") or "").lower()
+        if player in name or name in player:
+            match = row
+            break
+    if match is None:
+        return None, f"{raw.get('player')} has no active cap hold to renounce — renounce applies to expired contracts with retained rights"
+    amount = hold_amount(match)
+    if not amount:
+        return None, f"{match.get('PLAYER_NAME')}'s hold amount is unknown — the derivation could not price it, so renouncing is honestly unavailable rather than zero-freed"
+    name = str(match.get("PLAYER_NAME") or match.get("player"))
+    return {"move": index, "kind": "renounce",
+            "detail": f"renounce {name} — cap hold released",
+            "delta": -amount, "roster_delta": 0,
+            "exactness": holds["exactness"] if holds["exactness"] in ("estimated", "partially_unknown") else "unvalidated",
+            "player_key": name.lower()}, None
+
+
 def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     team = str(payload.get("team") or "").strip().upper()
     base_season = str(payload.get("season") or "").strip() or "2026-27"
@@ -224,6 +277,12 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
 
     schedules = _player_schedules(con, base_season)
     baseline = _team_baseline(con, team, schedules, seasons)
+    holds_by_season = {season: _season_holds(con, team, season) for season in seasons}
+    for season, holds in holds_by_season.items():
+        if holds["total"]:
+            entry = baseline.get(season)
+            if entry is not None:
+                entry["payroll"] = int(entry["payroll"]) + holds["total"]
 
     errors: list[dict[str, str]] = []
     warnings: list[str] = []
@@ -321,6 +380,17 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                                     "detail": f"{schedule['player']} option declined",
                                     "delta": -salary_x, "roster_delta": -1,
                                     "exactness": "exact"})
+        elif kind == "renounce":
+            effect, error = _renounce_effect(holds_by_season.get(target) or {"rows": [], "exactness": "unknown"}, raw, i)
+            if error:
+                errors.append({"move": str(i), "error": error})
+                continue
+            already = any(e.get("kind") == "renounce" and e.get("player_key") == effect["player_key"]
+                          for e in carried.get(target, []))
+            if already:
+                errors.append({"move": str(i), "error": f"{raw.get('player')} is already renounced in this scenario"})
+                continue
+            add_effect(target, effect)
         else:
             errors.append({"move": str(i), "error": f"unknown move kind '{kind}'"})
 
@@ -375,12 +445,28 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                         for e in sorted(effects, key=lambda e: e["move"])],
             "moves_in_season": len(season_moves),
             "ordering_notes": ordering_notes,
+            **({"cap_holds": holds_by_season[season]["total"],
+                "cap_holds_exactness": holds_by_season[season]["exactness"],
+                "cap_hold_details": [{"player": str(r.get("PLAYER_NAME") or r.get("player") or ""),
+                                      "amount": hold_amount(r) or None,
+                                      "fa_type": str(r.get("FA_TYPE") or "")}
+                                     for r in holds_by_season[season]["rows"]]}
+               if holds_by_season[season]["rows"] else {}),
         })
 
     disclosures = [
         "signings project as one-year deals — contract structure (years, raises) arrives with the signing move vocabulary",
         "apron and tax comparisons use committed-payroll proxies per the cap-rules derivation contract, not full CBA Apron Team Salary",
     ]
+    hold_seasons = [s for s in seasons if holds_by_season[s]["rows"]]
+    if hold_seasons:
+        unknown_total = sum(holds_by_season[s]["unknown_count"] for s in hold_seasons)
+        disclosures.append(
+            f"cap holds are included in payroll for {', '.join(hold_seasons)} ({holds_by_season[hold_seasons[0]]['source']}"
+            + (f", {unknown_total} unpriced" if unknown_total else "")
+            + ") — a renounced hold leaves the books entirely; re-signing a renounced player at a new salary is a separate signing move")
+    if len(seasons) > 1:
+        disclosures.append("incomplete-roster minimum charges are not yet projected — the cap sheet includes them for the current season")
     if truncated:
         disclosures.append(f"seasons beyond warehouse salary coverage are excluded: {', '.join(truncated)}")
     return {
