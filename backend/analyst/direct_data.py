@@ -111,8 +111,8 @@ def product_trade_partners(player: str, season: str = '2026-27', teams: str = ''
 @tool(description='List one team\'s trade assets: roster salaries and owned draft picks.')
 def product_trade_assets(team: str, season: str = '2026-27') -> dict:
     from shared import store
-    from shared.contracts import salary_records
-    abbr = str(team or '').strip().upper()
+    from shared.contracts import canonical_team_abbr, salary_records
+    abbr = canonical_team_abbr(team)
     if not abbr:
         return {'ok': False, 'error': 'team needed'}
     try:
@@ -121,7 +121,8 @@ def product_trade_assets(team: str, season: str = '2026-27') -> dict:
         return {'ok': False, 'error': 'warehouse unreachable'}
     try:
         records = [r for r in salary_records(con, salary_season=season, include_fallback=True)
-                   if str(r.get('TEAM') or '').upper() == abbr and isinstance(r.get('salary'), (int, float))]
+                   if canonical_team_abbr(r.get('TEAM')) == abbr
+                   and isinstance(r.get('salary'), (int, float))]
         records.sort(key=lambda r: -(r['salary'] or 0))
         players = [{'name': str(r.get('PLAYER_NAME') or ''), 'salary': round(float(r['salary']) / 1_000_000, 1)}
                    for r in records if r.get('PLAYER_NAME')]
@@ -129,12 +130,14 @@ def product_trade_assets(team: str, season: str = '2026-27') -> dict:
         tables = {row[0] for row in con.execute('SHOW TABLES').fetchall()}
         if 'silver_future_picks' in tables:
             rows = con.execute(
-                "SELECT DRAFT_YEAR, ROUND, ORIG_TEAM, PROTECTION, CONDITIONAL, SUMMARY "
-                "FROM silver_future_picks WHERE ? IN (SELECT UNNEST(string_split(HELD_BY, ';')))",
-                [abbr]).fetchall()
+                "SELECT DRAFT_YEAR, ROUND, ORIG_TEAM, PROTECTION, CONDITIONAL, SUMMARY, HELD_BY "
+                "FROM silver_future_picks").fetchall()
+            owned_rows = [r for r in rows
+                          if abbr in {canonical_team_abbr(holder)
+                                      for holder in str(r[6] or '').split(';')}]
             picks = [{'year': int(r[0]), 'round': int(r[1]), 'orig': str(r[2] or ''),
                       'protection': r[3], 'conditional': bool(r[4]), 'summary': str(r[5] or '')}
-                     for r in rows]
+                     for r in owned_rows]
         source = 'salary_records' + (' + silver_future_picks' if 'silver_future_picks' in tables else '')
         return {'ok': True, 'team': abbr, 'season': season, 'players': players, 'picks': picks,
                 'meta': {'source': source, 'season': season}}

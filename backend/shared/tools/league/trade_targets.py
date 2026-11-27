@@ -2,6 +2,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from ...contracts import canonical_team_abbr
 from ._helpers import _owned_connection
 from .cba_cap import CAP, _payroll_source, _salary_date, _resolve_team_abbr
 from .draft_contracts import _contract_norm
@@ -132,7 +133,7 @@ def get_trade_targets(need: str = "", team: str = "", position: str = "",
                       min_mpg: float = _MIN_MPG, limit: int = _LIMIT,
                       season: str | None = None) -> dict[str, Any]:
     raw_team = str(team or "").strip()
-    acquirer = (_resolve_team_abbr(raw_team) or "").upper() \
+    acquirer = (_resolve_team_abbr(canonical_team_abbr(raw_team)) or "").upper() \
         if raw_team else ""
     if raw_team and not acquirer:
         return {"tool": "get_trade_targets", "ok": False,
@@ -185,7 +186,7 @@ def get_trade_targets(need: str = "", team: str = "", position: str = "",
     rows: list[dict] = []
     for c in cap:
         name = str(c.get("PLAYER_NAME") or "")
-        player_team = str(c.get("TEAM") or "").upper()
+        player_team = canonical_team_abbr(c.get("TEAM"))
         salary = int(c.get("salary") or 0)
         if acquirer and player_team == acquirer:
             skipped["acquirer"] += 1
@@ -236,7 +237,7 @@ def get_trade_targets(need: str = "", team: str = "", position: str = "",
                if h_g and h.get("deflections") is not None else None,
                "contested_shots_pg": round(float(h["contested_shots"]) / h_g, 2)
                if h_g and h.get("contested_shots") is not None else None}
-        prod_team = str(p.get("TEAM") or "").upper()
+        prod_team = canonical_team_abbr(p.get("TEAM"))
         if prod_team and prod_team != player_team:
             row["production_team"] = prod_team
         rows.append(row)

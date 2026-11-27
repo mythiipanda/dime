@@ -3,6 +3,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from ...contracts import canonical_team_abbr
 from ._helpers import _owned_connection, _pkg
 from .cba_cap import (
     CAP,
@@ -186,7 +187,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
                 in_unknown.append(raw)
                 continue
             cname, cteam, csal = hit
-            if str(cteam).upper() == team.upper():
+            if canonical_team_abbr(cteam) == canonical_team_abbr(team):
                 in_unknown.append(f"{cname} is already on {team.upper()}")
                 continue
             in_names.append(cname)

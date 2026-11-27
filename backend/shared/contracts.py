@@ -13,6 +13,14 @@ def normalize_name(value: object) -> str:
     return ''.join(words)
 
 
+_TEAM_ABBR_CANONICAL = {'WSH': 'WAS', 'BRK': 'BKN', 'CHO': 'CHA', 'PHO': 'PHX'}
+
+
+def canonical_team_abbr(value: object) -> str:
+    code = str(value or '').strip().upper()
+    return _TEAM_ABBR_CANONICAL.get(code, code)
+
+
 def player_name_key_sql(column: str) -> str:
     ws = r"\s\p{Z}"
     cleaned = (f"regexp_replace(strip_accents(lower({column})), "
@@ -98,7 +106,7 @@ def salary_records(con, season: str | None = None, salary_season: str | None = N
         if rows:
             for row in rows:
                 row['PLAYER_NAME'] = row.get('PLAYER_NAME', row.get('player'))
-                row['TEAM'] = row.get('TEAM', row.get('team'))
+                row['TEAM'] = canonical_team_abbr(row.get('TEAM', row.get('team')))
                 row['salary'] = row.get(salary)
             if not records:
                 records = rows
@@ -115,18 +123,19 @@ def salary_records(con, season: str | None = None, salary_season: str | None = N
 
 
 def match_record(records: list[dict], name: str, player_id=None, team: str = '') -> dict | None:
+    team_code = canonical_team_abbr(team)
     if player_id is not None:
         hits = [r for r in records if r.get('PLAYER_ID') == player_id]
         if len(hits) == 1:
             return hits[0]
         if hits:
-            hits = [r for r in hits if str(r.get('TEAM') or '').upper() == team.upper()]
+            hits = [r for r in hits if canonical_team_abbr(r.get('TEAM')) == team_code]
             return hits[0] if len(hits) == 1 else None
     hits = [r for r in records if normalize_name(r.get('PLAYER_NAME', r.get('PLAYER'))) == normalize_name(name)
             and (player_id is None or r.get('PLAYER_ID') is None or r['PLAYER_ID'] == player_id)]
     if len(hits) == 1:
         return hits[0]
-    hits = [r for r in hits if str(r.get('TEAM') or '').upper() == team.upper()]
+    hits = [r for r in hits if canonical_team_abbr(r.get('TEAM')) == team_code]
     return hits[0] if len(hits) == 1 else None
 
 
@@ -145,7 +154,8 @@ def warehouse_player_ids(con) -> list[dict]:
         season_sql = '_season' if '_season' in columns else "''"
         for pid, player, abbr, season in con.execute(
                 f'SELECT DISTINCT PLAYER_ID, {name}, {team_sql}, {season_sql} FROM {table} WHERE PLAYER_ID IS NOT NULL').fetchall():
-            records.append({'PLAYER_ID': pid, 'PLAYER_NAME': player, 'TEAM': abbr, '_season': season or ''})
+            records.append({'PLAYER_ID': pid, 'PLAYER_NAME': player,
+                            'TEAM': canonical_team_abbr(abbr), '_season': season or ''})
     return records
 
 
@@ -159,7 +169,8 @@ def resolve_player_ids(frame, con):
         unique = {r['PLAYER_ID'] for r in candidates}
         if len(unique) > 1:
             latest = {pid: max(r['_season'] for r in candidates if r['PLAYER_ID'] == pid) for pid in unique}
+            team_code = canonical_team_abbr(row['TEAM'])
             unique = {r['PLAYER_ID'] for r in candidates if r['_season'] == latest[r['PLAYER_ID']]
-                      and str(r['TEAM'] or '').upper() == str(row['TEAM']).upper()}
+                      and canonical_team_abbr(r['TEAM']) == team_code}
         ids.append(next(iter(unique)) if len(unique) == 1 else None)
     return frame.with_columns(pl.Series('PLAYER_ID', ids, dtype=pl.Int64))
