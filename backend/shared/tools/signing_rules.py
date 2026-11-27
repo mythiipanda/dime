@@ -187,6 +187,8 @@ def normalize_signing_input(raw: Any) -> tuple[dict[str, Any] | None, list[str]]
     salary_schedule, schedule_errors = _normalize_salary_schedule(
         raw.get("salary_schedule"), amount, years)
     errors.extend(schedule_errors)
+    if salary_schedule is not None and mechanism != "minimum":
+        errors.append("salary_schedule exact annual shape validation is supported only for mechanism=minimum in signing validation v1")
     if raw.get("prior_team") not in (None, ""):
         errors.append("prior_team cannot be consumed by signing validation v1; omit it or use a supported mechanism input")
     status = str(raw.get("free_agent_status") or "").strip().lower()

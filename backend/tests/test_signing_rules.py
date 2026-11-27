@@ -349,6 +349,10 @@ def test_unsupported_typed_free_agent_inputs_are_errors_not_silently_ignored():
             "mechanism": "ntmle", "replaces_cap_hold": True}
     out = validate_signing(base, team="TST", payroll_before=190_000_000)
     assert "replaces_cap_hold requires exact cap-hold ledger state" in out["input_errors"][0]
+    base = {"player": "Exception Signing", "amount": 10_000_000, "years": 2,
+            "mechanism": "ntmle", "salary_schedule": [10_000_000, 10_500_000]}
+    out = validate_signing(base, team="TST", payroll_before=190_000_000)
+    assert "supported only for mechanism=minimum" in out["input_errors"][0]
 
 
 def test_future_season_exceptions_scale_from_season_cap_line_or_require_lines():
