@@ -5467,6 +5467,51 @@
         "title": "product_scout_dossier",
         "type": "object"
       }
+    },
+    "product_cap_sheet": {
+      "name": "product_cap_sheet",
+      "description": "Read one team multi-year cap sheet: per-player contract matrix, per-season totals, apron state.",
+      "args_schema": {
+        "description": "Read one team multi-year cap sheet: per-player contract matrix, per-season totals, apron state.",
+        "properties": {
+          "team": {
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
+            "title": "Team",
+            "type": "string"
+          },
+          "season": {
+            "default": "2026-27",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'). Default: '2026-27'.",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "product_cap_sheet",
+        "type": "object"
+      }
+    },
+    "product_cap_scenario_eval": {
+      "name": "product_cap_scenario_eval",
+      "description": "Evaluate a typed cap scenario (signings, trades, waives, option decisions) for one team and season.",
+      "args_schema": {
+        "description": "Evaluate a typed cap scenario (signings, trades, waives, option decisions) for one team and season.",
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "description": "JSON object carrying the artifact's section data.",
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "payload"
+        ],
+        "title": "product_cap_scenario_eval",
+        "type": "object"
+      }
     }
   },
   "shared": {

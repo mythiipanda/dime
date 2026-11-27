@@ -1,0 +1,136 @@
+import pytest
+
+from shared import store
+
+
+@pytest.fixture()
+def con():
+    try:
+        conn = store.connect(read_only=True)
+    except Exception:
+        pytest.skip("warehouse unreachable")
+    yield conn
+    conn.close()
+
+
+def test_sheet_shape_boston(con):
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    out = cap_sheet_rows(con, "BOS", "2026-27")
+    assert out["ok"] is True, out.get("error")
+    assert out["lines"]["cap"] == 164_961_000
+    assert out["lines_projected"] is False
+    assert len(out["players"]) >= 10
+    first = out["players"][0]
+    assert first["player"]
+    assert first["years"]
+    year = first["years"][0]
+    assert set(year) == {"season", "salary", "option", "guaranteed"}
+    totals = out["totals"]
+    assert "2026-27" in totals
+    entry = totals["2026-27"]
+    for key in ("committed", "pending_option", "dead_money", "cap_holds",
+                "incomplete_roster_charges", "payroll"):
+        assert key in entry
+    assert entry["payroll"] == entry["committed"] + entry["dead_money"] + entry["cap_holds"] + entry["incomplete_roster_charges"] or entry["payroll"] >= entry["committed"]
+    assert set(out["state"]) == {"over_tax", "over_apron1", "over_apron2", "room_apron1", "room_apron2"}
+
+
+def test_sheet_multi_year_matrix(con):
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    out = cap_sheet_rows(con, "BOS", "2026-27")
+    seasons = set()
+    for player in out["players"]:
+        for year in player["years"]:
+            seasons.add(year["season"])
+    assert len(seasons) >= 5
+    assert any("2028" in s or "2029" in s for s in seasons)
+
+
+def test_cap_lines_projection_behavior(con):
+    from shared.tools.league.cap_sheet import cap_lines_for_season
+    lines, projected = cap_lines_for_season(con, "2026-27")
+    assert projected is False
+    assert lines["cap"] == 164_961_000
+    lines27, projected27 = cap_lines_for_season(con, "2027-28")
+    assert lines27["cap"] > 0
+    lines31, projected31 = cap_lines_for_season(con, "2031-32")
+    assert projected31 is True
+    assert lines31["cap"] > lines27["cap"]
+    assert lines31["apron2"] > lines31["apron1"] > lines31["tax"] > lines31["cap"]
+
+
+def test_scenario_signing_matches_tool_arithmetic(con):
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    out = evaluate_cap_scenario(con, {
+        "team": "BOS", "season": "2026-27",
+        "moves": [{"kind": "signing", "label": "X", "amount": 12_000_000}]})
+    assert out["ok"] is True
+    assert out["pay_after"] == out["pay_before"] + 12_000_000
+    kinds = [s["kind"] for s in out["steps"]]
+    assert kinds == ["payroll", "signing"]
+    assert out["steps"][1]["delta"] == 12_000_000
+
+
+def test_scenario_partial_errors_never_fail_whole_eval(con):
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    out = evaluate_cap_scenario(con, {
+        "team": "BOS", "season": "2026-27",
+        "moves": [{"kind": "signing", "amount": -5},
+                  {"kind": "trade_in", "player": "Nobody Real Ever"},
+                  {"kind": "signing", "label": "good", "amount": 5_000_000}]})
+    assert out["ok"] is True
+    assert len(out["errors"]) == 2
+    assert out["pay_after"] == out["pay_before"] + 5_000_000
+
+
+def test_scenario_unknown_kind_error(con):
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    out = evaluate_cap_scenario(con, {
+        "team": "BOS", "season": "2026-27",
+        "moves": [{"kind": "teleport", "player": "X"}]})
+    assert out["ok"] is True
+    assert any("unknown move kind" in e["error"] for e in out["errors"])
+
+
+def test_scenario_trade_matching_verdict(con):
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    out = evaluate_cap_scenario(con, {
+        "team": "BOS", "season": "2026-27",
+        "moves": [{"kind": "trade_out", "player": "Payton Pritchard"},
+                  {"kind": "trade_in", "player": "Jrue Holiday"}]})
+    assert out["ok"] is True
+    assert out["matching"] is not None
+    assert out["matching"]["legal"] is False
+    assert out["matching"]["incoming"] > out["matching"]["allowed_incoming"]
+
+
+def test_scenario_waive_relief_bounded(con):
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    out = evaluate_cap_scenario(con, {
+        "team": "BOS", "season": "2026-27",
+        "moves": [{"kind": "waive", "player": "Payton Pritchard"}]})
+    assert out["ok"] is True
+    deltas = [s["delta"] for s in out["steps"] if s["kind"] == "trade_out"]
+    assert deltas and deltas[0] <= 0
+    stretched = evaluate_cap_scenario(con, {
+        "team": "BOS", "season": "2026-27",
+        "moves": [{"kind": "waive", "player": "Payton Pritchard", "stretch": True}]})
+    stretch_deltas = [s["delta"] for s in stretched["steps"] if s["kind"] == "trade_out"]
+    assert stretch_deltas and stretch_deltas[0] <= 0
+
+
+def test_scenario_requires_moves(con):
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    out = evaluate_cap_scenario(con, {"team": "BOS", "season": "2026-27", "moves": []})
+    assert out["ok"] is False
+    out2 = evaluate_cap_scenario(con, {"team": "", "season": "2026-27",
+                                       "moves": [{"kind": "signing", "amount": 1}]})
+    assert out2["ok"] is False
+
+
+def test_endpoint_wrappers():
+    from analyst.direct_data import product_cap_scenario_eval, product_cap_sheet
+    bad = product_cap_sheet.invoke({"team": "", "season": "2026-27"})
+    assert bad["ok"] is False
+    bad2 = product_cap_scenario_eval.invoke({"payload": {"team": "", "moves": []}})
+    assert bad2["ok"] is False

@@ -108,6 +108,48 @@ def product_trade_partners(player: str, season: str = '2026-27', teams: str = ''
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
 
+@tool(description='Read one team multi-year cap sheet: per-player contract matrix, per-season totals, apron state.')
+def product_cap_sheet(team: str, season: str = '2026-27') -> dict:
+    from shared import store
+    from shared.contracts import canonical_team_abbr
+    abbr = canonical_team_abbr(team)
+    if not abbr:
+        return {'ok': False, 'error': 'team needed'}
+    try:
+        con = store.connect(read_only=True)
+    except Exception:
+        return {'ok': False, 'error': 'warehouse unreachable'}
+    try:
+        from shared.tools.league.cap_sheet import cap_sheet_rows
+        out = cap_sheet_rows(con, abbr, str(season or '2026-27'))
+        return out
+    except Exception as error:
+        return {'ok': False, 'error': str(error)[:200]}
+    finally:
+        con.close()
+
+@tool(description='Evaluate a typed cap scenario (signings, trades, waives, option decisions) for one team and season.')
+def product_cap_scenario_eval(payload: dict) -> dict:
+    from shared import store
+    from shared.contracts import canonical_team_abbr
+    if not isinstance(payload, dict):
+        return {'ok': False, 'error': 'payload must be an object'}
+    abbr = canonical_team_abbr(str(payload.get('team') or ''))
+    if not abbr:
+        return {'ok': False, 'error': 'team needed'}
+    payload = {**payload, 'team': abbr}
+    try:
+        con = store.connect(read_only=True)
+    except Exception:
+        return {'ok': False, 'error': 'warehouse unreachable'}
+    try:
+        from shared.tools.league.cap_sheet import evaluate_cap_scenario
+        return evaluate_cap_scenario(con, payload)
+    except Exception as error:
+        return {'ok': False, 'error': str(error)[:200]}
+    finally:
+        con.close()
+
 @tool(description='List one team\'s trade assets: roster salaries and owned draft picks.')
 def product_trade_assets(team: str, season: str = '2026-27') -> dict:
     from shared import store
@@ -878,7 +920,8 @@ def internal_catalogue():
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
-        product_compare, product_draft, product_matchups, product_awards, product_scout_dossier)
+        product_compare, product_draft, product_matchups, product_awards, product_scout_dossier,
+        product_cap_sheet, product_cap_scenario_eval)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description
