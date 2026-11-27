@@ -5402,6 +5402,23 @@
         "title": "product_draft",
         "type": "object"
       }
+    },
+    "product_matchups": {
+      "name": "product_matchups",
+      "description": "Read the live matchups slate: next game-date games with team ratings, form, and injuries.",
+      "args_schema": {
+        "description": "Read the live matchups slate: next game-date games with team ratings, form, and injuries.",
+        "properties": {
+          "season": {
+            "default": "",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "title": "product_matchups",
+        "type": "object"
+      }
     }
   },
   "shared": {

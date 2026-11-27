@@ -317,6 +317,7 @@ export function createProductServer(options: {
         res.end(await readFile(path));
     });
     route("GET", /^\/api\/today$/, async ({ res, url }) => json(res, await data.call("product_today", { season: url.searchParams.get("season") ?? "2025-26" })));
+    route("GET", /^\/api\/matchups$/, async ({ res, url }) => json(res, await data.call("product_matchups", { season: url.searchParams.get("season") ?? "" })));
     route("GET", /^\/api\/watchlist$/, async ({ res, url }) => json(res, await data.call("product_watchlist", { season: url.searchParams.get("season") ?? "2025-26" })));
     route("POST", /^\/api\/watchlist$/, async ({ req, res }) => { const input = parseBody(watchSchema, await body(req)); json(res, await data.call("product_watchlist_add", { ...input, season: input.season ?? "2025-26" })); });
     route("DELETE", /^\/api\/watchlist$/, async ({ res, url }) => {

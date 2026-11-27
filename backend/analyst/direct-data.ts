@@ -82,6 +82,9 @@ export type DirectOperations = {
     product_today: {
         season: string;
     };
+    product_matchups: {
+        season: string;
+    };
     product_briefing: {
         season: string;
     };

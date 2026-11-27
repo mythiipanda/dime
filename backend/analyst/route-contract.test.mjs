@@ -23,6 +23,7 @@ const data={close:async()=>{},async call(name,args){switch(name){
  case "product_trade":return args.team_a==="BAD"?{ok:false,error:"Unknown team BAD"}:output("trade",args);
  case "product_debate":if(args.season==="2025-26")return cases.find(c=>c.path==="/api/debate-card?a=A&b=B").body;return {result:{ok:true,rows:{path:"/private/debate_A_vs_B_1.html",players:["A","B"]}},season:args.season};
  case "product_today":return output("today",args);
+ case "product_matchups":return {ok:true,date:"2026-11-25",season:"2026-27",games:[]};
  case "product_watchlist":return output("watchlist",args);
  case "product_watchlist_add":return output("watchlist_add",args);
  case "product_watchlist_remove":return output("watchlist_remove",args);
@@ -63,6 +64,8 @@ try {
   console.log("Home and table-detail route contracts: schedule absence, schema, season, empty rows and invalid tables passed");
   const trade=await fetch(url+"/api/trade/check",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({team_a:"BAD",players_a:["Player A"],team_b:"NYK",players_b:["Player B"]})});assert.equal(trade.status,422);assert.equal((await trade.json()).error,"Unknown team BAD");
   console.log("Trade domain errors: HTTP 422 with readable checker reason passed");
+  const matchups=await fetch(url+"/api/matchups");assert.equal(matchups.status,200);const matchupsBody=await matchups.json();assert.equal(matchupsBody.ok,true);assert.ok(Array.isArray(matchupsBody.games));
+  console.log("Matchups route contract: 200 with ok flag and games array passed");
  }
  {
   const preflightPatch = await fetch(url + "/api/workspaces/fixture", {

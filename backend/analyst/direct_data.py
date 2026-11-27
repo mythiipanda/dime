@@ -344,6 +344,124 @@ def product_today(season: str = '2025-26') -> dict:
     from shared.tools.today import get_today
     return _decoded(get_today.invoke({'season':season}))
 
+@tool(description='Read the live matchups slate: next game-date games with team ratings, form, and injuries.')
+def product_matchups(season: str = '') -> dict:
+    import ast
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from shared import store
+
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute('SHOW TABLES').fetchall()}
+        if 'silver_schedule' not in tables or 'silver_team_ratings' not in tables:
+            return {'ok': False, 'error': 'required warehouse tables missing', 'games': []}
+        if 'silver_scoreboard' not in tables:
+            return {'ok': False, 'error': 'required warehouse tables missing', 'games': []}
+        day = 'try_cast(GAME_DATE_EST AS DATE)'
+        slate = con.execute(f'SELECT max({day}) FROM silver_scoreboard').fetchone()[0]
+        if slate is None:
+            return {'ok': True, 'date': '', 'games': [], 'note': 'no games found'}
+        rows = con.execute(
+            f'SELECT GAME_ID, GAME_STATUS_TEXT, HOME_TEAM_ABBREVIATION, VISITOR_TEAM_ABBREVIATION, NATL_TV_BROADCASTER_ABBREVIATION, HOME_TV_BROADCASTER_ABBREVIATION, AWAY_TV_BROADCASTER_ABBREVIATION FROM silver_scoreboard WHERE {day} = cast(? AS DATE)',
+            [slate.isoformat()],
+        ).fetchall()
+        games_by_id = {}
+        for gid, status, home_abbr, away_abbr, natl, home_tv, away_tv in rows:
+            games_by_id.setdefault(str(gid), {
+                'id': str(gid), 'status': str(status or ''), 'home_abbr': str(home_abbr or ''),
+                'away_abbr': str(away_abbr or ''), 'network': str(natl or home_tv or away_tv or ''),
+            })
+        ratings_season = con.execute('SELECT max(_season) FROM silver_team_ratings').fetchone()[0]
+        ratings = {}
+        for team_id, team_name, w, l, offr, defr, netr, pace, ts in con.execute(
+            'SELECT TEAM_ID, TEAM_NAME, W, L, OFF_RATING, DEF_RATING, NET_RATING, PACE, TS_PCT FROM silver_team_ratings WHERE _season = ?',
+            [ratings_season],
+        ).fetchall():
+            ratings[int(team_id)] = {'team_id': int(team_id), 'team_name': team_name, 'w': w, 'l': l,
+                                     'off_rating': offr, 'def_rating': defr, 'net_rating': netr, 'pace': pace, 'ts_pct': ts}
+        abbr_of = {}
+        if 'silver_team_games' in tables:
+            tg_season = con.execute('SELECT max(_season) FROM silver_team_games').fetchone()[0]
+            for team_id, matchup in con.execute('SELECT DISTINCT "Team_ID", MATCHUP FROM silver_team_games WHERE _season = ?', [tg_season]).fetchall():
+                abbr = str(matchup).split(' ')[0] if matchup else None
+                if abbr:
+                    abbr_of[abbr] = int(team_id)
+        form = {}
+        threes = {}
+        if 'silver_team_games' in tables:
+            tg_season = con.execute('SELECT max(_season) FROM silver_team_games').fetchone()[0]
+            for team_id in ratings:
+                games_rows = con.execute(
+                    'SELECT "WL" FROM silver_team_games WHERE "Team_ID" = ? AND _season = ? ORDER BY "GAME_DATE" DESC LIMIT 10',
+                    [team_id, tg_season],
+                ).fetchall()
+                form[team_id] = [r[0] for r in games_rows if r[0] in ('W', 'L')]
+                agg = con.execute(
+                    'SELECT sum(FG3M), sum(FG3A) FROM silver_team_games WHERE "Team_ID" = ? AND _season = ?',
+                    [team_id, tg_season],
+                ).fetchone()
+                if agg and agg[1]:
+                    threes[team_id] = round(100.0 * agg[0] / agg[1], 1)
+        injuries_by_team = {}
+        if 'silver_injuries' in tables:
+            inj_season = con.execute('SELECT max(_season) FROM silver_injuries').fetchone()[0]
+            for display, blob in con.execute('SELECT display_name, injuries FROM silver_injuries WHERE _season = ?', [inj_season]).fetchall():
+                entries = []
+                parsed = None
+                if isinstance(blob, str):
+                    try:
+                        parsed = json.loads(blob)
+                    except Exception:
+                        try:
+                            parsed = ast.literal_eval(blob)
+                        except Exception:
+                            parsed = None
+                elif isinstance(blob, list):
+                    parsed = blob
+                if isinstance(parsed, list):
+                    for item in parsed:
+                        if isinstance(item, dict) and item.get('status', '').lower() in ('out', 'doubtful'):
+                            short = str(item.get('shortComment') or '')[:110]
+                            if short:
+                                entries.append(short)
+                injuries_by_team[str(display)] = entries[:3]
+
+        def team_payload(abbr):
+            team_id = abbr_of.get(abbr)
+            base = ratings.get(team_id, {}) if team_id else {}
+            return {
+                'abbr': abbr,
+                'name': base.get('team_name', abbr),
+                'record': f"{base.get('w', '?')}-{base.get('l', '?')}" if base else '',
+                'net_rating': base.get('net_rating'),
+                'off_rating': base.get('off_rating'),
+                'def_rating': base.get('def_rating'),
+                'pace': base.get('pace'),
+                'ts_pct': (round(base['ts_pct'] * 100, 1) if base.get('ts_pct') is not None else None),
+                'fg3_pct': threes.get(team_id) if team_id else None,
+                'form': form.get(team_id, []) if team_id else [],
+                'injuries': injuries_by_team.get(base.get('team_name', ''), []) if base else [],
+            }
+
+        games = []
+        for game in sorted(games_by_id.values(), key=lambda g: g['status']):
+            if not game['away_abbr'] or not game['home_abbr']:
+                continue
+            games.append({
+                'id': game['id'],
+                'away': team_payload(game['away_abbr']),
+                'home': team_payload(game['home_abbr']),
+                'time': game['status'],
+                'network': game['network'],
+                'date': slate.isoformat(),
+            })
+        return {'ok': True, 'date': slate.isoformat(), 'season': ratings_season, 'games': games}
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc)[:200], 'games': []}
+    finally:
+        con.close()
+
 @tool(description='Read the current watchlist data.')
 def product_watchlist(season: str = '2025-26') -> dict:
     from shared.tools.watchlist import get_watchlist
@@ -687,7 +805,7 @@ def internal_catalogue():
         product_warehouse_identity, product_warehouse_health, product_dataset, product_freshness, product_table_detail, product_home,
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
-        product_compare, product_draft)
+        product_compare, product_draft, product_matchups)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description
