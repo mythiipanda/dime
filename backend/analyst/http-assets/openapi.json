@@ -1033,6 +1033,114 @@
         }
       }
     },
+    "/api/cap/scenario": {
+      "post": {
+        "tags": [
+          "cap"
+        ],
+        "operationId": "cap_scenario_eval",
+        "summary": "Evaluate a typed cap scenario in caller order",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "moves"
+                ],
+                "properties": {
+                  "team": {
+                    "type": "string"
+                  },
+                  "season": {
+                    "type": "string"
+                  },
+                  "waiver_date": {
+                    "type": "string"
+                  },
+                  "exception_state": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "moves": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 40,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response. Payroll, roster, cap-hold, team-salary, and cap-room state are caller-order scenario state; moves that are syntactically valid but illegal or unresolved can be included and are disclosed by the contamination flags.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "errors"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "includes_illegal_moves": {
+                      "type": "boolean",
+                      "description": "Whether final scenario state includes a move validation rejected as illegal or a prohibited trade."
+                    },
+                    "illegal_move_indices": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "includes_unvalidated_moves": {
+                      "type": "boolean",
+                      "description": "Whether final scenario state includes an applied signing whose legality could not be established."
+                    },
+                    "unvalidated_move_indices": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "illegal_move_state_disclosure": {
+                          "type": "string"
+                        },
+                        "sign_and_trade_scope": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid scenario request or domain error"
+          }
+        }
+      }
+    },
     "/api/trade/check": {
       "post": {
         "summary": "Trade Check",
