@@ -237,13 +237,22 @@ export default function HistoryView() {
 
         {!careerLoading && !careerError && arc.length > 0 && (
           <div className="mt-3">
-            <ArtifactChart
-              series={series}
-              xLabels={chartSeasons}
-              title={`${player} career trajectory`}
-              subtitle="per-game scoring and RAPTOR impact by season — open 'view chart data' for the table"
-              height={200}
-            />
+            <div className="grid gap-2">
+              <ArtifactChart
+                series={series.slice(0, 1)}
+                xLabels={chartSeasons}
+                title={`${player} scoring trajectory`}
+                subtitle="points per game by season — open 'view chart data' for exact figures"
+                height={130}
+              />
+              <ArtifactChart
+                series={series.slice(1)}
+                xLabels={chartSeasons}
+                title={`${player} impact trajectory`}
+                subtitle="RAPTOR impact by season — open 'view chart data' for exact figures"
+                height={130}
+              />
+            </div>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full min-w-[560px] border-separate border-spacing-0 text-[12px]">
                 <thead>
