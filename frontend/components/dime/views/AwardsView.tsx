@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
+import { Button } from "@/components/ds/Button";
 import { DataState } from "@/components/ds/DataState";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -100,7 +101,7 @@ function Board({ board }: { board: AwardBoard }) {
   );
 }
 
-export default function AwardsView() {
+export default function AwardsView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [data, setData] = useState<AwardsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -156,6 +157,28 @@ export default function AwardsView() {
             </span>
           )}
         </span>
+        {onAsk && active?.ok && (
+          <span className="ml-auto">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onAsk(
+                `Break down the ${data?.season ?? ""} ${active.award} race — who leads, who is closing, and what the case against the favorite is.`,
+                {
+                  kind: "awards_race",
+                  summary: `${active.award} race · ${data?.season ?? ""}`,
+                  entities: {
+                    award: active.award,
+                    season: data?.season,
+                    candidates: active.candidates.slice(0, 8).map((c) => ({ rank: c.rank, player: c.player, team: c.team, score: c.score })),
+                  },
+                },
+              )}
+            >
+              Ask Dime about this race
+            </Button>
+          </span>
+        )}
       </div>
 
       {loading && (

@@ -133,7 +133,7 @@ export function DimeShell() {
         {tab === "scout" && <div className="tools-view"><ScoutView onAsk={askBoard} /></div>}
         {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard} /></div>}
         {tab === "history" && <div className="tools-view"><HistoryView onAsk={askBoard} /></div>}
-        {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
+        {tab === "awards" && <div className="tools-view"><AwardsView onAsk={askBoard} /></div>}
       </div>
     </main>
     <DimeCommandPalette open={palette} entries={entries} onClose={() => setPalette(false)} />
