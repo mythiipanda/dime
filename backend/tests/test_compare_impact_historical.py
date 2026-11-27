@@ -40,8 +40,8 @@ def _seed(path):
         con.executemany(
             "INSERT INTO silver_hist_player_seasons VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
-                (893, "Michael Jordan", 1996, 33, "CHI", 80, 31.9, 28.2, 6.5, 5.9, 2.0, 0.5, 0.49, 0.37, 0.83, 0.58, 0.53, 0.33, 115.0, 102.0, 13.0),
-                (977, "Kobe Bryant", 2008, 30, "LAL", 82, 36.1, 26.8, 5.2, 4.9, 1.5, 0.4, 0.47, 0.35, 0.86, 0.56, 0.51, 0.32, 112.0, 105.0, 7.0),
+                (893, "Michael Jordan", 1997, 33, "CHI", 80, 31.9, 28.2, 6.5, 5.9, 2.0, 0.5, 0.49, 0.37, 0.83, 0.58, 0.53, 0.33, 115.0, 102.0, 13.0),
+                (977, "Kobe Bryant", 2009, 30, "LAL", 82, 36.1, 26.8, 5.2, 4.9, 1.5, 0.4, 0.47, 0.35, 0.86, 0.56, 0.51, 0.32, 112.0, 105.0, 7.0),
             ],
         )
     finally:
@@ -84,3 +84,14 @@ def test_compare_one_bad_block_degrades_honestly_not_500(warehouse, static_names
     for player in result["players"]:
         for block in ("season_line", "impact", "zones", "contract", "arc"):
             assert block in player
+
+
+def test_compare_season_line_hits_the_correct_end_year_row(warehouse, static_names):
+    from analyst.direct_data import product_compare
+
+    result = product_compare.invoke({"players": "893:1996-97,977:2008-09", "season": "2025-26"})
+    jordan = next(p for p in result["players"] if p["player_id"] == 893)
+    line = jordan.get("season_line") or {}
+    assert line.get("ok") is True, f"season line must resolve at the end-year grain: {line.get('error')}"
+    row = line.get("row") or {}
+    assert row.get("ppg") == pytest.approx(28.2), "the labeled season must be the row actually rendered — mislabeled data is worse than empty"

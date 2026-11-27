@@ -815,7 +815,7 @@ def _hist_year(season: str) -> int:
 def _compare_season_line(con, pid: int, season: str) -> dict:
     if "silver_hist_player_seasons" not in _compare_tables(con):
         return {"ok": False, "error": "silver_hist_player_seasons not in warehouse"}
-    year = _hist_year(season)
+    year = _hist_year(season) + 1
     row = con.execute(
         """SELECT season, age, team_abbreviation, gp, min, pts, reb, ast, stl, blk,
                   fg_pct, fg3_pct, ft_pct, ts_pct, efg_pct, usg_pct, off_rating, def_rating, net_rating
