@@ -391,7 +391,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
             </p>
           </div>
 
-          <aside className="w-full shrink-0 space-y-3 lg:w-[280px]">
+          <aside className="w-full shrink-0 space-y-3 lg:sticky lg:top-6 lg:w-[280px] lg:self-start">
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
               <h3 className="text-[13px] font-semibold text-ink">Scenario</h3>
               {moves.length > 0 && (
