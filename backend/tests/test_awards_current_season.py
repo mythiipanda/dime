@@ -8,6 +8,11 @@ BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
 sys.path.insert(0, str(BACKEND / "analyst"))
 
+BOTH_SEASONS = ("2025-26", "2026-27")
+PRIOR_ONLY = ("2025-26",)
+GAME_IDS = {"2025-26": "0022500001", "2026-27": "0022600001"}
+PREFIXES = {"2025-26": "Prior", "2026-27": "Current"}
+
 
 def _insert_player_rows(con, season: str, prefix: str) -> None:
     players = [
@@ -31,14 +36,16 @@ def _insert_player_rows(con, season: str, prefix: str) -> None:
 
 
 @pytest.fixture()
-def awards_warehouse(monkeypatch, tmp_path):
+def awards_warehouse(monkeypatch, tmp_path, request):
+    boxscore_seasons, leader_seasons = getattr(
+        request, "param", (BOTH_SEASONS, BOTH_SEASONS))
     path = tmp_path / "awards.duckdb"
     con = duckdb.connect(str(path))
     try:
         con.execute("CREATE TABLE silver_boxscores (GAME_ID VARCHAR, _season VARCHAR)")
         con.executemany(
             "INSERT INTO silver_boxscores VALUES (?, ?)",
-            [("0022500001", "2025-26"), ("0022600001", "2026-27")],
+            [(GAME_IDS[season], season) for season in boxscore_seasons],
         )
         con.execute(
             "CREATE TABLE silver_leaders_pts (PLAYER_ID INTEGER, PLAYER VARCHAR, "
@@ -54,8 +61,8 @@ def awards_warehouse(monkeypatch, tmp_path):
             "CREATE TABLE silver_standings (TeamID INTEGER, WINS INTEGER, "
             "LOSSES INTEGER, OppPointsPG DOUBLE, _season VARCHAR)"
         )
-        _insert_player_rows(con, "2025-26", "Prior")
-        _insert_player_rows(con, "2026-27", "Current")
+        for season in leader_seasons:
+            _insert_player_rows(con, season, PREFIXES[season])
     finally:
         con.close()
 
@@ -86,6 +93,32 @@ def test_award_race_defaults_to_latest_covered_input_season(awards_warehouse):
     assert race["meta"]["season"] == "2026-27"
     assert {row["player"] for row in race["rows"]["candidates"]} <= {
         "Current Alpha", "Current Beta", "Current Gamma"
+    }
+
+
+@pytest.mark.parametrize("awards_warehouse", [(PRIOR_ONLY, BOTH_SEASONS)], indirect=True)
+def test_award_race_default_follows_leaders_when_leaders_are_ahead(awards_warehouse):
+    from shared.tools.awards import get_award_race
+
+    race = get_award_race.invoke({"award": "MVP"})
+
+    assert race["ok"] is True, race
+    assert race["meta"]["season"] == "2026-27"
+    assert {row["player"] for row in race["rows"]["candidates"]} <= {
+        "Current Alpha", "Current Beta", "Current Gamma"
+    }
+
+
+@pytest.mark.parametrize("awards_warehouse", [(BOTH_SEASONS, PRIOR_ONLY)], indirect=True)
+def test_award_race_default_stays_on_prior_leaders_season(awards_warehouse):
+    from shared.tools.awards import get_award_race
+
+    race = get_award_race.invoke({"award": "MVP"})
+
+    assert race["ok"] is True, race
+    assert race["meta"]["season"] == "2025-26"
+    assert {row["player"] for row in race["rows"]["candidates"]} <= {
+        "Prior Alpha", "Prior Beta", "Prior Gamma"
     }
 
 

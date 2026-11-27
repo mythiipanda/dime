@@ -144,6 +144,7 @@ def _missing_table() -> str | None:
 
 def _pool(season: str) -> list[dict[str, Any]]:
     season = resolve_season(season, table="silver_leaders_pts")
+    season = clamp_season(season, table="silver_leaders_pts")
     source = _standings_for(str(season))
     return store._read_df(
         f"""SELECT l.PLAYER AS player, l.TEAM AS team,
@@ -179,7 +180,7 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
         return {"tool": "get_award_race", "ok": False, "rows": {},
                 "meta": {}, "error": f"unknown award '{award}'; valid awards: {valid}"}
     season = resolve_season(season, table="silver_leaders_pts")
-    season = clamp_season(season)
+    season = clamp_season(season, table="silver_leaders_pts")
     spec = PROJECTION_SPECS[canon]
     if spec.get("unavailable"):
         return {"tool": "get_award_race", "ok": False, "rows": {},
