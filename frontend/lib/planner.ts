@@ -1,0 +1,66 @@
+import { apiPath } from "./api";
+import type { ScenarioMove } from "./capsheet-fixture";
+
+export type ProjectionEffect = {
+  move: number;
+  kind: string;
+  detail: string;
+  delta: number;
+  exactness: "exact" | "derived" | "proxy" | "unresolved" | "unvalidated" | string;
+  disclosure?: string;
+  exception?: string;
+};
+
+export type ProjectionPlayer = { player: string; salary: number; option?: string };
+
+export type ProjectionSeason = {
+  season: string;
+  pay_before: number;
+  pay_after: number;
+  cap_room: number;
+  players: ProjectionPlayer[];
+  roster_before: number;
+  roster_after: number;
+  roster_issues: string[];
+  hard_cap: string;
+  hard_cap_violation: string;
+  exception_usage: string[];
+  effects: ProjectionEffect[];
+  moves_in_season: number;
+  ordering_notes: string[];
+  lines: { cap: number; tax: number; apron1: number; apron2: number };
+  lines_projected: boolean;
+};
+
+export type ProjectionResponse = {
+  ok: boolean;
+  error?: string;
+  team?: string;
+  base_season?: string;
+  seasons: ProjectionSeason[];
+  errors: { move: string; error: string }[];
+  warnings: string[];
+  disclosures: string[];
+};
+
+export async function fetchProjection(team: string, season: string, moves: ScenarioMove[]): Promise<ProjectionResponse | null> {
+  try {
+    const response = await fetch(apiPath("/cap/projection"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ team, season, moves }),
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!body || typeof body !== "object" || (body as ProjectionResponse).ok !== true) return null;
+    return body as ProjectionResponse;
+  } catch {
+    return null;
+  }
+}
+
+export function formatMoney(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${value}`;
+}
