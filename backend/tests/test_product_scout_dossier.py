@@ -37,6 +37,29 @@ def test_scout_dossier_form_and_factors_populated(dossier):
     assert factors["offense"]["efg_pct"] > 0
 
 
+def test_scout_dossier_form_rows_are_deduped_real_games(dossier):
+    games = dossier["sections"]["recent_form"]["rows"]["games"]
+    keys = [(g["date"], g["matchup"]) for g in games]
+    assert len(keys) == len(set(keys)), f"duplicate game rows: {keys}"
+    for g in games:
+        if g["pts"] is not None and g["opp_pts"] is not None:
+            assert g["pts"] != g["opp_pts"], f"tie score is impossible: {g}"
+            if g["wl"] == "W":
+                assert g["pts"] > g["opp_pts"], g
+            elif g["wl"] == "L":
+                assert g["pts"] < g["opp_pts"], g
+
+
+def test_scout_dossier_factor_units_are_fractions(dossier):
+    factors = dossier["sections"]["four_factors"]["rows"]
+    for side in ("offense", "defense"):
+        row = factors[side]
+        for key in ("efg_pct", "tov_pct", "oreb_pct"):
+            value = row.get(key)
+            if value is not None:
+                assert 0 < value < 1, f"{side}.{key}={value} is not a fraction-scale ratio"
+
+
 def test_scout_dossier_sections_carry_provenance(dossier):
     for key in ("recent_form", "four_factors", "shot_profile", "top_lineups", "head_to_head"):
         assert dossier["sections"][key].get("source"), key
