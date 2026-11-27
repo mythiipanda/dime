@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { initialTeamParam } from "@/lib/open-in-view";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -35,7 +36,7 @@ function useFixture(): boolean {
 }
 
 export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void }) {
-  const [team, setTeam] = useState("BOS");
+  const [team, setTeam] = useState(() => initialTeamParam() ?? "BOS");
   const [sheet, setSheet] = useState<CapSheetResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
