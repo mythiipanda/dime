@@ -865,6 +865,22 @@ def _evaluate_team(team: str, side: dict[str, Any],
         team, pay_after, aggregates=aggregates, cash_out=cash_out,
         prior_tpe=usage["prior"], snt_tpe=usage["snt"],
         is_snt_receiver=is_snt_receiver, expanded_matching=expanded_matching)
+    tpe_creation = None
+    if (out_eff > side["in_total"]
+            and side["pay_before"] > CAP["cap"]
+            and pay_after > CAP["cap"]
+            and not state_after["over_apron1"]):
+        amount = out_eff - side["in_total"]
+        tpe_creation = {
+            "amount": amount,
+            "expiry": "one year from the trade execution date",
+            "condition": ("would generate only if this construction is executed as a "
+                          "non-simultaneous trade — a simultaneous execution forfeits the exception"),
+            "copy": (f"If executed as a non-simultaneous trade, this construction would generate "
+                     f"a ${amount / 1_000_000:.1f}M trade exception expiring one year from the "
+                     f"execution date. Executed simultaneously, it generates nothing."),
+        }
+
     issues = _inactive_tpe_issues(team, usage["inactive"])
     if state_after["over_apron2"]:
         issues.extend(_apron2_issues(team, side["out_names"], cash_out,
@@ -886,6 +902,7 @@ def _evaluate_team(team: str, side: dict[str, Any],
         "picks_in": picks_in,
         "cash_out": cash_out, "cash_in": cash_in,
         "tpe_used": usage["used"],
+        "tpe_creation": tpe_creation,
         "tpe_details": [_public_tpe(item, bool(state_after["over_apron1"]))
                         for item in team_tpes],
         "allowed_incoming": allow, "match_rule": rule,
