@@ -145,12 +145,15 @@ function ShapeChart({ target, comp, features, labels, compName }: {
 }
 
 export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
-  const [query, setQuery] = useState("Jayson Tatum");
-  const [player, setPlayer] = useState("Jayson Tatum");
+  const initialParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const initialPlayer = initialParams?.get("player") || "Jayson Tatum";
+  const [query, setQuery] = useState(initialPlayer);
+  const [player, setPlayer] = useState(initialPlayer);
   const [career, setCareer] = useState<CareerResponse | null>(null);
   const [careerError, setCareerError] = useState<string | null>(null);
   const [careerLoading, setCareerLoading] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
+  const [pendingSeason, setPendingSeason] = useState<string | null>(initialParams?.get("season") || null);
   const [comps, setComps] = useState<CompsResponse | null>(null);
   const [compsError, setCompsError] = useState<string | null>(null);
   const [compsLoading, setCompsLoading] = useState(false);
@@ -179,7 +182,8 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           setCareer(null);
         } else {
           setCareer(value);
-          setSelectedSeason(null);
+          setSelectedSeason(pendingSeason);
+          setPendingSeason(null);
           setComps(null);
         }
         setCareerLoading(false);
@@ -258,6 +262,48 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
       cancelled = true;
     };
   }, [leaderSeason, category]);
+
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("player", player);
+    if (selectedSeason) params.set("season", selectedSeason);
+    else params.delete("season");
+    const url = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, "", url);
+  }, [player, selectedSeason]);
+
+  const walkTo = (name: string, season: string) => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      params.set("player", name);
+      params.set("season", season);
+      window.history.pushState(null, "", `${window.location.pathname}?${params.toString()}`);
+    }
+    setQuery(name);
+    setPendingSeason(season);
+    setPlayer(name);
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlPlayer = params.get("player");
+      const urlSeason = params.get("season");
+      if (urlPlayer && urlPlayer !== player) {
+        setQuery(urlPlayer);
+        setPendingSeason(urlSeason);
+        setPlayer(urlPlayer);
+      } else if (urlSeason && urlSeason !== selectedSeason) {
+        setSelectedSeason(urlSeason);
+        setComps(null);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [player, selectedSeason]);
 
   const arc = career?.rows ?? [];
   const chartSeasons = arc.map((s) => s.season);
@@ -443,16 +489,18 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
               )}
               <div className="mt-1.5 divide-y divide-line">
                 {comps.rows.map((comp, i) => (
-                  <button
-                    type="button"
+                  <div
                     key={`${comp.PLAYER_ID}-${comp.season}-${i}`}
-                    className={`block w-full cursor-pointer py-2.5 text-left ${i === selectedComp ? "bg-field" : ""} rounded-[6px] px-2 -mx-2`}
-                    onClick={() => setSelectedComp(i)}
-                    aria-pressed={i === selectedComp}
-                    title="overlay this comp's shape profile"
+                    className={`py-2.5 ${i === selectedComp ? "bg-field" : ""} rounded-[6px] px-2 -mx-2`}
                   >
                     <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
-                      <span className="text-ink">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 cursor-pointer text-left text-ink"
+                        onClick={() => setSelectedComp(i)}
+                        aria-pressed={i === selectedComp}
+                        title="overlay this comp's shape profile"
+                      >
                         {comp.PLAYER}
                         <span className="ml-1.5 font-mono text-[10px] text-ink-3">
                           {comp.season} {comp.TEAM}{comp.age != null ? ` · age ${comp.age}` : ""}
@@ -460,8 +508,17 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                         {comp.shared_archetype && comp.archetype && (
                           <span className="ml-1.5 rounded-full border border-line px-1.5 font-mono text-[9px] text-ink-3">{comp.archetype}</span>
                         )}
-                      </span>
+                      </button>
                       <span className="font-mono tabular-nums text-ink">{comp.similarity?.toFixed(1)}</span>
+                      <button
+                        type="button"
+                        data-testid={i === 0 ? "walk-comp" : undefined}
+                        className="font-mono text-[10.5px] text-accent underline-offset-2 hover:underline"
+                        onClick={() => walkTo(comp.PLAYER, comp.season)}
+                        title="recenter the surface on this player-season"
+                      >
+                        walk →
+                      </button>
                     </div>
                     {comp.drivers && comp.drivers.length > 0 && (
                       <div className="mt-1 space-y-0.5">
@@ -477,7 +534,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                         ))}
                       </div>
                     )}
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>
