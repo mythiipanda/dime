@@ -269,6 +269,17 @@ test("Draft view renders prospect board, free agents, cap room and fit with prov
   });
 });
 
+test("Draft view formats prospect per-game stats to one decimal", async () => {
+  const precision = { ...draftFixture, blocks: { ...draftFixture.blocks,
+    board: { ...draftFixture.blocks.board, rows: [
+      { board_order: 1, pick: 1, name: "Precision Prospect", position: "G", school: "Test U", gp: 10, pts: 12.34, reb: 4.06, ast: 3, ts_pct: 0.6, usg: 25.0 },
+    ] },
+  } };
+  await mount(<DraftView initialTeam="NYK" />, async () => Response.json(precision), async host => {
+    assert.match(host.textContent!, /Precision Prospect[\s\S]*12\.3[\s\S]*4\.1[\s\S]*3\.0/);
+  });
+});
+
 test("Draft view labels a mock draft as team-placement picks", async () => {
   const mockFixture = { ...draftFixture, blocks: { ...draftFixture.blocks,
     board: { ...draftFixture.blocks.board, board: "mock_draft" as const, order_semantics: "pick" as const } } };
