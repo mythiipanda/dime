@@ -169,6 +169,40 @@ def _trade_in_effects(con, team: str, raw: dict[str, Any], index: int, target: s
     return effects, None
 
 
+def _extend_effects(raw: dict[str, Any], index: int, target: str,
+                    seasons: list[str], schedules: dict[str, dict[str, Any]],
+                    team: str) -> tuple[list[dict[str, Any]], str | None]:
+    player = str(raw.get("player") or "").strip()
+    years = raw.get("years")
+    first_amount = raw.get("first_year_amount")
+    if not player:
+        return [], "extend needs a player"
+    if not isinstance(years, int) or years < 1 or years > 5:
+        return [], "extend needs years between 1 and 5"
+    if not isinstance(first_amount, (int, float)) or first_amount <= 0:
+        return [], "extend needs a positive first_year_amount"
+    schedule = schedules.get(player.lower())
+    if not schedule or canonical_team_abbr(schedule.get("team") or "") != canonical_team_abbr(team):
+        return [], f"could not match {player} on {team}"
+    contracted = sorted(s for s, v in schedule.get("salary_by_season", {}).items() if v)
+    if not contracted:
+        return [], f"{player} has no contract schedule to extend"
+    last_year = contracted[-1]
+    anchor = _shift_season(target, 1) or target
+    start = max(_shift_season(last_year, 1) or "", anchor)
+    effects = []
+    for offset in range(int(years)):
+        season = _shift_season(start, offset)
+        if not season or season not in seasons:
+            continue
+        effects.append({"move": index, "kind": "extend",
+                        "detail": f"{schedule['player']} extension year {offset + 1}",
+                        "delta": int(first_amount), "roster_delta": 1 if season == start else 0,
+                        "exactness": "unvalidated", "season": season,
+                        "disclosure": "extension amounts are flat and unvalidated against max-extension rules — validation depth is a later slice"})
+    return effects, None
+
+
 def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     team = str(payload.get("team") or "").strip().upper()
     base_season = str(payload.get("season") or "").strip() or "2026-27"
@@ -236,7 +270,19 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             if error:
                 errors.append({"move": str(i), "error": error})
             elif effect:
+                exception = str(raw.get("exception") or "cap_room").strip().lower() or "cap_room"
+                if exception not in ("cap_room", "mle", "bae", "minimum", "bird"):
+                    errors.append({"move": str(i), "error": f"unknown exception '{exception}'"})
+                    continue
+                effect["exception"] = exception
                 add_effect(target, {k: v for k, v in effect.items() if k != "season"})
+        elif kind == "extend":
+            effects, error = _extend_effects(raw, i, target, seasons, schedules, team)
+            if error:
+                errors.append({"move": str(i), "error": error})
+            for effect in effects:
+                season_key = effect.pop("season")
+                add_effect(season_key, effect)
         elif kind == "trade_out":
             player = str(raw.get("player") or "").strip()
             total, matched, unknown = _match_trade_players(team, player, con, target)
@@ -286,9 +332,18 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         pay_after = int(base["payroll"]) + sum(int(e["delta"]) for e in effects)
         roster_after = int(base["roster_count"]) + sum(int(e.get("roster_delta") or 0) for e in effects)
         state = apron_state(pay_after, lines)
+        hard_cap_triggers = sorted({e.get("exception") for e in effects
+                                    if e.get("exception") in ("mle", "bae")})
+        hard_cap_violation = ""
+        if hard_cap_triggers and pay_after > lines["apron1"]:
+            hard_cap_violation = (f"{team} is hard-capped at the first apron after using "
+                                  f"the {'/'.join(t.upper() for t in hard_cap_triggers)} — "
+                                  f"payroll ${pay_after:,} exceeds ${lines['apron1']:,}")
+        exception_usage = sorted({e["exception"] for e in effects
+                                  if e.get("exception") and e["exception"] != "cap_room"})
         season_moves = moves_by_season.get(season, [])
         ordering_notes = []
-        signings = [e for e in effects if e["kind"] == "signing"]
+        signings = [e for e in effects if e["kind"] == "signing" and e.get("exception", "cap_room") == "cap_room"]
         for effect in signings:
             prior_deltas = sum(int(e["delta"]) for e in effects if e["move"] < effect["move"])
             running_pay = int(base["payroll"]) + prior_deltas
@@ -310,6 +365,9 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "roster_before": int(base["roster_count"]),
             "roster_after": roster_after,
             "roster_issues": roster_issue_list,
+            "hard_cap": hard_cap_triggers[0] + " apron" if hard_cap_triggers else "",
+            "hard_cap_violation": hard_cap_violation,
+            "exception_usage": exception_usage,
             "effects": [{"move": e["move"], "kind": e["kind"], "detail": e["detail"],
                          "delta": int(e["delta"]), "exactness": e.get("exactness", "exact"),
                          **({"disclosure": e["disclosure"]} if e.get("disclosure") else {})}
