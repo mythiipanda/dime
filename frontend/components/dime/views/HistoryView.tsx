@@ -273,8 +273,8 @@ export default function HistoryView() {
 
       {selectedSeason && (
         <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">
-            era-relative neighbors — {player} {selectedSeason}
+          <h3 className="text-[13px] font-semibold text-ink">
+            Era-relative neighbors — {player} {selectedSeason}
           </h3>
           {compsLoading && <p className="mt-2 text-[12.5px] text-ink-3">Scoring the pool…</p>}
           {compsError && !compsLoading && (
@@ -304,7 +304,7 @@ export default function HistoryView() {
       <div className="xl:sticky xl:top-6">
       <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5 xl:mt-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">era leaderboard</h3>
+          <h3 className="text-[13px] font-semibold text-ink">Era leaderboard</h3>
           <div className="ml-auto flex items-center gap-1.5 text-[12px]">
             <select
               value={leaderSeason}
