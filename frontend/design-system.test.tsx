@@ -266,3 +266,10 @@ test("shot chart court strokes use a legible mid-tone, not a hairline token", ()
   assert.ok(!source.includes('const LINE = "var(--line-strong)"'), "court geometry must not render in the hairline token — illegible in light mode");
   assert.ok(source.includes("var(--ink-3)"), "court strokes use the mid-tone ink token");
 });
+
+test("card bodies do not repeat the kind label the shell already carries", () => {
+  for (const file of ["./components/dime/ArtifactPlayerCard.tsx", "./components/dime/ArtifactTeamCard.tsx"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(!source.includes("Player snapshot</p>") && !source.includes("Team snapshot</p>"), `${file} re-labels the kind inside the body — redundant with the shell header`);
+  }
+});

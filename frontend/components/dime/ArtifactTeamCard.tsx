@@ -11,7 +11,7 @@ import type { TeamCardArtifactPayload } from "@/lib/dime-stream";
 export default function ArtifactTeamCard({ artifact }: { artifact: TeamCardArtifactPayload }) {
   return <div className="p-4">
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0 flex-1"><p className="mb-1 text-xs text-ink-3">Team snapshot</p><h3 className="break-words text-xl font-medium tracking-tight text-ink">{artifact.teamName}</h3><p className="mt-1 break-words text-[13px] text-ink-2">{artifact.provenance?.season || "Scope not declared"}</p></div>
+      <div className="min-w-0 flex-1"><h3 className="mb-1 break-words text-xl font-medium tracking-tight text-ink">{artifact.teamName}</h3><p className="mt-1 break-words text-[13px] text-ink-2">{artifact.provenance?.season || "Scope not declared"}</p></div>
       <StatusPill dot={false}>Source values</StatusPill>
     </div>
     <dl className="grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-3">
