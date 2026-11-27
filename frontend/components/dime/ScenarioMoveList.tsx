@@ -1,6 +1,7 @@
 "use client";
 
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
+import { describeScenarioMove } from "@/lib/capsheet-fixture";
 import { unitizeMoves, removeUnitAt, ungroupAt, moveUnit, type MoveGroupsMap } from "@/lib/move-groups";
 
 export type MoveListLabels = {
@@ -17,13 +18,15 @@ export default function ScenarioMoveList({
   onChange,
   reorderable = false,
   numbered = false,
+  readOnly = false,
 }: {
   moves: ScenarioMove[];
   groups: MoveGroupsMap;
   labels: MoveListLabels;
-  onChange: (next: ScenarioMove[]) => void;
+  onChange?: (next: ScenarioMove[]) => void;
   reorderable?: boolean;
   numbered?: boolean;
+  readOnly?: boolean;
 }) {
   const units = unitizeMoves(moves);
   return (
@@ -35,7 +38,7 @@ export default function ScenarioMoveList({
               aria-label="Move earlier"
               disabled={unitIndex === 0}
               className="text-[10px] text-ink-3 hover:text-ink disabled:opacity-30"
-              onClick={() => onChange(moveUnit(moves, unitIndex, -1))}
+              onClick={() => onChange?.(moveUnit(moves, unitIndex, -1))}
             >
               ▲
             </button>
@@ -43,7 +46,7 @@ export default function ScenarioMoveList({
               aria-label="Move later"
               disabled={unitIndex === units.length - 1}
               className="text-[10px] text-ink-3 hover:text-ink disabled:opacity-30"
-              onClick={() => onChange(moveUnit(moves, unitIndex, 1))}
+              onClick={() => onChange?.(moveUnit(moves, unitIndex, 1))}
             >
               ▼
             </button>
@@ -59,19 +62,21 @@ export default function ScenarioMoveList({
                 <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3">
                   {numbered && <span className="mr-1.5 font-mono normal-case tracking-normal">{unitIndex + 1}</span>}Trade{meta?.partner ? ` with ${meta.partner}` : ""} — {outCount} out / {inCount} in
                 </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  {reorder}
-                  <button
-                    className={action}
-                    title="The moves stay, but the result may no longer represent a legal trade"
-                    onClick={() => onChange(ungroupAt(moves, unitIndex))}
-                  >
-                    split
-                  </button>
-                  <button className={action} onClick={() => onChange(removeUnitAt(moves, unitIndex))}>
-                    remove
-                  </button>
-                </span>
+                {!readOnly && (
+                  <span className="flex shrink-0 items-center gap-2">
+                    {reorder}
+                    <button
+                      className={action}
+                      title="The moves stay, but the result may no longer represent a legal trade"
+                      onClick={() => onChange?.(ungroupAt(moves, unitIndex))}
+                    >
+                      split
+                    </button>
+                    <button className={action} onClick={() => onChange?.(removeUnitAt(moves, unitIndex))}>
+                      remove
+                    </button>
+                  </span>
+                )}
               </div>
               <div className="mt-1 space-y-1">
                 {unit.entries.map((entry) => (
@@ -102,15 +107,21 @@ export default function ScenarioMoveList({
                 <span className="mt-0.5 block text-[11px] leading-[1.45] text-ink-2">{basis}</span>
               )}
             </div>
-            <span className="flex shrink-0 items-center gap-2">
-              {reorder}
-              <button className={action} onClick={() => onChange(removeUnitAt(moves, unitIndex))}>
-                remove
-              </button>
-            </span>
+            {!readOnly && (
+              <span className="flex shrink-0 items-center gap-2">
+                {reorder}
+                <button className={action} onClick={() => onChange?.(removeUnitAt(moves, unitIndex))}>
+                  remove
+                </button>
+              </span>
+            )}
           </div>
         );
       })}
     </>
   );
+}
+
+export function ReadOnlyMoveList({ moves, groups }: { moves: ScenarioMove[]; groups: MoveGroupsMap }) {
+  return <ScenarioMoveList moves={moves} groups={groups} labels={{ describe: describeScenarioMove }} numbered readOnly />;
 }

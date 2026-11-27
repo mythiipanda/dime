@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { describeScenarioMove } from "@/lib/capsheet-fixture";
+import type { MoveGroupsMap } from "@/lib/move-groups";
+import { ReadOnlyMoveList } from "@/components/dime/ScenarioMoveList";
 import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
 import { ArtifactBody } from "@/components/site/harness/ArtifactsView";
 import { asResolvedArtifacts } from "@/lib/stream/artifacts";
@@ -85,6 +87,7 @@ export function SharedScenarioView({
   evaluation: ProjectionResponse | null;
 }) {
   const moves = object.payload.moves;
+  const groupsMeta = (object.payload as { groups?: MoveGroupsMap }).groups ?? {};
   const errors = (evaluation?.errors ?? []).filter(Boolean);
   const evaluationFailed = evaluation !== null && (evaluation.ok === false || errors.length > 0);
   const seasons = evaluation?.seasons ?? [];
@@ -103,16 +106,9 @@ export function SharedScenarioView({
         <div className="space-y-4">
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">Moves</h2>
-            <ol className="mt-2 space-y-2">
-              {moves.map((move, i) => (
-                <li key={i} className="flex items-baseline justify-between gap-3 text-[12.5px]">
-                  <span className="min-w-0 text-ink-2">
-                    <span className="mr-1.5 font-mono text-[10.5px] text-ink-3">{i + 1}.</span>
-                    {describeScenarioMove(move)}
-                  </span>
-                </li>
-              ))}
-            </ol>
+            <div className="mt-2 space-y-1.5">
+              <ReadOnlyMoveList moves={moves} groups={groupsMeta} />
+            </div>
             {evaluation === null && (
               <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.55] text-ink-3">
                 This scenario could not be evaluated live — the stored moves are shown as shared, without computed cap impact.
