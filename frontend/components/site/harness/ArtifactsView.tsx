@@ -1,6 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useState } from "react";
+import { Share2 } from "lucide-react";
+import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
+import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import ArtifactChart, { type ChartSeries } from "@/components/dime/ArtifactChart";
 import ArtifactCompare from "@/components/dime/ArtifactCompare";
 import ArtifactScatter from "@/components/dime/ArtifactScatter";
@@ -227,21 +231,78 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
   return "";
 }
 
-export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
+type SharePhase =
+  | { phase: "idle" }
+  | { phase: "minting" }
+  | { phase: "minted"; link: string; copied: boolean }
+  | { phase: "error" };
+
+function ShareableArtifact({ artifact, shareContext }: { artifact: DimeArtifact; shareContext?: { run_id: string; thread: string; index: number } }) {
+  const [share, setShare] = useState<SharePhase>({ phase: "idle" });
+  const mint = () => {
+    if (!shareContext || share.phase === "minting") return;
+    setShare({ phase: "minting" });
+    mintObject("artifact_ref", artifact.title || "shared artifact", {
+      run_id: shareContext.run_id,
+      thread: shareContext.thread,
+      artifact_index: shareContext.index,
+    })
+      .then((created) => setShare({ phase: "minted", link: objectShareLink(created.read_token), copied: false }))
+      .catch(() => setShare({ phase: "error" }));
+  };
+  const copyLink = (link: string) => {
+    copyToClipboard(link, () => setShare((current) => current.phase === "minted" ? { ...current, copied: true } : current));
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <ArtifactShell
+        title={artifact.title}
+        source={artifact.source}
+        copyText={artifactToCopyText(artifact)}
+        actions={<>
+          <OpenInViewButton artifact={artifact} />
+          <PinButton artifact={artifact} />
+          {shareContext && (
+            <button
+              className="icon-button"
+              aria-label={share.phase === "minting" ? "Creating share link" : "Share artifact"}
+              title={share.phase === "error" ? "Could not create share link — try again" : "Share artifact"}
+              disabled={share.phase === "minting"}
+              onClick={mint}
+            >
+              <Share2 width={13} height={13} aria-hidden="true" />
+            </button>
+          )}
+        </>}
+      >
+        <ArtifactBody artifact={artifact} />
+        <ProvenancePanel provenance={artifact.provenance ?? undeclaredProvenance()} />
+      </ArtifactShell>
+      {share.phase === "minted" && (
+        <MintedLink
+          link={share.link}
+          copied={share.copied}
+          onCopy={copyLink}
+          note="Anyone with this link can view this artifact and its pinned evidence — read-only. Numbers are the capture-time snapshot."
+        />
+      )}
+      {share.phase === "error" && (
+        <p role="status" className="text-[11.5px] text-red">Could not create the share link — try again.</p>
+      )}
+    </div>
+  );
+}
+
+export function StreamArtifacts({ artifacts, shareContext }: { artifacts: DimeArtifact[]; shareContext?: { run_id: string; thread: string } }) {
   if (artifacts.length === 0) return null;
   return (
     <div className="mt-5 flex flex-col gap-4">
       {artifacts.map((artifact, i) => (
-        <ArtifactShell
+        <ShareableArtifact
           key={i}
-          title={artifact.title}
-          source={artifact.source}
-          copyText={artifactToCopyText(artifact)}
-          actions={<><OpenInViewButton artifact={artifact} /><PinButton artifact={artifact} /></>}
-        >
-          <ArtifactBody artifact={artifact} />
-          <ProvenancePanel provenance={artifact.provenance ?? undeclaredProvenance()} />
-        </ArtifactShell>
+          artifact={artifact}
+          shareContext={shareContext ? { ...shareContext, index: i } : undefined}
+        />
       ))}
     </div>
   );

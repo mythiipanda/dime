@@ -34,6 +34,7 @@ export function DimeShell() {
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
   const [replay, setReplay] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
+  const navigateRef = useRef<(nextTab: ShellTab) => void>(() => {});
   const [dark, setDark] = useState(true);
   const [workflowRequest, setWorkflowRequest] = useState<{ thread: string; text: string } | null>(null);
   const workflowStarting = useRef(false);
@@ -53,10 +54,16 @@ export function DimeShell() {
     window.addEventListener("popstate", read);
     const key = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setPalette(true); } };
     window.addEventListener("keydown", key);
-    return () => { window.removeEventListener("popstate", read); window.removeEventListener("keydown", key); };
+    const external = (event: Event) => {
+      const detail = (event as CustomEvent<{ tab?: string }>).detail;
+      if (detail?.tab) navigateRef.current(parseShellTab(detail.tab));
+    };
+    window.addEventListener("dime:navigate", external);
+    return () => { window.removeEventListener("popstate", read); window.removeEventListener("keydown", key); window.removeEventListener("dime:navigate", external); };
   }, []);
   const reload = useCallback(() => { void getThreads().then(items => setThreads(items.sort((a, b) => b.updated.localeCompare(a.updated)))); }, []);
   useEffect(() => { reload(); }, [reload]);
+  navigateRef.current = (nextTab: ShellTab) => navigate(nextTab);
   const navigate = (nextTab: ShellTab, nextThread = thread) => {
     setTab(nextTab); setThread(nextThread); setReplay(null);
     if (nextTab !== "boards") setBoardId(null);

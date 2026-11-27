@@ -228,3 +228,19 @@ test("post-mint edits surface Share updated instead of a dead end", async () => 
   }
 });
 
+test("roster rows without player_ids render distinctly — no key collapse for unsigned camp players", async () => {
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { errors.push(args.map(String).join(" ")); };
+  const mounted = await mountCapSheet();
+  try {
+    const names = [...mounted.host.querySelectorAll("tbody tr th, tbody tr td:first-child")].map((cell) => cell.textContent ?? "");
+    assert.ok(names.length > 0, "roster renders");
+    const dupeKeyWarnings = errors.filter((line) => line.includes("same key"));
+    assert.deepEqual(dupeKeyWarnings, [], "no duplicate-key warnings even with null player_ids in the roster");
+  } finally {
+    console.error = originalError;
+    await mounted.cleanup();
+  }
+});
+

@@ -9,7 +9,7 @@ import { createAnalyst, analystRequestSchema, backendRoot, newRunId, encodeEvent
 import { ProjectStore, WorkspaceStore } from "./catalog-stores.js";
 import { ObjectStore, validateObjectPayload, type ObjectKind } from "./object-store.js";
 import { providerPolicy } from "./providers.js";
-import { objectValue } from "./python-tools.js";
+import { objectValue, sourceResult } from "./python-tools.js";
 import type { DirectData } from "./direct-data.js";
 export class HttpError extends Error {
     constructor(readonly status: number, readonly detail: unknown, readonly headers: Record<string, string> = {}) { super(typeof detail === "string" ? detail : "Request failed"); }
@@ -300,14 +300,53 @@ export function createProductServer(options: {
             throw new HttpError(422, [validationDetail("thread_not_owned", ["body", "payload", "thread"], "thread has no runs for this owner", null)]);
         return { thread, owner, granted_before: new Date().toISOString() };
     };
+    const stampArtifactRef = (owner: string, payload: unknown) => {
+        const shape = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+        const runId = typeof shape.run_id === "string" ? shape.run_id.trim().slice(0, 60) : "";
+        const thread = typeof shape.thread === "string" ? shape.thread.trim().slice(0, 120) : "";
+        const index = typeof shape.artifact_index === "number" && Number.isInteger(shape.artifact_index) ? shape.artifact_index : -1;
+        if (!runId || !thread || index < 0)
+            throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], "artifact ref payload requires run_id, thread and artifact_index", null)]);
+        let resolved;
+        try {
+            resolved = analyst.store.readSources({ owner, thread }, runId);
+        }
+        catch {
+            throw new HttpError(422, [validationDetail("run_not_owned", ["body", "payload", "run_id"], "run not found for this owner and thread", null)]);
+        }
+        const artifacts = resolved.submission && Array.isArray((resolved.submission as Record<string, unknown>).artifacts) ? (resolved.submission as Record<string, unknown>).artifacts as unknown[] : [];
+        if (index >= artifacts.length)
+            throw new HttpError(422, [validationDetail("artifact_index_out_of_range", ["body", "payload", "artifact_index"], "artifact index out of range for the run submission", null)]);
+        return { run_id: runId, artifact_index: index, thread, owner };
+    };
+    const validateBoardPins = (store: ObjectStore, owner: string, payload: unknown): string | null => {
+        const shape = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+        if (!Array.isArray(shape.pins))
+            return null;
+        for (const pin of shape.pins) {
+            const p = pin && typeof pin === "object" ? pin as Record<string, unknown> : {};
+            const target = typeof p.object_id === "string" ? store.get(p.object_id) : undefined;
+            if (!target)
+                return `pin target does not exist`;
+            if (target.owner !== owner)
+                return `pin target is owned by someone else — cross-owner pinning is not supported`;
+            if (target.kind !== p.kind)
+                return `pin kind does not match the referenced object`;
+        }
+        return null;
+    };
+
     route("POST", /^\/api\/objects$/, async ({ req, res }) => {
         objectWriteRate(req);
         const owner = objectOwner(req);
         const input = parseBody(objectCreate, await body(req));
-        const payload = input.kind === "thread_grant" ? await stampThreadGrant(owner, input.payload) : input.payload;
+        const payload = input.kind === "thread_grant" ? await stampThreadGrant(owner, input.payload) : input.kind === "artifact_ref" ? stampArtifactRef(owner, input.payload) : input.payload;
         const invalid = validateObjectPayload(input.kind, payload);
         if (invalid)
             throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], invalid, null)]);
+        const pinInvalid = input.kind === "board" ? validateBoardPins(objects, owner, payload) : null;
+        if (pinInvalid)
+            throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], pinInvalid, null)]);
         const created = objects.create({ kind: input.kind as ObjectKind, owner, title: input.title, payload });
         const value = objects.get(created.object_id);
         if (!value)
@@ -327,11 +366,14 @@ export function createProductServer(options: {
         const value = authorizedObject(req, params[0]);
         const input = parseBody(objectPatch, await body(req));
         if (input.payload !== undefined) {
-            if (value.kind === "thread_grant")
-                throw new HttpError(422, [validationDetail("payload_immutable", ["body", "payload"], "thread grant payloads are immutable — archive and re-grant instead", null)]);
+            if (value.kind === "thread_grant" || value.kind === "artifact_ref")
+                throw new HttpError(422, [validationDetail("payload_immutable", ["body", "payload"], "grant and artifact ref payloads are immutable — archive and re-create instead", null)]);
             const invalid = validateObjectPayload(value.kind, input.payload);
             if (invalid)
                 throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], invalid, null)]);
+            const pinInvalid = value.kind === "board" ? validateBoardPins(objects, value.owner, input.payload) : null;
+            if (pinInvalid)
+                throw new HttpError(422, [validationDetail("payload_invalid", ["body", "payload"], pinInvalid, null)]);
         }
         objects.update(value, input);
         const updated = objects.get(value.object_id);
@@ -369,6 +411,43 @@ export function createProductServer(options: {
                 };
             });
     };
+    const resolveArtifactRef = (payload: unknown): { artifact: unknown; evidence: unknown[]; unavailable: boolean } => {
+        const shape = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+        const runId = typeof shape.run_id === "string" ? shape.run_id : "";
+        const thread = typeof shape.thread === "string" ? shape.thread : "";
+        const owner = typeof shape.owner === "string" ? shape.owner : "";
+        const index = typeof shape.artifact_index === "number" ? shape.artifact_index : -1;
+        try {
+            const resolved = analyst.store.readSources({ owner, thread }, runId);
+            const artifacts = resolved.submission && Array.isArray((resolved.submission as Record<string, unknown>).artifacts) ? (resolved.submission as Record<string, unknown>).artifacts as unknown[] : [];
+            const artifact = index >= 0 && index < artifacts.length ? artifacts[index] : null;
+            if (!artifact)
+                throw new Error("artifact missing");
+            const selectors = artifact && typeof artifact === "object" && Array.isArray((artifact as Record<string, unknown>).sources) ? (artifact as Record<string, unknown>).sources as { ref?: string; rows?: number[]; columns?: string[] }[] : [];
+            const records = new Map((resolved.sources ?? []).map(record => [record.ref, record]));
+            const evidence = selectors.map(selector => {
+                const record = selector.ref ? records.get(selector.ref) : undefined;
+                if (!record)
+                    return { ref: selector.ref ?? "", missing: true };
+                const result = sourceResult(record);
+                const data = objectValue(result.structuredContent.result) ?? {};
+                const rows = Array.isArray(data.rows) ? data.rows as Record<string, unknown>[] : [];
+                const picked = Array.isArray(selector.rows) ? selector.rows.map(i => rows[i]).filter((row): row is Record<string, unknown> => !!row) : rows;
+                const meta = objectValue(data.meta);
+                return {
+                    ref: record.ref,
+                    tool: record.tool,
+                    ...(meta ? { meta } : {}),
+                    rows: picked.slice(0, 200)
+                };
+            });
+            return { artifact, evidence, unavailable: false };
+        }
+        catch {
+            return { artifact: null, evidence: [], unavailable: true };
+        }
+    };
+
     route("GET", /^\/s\/([^/]+)$/, async ({ res, params }) => {
         if (!readTokenShape.test(params[0]))
             throw new HttpError(422, [validationDetail("read_token_format", ["params", "read_token"], "Invalid share token", params[0])]);
@@ -376,9 +455,45 @@ export function createProductServer(options: {
         if (!value)
             throw new HttpError(404, "not found");
         const shared = publicObject(value);
+        if (value.kind === "board" && !value.archived) {
+            const shape = value.payload && typeof value.payload === "object" ? value.payload as Record<string, unknown> : {};
+            const pins = Array.isArray(shape.pins) ? shape.pins as { kind?: string; object_id?: string; note?: string }[] : [];
+            const resolvedPins = pins.map(pin => {
+                const target = typeof pin.object_id === "string" ? objects.get(pin.object_id) : undefined;
+                if (!target)
+                    return { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "missing" };
+                if (target.archived)
+                    return { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "archived" };
+                const base = { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "ok", title: target.title, payload: target.payload };
+                if (pin.kind === "artifact_ref") {
+                    const resolvedRef = resolveArtifactRef(target.payload);
+                    return { ...base, artifact: resolvedRef.artifact, artifact_unavailable: resolvedRef.unavailable };
+                }
+                return base;
+            });
+            json(res, { ...shared, pins: resolvedPins });
+            return;
+        }
         if (value.kind === "thread_grant" && !value.archived) {
             const transcript = await resolveThreadTranscript(value.payload);
             json(res, { ...shared, payload: { thread: true }, transcript });
+            return;
+        }
+        if (value.kind === "artifact_ref" && !value.archived) {
+            const shape = value.payload && typeof value.payload === "object" ? value.payload as Record<string, unknown> : {};
+            const index = typeof shape.artifact_index === "number" ? shape.artifact_index : -1;
+            const resolvedRef = resolveArtifactRef(value.payload);
+            if (resolvedRef.unavailable) {
+                json(res, { ...shared, payload: { artifact_index: index }, artifact: null, evidence: [], unavailable: true });
+                return;
+            }
+            json(res, {
+                ...shared,
+                payload: { artifact_index: index },
+                artifact: resolvedRef.artifact,
+                evidence: resolvedRef.evidence,
+                captured_at: typeof shape.granted_before === "string" ? shape.granted_before : value.created_at
+            });
             return;
         }
         json(res, shared);
