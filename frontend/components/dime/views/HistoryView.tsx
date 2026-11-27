@@ -213,7 +213,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     let cancelled = false;
     setCompsLoading(true);
     setCompsError(null);
-    const windowParams = `${winStart ? `&start_season=${encodeURIComponent(winStart)}` : ""}${winEnd ? `&end_season=${encodeURIComponent(winEnd)}` : ""}`;
+    const windowParams = `${winStart ? `&start=${encodeURIComponent(winStart)}` : ""}${winEnd ? `&end=${encodeURIComponent(winEnd)}` : ""}`;
     fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=12${windowParams}`)}`)
       .then(async (response) => {
         const body = await response.json().catch(() => null);

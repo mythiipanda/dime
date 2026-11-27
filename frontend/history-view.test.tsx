@@ -284,7 +284,7 @@ test("era-window lens narrows the comp pool and rides the URL", async () => {
     await flush();
     const compsCalls = seen.filter((u) => u.includes("/history/era-comps"));
     assert.ok(
-      compsCalls.some((u) => u.includes("start_season=2003-04") && u.includes("end_season=2010-11")),
+      compsCalls.some((u) => u.includes("start=2003-04") && u.includes("end=2010-11")),
       `comps refetch carries the window, got ${compsCalls.join(" | ")}`,
     );
     const url = win.location.href;
