@@ -39,6 +39,7 @@ export default function ArtifactChart({ series, height = 220, footnote, unit, xL
     <figcaption className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-2">
       {series.map((s, i) => <span key={i} className="inline-flex min-w-0 items-center gap-2 break-words"><span aria-hidden="true" className="w-4 shrink-0 border-t-2" style={{ borderColor: toneColor[s.tone ?? (i === 0 ? "ink" : "muted")], borderTopStyle: i % 2 ? "dashed" : "solid" }} />{s.name}{s.unit ? <span className="text-ink-3">({s.unit})</span> : null}</span>)}
       {!series.some(s => s.unit) && unit ? <span className="text-ink-3">{unit}</span> : null}
+      {(marks ?? []).map((m, i) => <span key={`mark-legend-${i}`} className="inline-flex min-w-0 items-center gap-2 break-words text-ink-3"><span aria-hidden="true" className="w-4 shrink-0 border-t-2 border-dashed" style={{ borderColor: "var(--ink-3)" }} />{m.label}</span>)}
     </figcaption>
     <ResponsiveContainer width="100%" height={chartHeight} minWidth={0} initialDimension={{ width: 640, height: chartHeight }}>
       {variant === "bar"
@@ -47,7 +48,7 @@ export default function ArtifactChart({ series, height = 220, footnote, unit, xL
             <XAxis type="number" tick={{ fill: "var(--ink-3)", fontSize: 11 }} tickLine={false} axisLine={false} label={xLabel ? { value: xLabel, position: "insideBottom", offset: -4, fill: "var(--ink-3)", fontSize: 11 } : undefined} />
             <YAxis type="category" dataKey="label" width={numbered ? 150 : 132} tick={{ fill: "var(--ink)", fontSize: 11 }} tickLine={false} axisLine={false} label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft", fill: "var(--ink-3)", fontSize: 11 } : undefined} />
             <Tooltip contentStyle={{ background: "var(--surface)", borderColor: "var(--line)", borderRadius: 8, fontSize: 12, color: "var(--ink)" }} isAnimationActive={false} />
-            {(marks ?? []).map((m, i) => <ReferenceLine key={`mark-${i}`} x={m.value} stroke="var(--ink-3)" strokeDasharray="4 3" label={{ value: m.label, position: "insideTopLeft", fill: "var(--ink-3)", fontSize: 11 }} />)}
+            {(marks ?? []).map((m, i) => <ReferenceLine key={`mark-${i}`} x={m.value} stroke="var(--ink-3)" strokeDasharray="4 3" />)}
             {series.map((s, i) => <Bar key={i} dataKey={`series${i}`} name={s.name} fill={toneColor[s.tone ?? (i === 0 ? "ink" : "muted")]} isAnimationActive={false}>
               {labelValues && <LabelList dataKey={`series${i}`} position="right" style={{ fill: "var(--ink-2)", fontSize: 11 }} />}
             </Bar>)}
@@ -57,7 +58,7 @@ export default function ArtifactChart({ series, height = 220, footnote, unit, xL
             <XAxis dataKey="label" tick={{ fill: "var(--ink-3)", fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={24} label={xLabel ? { value: xLabel, position: "insideBottom", offset: -8, fill: "var(--ink-3)", fontSize: 11 } : undefined} />
             <YAxis tick={{ fill: "var(--ink-3)", fontSize: 11 }} tickLine={false} axisLine={false} width={48} domain={["auto", "auto"]} label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft", fill: "var(--ink-3)", fontSize: 11 } : undefined} />
             <Tooltip contentStyle={{ background: "var(--surface)", borderColor: "var(--line)", borderRadius: 8, fontSize: 12, color: "var(--ink)" }} isAnimationActive={false} />
-            {(marks ?? []).map((m, i) => <ReferenceLine key={`mark-${i}`} y={m.value} stroke="var(--ink-3)" strokeDasharray="4 3" label={{ value: m.label, position: "insideTopRight", fill: "var(--ink-3)", fontSize: 11 }} />)}
+            {(marks ?? []).map((m, i) => <ReferenceLine key={`mark-${i}`} y={m.value} stroke="var(--ink-3)" strokeDasharray="4 3" />)}
             {series.map((s, i) => <Line key={i} type="linear" dataKey={`series${i}`} name={s.name} stroke={toneColor[s.tone ?? (i === 0 ? "ink" : "muted")]} strokeWidth={2} strokeDasharray={i % 2 ? "4 3" : undefined} dot={count <= 12 || labelValues} connectNulls={false} isAnimationActive={false}>
               {labelValues && <LabelList dataKey={`series${i}`} position="top" style={{ fill: "var(--ink-2)", fontSize: 10 }} />}
             </Line>)}

@@ -253,3 +253,15 @@ test("reduced motion keeps opacity fades while movement transitions are opt-in g
   const sortBase = globals.match(/\.records-sort \{(?!.*transform)[\s\S]*?transition: opacity 120ms ease-out;/);
   assert.ok(sortBase, "the base rule keeps the opacity fade without the transform");
 });
+
+test("shot chart court strokes use a legible mid-tone, not a hairline token", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactShotChart.tsx", import.meta.url), "utf8");
+  assert.ok(!source.includes('const LINE = "var(--line-strong)"'), "court geometry must not render in the hairline token — illegible in light mode");
+  assert.ok(source.includes("var(--ink-3)"), "court strokes use the mid-tone ink token");
+});
+
+test("chart threshold marks label in the legend strip, never inside the plot where bars collide", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactChart.tsx", import.meta.url), "utf8");
+  assert.ok(!source.includes("position: \"insideTopLeft\"") && !source.includes("position: \"insideTopRight\""), "reference-line labels must not render inside the plot area");
+  assert.ok(source.includes("mark-legend"), "mark labels ride in the legend strip");
+});
