@@ -288,3 +288,9 @@ test("the shell never renders undeclared provenance as a headline subtitle", () 
   const source = readFileSync(new URL("./components/dime/ArtifactShell.tsx", import.meta.url), "utf8");
   assert.ok(source.includes('source === "source not declared"'), "the shell drops the undeclared-provenance string from the subtitle slot");
 });
+
+test("scatter labels every point at low density and stays hover-only beyond it", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactScatter.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("points.length <= 8"), "static labels for all points when density is 8 or fewer");
+  assert.ok(source.includes("<title>"), "hover titles carry identity beyond that density");
+});
