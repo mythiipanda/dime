@@ -467,7 +467,17 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                       onClick={() => setSelectedSeason(row.season)}
                       title="click for era comps of this season"
                     >
-                      <td className="border-t border-line px-2 py-1 font-mono text-ink">{row.season}</td>
+                      <td className="border-t border-line px-2 py-1 font-mono text-ink">
+                        <button
+                          type="button"
+                          className="font-mono text-ink underline-offset-2 hover:underline"
+                          aria-pressed={selectedSeason === row.season}
+                          title="activate for era comps of this season"
+                          onClick={() => setSelectedSeason(row.season)}
+                        >
+                          {row.season}
+                        </button>
+                      </td>
                       <td className="border-t border-line px-2 py-1 text-right font-mono tabular-nums text-ink-2">{row.gp ?? "–"}</td>
                       <td className="border-t border-line px-2 py-1 text-right font-mono tabular-nums text-ink-2">{fmt(row.min)}</td>
                       <td className="border-t border-line px-2 py-1 text-right font-mono tabular-nums text-ink">{fmt(row.pts)}</td>

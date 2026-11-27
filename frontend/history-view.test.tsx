@@ -59,8 +59,10 @@ function clickSeasonRow(host: ParentNode, season: string) {
   const rows = Array.from(host.querySelectorAll("tr")) as Element[];
   const row = rows.find((r: Element) => (r.textContent ?? "").startsWith(season) && r.className.includes("cursor-pointer"));
   assert.ok(row, `season row ${season} should render in the arc table`);
+  const toggle = row.querySelector("button[aria-pressed]");
+  assert.ok(toggle, "season rows expose a native button — keyboard-operable, pressed state exposed");
   act(() => {
-    (row as HTMLElement).click();
+    (toggle as HTMLElement).click();
   });
 }
 
