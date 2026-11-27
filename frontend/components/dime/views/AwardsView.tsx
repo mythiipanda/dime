@@ -63,14 +63,14 @@ function Board({ board }: { board: AwardBoard }) {
           <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-wide text-ink-3">score</span>
         </div>
         {board.candidates.map((c) => (
-          <div key={c.player} className="px-4 py-3">
+          <div key={c.player} className={`px-4 py-3 ${c.rank === 1 ? "bg-field/40" : ""}`}>
             <div className="flex items-center gap-3">
-              <span className="w-5 shrink-0 font-mono text-[12px] tabular-nums text-ink-3">{c.rank}</span>
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink" title={`${c.player} · ${c.team}`}>
+              <span className={`w-5 shrink-0 font-mono text-[12px] tabular-nums ${c.rank === 1 ? "font-semibold text-accent" : "text-ink-3"}`}>{c.rank}</span>
+              <span className={`min-w-0 flex-1 truncate text-[13px] text-ink ${c.rank === 1 ? "font-semibold" : "font-medium"}`} title={`${c.player} · ${c.team}`}>
                 {c.player}
                 <span className="ml-2 font-mono text-[11px] font-normal text-ink-3">{c.team}</span>
               </span>
-              <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink-2" title="projection score (z-weighted composite)">
+              <span className={`shrink-0 font-mono text-[12px] tabular-nums ${c.rank === 1 ? "font-semibold text-ink" : "text-ink-2"}`} title="projection score (z-weighted composite)">
                 {c.score.toFixed(2)}
               </span>
             </div>
