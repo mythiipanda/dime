@@ -197,3 +197,48 @@ test("objects route contract: create, ownership, update, share rotation, public 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("objects route contract: board kind validates intent payload", async () => {
+  const { server, root } = fixture();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const owner = "client-board-owner";
+  const post = (path, payload, headers = {}) => fetch(url + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(payload) });
+  const intent = {
+    season: "2026-27",
+    rows: [{ player_id: 1628369 }, { player_id: 1627759 }],
+    columns: [{ metric_id: "ppg" }, { metric_id: "ts_pct" }],
+    template_id: "scoring-guards",
+  };
+  try {
+    for (const bad of [
+      { kind: "board", title: "t" },
+      { kind: "board", title: "t", payload: {} },
+      { kind: "board", title: "t", payload: { ...intent, rows: [] } },
+      { kind: "board", title: "t", payload: { ...intent, columns: [] } },
+      { kind: "board", title: "t", payload: { ...intent, rows: [{}] } },
+      { kind: "board", title: "t", payload: { ...intent, rows: [{ player_id: "abc" }] } },
+      { kind: "board", title: "t", payload: { ...intent, columns: [{}] } },
+      { kind: "board", title: "t", payload: { ...intent, cells: {} } },
+      { kind: "board", title: "t", payload: { ...intent, extra: 1 } },
+    ]) {
+      const response = await post("/api/objects", bad, { "x-dime-owner": owner });
+      assert.equal(response.status, 422, JSON.stringify(bad));
+    }
+    const created = await post("/api/objects", { kind: "board", title: "Scoring guards", payload: intent }, { "x-dime-owner": owner });
+    assert.equal(created.status, 201);
+    const object = await created.json();
+    const share = await fetch(`${url}/s/${object.read_token}`);
+    assert.equal(share.status, 200);
+    const shared = await share.json();
+    assert.equal(shared.kind, "board");
+    assert.equal(shared.payload.rows.length, 2);
+    assert.equal(shared.payload.columns.length, 2);
+    assert.equal(shared.payload.cells, undefined, "cells never persist — evaluated output is re-computed at open time");
+  }
+  finally {
+    server.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+

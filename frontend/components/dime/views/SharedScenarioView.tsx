@@ -15,12 +15,12 @@ function sharedDate(iso: string): string {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
 }
 
-function Frame({ children }: { children: ReactNode }) {
+export function SharedFrame({ children, label = "shared cap scenario" }: { children: ReactNode; label?: string }) {
   return (
     <main className="mx-auto min-h-screen w-full max-w-[860px] px-5 py-10 sm:px-8">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <a href="/" className="text-[15px] font-semibold tracking-tight text-ink">dime</a>
-        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">shared cap scenario</span>
+        <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{label}</span>
         <span className="rounded-full border border-line px-2 py-px font-mono text-[9.5px] uppercase tracking-wide text-ink-3">
           read-only
         </span>
@@ -63,12 +63,12 @@ export function SharedScenarioNotice({ tone }: { tone: "archived" | "not_found" 
   };
   const { title, body } = copy[tone];
   return (
-    <Frame>
+    <SharedFrame>
       <section className="mt-8 rounded-[10px] bg-surface p-6 shadow-hairline">
         <h1 className="text-[17px] font-semibold text-ink">{title}</h1>
         <p className="mt-2 max-w-[520px] text-[13px] leading-[1.6] text-ink-2">{body}</p>
       </section>
-    </Frame>
+    </SharedFrame>
   );
 }
 
@@ -86,7 +86,7 @@ export function SharedScenarioView({
   const evaluationFailed = evaluation !== null && (evaluation.ok === false || errors.length > 0);
 
   return (
-    <Frame>
+    <SharedFrame>
       <div className="mt-6">
         <h1 className="text-[22px] font-semibold tracking-tight text-ink">{object.title}</h1>
         <p className="mt-1 text-[12.5px] text-ink-3">
@@ -201,6 +201,6 @@ export function SharedScenarioView({
           </section>
         </aside>
       </div>
-    </Frame>
+    </SharedFrame>
   );
 }

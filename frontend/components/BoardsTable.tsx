@@ -52,10 +52,11 @@ export function BoardValue({ cell, metric, column, player }: { cell: BoardCell; 
 }
 
 
-export function BoardsTable({ board, metrics, loading, sort, onSort, onRemoveRow, onRemoveColumn, onMoveRow, onMoveColumn }: {
+export function BoardsTable({ board, metrics, loading, sort, onSort, onRemoveRow, onRemoveColumn, onMoveRow, onMoveColumn, readOnly = false }: {
   board: Board; metrics: BoardMetric[]; loading: boolean; sort: { id: string; best: boolean } | null;
   onSort: (metric: BoardMetric) => void; onRemoveRow: (id: number) => void; onRemoveColumn: (id: string) => void;
   onMoveRow: (from: number, to: number) => void; onMoveColumn: (from: number, to: number) => void;
+  readOnly?: boolean;
 }) {
   const ranks = Object.fromEntries(metrics.map(metric => [metric.id, columnPercentiles(board, metric)]));
   return <div className="overflow-x-auto rounded-xl border border-line bg-surface">
@@ -66,23 +67,23 @@ export function BoardsTable({ board, metrics, loading, sort, onSort, onRemoveRow
           const label = metric?.label || presentation?.label || metric_id;
           const unit = metric?.unit || presentation?.unit;
           return <th scope="col" key={metric_id} className="min-w-40 px-3 py-3 text-right font-normal" aria-sort={sort?.id === metric_id && metric ? (metric.higher_is_better === sort.best ? "descending" : "ascending") : "none"}>
-            <div className="flex items-center justify-end gap-1"><Button size="xs" variant="quiet" disabled={!metric} title={metric?.definition} onClick={() => metric && onSort(metric)}>{label}{sort?.id === metric_id && (metric?.higher_is_better === sort.best ? " ↓" : " ↑")}</Button>
-              <Popover><PopoverTrigger asChild><Button size="xs" variant="quiet" aria-label={`Manage ${label}`}>···</Button></PopoverTrigger><PopoverContent align="end" aria-label={`Manage ${label}`}>
+            <div className="flex items-center justify-end gap-1"><Button size="xs" variant="quiet" disabled={!metric || readOnly} title={metric?.definition} onClick={() => metric && onSort(metric)}>{label}{sort?.id === metric_id && (metric?.higher_is_better === sort.best ? " ↓" : " ↑")}</Button>
+              {!readOnly && <Popover><PopoverTrigger asChild><Button size="xs" variant="quiet" aria-label={`Manage ${label}`}>···</Button></PopoverTrigger><PopoverContent align="end" aria-label={`Manage ${label}`}>
                 <Button size="sm" variant="quiet" disabled={index === 0} onClick={() => onMoveColumn(index, index - 1)}><ArrowLeft size={13} />Move left</Button>
                 <Button size="sm" variant="quiet" disabled={index === board.columns.length - 1} onClick={() => onMoveColumn(index, index + 1)}><ArrowRight size={13} />Move right</Button>
                 <Button size="sm" variant="quiet" onClick={() => onRemoveColumn(metric_id)}>Remove metric</Button>
-              </PopoverContent></Popover>
+              </PopoverContent></Popover>}
             </div><p className="mt-1 text-[10px] text-ink-3">{unit === "usd" ? "2026–27 · USD" : unit === "per_game" ? "Per game" : unit === "pct" ? "Percent" : unit || "Metric"}</p>
           </th>;
         })}
       </tr></thead>
       <tbody className="divide-y divide-line">{board.rows.map((row, index) => <tr key={row.player_id} className="hover:bg-hover">
         <th scope="row" className="px-4 py-3 font-normal"><div className="flex items-center gap-3"><span className="font-mono text-[10px] text-ink-3">{String(index + 1).padStart(2, "0")}</span><div className="min-w-28 flex-1"><p className="font-medium">{row.name}</p><p className="mt-1 text-[10px] text-ink-3">{row.team || "Team not recorded"}</p></div>
-          <Popover><PopoverTrigger asChild><Button size="xs" variant="quiet" aria-label={`Manage ${row.name}`}>···</Button></PopoverTrigger><PopoverContent align="start" aria-label={`Manage ${row.name}`}>
+          {!readOnly && <Popover><PopoverTrigger asChild><Button size="xs" variant="quiet" aria-label={`Manage ${row.name}`}>···</Button></PopoverTrigger><PopoverContent align="start" aria-label={`Manage ${row.name}`}>
             <Button size="sm" variant="quiet" disabled={index === 0} onClick={() => onMoveRow(index, index - 1)}><ArrowUp size={13} />Move up</Button>
             <Button size="sm" variant="quiet" disabled={index === board.rows.length - 1} onClick={() => onMoveRow(index, index + 1)}><ArrowDown size={13} />Move down</Button>
             <Button size="sm" variant="quiet" onClick={() => onRemoveRow(row.player_id)}><X size={13} />Remove player</Button>
-          </PopoverContent></Popover>
+          </PopoverContent></Popover>}
         </div></th>
         {board.columns.map(column => { const { metric_id } = column, metric = metrics.find(item => item.id === metric_id), cell = board.cells[row.player_id]?.[metric_id]; return <td key={metric_id} className="px-3 py-3 text-right">
           {cell ? <div className="flex items-center justify-end gap-1"><BoardValue cell={cell} metric={metric} column={column} player={row.name} />{ranks[metric_id]?.[row.player_id] === 1 && <ValuePill tone="accent">Best</ValuePill>}</div> : <span className="text-ink-3">{loading ? "Loading…" : "Not filled"}</span>}
