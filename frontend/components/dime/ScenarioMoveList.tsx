@@ -1,6 +1,7 @@
 "use client";
 
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
+import { describeScenarioMove } from "@/lib/capsheet-fixture";
 import { unitizeMoves, removeUnitAt, ungroupAt, moveUnit, type MoveGroupsMap } from "@/lib/move-groups";
 
 export type MoveListLabels = {
@@ -22,7 +23,7 @@ export default function ScenarioMoveList({
   moves: ScenarioMove[];
   groups: MoveGroupsMap;
   labels: MoveListLabels;
-  onChange: (next: ScenarioMove[]) => void;
+  onChange?: (next: ScenarioMove[]) => void;
   reorderable?: boolean;
   numbered?: boolean;
   readOnly?: boolean;
@@ -37,7 +38,7 @@ export default function ScenarioMoveList({
               aria-label="Move earlier"
               disabled={unitIndex === 0}
               className="text-[10px] text-ink-3 hover:text-ink disabled:opacity-30"
-              onClick={() => onChange(moveUnit(moves, unitIndex, -1))}
+              onClick={() => onChange?.(moveUnit(moves, unitIndex, -1))}
             >
               ▲
             </button>
@@ -45,7 +46,7 @@ export default function ScenarioMoveList({
               aria-label="Move later"
               disabled={unitIndex === units.length - 1}
               className="text-[10px] text-ink-3 hover:text-ink disabled:opacity-30"
-              onClick={() => onChange(moveUnit(moves, unitIndex, 1))}
+              onClick={() => onChange?.(moveUnit(moves, unitIndex, 1))}
             >
               ▼
             </button>
@@ -67,11 +68,11 @@ export default function ScenarioMoveList({
                     <button
                       className={action}
                       title="The moves stay, but the result may no longer represent a legal trade"
-                      onClick={() => onChange(ungroupAt(moves, unitIndex))}
+                      onClick={() => onChange?.(ungroupAt(moves, unitIndex))}
                     >
                       split
                     </button>
-                    <button className={action} onClick={() => onChange(removeUnitAt(moves, unitIndex))}>
+                    <button className={action} onClick={() => onChange?.(removeUnitAt(moves, unitIndex))}>
                       remove
                     </button>
                   </span>
@@ -109,7 +110,7 @@ export default function ScenarioMoveList({
             {!readOnly && (
               <span className="flex shrink-0 items-center gap-2">
                 {reorder}
-                <button className={action} onClick={() => onChange(removeUnitAt(moves, unitIndex))}>
+                <button className={action} onClick={() => onChange?.(removeUnitAt(moves, unitIndex))}>
                   remove
                 </button>
               </span>
@@ -119,4 +120,8 @@ export default function ScenarioMoveList({
       })}
     </>
   );
+}
+
+export function ReadOnlyMoveList({ moves, groups }: { moves: ScenarioMove[]; groups: MoveGroupsMap }) {
+  return <ScenarioMoveList moves={moves} groups={groups} labels={{ describe: describeScenarioMove }} numbered readOnly />;
 }

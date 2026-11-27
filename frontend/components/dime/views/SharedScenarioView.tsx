@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { describeScenarioMove } from "@/lib/capsheet-fixture";
 import type { MoveGroupsMap } from "@/lib/move-groups";
-import ScenarioMoveList from "@/components/dime/ScenarioMoveList";
+import { ReadOnlyMoveList } from "@/components/dime/ScenarioMoveList";
 import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
 import { ArtifactBody } from "@/components/site/harness/ArtifactsView";
 import { asResolvedArtifacts } from "@/lib/stream/artifacts";
@@ -107,14 +107,7 @@ export function SharedScenarioView({
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">Moves</h2>
             <div className="mt-2 space-y-1.5">
-              <ScenarioMoveList
-                moves={moves}
-                groups={groupsMeta}
-                labels={{ describe: describeScenarioMove }}
-                onChange={() => {}}
-                numbered
-                readOnly
-              />
+              <ReadOnlyMoveList moves={moves} groups={groupsMeta} />
             </div>
             {evaluation === null && (
               <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.55] text-ink-3">
