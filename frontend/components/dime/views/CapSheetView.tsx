@@ -35,6 +35,15 @@ function useFixture(): boolean {
     && new URLSearchParams(window.location.search).get("fixture") === "cap";
 }
 
+const DEFAULT_SCENARIO_SEASON = "2026-27";
+
+function scenarioSeasonForMoves(moves: ScenarioMove[]): string | null {
+  const optionMoves = moves.filter((move) => move.kind === "option_decision");
+  if (optionMoves.length === 0) return DEFAULT_SCENARIO_SEASON;
+  const seasons = new Set(optionMoves.map((move) => move.season || DEFAULT_SCENARIO_SEASON));
+  return seasons.size === 1 ? Array.from(seasons)[0] : null;
+}
+
 export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void }) {
   const [team, setTeam] = useState(() => initialTeamParam() ?? "BOS");
   const [sheet, setSheet] = useState<CapSheetResponse | null>(null);
@@ -49,6 +58,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const [signingAmount, setSigningAmount] = useState("");
   const [signingLabel, setSigningLabel] = useState("");
   const fixture = useFixture();
+  const scenarioSeason = useMemo(() => scenarioSeasonForMoves(moves), [moves]);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,17 +102,23 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       setScenarioError(null);
       return;
     }
+    if (scenarioSeason === null) {
+      setScenario(null);
+      setScenarioError("Option decisions span multiple seasons. Evaluate one season at a time.");
+      setEvaluating(false);
+      return;
+    }
     let cancelled = false;
     setEvaluating(true);
     if (fixture) {
-      setScenario(capScenarioFixture);
+      setScenario({ ...capScenarioFixture, season: scenarioSeason });
       setEvaluating(false);
       return;
     }
     fetch(`${BACKEND}${apiPath("/cap/scenario")}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ team, season: "2026-27", moves }),
+      body: JSON.stringify({ team, season: scenarioSeason, moves }),
     })
       .then(async (response) => {
         const body = await response.json().catch(() => null);
@@ -124,7 +140,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
     return () => {
       cancelled = true;
     };
-  }, [moves, team, fixture]);
+  }, [moves, team, fixture, scenarioSeason]);
 
   const seasons = useMemo(() => {
     if (!sheet?.players?.length) return [] as string[];
@@ -176,7 +192,8 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       if (move.kind === "trade_out") return `- trade out ${move.player}`;
       return `- trade in ${move.player}`;
     });
-    return `Cap scenario for ${sheet?.team ?? team} (2026-27):\n${lines.join("\n")}\nPost-scenario payroll: ${scenario ? money(scenario.pay_after) : "not evaluated"}. Analyze this scenario: what restrictions trigger, what is the apron exposure, and what are the basketball consequences?`;
+    const evaluationSeason = scenario?.season ?? scenarioSeason ?? "mixed seasons";
+    return `Cap scenario for ${sheet?.team ?? team} (${evaluationSeason}):\n${lines.join("\n")}\nPost-scenario payroll: ${scenario ? money(scenario.pay_after) : "not evaluated"}. Analyze this scenario: what restrictions trigger, what is the apron exposure, and what are the basketball consequences?`;
   }
 
   function saveToBoard() {
@@ -190,7 +207,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       kind: "cap_scenario",
       title: `${sheet?.team ?? team} cap scenario — ${moves.length} move${moves.length === 1 ? "" : "s"}`,
       team: sheet?.team ?? team,
-      season: sheet?.season ?? "2026-27",
+      season: scenario?.season ?? scenarioSeason ?? sheet?.season ?? DEFAULT_SCENARIO_SEASON,
       moves,
       pay_after: scenario?.pay_after ?? null,
       pinned_from: "cap_sheet_view",
@@ -366,6 +383,11 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
           <aside className="w-full shrink-0 space-y-3 lg:w-[280px]">
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
               <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">scenario</h3>
+              {moves.length > 0 && (
+                <p className="mt-1 font-mono text-[10px] text-ink-3">
+                  evaluation season {scenarioSeason ?? "mixed"}
+                </p>
+              )}
               {moves.length === 0 ? (
                 <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-3">
                   No moves yet. Toggle an option cell or add a signing below — the grid re-prices instantly.
