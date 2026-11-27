@@ -129,3 +129,49 @@ test("archiveBoardObject archives server-side and clears the mapping — local c
     globalThis.fetch = previousFetch;
   }
 });
+
+test("boardShareToken resolves for already-synced boards — the mint-at-creation path never dead-ends sharing", async () => {
+  freshDom();
+  window.localStorage.setItem("dime_board_object:board-test-1", "obj-existing");
+  window.localStorage.setItem("dime_object_token:obj-existing", "owner-token-1");
+  const calls: { method: string; url: string; headers: unknown }[] = [];
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    calls.push({ method: String(init?.method ?? "GET"), url, headers: init?.headers });
+    if (init?.method === "PATCH") return Response.json({ ok: true });
+    if (init?.method === undefined || init?.method === "GET") {
+      assert.match(url, /\/api\/objects\/obj-existing$/, "recovery must use the owner-token object GET, not the token-stripped list endpoint");
+      return Response.json({ object_id: "obj-existing", read_token: "recovered-read-token" });
+    }
+    throw new Error(`unexpected ${init?.method} ${url}`);
+  };
+  try {
+    const { boardShareToken } = await import("./lib/board-objects");
+    const result = await boardShareToken(sampleBoard() as never);
+    assert.deepEqual(result, { objectId: "obj-existing", readToken: "recovered-read-token" });
+    assert.equal(calls.some((c) => c.url.endsWith("/api/objects") && c.method === "GET"), false, "the list endpoint strips read_token by design — never a recovery source");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("boardShareToken prefers the locally retained read token without a network round trip", async () => {
+  freshDom();
+  window.localStorage.setItem("dime_board_object:board-test-1", "obj-existing");
+  window.localStorage.setItem("dime_object_token:obj-existing", "owner-token-1");
+  window.localStorage.setItem("dime_object_rtoken:obj-existing", "cached-read-token");
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    if (init?.method === "PATCH") return Response.json({ ok: true });
+    throw new Error(`unexpected fetch ${String(input)}`);
+  };
+  try {
+    const { boardShareToken } = await import("./lib/board-objects");
+    const result = await boardShareToken(sampleBoard() as never);
+    assert.deepEqual(result, { objectId: "obj-existing", readToken: "cached-read-token" });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+

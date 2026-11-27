@@ -31,7 +31,7 @@ export default async function SharedScenarioPage({ params }: Params) {
     case "ok-board":
       return <SharedBoardView object={state.object} board={state.board} metrics={state.metrics} />;
     case "archived":
-      return <SharedScenarioNotice tone="archived" />;
+      return <SharedScenarioNotice tone="archived" kind={state.object.kind} />;
     case "not_found":
       return <SharedScenarioNotice tone="not_found" />;
     case "invalid":

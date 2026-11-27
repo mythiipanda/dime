@@ -1,7 +1,5 @@
 import { listBoards, type Board } from "./boards";
-import { BACKEND } from "./chat";
-import { getClientId } from "./api";
-import { mintObject, updateObject } from "./objects-client";
+import { fetchOwnedObject, mintObject, readTokenFor, updateObject } from "./objects-client";
 
 const mappingKey = (localId: string) => `dime_board_object:${localId}`;
 
@@ -68,15 +66,10 @@ export async function boardShareToken(board: Board): Promise<{ objectId: string;
   const synced = await syncBoardObject(board);
   if (!synced) return null;
   if (synced.readToken) return synced;
-  try {
-    const response = await fetch(`${BACKEND}/api/objects`, { headers: { "x-dime-owner": getClientId() } });
-    if (!response.ok) return null;
-    const body = await response.json().catch(() => null);
-    const match = Array.isArray(body?.objects) ? body.objects.find((item: { object_id?: string }) => item.object_id === synced.objectId) : null;
-    return match?.read_token ? { objectId: synced.objectId, readToken: match.read_token } : null;
-  } catch {
-    return null;
-  }
+  const cached = readTokenFor(synced.objectId);
+  if (cached) return { objectId: synced.objectId, readToken: cached };
+  const owned = await fetchOwnedObject(synced.objectId);
+  return owned?.read_token ? { objectId: synced.objectId, readToken: owned.read_token } : null;
 }
 
 let started = false;
