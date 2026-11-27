@@ -170,3 +170,25 @@ test("history shape chart renders paired z-profile bars for the selected comp", 
     restore();
   }
 });
+
+test("walking a comp recenters the surface on that player-season and updates the URL", async () => {
+  const { host, root, HistoryView, restore } = await boot(() => compsPayload);
+  try {
+    await act(async () => root.render(<HistoryView />));
+    await flush();
+    clickSeasonRow(host, "1996-97");
+    await flush();
+    const walk = host.querySelector("[data-testid='walk-comp']");
+    assert.ok(walk, "comp cards carry a walk affordance");
+    act(() => { (walk as HTMLElement).click(); });
+    await flush();
+    const text = host.textContent ?? "";
+    assert.match(text, /Era-relative neighbors — Kobe Bryant 2008-09/, "surface recenters on the comp player-season");
+    const url = (globalThis as any).window.location.href;
+    assert.ok(url.includes("player=Kobe"), `URL carries the spine position, got ${url}`);
+    assert.ok(url.includes("season=2008-09"), `URL carries the season, got ${url}`);
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
