@@ -7,6 +7,7 @@ import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { fetchProjection, formatMoney, type ProjectionResponse, type ProjectionSeason } from "@/lib/planner";
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
 import { pruneGroups, type MoveGroupsMap } from "@/lib/move-groups";
+import ScenarioMoveList from "@/components/dime/ScenarioMoveList";
 
 const TEAMS = [
   "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW",
@@ -113,14 +114,10 @@ export default function PlannerView() {
     if (liveGroups !== groups) setGroups(liveGroups);
     void syncCapDraft(team, BASE_SEASON, next, liveGroups).then(ok => setSyncFailed(!ok));
     void project(team, next);
-  }, [team, project]);
+  }, [team, project, groups]);
 
   const addMove = useCallback((move: ScenarioMove) => {
     applyMoves([...moves, move]);
-  }, [moves, applyMoves]);
-
-  const removeMove = useCallback((index: number) => {
-    applyMoves(moves.filter((_, i) => i !== index));
   }, [moves, applyMoves]);
 
   function mintShare() {
@@ -368,16 +365,16 @@ export default function PlannerView() {
           {moves.length > 0 && (
             <div className="mt-4 rounded-[10px] bg-surface p-4 shadow-hairline">
               <h2 className="text-[13px] font-semibold text-ink">Scenario moves · {moves.length}</h2>
-              <ul className="mt-2 space-y-1">
-                {moves.map((move, i) => (
-                  <li key={i} className="flex items-center justify-between gap-3 text-[12.5px]">
-                    <span className="text-ink-2"><span className="mr-2 font-mono text-[10.5px] text-ink-3">{i + 1}</span>{moveLabel(move)}</span>
-                    {editing && (
-                      <button type="button" onClick={() => removeMove(i)} className="rounded px-1.5 py-0.5 text-[11px] text-ink-3 hover:bg-surface-2 hover:text-red">remove</button>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <div className="mt-2 space-y-1.5">
+                <ScenarioMoveList
+                  moves={moves}
+                  groups={groups}
+                  labels={{ describe: moveLabel }}
+                  onChange={applyMoves}
+                  reorderable={editing}
+                  numbered
+                />
+              </div>
               <p className="mt-2 text-[11px] leading-[1.5] text-ink-3">Order matters — a signing that fits after a trade may be flagged before it. Moves write through to the shared cap-sheet draft.</p>
               {editing && (share.phase !== "minted" || JSON.stringify(moves) !== JSON.stringify(share.moves)) && (
                 <button

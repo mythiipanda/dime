@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mintGroupId, removeUnitAt, ungroupAt, unitizeMoves } from "./lib/move-groups";
+import { mintGroupId, moveUnit, removeUnitAt, ungroupAt, unitizeMoves } from "./lib/move-groups";
 import type { ScenarioMove } from "./lib/capsheet-fixture";
 
 const out = (player: string, group?: string): ScenarioMove => ({ kind: "trade_out", player, ...(group ? { group } : {}) });
@@ -54,4 +54,26 @@ test("minted group ids are unique trade-prefixed strings", () => {
   const b = mintGroupId();
   assert.notEqual(a, b);
   assert.equal(a.startsWith("trade-"), true);
+});
+
+test("moveUnit swaps a unit with its neighbor, groups travel whole", () => {
+  const moves = [sign("a"), out("x", "g1"), { kind: "trade_in", player: "z", group: "g1" } as ScenarioMove, sign("b")];
+  const down = moveUnit(moves, 0, 1);
+  assert.deepEqual(down.map((move) => move.label ?? move.player), ["x", "z", "a", "b"]);
+  const upAgain = moveUnit(down, 1, -1);
+  assert.deepEqual(upAgain.map((move) => move.label ?? move.player), ["a", "x", "z", "b"]);
+});
+
+test("moveUnit at the edges is a no-op", () => {
+  const moves = [sign("a"), sign("b")];
+  assert.deepEqual(moveUnit(moves, 0, -1), moves);
+  assert.deepEqual(moveUnit(moves, 1, 1), moves);
+});
+
+test("moveUnit cannot interleave a group — the unit moves as one block past its neighbor", () => {
+  const moves = [out("x", "g1"), { kind: "trade_in", player: "z", group: "g1" } as ScenarioMove, sign("a")];
+  const down = moveUnit(moves, 0, 1);
+  assert.deepEqual(down.map((move) => move.label ?? move.player), ["a", "x", "z"]);
+  assert.equal(down[1].group, "g1");
+  assert.equal(down[2].group, "g1");
 });

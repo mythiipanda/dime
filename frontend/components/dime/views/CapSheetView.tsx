@@ -9,7 +9,8 @@ import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
 import { consumeCapHandoff } from "@/lib/cap-handoff";
 import { syncCapDraft, loadCapDraft } from "@/lib/cap-draft";
-import { pruneGroups, removeUnitAt, ungroupAt, unitizeMoves, type MoveGroupsMap } from "@/lib/move-groups";
+import { pruneGroups, type MoveGroupsMap } from "@/lib/move-groups";
+import ScenarioMoveList from "@/components/dime/ScenarioMoveList";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -489,72 +490,17 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                 </p>
               ) : (
                 <div className="mt-2 space-y-1.5">
-                  {unitizeMoves(moves).map((unit, unitIndex) => {
-                    if (unit.group) {
-                      const meta = groups[unit.group];
-                      const outCount = unit.entries.filter((entry) => entry.move.kind === "trade_out").length;
-                      const inCount = unit.entries.filter((entry) => entry.move.kind === "trade_in").length;
-                      return (
-                        <div key={unit.group} className="rounded-[8px] border border-line px-2.5 py-2">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3">
-                              Trade{meta?.partner ? ` with ${meta.partner}` : ""} — {outCount} out / {inCount} in
-                            </span>
-                            <span className="flex shrink-0 gap-2">
-                              <button
-                                className="text-[11px] text-ink-2 underline-offset-2 hover:underline"
-                                title="The moves stay, but the result may no longer represent a legal trade"
-                                onClick={() => setMoves((current) => ungroupAt(current, unitIndex))}
-                              >
-                                split
-                              </button>
-                              <button
-                                className="text-[11px] text-ink-2 underline-offset-2 hover:underline"
-                                onClick={() => setMoves((current) => removeUnitAt(current, unitIndex))}
-                              >
-                                remove
-                              </button>
-                            </span>
-                          </div>
-                          <div className="mt-1 space-y-1">
-                            {unit.entries.map((entry) => (
-                              <p key={entry.index} className="text-[12px] text-ink-2">{describeScenarioMove(entry.move)}</p>
-                            ))}
-                          </div>
-                          <p className="mt-1 text-[10.5px] leading-[1.4] text-ink-3">
-                            One transaction — its legs move as a unit.
-                            {meta?.verdict === true && " Evaluated legal at import."}
-                            {meta?.verdict === false && " Evaluated illegal at import."}
-                          </p>
-                        </div>
-                      );
-                    }
-                    const entry = unit.entries[0];
-                    const move = entry.move;
-                    const waiverStep = move.kind === "waive"
-                      ? scenario?.steps.find((step) => step.kind === "waive" && step.player === move.player)
-                      : undefined;
-                    return (
-                      <div key={entry.index} className="flex items-baseline justify-between gap-2 text-[12px]">
-                        <div className="min-w-0">
-                          <span className="text-ink-2">
-                            {describeScenarioMove(move)}
-                          </span>
-                          {waiverStep?.estimate_basis && (
-                            <span className="mt-0.5 block text-[11px] leading-[1.45] text-ink-2">
-                              {waiverStep.estimate_basis}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          className="shrink-0 text-[11px] text-ink-2 underline-offset-2 hover:underline"
-                          onClick={() => setMoves((current) => removeUnitAt(current, unitIndex))}
-                        >
-                          remove
-                        </button>
-                      </div>
-                    );
-                  })}
+                  <ScenarioMoveList
+                    moves={moves}
+                    groups={groups}
+                    labels={{
+                      describe: describeScenarioMove,
+                      waiverBasis: (move) => move.kind === "waive"
+                        ? scenario?.steps.find((step) => step.kind === "waive" && step.player === move.player)?.estimate_basis
+                        : undefined,
+                    }}
+                    onChange={setMoves}
+                  />
                   {evaluating && <p className="text-[11.5px] text-ink-3">evaluating…</p>}
                   {handoffNote && <p className="text-[11px] leading-[1.45] text-ink-3">{handoffNote}</p>}
                   {scenarioError && <p className="text-[11.5px] text-red">{scenarioError}</p>}
