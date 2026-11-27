@@ -222,6 +222,15 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     return moves.some((m) => m.kind === "option_decision" && m.player === player.player && m.season === season);
   }
 
+  function removedFromSeason(player: CapPlayer): string | null {
+    const removal = moves
+      .filter((m) => (m.kind === "waive" || m.kind === "trade_out") && m.player === player.player)
+      .map((m) => m.season ?? seasons[0])
+      .filter((s): s is string => typeof s === "string")
+      .sort()[0];
+    return removal ?? null;
+  }
+
   function yearTotals(season: string) {
     if (!sheet) return null;
     const base = sheet.totals[season];
@@ -411,13 +420,16 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                         const year = player.years.find((y) => y.season === season);
                         if (!year) return <td key={season} className="border-t border-line px-2 py-1.5 text-right font-mono tabular-nums text-ink-3">–</td>;
                         const declined = toggledOption(player, year.season);
-                        const clickable = !!year.option && year.salary != null;
+                        const removal = removedFromSeason(player);
+                        const removed = removal != null && year.season >= removal;
+                        const clickable = !!year.option && year.salary != null && !removed;
                         return (
                           <td
                             key={season}
                             className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${
                               !year.guaranteed ? "text-ink-3" : "text-ink-2"
-                            } ${declined ? "line-through opacity-40" : ""} ${clickable ? "p-0" : ""}`}
+                            } ${declined || removed ? "line-through opacity-40" : ""} ${clickable ? "p-0" : ""}`}
+                            title={removed ? `${player.player} is removed by a scenario move in ${removal} — this season and forward are struck` : undefined}
                           >
                             {clickable ? (
                               <button

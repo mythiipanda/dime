@@ -92,6 +92,77 @@ def test_multi_year_signing_beyond_horizon_discloses_truncation():
     assert any("horizon" in w for w in out["warnings"])
 
 
+def rows_of(out, season):
+    return {r["player"]: r for r in block(out, season)["players"]}
+
+
+def test_trade_out_row_leaves_all_forward_seasons():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "trade_out", "player": "Alpha", "season": "2026-27"}])
+    finally:
+        con.close()
+    for season in ("2026-27", "2027-28", "2028-29"):
+        assert "Alpha" not in rows_of(out, season), f"Alpha row still present in {season}"
+        assert "Bravo" in rows_of(out, season)
+
+
+def test_trade_in_row_arrives_with_exact_salary_schedule():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "trade_in", "player": "Charlie", "season": "2026-27"}])
+    finally:
+        con.close()
+    for season in ("2026-27", "2027-28", "2028-29", "2029-30"):
+        row = rows_of(out, season).get("Charlie")
+        assert row is not None, f"Charlie missing in {season}"
+        assert row["salary"] == 12_000_000
+
+
+def test_signing_row_carries_full_shape_across_the_term():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "label": "Demo Wing", "amount": 12_000_000,
+                             "years": 2, "season": "2026-27"}])
+    finally:
+        con.close()
+    row1 = rows_of(out, "2026-27").get("Demo Wing")
+    row2 = rows_of(out, "2027-28").get("Demo Wing")
+    assert row1 and row1["salary"] == 12_000_000
+    assert row2 and row2["salary"] == 12_000_000
+    assert "Demo Wing" not in rows_of(out, "2028-29")
+
+
+def test_waive_removes_row_and_dead_money_never_appears_as_row():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "waive", "player": "Alpha", "season": "2026-27"}])
+    finally:
+        con.close()
+    for season in ("2026-27", "2027-28", "2028-29"):
+        rows = rows_of(out, season)
+        assert "Alpha" not in rows, f"waived Alpha row present in {season}"
+        assert all("dead" not in name.lower() for name in rows)
+
+
+def test_declined_option_removes_row_from_that_season_forward():
+    rows = [
+        ("Alpha", "TST", 1, 60_000_000,
+         20_000_000, 20_000_000, 20_000_000, None, None, "player", None, None),
+        ("Bravo", "TST", 2, 30_000_000,
+         10_000_000, 10_000_000, 10_000_000, None, None, None, None, None),
+    ]
+    con = memory_con(rows)
+    try:
+        out = project(con, [{"kind": "option_decision", "player": "Alpha", "exercise": False,
+                             "season": "2027-28"}])
+    finally:
+        con.close()
+    assert "Alpha" in rows_of(out, "2026-27")
+    assert "Alpha" not in rows_of(out, "2027-28")
+    assert "Alpha" not in rows_of(out, "2028-29")
+
+
 def test_trade_out_removes_player_in_trade_season_and_forward():
     con = memory_con()
     try:
