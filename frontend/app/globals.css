@@ -1425,6 +1425,55 @@ th.is-colsel .records-header-icon {
   }
 }
 
+@keyframes artifact-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes artifact-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes view-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.artifact-enter {
+  animation: artifact-fade var(--motion-fast) ease-out both;
+}
+
+.view-fade {
+  animation: view-fade-in var(--motion-fast) ease-out both;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .artifact-enter {
+    animation: artifact-enter var(--motion-normal) var(--ease-out-strong) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-enter, .view-fade {
+    animation-duration: var(--motion-fast) !important;
+  }
+}
+
 @keyframes pop-in {
   from {
     opacity: 0;

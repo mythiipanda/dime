@@ -227,3 +227,15 @@ for (const [theme, palette] of [["light", light], ["dark", dark]] as const) {
     });
   }
 }
+
+test("entrances keep opacity fades under reduced motion and layer movement behind no-preference", () => {
+  const globals = readFileSync(new URL("./app/globals.css", import.meta.url), "utf8");
+  assert.ok(globals.includes("@keyframes artifact-fade"), "opacity-only artifact fade keyframes exist");
+  assert.ok(globals.includes("@keyframes artifact-enter"), "movement-bearing artifact entrance keyframes exist");
+  const noPreference = [...globals.matchAll(/@media \(prefers-reduced-motion: no-preference\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join("\n");
+  assert.ok(noPreference.includes(".artifact-enter"), "the translate-bearing entrance applies only when motion is allowed");
+  const reduceBlocks = [...globals.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join("\n");
+  assert.ok(reduceBlocks.includes(".artifact-enter"), "reduced motion re-enables the opacity fade duration for entrances");
+  const base = globals.match(/\.artifact-enter \{\n\s+animation: artifact-fade/);
+  assert.ok(base, "the base artifact entrance is the opacity-only fade");
+});
