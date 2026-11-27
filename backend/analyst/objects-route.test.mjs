@@ -307,3 +307,102 @@ test("objects route contract: board kind validates intent payload", async () => 
   }
 });
 
+test("objects route contract: board pins validate references and resolve in the share payload", async () => {
+  const { server, root } = fixture();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const owner = "client-pin-owner";
+  const post = (path, payload, headers = {}) => fetch(url + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(payload) });
+  const intent = {
+    season: "2026-27",
+    rows: [{ player_id: 1628369 }],
+    columns: [{ metric_id: "ppg" }],
+  };
+  try {
+    const scenario = await post("/api/objects", { kind: "cap_scenario", title: "scenario", payload: { team: "BOS", season: "2026-27", moves: [{ kind: "waive", player: "Fixture Player" }] } }, { "x-dime-owner": owner });
+    assert.equal(scenario.status, 201);
+    const scenarioObject = await scenario.json();
+    const otherOwnerScenario = await post("/api/objects", { kind: "cap_scenario", title: "alien", payload: { team: "BOS", season: "2026-27", moves: [{ kind: "waive", player: "Fixture Player" }] } }, { "x-dime-owner": "client-other-owner" });
+    const alienObject = await otherOwnerScenario.json();
+    const trade = await post("/api/objects", { kind: "trade_scenario", title: "trade", payload: { season: "2026-27", legs: [{ from: "BOS", to: "DAL", players: ["Fixture Player"] }] } }, { "x-dime-owner": owner });
+    const tradeObject = await trade.json();
+
+    for (const bad of [
+      { kind: "board", title: "t", payload: { ...intent, pins: [{}] } },
+      { kind: "board", title: "t", payload: { ...intent, pins: [{ kind: "cap_scenario" }] } },
+      { kind: "board", title: "t", payload: { ...intent, pins: [{ kind: "cap_scenario", object_id: "x", extra: 1 }] } },
+      { kind: "board", title: "t", payload: { ...intent, pins: [{ kind: "board", object_id: scenarioObject.object_id }] } },
+      { kind: "board", title: "t", payload: { ...intent, pins: [{ kind: "cap_scenario", object_id: "obj-nonexistent" }] } },
+      { kind: "board", title: "t", payload: { ...intent, pins: [{ kind: "trade_scenario", object_id: scenarioObject.object_id }] } },
+      { kind: "board", title: "t", payload: { ...intent, pins: [{ kind: "cap_scenario", object_id: alienObject.object_id }] } },
+    ]) {
+      const response = await post("/api/objects", bad, { "x-dime-owner": owner });
+      assert.equal(response.status, 422, JSON.stringify(bad));
+    }
+
+    const pinned = {
+      ...intent,
+      pins: [
+        { kind: "cap_scenario", object_id: scenarioObject.object_id, note: "summer sheet" },
+        { kind: "trade_scenario", object_id: tradeObject.object_id },
+      ],
+    };
+    const created = await post("/api/objects", { kind: "board", title: "Pinned board", payload: pinned }, { "x-dime-owner": owner });
+    assert.equal(created.status, 201);
+    const object = await created.json();
+
+    const share = await fetch(`${url}/s/${object.read_token}`);
+    assert.equal(share.status, 200);
+    const shared = await share.json();
+    assert.equal(shared.kind, "board");
+    assert.equal(shared.pins.length, 2);
+    assert.equal(shared.pins[0].status, "ok");
+    assert.equal(shared.pins[0].kind, "cap_scenario");
+    assert.equal(shared.pins[0].title, "scenario");
+    assert.equal(shared.pins[0].note, "summer sheet");
+    assert.equal(shared.pins[0].payload.team, "BOS");
+    assert.equal(shared.pins[1].kind, "trade_scenario");
+    assert.equal(shared.pins[1].note, undefined);
+
+    const patch = await fetch(`${url}/api/objects/${object.object_id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-owner-token": object.owner_token },
+      body: JSON.stringify({ payload: { ...intent, pins: [{ kind: "cap_scenario", object_id: alienObject.object_id }] } }),
+    });
+    assert.equal(patch.status, 422, "cross-owner pin rejected on update too");
+  }
+  finally {
+    server.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("objects route contract: archived pin targets resolve honestly in the share payload", async () => {
+  const { server, root } = fixture();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const owner = "client-archive-pin-owner";
+  const post = (path, payload, headers = {}) => fetch(url + path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(payload) });
+  const intent = { season: "2026-27", rows: [{ player_id: 1628369 }], columns: [{ metric_id: "ppg" }] };
+  try {
+    const scenario = await post("/api/objects", { kind: "cap_scenario", title: "doomed", payload: { team: "BOS", season: "2026-27", moves: [{ kind: "waive", player: "Fixture Player" }] } }, { "x-dime-owner": owner });
+    const scenarioObject = await scenario.json();
+    const board = await post("/api/objects", { kind: "board", title: "b", payload: { ...intent, pins: [{ kind: "cap_scenario", object_id: scenarioObject.object_id }] } }, { "x-dime-owner": owner });
+    const boardObject = await board.json();
+    const archive = await fetch(`${url}/api/objects/${scenarioObject.object_id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-owner-token": scenarioObject.owner_token },
+      body: JSON.stringify({ archived: true }),
+    });
+    assert.equal(archive.status, 200);
+    const share = await fetch(`${url}/s/${boardObject.read_token}`);
+    const shared = await share.json();
+    assert.equal(shared.pins.length, 1);
+    assert.equal(shared.pins[0].status, "archived");
+    assert.equal(shared.pins[0].payload, undefined, "archived pins do not expose payloads");
+  }
+  finally {
+    server.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -406,3 +406,92 @@ test("shared artifact view normalizes object-shaped table rows into rendered cel
     await mounted.cleanup();
   }
 });
+
+
+test("board share render shows pin cards with live evaluations and honest degradation", async () => {
+  const { SharedBoardView } = await import("./components/dime/views/SharedBoardView");
+  const boardObject = {
+    kind: "board",
+    title: "Guards board",
+    schema_version: 1,
+    updated_at: "2026-11-27T12:00:00.000Z",
+    archived: false,
+    payload: {
+      season: "2026-27",
+      rows: [{ player_id: 1628369 }],
+      columns: [{ metric_id: "ppg" }],
+    },
+  };
+  const pins = [
+    {
+      kind: "trade_scenario",
+      object_id: "obj-trade-1",
+      status: "ok" as const,
+      title: "Fixture trade",
+      note: "summer idea",
+      payload: { season: "2026-27", legs: [{ from: "BOS", to: "DAL", players: ["Fixture Player"] }] },
+      tradeEvaluation: { rows: [{ team: "BOS", matching_ok: true }] },
+    },
+    {
+      kind: "cap_scenario",
+      object_id: "obj-cap-1",
+      status: "archived" as const,
+    },
+  ];
+  const mounted = await mountView(<SharedBoardView object={boardObject} board={null} metrics={[]} pins={pins} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /Pinned to this board/);
+    assert.match(text, /Fixture trade/);
+    assert.match(text, /summer idea/);
+    assert.match(text, /Legal under current salary-matching rules/);
+    assert.match(text, /removed by its owner/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("loadSharedScenario board dispatch parses pins and evaluates cap and trade targets", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const envelope = {
+    kind: "board",
+    title: "b",
+    schema_version: 1,
+    updated_at: "2026-11-27T12:00:00.000Z",
+    archived: false,
+    payload: {
+      season: "2026-27",
+      rows: [{ player_id: 1628369 }],
+      columns: [{ metric_id: "ppg" }],
+      pins: [
+        { kind: "cap_scenario", object_id: "obj-cap", note: "n", status: "ok", title: "cap pin", payload: { team: "BOS", season: "2026-27", moves: [{ kind: "waive" }] } },
+        { kind: "trade_scenario", object_id: "obj-trade", status: "ok", title: "trade pin", payload: { season: "2026-27", legs: [{ from: "BOS", to: "DAL" }] } },
+        { kind: "artifact_ref", object_id: "obj-art", status: "missing" },
+      ],
+    },
+    pins: [
+      { kind: "cap_scenario", object_id: "obj-cap", note: "n", status: "ok", title: "cap pin", payload: { team: "BOS", season: "2026-27", moves: [{ kind: "waive" }] } },
+      { kind: "trade_scenario", object_id: "obj-trade", status: "ok", title: "trade pin", payload: { season: "2026-27", legs: [{ from: "BOS", to: "DAL" }] } },
+      { kind: "artifact_ref", object_id: "obj-art", status: "missing" },
+    ],
+  };
+  const responses = new Map<string, unknown>([
+    ["/s/", envelope],
+    ["/api/cap/scenario", { errors: [], summary: {} }],
+    ["/api/trade/legs", { rows: [{ team: "BOS", matching_ok: true }] }],
+    ["/api/boards/fill", null],
+    ["/api/boards/metrics", null],
+  ]);
+  const result = await loadSharedScenario("http://backend", "tok", async (url) => {
+    const key = [...responses.keys()].find(k => String(url).includes(k));
+    return Response.json(key ? responses.get(key) : null);
+  });
+  assert.equal(result.status, "ok-board");
+  if (result.status === "ok-board") {
+    assert.equal(result.pins.length, 3);
+    assert.equal(result.pins[0].capEvaluation !== null && result.pins[0].capEvaluation !== undefined, true);
+    assert.equal(result.pins[1].tradeEvaluation?.rows?.length, 1);
+    assert.equal(result.pins[2].status, "missing");
+  }
+});
