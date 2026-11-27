@@ -106,13 +106,19 @@ export default function ScoutView() {
   const factors = sections.four_factors?.rows as { offense?: Record<string, number>; defense?: Record<string, number>; note?: string } | undefined;
   const zones = (sections.shot_profile?.rows as ShotZone[] | undefined) ?? [];
   const lineups = (sections.top_lineups?.rows as LineupRow[] | undefined) ?? [];
-  const rotation = sections.rotation?.rows as { players?: { player?: string; mpg?: number; pts?: number }[] } | Array<Record<string, unknown>> | undefined;
+  type RotationPlayer = Record<string, unknown>;
+  const rotation = sections.rotation?.rows as
+    | { players?: RotationPlayer[]; tiers?: { core?: RotationPlayer[]; bench?: RotationPlayer[]; fringe?: RotationPlayer[] } }
+    | RotationPlayer[]
+    | undefined;
   const injuries = (sections.injuries?.rows as Array<Record<string, unknown>> | undefined) ?? [];
   const h2h = sections.head_to_head?.rows as { record?: string; games?: H2HGame[] } | undefined;
 
-  const rotationPlayers = Array.isArray(rotation)
+  const rotationPlayers: RotationPlayer[] = Array.isArray(rotation)
     ? rotation
-    : ((rotation as { players?: Array<Record<string, unknown>> })?.players ?? []);
+    : rotation?.tiers
+      ? [...(rotation.tiers.core ?? []), ...(rotation.tiers.bench ?? []), ...(rotation.tiers.fringe ?? [])]
+      : (rotation?.players ?? []);
 
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-8">
@@ -248,7 +254,7 @@ export default function ScoutView() {
             <div className="divide-y divide-line">
               {(rotationPlayers as Array<Record<string, unknown>>).slice(0, 10).map((p, i) => {
                 const name = String(p.player ?? p.player_name ?? p.PLAYER ?? "?");
-                const mpg = typeof p.mpg === "number" ? p.mpg : typeof p.MIN === "number" ? p.MIN : null;
+                const mpg = typeof p.mpg === "number" ? p.mpg : typeof p.MPG === "number" ? p.MPG : null;
                 const pts = typeof p.pts === "number" ? p.pts : typeof p.PTS === "number" ? p.PTS : null;
                 return (
                   <div key={i} className="flex items-baseline justify-between py-1.5 text-[12.5px]">
