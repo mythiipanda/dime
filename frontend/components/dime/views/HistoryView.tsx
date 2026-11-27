@@ -193,13 +193,15 @@ export default function HistoryView() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-8">
+    <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-8">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-[15px] font-semibold text-ink">History</h1>
         <span className="font-mono text-[10px] text-ink-3">{`1996-97 → ${SEASONS[0]} · era-relative throughout`}</span>
       </div>
 
-      <section className="mt-4 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
+      <div className="mt-4 xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-4">
+      <div>
+      <section className="rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
         <form
           className="flex items-center gap-1.5"
           onSubmit={(e) => {
@@ -271,8 +273,8 @@ export default function HistoryView() {
 
       {selectedSeason && (
         <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">
-            era-relative neighbors — {player} {selectedSeason}
+          <h3 className="text-[13px] font-semibold text-ink">
+            Era-relative neighbors — {player} {selectedSeason}
           </h3>
           {compsLoading && <p className="mt-2 text-[12.5px] text-ink-3">Scoring the pool…</p>}
           {compsError && !compsLoading && (
@@ -297,10 +299,12 @@ export default function HistoryView() {
           </p>
         </section>
       )}
+      </div>
 
-      <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
+      <div className="xl:sticky xl:top-6">
+      <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5 xl:mt-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">era leaderboard</h3>
+          <h3 className="text-[13px] font-semibold text-ink">Era leaderboard</h3>
           <div className="ml-auto flex items-center gap-1.5 text-[12px]">
             <select
               value={leaderSeason}
@@ -347,6 +351,8 @@ export default function HistoryView() {
           </p>
         )}
       </section>
+      </div>
+      </div>
     </div>
   );
 }

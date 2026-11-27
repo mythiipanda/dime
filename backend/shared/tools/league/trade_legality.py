@@ -83,17 +83,33 @@ def _leg_picks(leg: dict) -> list[dict[str, Any]]:
     return out
 
 
-def _parse_cash(rows: Any) -> list[dict[str, Any]]:
+def _parse_cash(rows: Any, parties: set[str]
+                ) -> tuple[list[dict[str, Any]], str | None]:
     if isinstance(rows, dict):
         rows = [rows]
     out: list[dict[str, Any]] = []
-    for raw in rows or []:
+    for index, raw in enumerate(rows or [], 1):
         if not isinstance(raw, dict):
-            continue
-        out.append({"from": _leg_team(raw.get("from")),
-                    "to": _leg_team(raw.get("to")),
-                    "amount": int(raw.get("amount") or 0)})
-    return out
+            return [], f"cash row {index} is not an object"
+        null_keys = [key for key in ("from", "to", "amount")
+                     if key in raw and raw[key] is None]
+        if null_keys:
+            return [], (f"cash row {index} has explicit null for "
+                        f"{', '.join(null_keys)}")
+        sender = _leg_team(raw.get("from"))
+        receiver = _leg_team(raw.get("to"))
+        if not sender or not receiver:
+            return [], f"cash row {index} needs from and to teams"
+        amount = _strict_integer(raw.get("amount"))
+        if amount is None or amount <= 0:
+            return [], (f"cash row {index} amount must be a positive "
+                        "integer")
+        for label, team in (("from", sender), ("to", receiver)):
+            if canonical_team_abbr(team) not in parties:
+                return [], (f"cash row {index} {label} team {team} is not "
+                            "a trade party")
+        out.append({"from": sender, "to": receiver, "amount": amount})
+    return out, None
 
 
 def _strict_integer(value: Any) -> int | None:
@@ -716,8 +732,9 @@ def _build_checks(team_rows: dict[str, Any],
                               "aggregation hard-caps at the second apron"})
     checks.append({"rule": "cash in trade",
                    "checked": True,
-                   "note": "apron2 ban + second-apron hard-cap trigger "
-                           "checked; annual cash limit not tracked"})
+                   "note": "positive trade-party cash validated; apron2 ban "
+                           "+ second-apron hard-cap trigger checked; annual "
+                           "cash limit not tracked"})
     tpe_note = ("kind, origin timing, amount capacity and non-combination "
                 "checked for declared uses")
     if legacy_tpes:
@@ -735,7 +752,8 @@ def _build_checks(team_rows: dict[str, Any],
     '[{"from":"BOS","to":"DEN","players":"Jayson Tatum, Sam Hauser",'
     '"picks":[{"year":2028,"round":1,"protection":"top-4"},{"year":2030,"round":1,"swap":true}]}].\n'
     'Optional "sign_and_trade" = {"player":"...","new_salary":0,"years":3} '
-    '(3-year minimum, BYC handled), "cash" = [{"from","to","amount"}], '
+    '(3-year minimum, BYC handled), "cash" = [{"from","to","amount"}] '
+    'with positive integer amounts between trade parties, '
     '"tpe" = [{"team","amount","kind":"ordinary|sign_and_trade",'
     '"origin_season":"YYYY-YY"}]; rows are declared uses, not inventory. '
     'Present keys must be non-null; omit unused optional keys. Amount and '
@@ -762,7 +780,11 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
     if err:
         return _trade_error(err)
 
-    cash_moves = _parse_cash(cash_value)
+    parties = {canonical_team_abbr(move["from"]) for move in moves} | {
+        canonical_team_abbr(move["to"]) for move in moves}
+    cash_moves, cash_err = _parse_cash(cash_value, parties)
+    if cash_err:
+        return _trade_error(cash_err)
     tpe_rows, tpe_err = _parse_tpe(tpe_value)
     if tpe_err:
         return _trade_error(tpe_err)
