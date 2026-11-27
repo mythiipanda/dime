@@ -72,6 +72,11 @@ function Board({ board }: { board: AwardBoard }) {
               </span>
               <span className={`shrink-0 font-mono text-[12px] tabular-nums ${c.rank === 1 ? "font-semibold text-ink" : "text-ink-2"}`} title="projection score (z-weighted composite)">
                 {c.score.toFixed(2)}
+                {c.rank > 1 && board.candidates[0] && (
+                  <span className="ml-1 text-[10px] text-ink-3" title="gap to the projection leader">
+                    −{(board.candidates[0].score - c.score).toFixed(2)}
+                  </span>
+                )}
               </span>
             </div>
             <div className="mt-0.5 truncate pl-8 font-mono text-[11.5px] tabular-nums text-ink-3" title={driverLine(c.drivers)}>
