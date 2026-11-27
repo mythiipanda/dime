@@ -283,10 +283,45 @@ def _exceptions_block(lines: dict[str, Any], effects: list[dict[str, Any]],
     return rows
 
 
+def _tpe_disclosures(rows: list, season: str, team: str,
+                     default_origin: int | None = None) -> list[dict[str, Any]]:
+    try:
+        start = int(str(season)[:4])
+    except (TypeError, ValueError):
+        return []
+    out = []
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        if str(raw.get("team") or "").strip().upper() != team:
+            continue
+        amount = raw.get("amount")
+        if not isinstance(amount, int) or amount <= 0:
+            continue
+        origin = raw.get("origin_year")
+        origin = int(origin) if isinstance(origin, int) else (default_origin or start)
+        if origin + 1 < start:
+            status = "expired"
+        elif origin > start:
+            status = "not yet available"
+        else:
+            status = "active"
+        out.append({
+            "amount": amount,
+            "kind": str(raw.get("kind") or "ordinary"),
+            "exactness": str(raw.get("exactness") or "user_declared"),
+            "status": status,
+            "note": ("exception disclosure only — no payroll effect; season-grain expiry is "
+                     "approximate, exact dates are not carried"),
+        })
+    return out
+
+
 def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     team = str(payload.get("team") or "").strip().upper()
     base_season = str(payload.get("season") or "").strip() or "2026-27"
     moves_in = payload.get("moves")
+    tpes_in = payload.get("tpes") or []
     if not team:
         return {"ok": False, "error": "team needed"}
     if not isinstance(moves_in, list):
@@ -535,6 +570,10 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "moves_in_season": len(season_moves),
             "ordering_notes": ordering_notes,
             "exceptions": _exceptions_block(lines, effects, pay_after),
+            **({"trade_exceptions": disclosed}
+               if (disclosed := _tpe_disclosures(
+                       tpes_in, season, team,
+                       default_origin=int(str(base_season)[:4]))) else {}),
             **({"cap_holds": holds_by_season[season]["total"],
                 "cap_holds_exactness": holds_by_season[season]["exactness"],
                 "cap_hold_details": [{"player": str(r.get("PLAYER_NAME") or r.get("player") or ""),

@@ -27,7 +27,14 @@ export const capScenarioPayloadSchema = Type.Object({
         partner: Type.Optional(Type.String({ maxLength: 120 })),
         verdict: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
         evaluated_at: Type.Optional(Type.String({ maxLength: 40 }))
-    }, { additionalProperties: false }), { maxProperties: 20 }))
+    }, { additionalProperties: false }), { maxProperties: 20 })),
+    tpes: Type.Optional(Type.Array(Type.Object({
+        team: Type.String({ minLength: 2, maxLength: 4 }),
+        amount: Type.Integer({ minimum: 1 }),
+        kind: Type.Optional(Type.String({ maxLength: 24 })),
+        origin_year: Type.Optional(Type.Integer({ minimum: 2000, maximum: 2100 })),
+        exactness: Type.Optional(Type.String({ maxLength: 32 }))
+    }, { additionalProperties: false }), { maxItems: 30 }))
 }, { additionalProperties: false });
 
 export const tradeScenarioPayloadSchema = Type.Object({

@@ -315,6 +315,7 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
               team: pin.payload.team,
               season: pin.payload.season,
               moves: pin.payload.moves,
+              tpes: (pin.payload as { tpes?: unknown[] }).tpes,
             }),
             cache: "no-store",
           });
@@ -377,6 +378,7 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
         team: object.payload.team,
         season: object.payload.season,
         moves: object.payload.moves,
+        tpes: (object.payload as { tpes?: unknown[] }).tpes,
       }),
       cache: "no-store",
     });
