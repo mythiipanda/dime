@@ -17,3 +17,16 @@ Object.assign(globalThis, {
   requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window),
   cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
 });
+if (!dom.window.matchMedia) {
+  dom.window.matchMedia = (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }) as MediaQueryList;
+  Object.assign(globalThis, { matchMedia: dom.window.matchMedia });
+}
