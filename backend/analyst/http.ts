@@ -18,6 +18,7 @@ const workspaceCreate = Type.Object({ name: Type.String({ minLength: 1, maxLengt
 const members = Type.Optional(Type.Union([Type.Array(Type.String(), { maxItems: 1024 }), Type.Null()]));
 const workspaceUpdate = Type.Object({ name: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 256 }), Type.Null()])), add_thread_ids: members, remove_thread_ids: members, add_brief_ids: members, remove_brief_ids: members }, { additionalProperties: false });
 const branchCreate = Type.Object({ thread: text(80), client: text(80), parent_sequence: Type.Integer({ minimum: 1 }), branch_id: Type.Optional(Type.Union([text(64), Type.Null()])) }, { additionalProperties: false });
+const tradeLegsSchema = Type.Object({ legs: Type.Array(Type.Object({ from: Type.String({ minLength: 2, maxLength: 4 }), to: Type.String({ minLength: 2, maxLength: 4 }), players: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 })) }, { additionalProperties: true }), { minItems: 1, maxItems: 8 }), season: Type.Optional(Type.String()) }, { additionalProperties: false });
 const tradeSchema = Type.Object({ team_a: Type.Optional(Type.String()), team_b: Type.Optional(Type.String()), players_a: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), players_b: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), season: Type.Optional(Type.String()) }, { additionalProperties: false });
 const capScenarioSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), moves: Type.Array(Type.Object({ kind: Type.String(), label: Type.Optional(Type.String()), amount: Type.Optional(Type.Number()), player: Type.Optional(Type.String()), exercise: Type.Optional(Type.Boolean()), stretch: Type.Optional(Type.Boolean()), season: Type.Optional(Type.String()) }, { additionalProperties: false }), { minItems: 1, maxItems: 40 }) }, { additionalProperties: false });
 const partnersSchema = Type.Object({ player: Type.Optional(Type.String()), season: Type.Optional(Type.String()), teams: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), max_packages: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }, { additionalProperties: false });
@@ -284,7 +285,8 @@ export function createProductServer(options: {
         const input = parseBody(partnersSchema, await body(req));
         const teams = (value: string | string[] | undefined) => Array.isArray(value) ? value.map(s => s.trim()).filter(Boolean).join(", ") : value ?? "";
         const result = await data.call("product_trade_partners", { player: input.player ?? "", season: input.season ?? "2026-27", teams: teams(input.teams), max_packages: input.max_packages ?? 3 });
-        json(res, result, result.ok === false ? 422 : 200);
+route("POST", /^\/api\/trade\/legs$/, async ({ req, res }) => { const input = parseBody(tradeLegsSchema, await body(req)); const result = await data.call("product_trade_legs", { legs: JSON.stringify(input.legs), season: input.season ?? "2026-27" }); json(res, result, result.ok === false ? 422 : 200); });
+                json(res, result, result.ok === false ? 422 : 200);
     });
     route("GET", /^\/api\/morning$/, async ({ res, url }) => {
         const result = await data.call("product_morning", { team: (url.searchParams.get("team") ?? "").slice(0, 12), season: url.searchParams.get("season") ?? "" });

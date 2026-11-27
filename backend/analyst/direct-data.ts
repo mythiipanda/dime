@@ -100,6 +100,10 @@ export type DirectOperations = {
         opponent: string;
         season: string;
     };
+    product_trade_legs: {
+        legs: string;
+        season: string;
+    };
     product_briefing: {
         season: string;
     };

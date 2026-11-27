@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 import type { DimeArtifact } from "@/lib/dime-stream";
+import { listBoards } from "@/lib/boards";
 import { nbaTeams } from "../../../lib/dime-data-trades";
 import PinButton from "../PinButton";
 
@@ -39,36 +40,72 @@ type TradeCheckRows = {
   salary_date?: string;
 };
 
+type LegTeamRows = {
+  team: string;
+  incoming?: number;
+  outgoing?: number;
+  matching_ok?: boolean;
+  match_rule?: string;
+  allowed_incoming?: number;
+  over_apron1?: boolean;
+  over_apron2?: boolean;
+  hard_cap?: string | null;
+  issues?: string[];
+};
+
+type LegsResponse = {
+  rows?: LegTeamRows[];
+  meta?: { disclaimer?: string; salary_date?: string; rules?: unknown };
+  error?: string;
+  ok?: boolean;
+};
+
 type CheckState =
   | { state: "idle" }
   | { state: "loading" }
   | { state: "ok"; rows: TradeCheckRows }
+  | { state: "ok-legs"; rows: LegTeamRows[]; disclaimer: string; salary_date?: string; legal: boolean; issues: string[] }
   | { state: "error"; error: string };
 
 type PartnerRow = { team: string; players: string; package_salary: number; legal: boolean; match_rule?: string };
 type FillersState =
   | { state: "idle" }
-  | { state: "loading"; side: "a" | "b" }
-  | { state: "ok"; side: "a" | "b"; rows: PartnerRow[] }
-  | { state: "error"; side: "a" | "b"; error: string };
+  | { state: "loading"; side: number }
+  | { state: "ok"; side: number; rows: PartnerRow[] }
+  | { state: "error"; side: number; error: string };
 
 type Package = { players: string[]; picks: string[] };
+const emptyPackage = (): Package => ({ players: [], picks: [] });
 
 const pickKey = (pick: Pick) => `${pick.year}-${pick.round}-${pick.orig}`;
 const pickLabel = (pick: Pick) => `${pick.year} R${pick.round}${pick.orig ? ` (via ${pick.orig})` : ""}${pick.protection ? ` · ${pick.protection}` : ""}`;
 
+function parsePickId(id: string): Record<string, unknown> {
+  const [year, round] = id.split("-");
+  return { year: Number(year), round: Number(round) };
+}
+
 const chipButton = "h-7 shrink-0 rounded-[7px] border border-line bg-surface px-2 font-mono text-[11px] text-ink-2 hover:bg-hover disabled:opacity-40";
 const playerButton = "w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-hover";
 
+type ScenarioSnapshot = {
+  teams: string[];
+  packages: Package[];
+  season: string;
+  verdict: boolean | null;
+};
+
 export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }) {
-  const [teamA, setTeamA] = useState("DAL");
-  const [teamB, setTeamB] = useState("NYK");
+  const [teams, setTeams] = useState<string[]>(["DAL", "NYK"]);
+  const [pkgs, setPkgs] = useState<Package[]>([emptyPackage(), emptyPackage()]);
   const [assets, setAssets] = useState<Record<string, Assets>>({});
-  const [pkgA, setPkgA] = useState<Package>({ players: [], picks: [] });
-  const [pkgB, setPkgB] = useState<Package>({ players: [], picks: [] });
   const [check, setCheck] = useState<CheckState>({ state: "idle" });
   const [fillers, setFillers] = useState<FillersState>({ state: "idle" });
+  const [snapshot, setSnapshot] = useState<ScenarioSnapshot | null>(null);
+  const [loadNote, setLoadNote] = useState<string | null>(null);
   const checkSeq = useRef(0);
+
+  const multi = teams.length > 2;
 
   const loadAssets = useCallback((abbr: string) => {
     setAssets(previous => {
@@ -89,75 +126,126 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
   }, []);
 
   useEffect(() => {
-    loadAssets(teamA);
-    loadAssets(teamB);
-  }, [teamA, teamB, loadAssets]);
+    teams.forEach(loadAssets);
+  }, [teams, loadAssets]);
 
   useEffect(() => {
-    if (pkgA.players.length === 0 || pkgB.players.length === 0) {
+    const populated = pkgs.filter(pkg => pkg.players.length > 0).length;
+    if (populated < 2) {
       setCheck({ state: "idle" });
       return;
     }
     const seq = ++checkSeq.current;
     setCheck({ state: "loading" });
-    fetch(`${BACKEND}${apiPath("/trade/check")}`, {
+    if (!multi) {
+      fetch(`${BACKEND}${apiPath("/trade/check")}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ team_a: teams[0], players_a: pkgs[0].players, team_b: teams[1], players_b: pkgs[1].players, season: TRADE_SEASON }),
+      })
+        .then(response => response.json().then(data => ({ status: response.status, data })))
+        .then(({ status, data }) => {
+          if (checkSeq.current !== seq) return;
+          if (status === 422 || data.ok === false) {
+            setCheck({ state: "error", error: data.error ?? "Trade check failed" });
+            return;
+          }
+          setCheck({ state: "ok", rows: data.rows });
+        })
+        .catch(() => {
+          if (checkSeq.current === seq) setCheck({ state: "error", error: "Could not reach the backend" });
+        });
+      return;
+    }
+    const legs = teams.map((team, index) => ({
+      from: team,
+      to: teams[(index + 1) % teams.length],
+      players: pkgs[index].players.join(", "),
+      picks: pkgs[index].picks.map(parsePickId),
+    }));
+    fetch(`${BACKEND}${apiPath("/trade/legs")}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ team_a: teamA, players_a: pkgA.players, team_b: teamB, players_b: pkgB.players, season: TRADE_SEASON }),
+      body: JSON.stringify({ legs, season: TRADE_SEASON }),
     })
       .then(response => response.json().then(data => ({ status: response.status, data })))
-      .then(({ status, data }) => {
+      .then(({ status, data }: { status: number; data: LegsResponse }) => {
         if (checkSeq.current !== seq) return;
         if (status === 422 || data.ok === false) {
           setCheck({ state: "error", error: data.error ?? "Trade check failed" });
           return;
         }
-        setCheck({ state: "ok", rows: data.rows });
+        const rows = data.rows ?? [];
+        const legal = rows.length > 0 && rows.every(row => row.matching_ok !== false) ;
+        const issues = rows.flatMap(row => row.issues ?? []);
+        setCheck({
+          state: "ok-legs",
+          rows,
+          legal,
+          issues,
+          disclaimer: data.meta?.disclaimer ?? "",
+          salary_date: data.meta?.salary_date,
+        });
       })
       .catch(() => {
         if (checkSeq.current === seq) setCheck({ state: "error", error: "Could not reach the backend" });
       });
-  }, [pkgA.players, pkgB.players, teamA, teamB]);
+  }, [pkgs, teams, multi]);
 
-  const addPlayer = useCallback((side: "a" | "b", name: string) => {
-    setFillers({ state: "idle" });
-    if (side === "a") {
-      setPkgA(previous => previous.players.includes(name) ? previous : { ...previous, players: [...previous.players, name] });
-    } else {
-      setPkgB(previous => previous.players.includes(name) ? previous : { ...previous, players: [...previous.players, name] });
-    }
+  const setPkgAt = useCallback((index: number, next: (previous: Package) => Package) => {
+    setPkgs(previous => previous.map((pkg, i) => (i === index ? next(pkg) : pkg)));
   }, []);
 
-  const addPick = useCallback((side: "a" | "b", id: string) => {
-    if (side === "a") {
-      setPkgA(previous => previous.picks.includes(id) ? previous : { ...previous, picks: [...previous.picks, id] });
-    } else {
-      setPkgB(previous => previous.picks.includes(id) ? previous : { ...previous, picks: [...previous.picks, id] });
-    }
-  }, []);
-
-  const removeItem = useCallback((side: "a" | "b", kind: "player" | "pick", value: string) => {
+  const addPlayer = useCallback((side: number, name: string) => {
     setFillers({ state: "idle" });
-    const setter = side === "a" ? setPkgA : setPkgB;
-    setter(previous => kind === "player"
+    setPkgAt(side, previous => previous.players.includes(name) ? previous : { ...previous, players: [...previous.players, name] });
+  }, [setPkgAt]);
+
+  const addPick = useCallback((side: number, id: string) => {
+    setPkgAt(side, previous => previous.picks.includes(id) ? previous : { ...previous, picks: [...previous.picks, id] });
+  }, [setPkgAt]);
+
+  const removeItem = useCallback((side: number, kind: "player" | "pick", value: string) => {
+    setFillers({ state: "idle" });
+    setPkgAt(side, previous => kind === "player"
       ? { ...previous, players: previous.players.filter(name => name !== value) }
       : { ...previous, picks: previous.picks.filter(id => id !== value) });
-  }, []);
+  }, [setPkgAt]);
+
+  const setTeamAt = useCallback((index: number, abbr: string) => {
+    setTeams(previous => previous.map((team, i) => (i === index ? abbr : team)));
+    setPkgAt(index, () => emptyPackage());
+    setFillers({ state: "idle" });
+  }, [setPkgAt]);
+
+  const addTeam = useCallback(() => {
+    const unused = nbaTeams.find(team => !teams.includes(team.abbr));
+    if (!unused || teams.length >= 4) return;
+    setTeams(previous => [...previous, unused.abbr]);
+    setPkgs(previous => [...previous, emptyPackage()]);
+  }, [teams]);
+
+  const removeTeam = useCallback((index: number) => {
+    if (teams.length <= 2) return;
+    setTeams(previous => previous.filter((_, i) => i !== index));
+    setPkgs(previous => previous.filter((_, i) => i !== index));
+  }, [teams.length]);
 
   const onAssetDrag = useCallback((event: React.DragEvent, name: string) => {
     event.dataTransfer.setData("text/plain", name);
   }, []);
 
-  const onPackageDrop = useCallback((side: "a" | "b", event: React.DragEvent) => {
+  const onPackageDrop = useCallback((side: number, event: React.DragEvent) => {
     event.preventDefault();
     const name = event.dataTransfer.getData("text/plain");
     if (name.startsWith("pick:")) addPick(side, name.slice(5));
     else if (name) addPlayer(side, name);
   }, [addPlayer, addPick]);
 
-  const suggestFillers = useCallback((side: "a" | "b") => {
-    const other = side === "a" ? pkgB.players : pkgA.players;
-    const target = side === "a" ? teamA : teamB;
+  const suggestFillers = useCallback((side: number) => {
+    const otherIndex = side === 0 ? 1 : 0;
+    const other = pkgs[otherIndex]?.players ?? [];
+    const target = teams[side];
     if (other.length === 0) return;
     setFillers({ state: "loading", side });
     fetch(`${BACKEND}${apiPath("/trade/partners")}`, {
@@ -174,40 +262,46 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
         setFillers({ state: "ok", side, rows: (data.rows ?? []).filter((row: PartnerRow) => row.team === target) });
       })
       .catch(() => setFillers({ state: "error", side, error: "Could not reach the backend" }));
-  }, [pkgA.players, pkgB.players, teamA, teamB]);
+  }, [pkgs, teams]);
 
-  const packageSummary = (side: "a" | "b") => {
-    const pkg = side === "a" ? pkgA : pkgB;
+  const packageSummary = (side: number) => {
+    const pkg = pkgs[side] ?? emptyPackage();
     const names = pkg.players.slice();
     if (pkg.picks.length > 0) names.push(`${pkg.picks.length} pick${pkg.picks.length === 1 ? "" : "s"}`);
     return names.length ? names.join(", ") : "nothing";
   };
 
   const buildAskText = () => {
-    const rows = check.state === "ok" ? check.rows : null;
-    const verdict = rows ? (rows.legal ? "legal" : "not legal") : "not checked";
-    const issues = rows && rows.issues.length > 0 ? ` Issues: ${rows.issues.join(" ")}` : "";
-    return `Evaluate this proposed trade for ${TRADE_SEASON}: ${teamA} sends ${packageSummary("a")}; ${teamB} sends ${packageSummary("b")}. Salary check says: ${verdict}.${issues} Grade the basketball fit and value for both sides.`;
+    const parts = teams.map((team, index) => `${team} sends ${packageSummary(index)}`);
+    let verdict = "not checked";
+    let issues = "";
+    if (check.state === "ok") {
+      verdict = check.rows.legal ? "legal" : "not legal";
+      issues = check.rows.issues.length > 0 ? ` Issues: ${check.rows.issues.join(" ")}` : "";
+    } else if (check.state === "ok-legs") {
+      verdict = check.legal ? "legal" : "not legal";
+      issues = check.issues.length > 0 ? ` Issues: ${check.issues.join(" ")}` : "";
+    }
+    return `Evaluate this proposed ${teams.length}-team trade for ${TRADE_SEASON}: ${parts.join("; ")}. Salary check says: ${verdict}.${issues} Grade the basketball fit and value for every side.`;
   };
 
   const pinArtifact = (): DimeArtifact => {
     const rows: (string | number)[][] = [];
-    const push = (side: "a" | "b") => {
-      const pkg = side === "a" ? pkgA : pkgB;
-      const abbr = side === "a" ? teamA : teamB;
+    teams.forEach((abbr, index) => {
+      const pkg = pkgs[index] ?? emptyPackage();
       const roster = assets[abbr];
       for (const name of pkg.players) {
         const salary = roster?.state === "ready" ? roster.players.find(player => player.name === name)?.salary : undefined;
         rows.push([`${abbr} sends`, name, salary ?? "", "player"]);
       }
       for (const id of pkg.picks) rows.push([`${abbr} sends`, id, "", "draft pick (not in salary match)"]);
-    };
-    push("a");
-    push("b");
-    if (check.state === "ok") rows.push(["verdict", check.rows.legal ? "legal" : "not legal", "", check.rows.issues.join(" ") || check.rows.disclaimer]);
+    });
+    const legal = check.state === "ok" ? check.rows.legal : check.state === "ok-legs" ? check.legal : null;
+    const issueText = check.state === "ok" ? check.rows.issues.join(" ") : check.state === "ok-legs" ? check.issues.join(" ") : "";
+    if (legal !== null) rows.push(["verdict", legal ? "legal" : "not legal", "", issueText]);
     return {
       kind: "table",
-      title: `${teamA} ↔ ${teamB} trade · ${TRADE_SEASON}`,
+      title: `${teams.join(" ↔ ")} trade · ${TRADE_SEASON}`,
       columns: [
         { key: "side", label: "side" },
         { key: "asset", label: "asset" },
@@ -218,26 +312,61 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
       provenance: {
         origin: "warehouse",
         liveSources: [],
-        capability: "get_trade_check",
+        capability: multi ? "get_trade_legality" : "get_trade_check",
         season: TRADE_SEASON,
-        asOf: check.state === "ok" ? check.rows.salary_date : undefined,
+        asOf: check.state === "ok" ? check.rows.salary_date : check.state === "ok-legs" ? check.salary_date : undefined,
       },
     };
   };
 
-  const sidePayroll = (side: "a" | "b") => {
-    if (check.state !== "ok") return null;
+  const scenarioArtifact = (): DimeArtifact => {
+    const legal = check.state === "ok" ? check.rows.legal : check.state === "ok-legs" ? check.legal : null;
+    return {
+      kind: "trade_scenario",
+      title: `${teams.join(" ↔ ")} scenario · ${TRADE_SEASON}`,
+      teams: teams.slice(),
+      packages: pkgs.map(pkg => ({ players: pkg.players.slice(), picks: pkg.picks.slice() })),
+      season: TRADE_SEASON,
+      verdict: legal,
+    } as unknown as DimeArtifact;
+  };
+
+  function loadScenario() {
+    for (const board of listBoards()) {
+      const pin = (board.pins ?? []).filter(p => (p.artifact as { kind?: string }).kind === "trade_scenario").pop();
+      if (!pin) continue;
+      const artifact = pin.artifact as unknown as ScenarioSnapshot & { packages?: Package[] };
+      if (!Array.isArray(artifact.teams) || !Array.isArray(artifact.packages)) continue;
+      setTeams(artifact.teams.slice());
+      setPkgs(artifact.packages.map(pkg => ({ players: (pkg.players ?? []).slice(), picks: (pkg.picks ?? []).slice() })));
+      setSnapshot({ teams: artifact.teams.slice(), packages: artifact.packages, season: artifact.season, verdict: artifact.verdict ?? null });
+      setLoadNote(`loaded "${pin.artifact.title}" from "${board.title}"`);
+      return;
+    }
+    setLoadNote("no saved trade scenario found on any board");
+  }
+
+  const currentVerdict = check.state === "ok" ? check.rows.legal : check.state === "ok-legs" ? check.legal : null;
+  const verdictDrift = snapshot && snapshot.verdict !== null && currentVerdict !== null && snapshot.verdict !== currentVerdict;
+
+  const sidePayroll = (side: number) => {
+    if (check.state !== "ok" || side > 1) return null;
     const rows = check.rows;
-    const self = side === "a" ? rows.team_a : rows.team_b;
-    const other = side === "a" ? rows.team_b : rows.team_a;
+    const self = side === 0 ? rows.team_a : rows.team_b;
+    const other = side === 0 ? rows.team_b : rows.team_a;
     const before = self.payroll / 1_000_000;
     const after = (self.payroll - self.out + other.out) / 1_000_000;
     return { before, after, out: self.out / 1_000_000, allowed: self.allowed_in / 1_000_000, rule: self.match_rule, needed: self.outgoing_needed, apron1: self.over_apron1, apron2: self.over_apron2 };
   };
 
-  const renderPackage = (side: "a" | "b") => {
-    const pkg = side === "a" ? pkgA : pkgB;
-    const abbr = side === "a" ? teamA : teamB;
+  const legRow = (side: number): LegTeamRows | null => {
+    if (check.state !== "ok-legs") return null;
+    return check.rows.find(row => row.team === teams[side]) ?? null;
+  };
+
+  const renderPackage = (side: number) => {
+    const pkg = pkgs[side] ?? emptyPackage();
+    const abbr = teams[side];
     const roster = assets[abbr];
     return (
       <div
@@ -263,26 +392,31 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
     );
   };
 
-  const renderColumn = (side: "a" | "b") => {
-    const abbr = side === "a" ? teamA : teamB;
-    const setTeam = side === "a" ? setTeamA : setTeamB;
-    const setPkg = side === "a" ? setPkgA : setPkgB;
-    const pkg = side === "a" ? pkgA : pkgB;
+  const renderColumn = (side: number) => {
+    const abbr = teams[side];
+    const pkg = pkgs[side] ?? emptyPackage();
     const roster = assets[abbr];
     const payroll = sidePayroll(side);
+    const leg = legRow(side);
+    const label = multi ? `${abbr} → ${teams[(side + 1) % teams.length]}` : `Team ${side === 0 ? "A" : "B"} sends`;
     return (
-      <div className="flex-1 min-w-0 space-y-2">
+      <div key={`${side}-${abbr}`} className="flex-1 min-w-0 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <label className="font-mono text-[10px] uppercase tracking-wider text-ink-3" htmlFor={`trade-team-${side}`}>Team {side === "a" ? "A" : "B"} sends</label>
-          <select
-            id={`trade-team-${side}`}
-            value={abbr}
-            onChange={event => { setTeam(event.target.value); setPkg({ players: [], picks: [] }); setFillers({ state: "idle" }); }}
-            className="h-7 rounded-[7px] border border-line bg-surface px-2 text-xs text-ink"
-            aria-label={`Team ${side === "a" ? "A" : "B"}`}
-          >
-            {nbaTeams.map(team => <option key={team.abbr} value={team.abbr}>{team.abbr} · {team.name}</option>)}
-          </select>
+          <label className="font-mono text-[10px] uppercase tracking-wider text-ink-3" htmlFor={`trade-team-${side}`}>{label}</label>
+          <div className="flex items-center gap-1">
+            <select
+              id={`trade-team-${side}`}
+              value={abbr}
+              onChange={event => setTeamAt(side, event.target.value)}
+              className="h-7 rounded-[7px] border border-line bg-surface px-2 text-xs text-ink"
+              aria-label={`Team ${side + 1}`}
+            >
+              {nbaTeams.map(team => <option key={team.abbr} value={team.abbr}>{team.abbr} · {team.name}</option>)}
+            </select>
+            {teams.length > 2 && (
+              <button className="h-7 rounded-[7px] border border-line px-1.5 font-mono text-[11px] text-ink-3 hover:bg-hover" onClick={() => removeTeam(side)} title="Remove team">×</button>
+            )}
+          </div>
         </div>
         {renderPackage(side)}
         <div className="rounded-card border border-line bg-surface shadow-hairline">
@@ -352,12 +486,29 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
             <div className="mt-0.5 font-mono text-[10px] text-ink-3">{payroll.rule}</div>
           </div>
         )}
+        {leg && (
+          <div className="rounded-card border border-line bg-surface px-3 py-2 text-xs shadow-hairline">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-3">matching</span>
+              <span className={`font-mono text-[10.5px] ${leg.matching_ok === false ? "text-red" : "text-green"}`}>{leg.matching_ok === false ? "fails" : "ok"}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-ink-3">
+              {leg.outgoing != null && <span>out {money(leg.outgoing / 1_000_000)}</span>}
+              {leg.incoming != null && <span>in {money(leg.incoming / 1_000_000)}</span>}
+              {leg.over_apron1 && <span className="text-orange">over apron 1</span>}
+              {leg.over_apron2 && <span className="text-red">over apron 2</span>}
+              {leg.hard_cap && <span className="text-red">hard-capped at {leg.hard_cap}</span>}
+            </div>
+            {leg.match_rule && <div className="mt-0.5 font-mono text-[10px] text-ink-3">{leg.match_rule}</div>}
+          </div>
+        )}
       </div>
     );
   };
 
-  const renderFillers = (side: "a" | "b") => {
-    const needs = check.state === "ok" ? (side === "a" ? check.rows.team_a : check.rows.team_b).outgoing_needed : 0;
+  const renderFillers = (side: number) => {
+    if (multi || side > 1) return null;
+    const needs = check.state === "ok" ? (side === 0 ? check.rows.team_a : check.rows.team_b).outgoing_needed : 0;
     const active = fillers.state !== "idle" && fillers.side === side;
     if (needs <= 0 && !active) return null;
     return (
@@ -367,7 +518,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
             className="h-7 rounded-[7px] border border-line bg-surface px-2.5 text-xs font-medium text-ink-2 hover:bg-hover"
             onClick={() => suggestFillers(side)}
           >
-            Side {side === "a" ? teamA : teamB} needs ${(needs / 1_000_000).toFixed(1)}M more outgoing · suggest fillers
+            Side {teams[side]} needs ${(needs / 1_000_000).toFixed(1)}M more outgoing · suggest fillers
           </button>
         )}
         {active && fillers.state === "loading" && <div className="text-xs text-ink-3">Searching packages…</div>}
@@ -396,14 +547,36 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="text-sm font-semibold text-ink">Trade builder</div>
-          <div className="font-mono text-[10px] text-ink-3">{TRADE_SEASON} · salaries via salary_records · checks via get_trade_check</div>
+          <div className="font-mono text-[10px] text-ink-3">
+            {TRADE_SEASON} · salaries via salary_records · checks via {multi ? "get_trade_legality" : "get_trade_check"}
+            {multi ? " · rotational construction: each team's outgoing goes to the next team" : ""}
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
-          {(pkgA.players.length > 0 || pkgB.players.length > 0) && <PinButton artifact={pinArtifact()} />}
+          {teams.length < 4 && (
+            <button
+              className="h-7 rounded-[7px] border border-line bg-surface px-2.5 text-xs font-medium text-ink-2 hover:bg-hover"
+              onClick={addTeam}
+            >
+              Add team
+            </button>
+          )}
+          {pkgs.some(pkg => pkg.players.length > 0 || pkg.picks.length > 0) && (
+            <>
+              <span title="Pin trade table"><PinButton artifact={pinArtifact()} /></span>
+              <span title="Pin re-loadable scenario"><PinButton artifact={scenarioArtifact()} /></span>
+            </>
+          )}
+          <button
+            className="h-7 rounded-[7px] border border-line bg-surface px-2.5 text-xs font-medium text-ink-2 hover:bg-hover"
+            onClick={loadScenario}
+          >
+            Load saved
+          </button>
           {onAsk && (
             <button
               className="h-7 rounded-[7px] border border-line bg-surface px-2.5 text-xs font-medium text-ink-2 hover:bg-hover disabled:opacity-40"
-              disabled={pkgA.players.length === 0 || pkgB.players.length === 0}
+              disabled={pkgs.filter(pkg => pkg.players.length > 0).length < 2}
               onClick={() => onAsk(buildAskText())}
             >
               Ask Dime about this trade
@@ -412,13 +585,14 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
         </div>
       </div>
 
+      {loadNote && <div className="font-mono text-[10px] text-ink-3">{loadNote}</div>}
+
       <div className="flex flex-col gap-3 md:flex-row">
-        {renderColumn("a")}
-        {renderColumn("b")}
+        {teams.map((_, index) => renderColumn(index))}
       </div>
 
       <div className="rounded-card border border-line bg-surface px-3 py-2 shadow-hairline" aria-live="polite">
-        {check.state === "idle" && <div className="text-xs text-ink-3">Add at least one player to each side and the salary check runs automatically.</div>}
+        {check.state === "idle" && <div className="text-xs text-ink-3">Add players to at least two sides and the salary check runs automatically.</div>}
         {check.state === "loading" && <div className="text-xs text-ink-3">Checking salary match and apron rules…</div>}
         {check.state === "error" && <div className="text-xs text-red" role="alert">{check.error}</div>}
         {check.state === "ok" && (
@@ -431,9 +605,24 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
             {check.rows.salary_date && <div className="font-mono text-[10px] text-ink-3">salaries as of {check.rows.salary_date}</div>}
           </div>
         )}
+        {check.state === "ok-legs" && (
+          <div className="space-y-1 text-xs">
+            <div className={`font-semibold ${check.legal ? "text-green" : "text-red"}`}>
+              {check.legal ? "Matching passes for every team" : "Matching fails for at least one team"}
+            </div>
+            {check.issues.map((issue, index) => <div key={index} className="text-ink-2">{issue}</div>)}
+            {check.disclaimer && <div className="font-mono text-[10px] text-ink-3">{check.disclaimer}</div>}
+            {check.salary_date && <div className="font-mono text-[10px] text-ink-3">salaries as of {check.salary_date}</div>}
+          </div>
+        )}
+        {verdictDrift && snapshot && (
+          <div className="mt-1 rounded-[7px] border border-line px-2 py-1 text-[11px] text-ink-2" role="status">
+            Verdict changed since this scenario was pinned: was {snapshot.verdict ? "legal" : "not legal"}, now {currentVerdict ? "legal" : "not legal"} on current salaries.
+          </div>
+        )}
         <div className="mt-2 space-y-1">
-          {renderFillers("a")}
-          {renderFillers("b")}
+          {renderFillers(0)}
+          {renderFillers(1)}
         </div>
       </div>
     </div>

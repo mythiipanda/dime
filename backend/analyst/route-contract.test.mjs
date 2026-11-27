@@ -26,6 +26,7 @@ const data={close:async()=>{},async call(name,args){switch(name){
  case "product_matchups":return {ok:true,date:"2026-11-25",season:"2026-27",games:[]};
  case "product_awards":return {ok:true,season:"2025-26",awards:[]};
  case "product_scout_dossier":return {ok:true,season:"2025-26",team:{abbrev:"BOS"},opponent:{abbrev:"NYK"},edge:null,sections:{}};
+ case "product_trade_legs":return {ok:true,rows:[],meta:{}};
  case "product_watchlist":return output("watchlist",args);
  case "product_watchlist_add":return output("watchlist_add",args);
  case "product_watchlist_remove":return output("watchlist_remove",args);
