@@ -1,4 +1,3 @@
-"""Season scope disclosure at the tool-result provenance chokepoint."""
 from analyst.tools.common import call_sync, disclose_scoped_season
 
 
