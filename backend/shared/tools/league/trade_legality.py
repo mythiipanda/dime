@@ -12,6 +12,7 @@ from .cba_cap import (
     SalaryColumnError,
     _allowed_incoming,
     _apron_state,
+    _hard_cap_consequences,
     _locate_player_team,
     _match_trade_players,
     _payroll,
@@ -239,11 +240,6 @@ def _expanded_matching_use(incoming_salaries: list[int], in_total: int,
     return not _placement_fits(
         incoming_salaries, [strict_limit] + capacities, required_bins,
         strict_limit)
-
-
-def _add_hard_cap(hard_caps: list[str], apron: str) -> None:
-    if apron not in hard_caps:
-        hard_caps.append(apron)
 
 
 def _public_tpe(tpe: dict[str, Any], over_apron1: bool) -> dict[str, Any]:
@@ -521,25 +517,6 @@ def _inactive_tpe_issues(team: str,
     return [_inactive_tpe_issue(team, item) for item in inactive_tpes]
 
 
-def _team_hard_caps(aggregates: bool, cash_out: int, prior_tpe: bool,
-                    snt_tpe: bool, is_snt_receiver: bool,
-                    expanded_matching: bool) -> list[str]:
-    hard_caps: list[str] = []
-    if aggregates:
-        _add_hard_cap(hard_caps, "second apron")
-    if cash_out:
-        _add_hard_cap(hard_caps, "second apron")
-    if prior_tpe:
-        _add_hard_cap(hard_caps, "first apron")
-    if snt_tpe:
-        _add_hard_cap(hard_caps, "second apron")
-    if is_snt_receiver:
-        _add_hard_cap(hard_caps, "first apron")
-    if expanded_matching:
-        _add_hard_cap(hard_caps, "first apron")
-    return hard_caps
-
-
 def _frozen_pick_issues(team: str, picks_out: list[dict[str, Any]],
                         season_start: int | None) -> list[str]:
     if not season_start:
@@ -562,30 +539,6 @@ def _apron2_issues(team: str, out_names: list[str], cash_out: int,
     if cash_out:
         issues.append(f"{team} cannot send cash above the second apron")
     issues.extend(_frozen_pick_issues(team, picks_out, season_start))
-    return issues
-
-
-def _hard_cap_issues(team: str, hard_caps: list[str], pay_after: int,
-                     is_snt_receiver: bool, prior_tpe: bool,
-                     expanded_matching: bool) -> list[str]:
-    issues: list[str] = []
-    if "second apron" in hard_caps and pay_after > CAP["apron2"]:
-        issues.append(
-            f"{team} is hard-capped at the second apron by this deal "
-            f"(post-trade payroll ${pay_after:,} > ${CAP['apron2']:,})")
-    if "first apron" not in hard_caps or pay_after <= CAP["apron1"]:
-        return issues
-    causes: list[str] = []
-    if is_snt_receiver:
-        causes.append("the sign-and-trade")
-    if prior_tpe:
-        causes.append("the prior-year traded player exception")
-    if expanded_matching:
-        causes.append("expanded salary matching")
-    cause = " and ".join(causes) or "this deal"
-    issues.append(
-        f"{team} is hard-capped at the first apron by {cause} "
-        f"(post-trade payroll ${pay_after:,} > ${CAP['apron1']:,})")
     return issues
 
 
@@ -649,16 +602,15 @@ def _evaluate_team(team: str, side: dict[str, Any],
     expanded_matching = _expanded_matching_use(
         incoming_salaries, side["in_total"], out_eff, room_before,
         usage["capacities"], required_tpe_bins)
-    hard_caps = _team_hard_caps(aggregates, cash_out, usage["prior"],
-                                usage["snt"], is_snt_receiver,
-                                expanded_matching)
+    hard_cap = _hard_cap_consequences(
+        team, pay_after, aggregates=aggregates, cash_out=cash_out,
+        prior_tpe=usage["prior"], snt_tpe=usage["snt"],
+        is_snt_receiver=is_snt_receiver, expanded_matching=expanded_matching)
     issues = _inactive_tpe_issues(team, usage["inactive"])
     if state_after["over_apron2"]:
         issues.extend(_apron2_issues(team, side["out_names"], cash_out,
                                      picks_out, season_start))
-    issues.extend(_hard_cap_issues(team, hard_caps, pay_after,
-                                   is_snt_receiver, usage["prior"],
-                                   expanded_matching))
+    issues.extend(hard_cap["issues"])
     issues.extend(_matching_issue(team, salary_fit, usage["active"],
                                   side["in_total"], allow, rule))
     issues.extend(_future_pick_issues(team, picks_out, season_start))
@@ -680,7 +632,7 @@ def _evaluate_team(team: str, side: dict[str, Any],
         "allowed_incoming": allow, "match_rule": rule,
         "matching_ok": salary_fit,
         "aggregates": aggregates,
-        "hard_cap": "+".join(hard_caps) if hard_caps else "",
+        "hard_cap": hard_cap["hard_cap"],
         "over_apron1": state_after["over_apron1"],
         "over_apron2": state_after["over_apron2"],
         "room_apron2": state_after["room_apron2"],

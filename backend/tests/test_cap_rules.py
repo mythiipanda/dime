@@ -4,6 +4,7 @@ from shared.tools.cap_rules import (
     apron_state,
     cba_restrictions,
     frozen_pick_year,
+    hard_cap_consequences,
     matching_band,
     roster_issues,
     scenario_trace,
@@ -57,6 +58,29 @@ def test_used_expanded_matching():
     assert used_expanded_matching(10_000_000, 20_000_000) is False
     assert used_expanded_matching(35_000_000, 20_000_000, cap_room=15_000_000) is False
     assert used_expanded_matching(36_000_000, 20_000_000, cap_room=15_000_000) is True
+
+
+def test_hard_cap_consequences_cover_both_triggers_post_trade():
+    below = hard_cap_consequences(
+        "BOS", CAP["apron1"] - 1,
+        aggregates=True, expanded_matching=True)
+    assert below["hard_cap"] == "second apron+first apron"
+    assert below["violations"] == []
+    assert below["issues"] == []
+
+    over_first = hard_cap_consequences(
+        "BOS", CAP["apron1"] + 1,
+        aggregates=True, expanded_matching=True)
+    assert over_first["violations"] == ["first apron"]
+    assert len(over_first["issues"]) == 1
+    assert "expanded salary matching" in over_first["issues"][0]
+
+    over_second = hard_cap_consequences(
+        "BOS", CAP["apron2"] + 1,
+        aggregates=True, expanded_matching=True)
+    assert over_second["violations"] == ["second apron", "first apron"]
+    assert len(over_second["issues"]) == 2
+    assert "second apron" in over_second["issues"][0]
 
 
 def test_matching_band_shape():

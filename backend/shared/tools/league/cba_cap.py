@@ -15,6 +15,7 @@ from ..cap_rules import (
     EXPANDED_TPE_MID_MAX as _EXPANDED_TPE_MID_MAX,
     allowed_incoming as _allowed_incoming,
     apron_state as _apron_state,
+    hard_cap_consequences as _hard_cap_consequences,
     used_expanded_matching as _used_expanded_matching,
 )
 
