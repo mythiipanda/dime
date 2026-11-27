@@ -542,3 +542,35 @@ def test_over_apron_marks_ntmle_unavailable():
     assert rows["mle"]["unavailable"] is True
     assert rows["bae"]["unavailable"] is True
     assert rows["room"]["unavailable"] is False
+
+def test_trade_exceptions_disclosed_per_season_with_no_payroll_effect():
+    con = memory_con()
+    try:
+        from shared.tools.league.cap_projection import project_cap_scenario
+        tpes = [
+            {"team": "TST", "amount": 10_534_956, "kind": "ordinary",
+             "origin_year": 2026, "exactness": "scenario_derived"},
+            {"team": "TST", "amount": 5_000_000, "kind": "ordinary",
+             "origin_year": 2024, "exactness": "user_declared"},
+            {"team": "OTH", "amount": 9_000_000, "kind": "ordinary",
+             "origin_year": 2026, "exactness": "user_declared"},
+        ]
+        out = project_cap_scenario(con, {"team": "TST", "season": "2026-27", "moves": [], "tpes": tpes})
+        first = block(out, "2026-27")
+        disclosed = first.get("trade_exceptions") or []
+        assert len(disclosed) == 2
+        amounts = sorted(row["amount"] for row in disclosed)
+        assert amounts == [5_000_000, 10_534_956]
+        active = next(row for row in disclosed if row["amount"] == 10_534_956)
+        assert active["status"] == "active"
+        assert active["exactness"] == "scenario_derived"
+        assert "no payroll effect" in active["note"]
+        expired = next(row for row in disclosed if row["amount"] == 5_000_000)
+        assert expired["status"] == "expired"
+        plain = project(con, [])
+        assert first["pay_after"] == block(plain, "2026-27")["pay_after"]
+        later = block(out, "2028-29")
+        later_amounts = sorted(row["amount"] for row in (later.get("trade_exceptions") or []))
+        assert later_amounts == sorted(row["amount"] for row in disclosed)
+    finally:
+        con.close()

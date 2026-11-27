@@ -41,6 +41,15 @@ function SeasonSummary({ block }: { block: ProjectionSeason }) {
         {block.exception_usage.map(ex => (
           <span key={ex} className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-ink-2">{ex.toUpperCase()}</span>
         ))}
+        {(block.trade_exceptions ?? []).map((tpe, i) => (
+          <span
+            key={`tpe-${i}`}
+            title={tpe.note}
+            className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${tpe.status === "active" ? "bg-surface-2 text-ink-2" : "bg-surface-2/50 text-ink-3 line-through"}`}
+          >
+            TPE ${(tpe.amount / 1_000_000).toFixed(1)}M · {tpe.exactness.replace(/_/g, " ")}
+          </span>
+        ))}
       </div>
       {block.hard_cap_violation && (
         <p className="mt-1.5 text-[11px] leading-[1.5] text-red">{block.hard_cap_violation}</p>

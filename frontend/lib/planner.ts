@@ -42,6 +42,7 @@ export type ProjectionSeason = {
   hard_cap: string;
   hard_cap_violation: string;
   exception_usage: string[];
+  trade_exceptions?: { amount: number; kind: string; exactness: string; status: string; note: string }[];
   effects: ProjectionEffect[];
   moves_in_season: number;
   ordering_notes: string[];
