@@ -108,6 +108,55 @@ def test_unknown_player():
     assert res["ok"] is False
     assert "unknown player" in res["error"]
 
+
+def _hist_warehouse_ready() -> bool:
+    import duckdb
+
+    try:
+        con = duckdb.connect(str(WH), read_only=True)
+        try:
+            return con.execute(
+                "SELECT COUNT(*) FROM silver_hist_player_seasons"
+                " WHERE _season = '1996-97'").fetchone()[0] > 0
+        finally:
+            con.close()
+    except Exception:
+        return False
+
+
+def test_era_comps_exposes_z_vectors():
+    if not _hist_warehouse_ready():
+        pytest.skip("silver_hist_player_seasons missing/empty")
+    from shared.tools.player.comps import get_era_comps
+    res = get_era_comps.invoke({"player_id": "Michael Jordan", "season": "1996-97", "k": 4})
+    assert res["ok"] is True, res.get("error")
+    feats = res["meta"]["features"]
+    assert len(feats) >= 5
+    target_z = res["player"].get("z")
+    assert isinstance(target_z, dict)
+    assert set(target_z) == set(feats)
+    assert all(isinstance(v, (int, float)) for v in target_z.values())
+    labels = res["meta"].get("feature_labels")
+    assert isinstance(labels, dict)
+    assert set(labels) == set(feats)
+    assert all(isinstance(v, str) and v for v in labels.values())
+
+    def dist(za, zb):
+        import math
+        return math.sqrt(sum((za[f] - zb[f]) ** 2 for f in feats))
+
+    dists = []
+    for row in res["rows"]:
+        zv = row.get("z")
+        assert isinstance(zv, dict), "comp rows must expose their z-vector"
+        assert set(zv) == set(feats)
+        assert all(isinstance(v, (int, float)) for v in zv.values())
+        dists.append(dist(target_z, zv))
+    assert all(b >= a for a, b in zip(dists, dists[1:])), "z-space distance must rank with comp order"
+    top_sim = res["rows"][0]["similarity"]
+    expected = round(100 / (1 + dists[0] / 20), 1)
+    assert abs(top_sim - expected) < 1.0, "exposed vectors must reproduce the similarity score"
+
 def test_missing_season():
     res = tools.get_comps.invoke(
         {"player_id": "Luka Doncic", "season": "2030-31"})
