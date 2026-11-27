@@ -13,7 +13,7 @@ export function formatHeadlineMetric(value: unknown, unit: string | undefined): 
     const abs = Math.abs(num);
     if (abs >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
     if (abs >= 10_000) return num.toLocaleString("en-US");
-    return String(num);
+    return String(value);
   }
-  return String(Math.round(num * 10) / 10);
+  return String(value);
 }
