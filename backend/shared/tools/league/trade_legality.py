@@ -40,6 +40,11 @@ _SNT_GUARANTEE_DISCLOSURE = (
 _SNT_OPTION_YEAR_DISCLOSURE = (
     "years is treated as total declared seasons; non-option seasons cannot be "
     "distinguished, so option-year treatment is unsupported")
+_PICK_OWNERSHIP_LIMITATIONS = (
+    "protection/swap reconciliation and pooled/conditional picks are not "
+    "modeled; same-year multiple firsts are validated only at year grain "
+    "because the leg input does not identify the original team of a "
+    "same-year first")
 
 
 def _parse_json_arg(text: str, label: str) -> tuple[Any, str | None]:
@@ -300,6 +305,11 @@ def _parse_snt(value: Any) -> tuple[dict[str, Any] | None, str | None]:
             "years": years}, None
 
 
+def _picks_season(con) -> str:
+    row = con.execute("select max(_season) from silver_future_picks").fetchone()
+    return row[0] if row and row[0] else (_pkg().current_season() or "")
+
+
 def _pick_inventory(con, season_start: int) -> dict[str, set[int]] | None:
     tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     if "silver_future_picks" not in tables:
@@ -307,7 +317,8 @@ def _pick_inventory(con, season_start: int) -> dict[str, set[int]] | None:
     held: dict[str, set[int]] = {}
     rows = con.execute(
         "select DRAFT_YEAR, ROUND, ORIG_TEAM, STATUS, HELD_BY "
-        "from silver_future_picks where ROUND = 1").fetchall()
+        "from silver_future_picks where ROUND = 1 and _season = ?",
+        [_picks_season(con)]).fetchall()
     for year, _rnd, orig, status, held_by in rows:
         y = int(year)
         if not (season_start < y <= season_start + _STEPIEN_WINDOW):
@@ -758,13 +769,12 @@ def _pick_inventory_check(pick_held: dict[str, set[int]] | None
     if pick_held is None:
         return {"rule": "pick ownership", "checked": False,
                 "note": "duplicate declarations checked; silver_future_picks "
-                        "not seeded - ownership not verified; protections/"
-                        "swaps reconciliation not modeled"}
+                        "not seeded - ownership not verified; "
+                        f"{_PICK_OWNERSHIP_LIMITATIONS}"}
     return {"rule": "pick ownership", "checked": True,
             "note": "outgoing first-round ownership and duplicate "
                     "declarations checked at year grain against "
-                    "silver_future_picks; protections/swaps reconciliation "
-                    "not modeled"}
+                    f"silver_future_picks; {_PICK_OWNERSHIP_LIMITATIONS}"}
 
 
 def _stepien_result(teams: list[str], moves: list[dict[str, Any]],
@@ -842,8 +852,9 @@ def _build_checks(team_rows: dict[str, Any],
     'CBA $250k cushion, reduced to $0 over the first apron; entries '
     'older than the prior season are treated as expired. Outgoing '
     'first-round picks are duplicate-checked and validated at year grain '
-    'against silver_future_picks when seeded; protection/swap '
-    'reconciliation is not modeled. Checks 2023 '
+    'against silver_future_picks when seeded; '
+    + _PICK_OWNERSHIP_LIMITATIONS
+    + '. Checks 2023 '
     'CBA salary matching tiers, apron aggregation bans, post-trade '
     'hard caps, typed TPE restrictions, cash bans, the frozen '
     'second-apron pick, and Stepien consecutive-first rules. '
@@ -927,10 +938,10 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                      "disclaimer": "Estimate only. Covers matching, apron "
                      "aggregation, hard caps, typed TPE restrictions, cash "
                      "bans, sign-and-trade terms/BYC, year-grain pick "
-                     "ownership, Stepien and frozen-pick rules. Skips pick "
-                     "protection/swap reconciliation, no-trade clauses, "
-                     "trade kickers, poison-pill, and minimum-salary "
-                     "exceptions; sign-and-trade "
+                     "ownership, Stepien and frozen-pick rules. Skips "
+                     "no-trade clauses, trade kickers, poison-pill, and "
+                     "minimum-salary exceptions; "
+                     f"{_PICK_OWNERSHIP_LIMITATIONS}; sign-and-trade "
                      f"{_SNT_GUARANTEE_DISCLOSURE}; prior-team/preseason "
                      "eligibility not modeled. Confirm with a cap "
                      "specialist."}}

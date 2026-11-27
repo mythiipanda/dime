@@ -24,9 +24,10 @@ def _seed(monkeypatch, tmp_path, salaries, picks=None):
                 "CONDITIONAL VARCHAR, SUMMARY VARCHAR, LAST_EDITED VARCHAR, "
                 "_season VARCHAR)")
             for row in picks:
+                season = row[5] if len(row) > 5 else "2026-27"
                 con.execute(
                     "INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?, "
-                    "'', '', '', '', '', '2026-27')", list(row))
+                    "'', '', '', '', '', ?)", list(row[:5]) + [season])
     finally:
         con.close()
     monkeypatch.setattr(store, "DB_PATH", path)
@@ -94,16 +95,23 @@ def test_trade_legality_stepien_consecutive_firsts(monkeypatch, tmp_path):
     assert any("Stepien" in i for i in out["issues"])
 
 
-def _balanced_pick_trade(monkeypatch, tmp_path, picks, declared_picks):
+def _balanced_pick_trade(monkeypatch, tmp_path, picks, declared_picks,
+                         pick_sender="BOS"):
     from shared.tools import get_trade_legality
     _seed(monkeypatch, tmp_path,
           _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
           picks=picks)
-    return get_trade_legality.invoke({
-        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One",'
+    if pick_sender == "BOS":
+        legs = ('[{"from":"BOS","to":"MIA","players":"Alpha One",'
                 f'"picks":{declared_picks}}},'
-                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]')
+    else:
+        legs = ('[{"from":"MIA","to":"BOS","players":"Beta Two",'
+                f'"picks":{declared_picks}}},'
+                '{"from":"BOS","to":"MIA","players":"Alpha One"}]')
+    return get_trade_legality.invoke({
+        "legs": legs,
         "season": "2026-27",
     })
 
@@ -117,7 +125,13 @@ def test_trade_legality_owned_pick_remains_valid(monkeypatch, tmp_path):
     check = next(row for row in out["checks"]
                  if row["rule"] == "pick ownership")
     assert check["checked"] is True
-    assert "protections/swaps reconciliation not modeled" in check["note"]
+    limitation = ("same-year multiple firsts are validated only at year grain "
+                  "because the leg input does not identify the original team "
+                  "of a same-year first")
+    assert "pooled/conditional picks are not modeled" in check["note"]
+    assert limitation in check["note"]
+    assert "pooled/conditional picks are not modeled" in out["meta"]["disclaimer"]
+    assert limitation in out["meta"]["disclaimer"]
 
 
 def test_trade_legality_rejects_pick_team_does_not_own(
@@ -130,6 +144,37 @@ def test_trade_legality_rejects_pick_team_does_not_own(
         '[{"year":2028,"round":1}]')
     assert out["ok"] is False
     assert ("cannot declare a 2028 first-round pick it does not own"
+            in out["error"])
+
+
+def test_trade_legality_latest_pick_vintage_rejects_stale_own(
+        monkeypatch, tmp_path):
+    bos_picks = [(y, 1, "BOS", "own", "BOS")
+                 for y in range(2027, 2034) if y != 2028]
+    bos_picks += [
+        (2028, 1, "BOS", "own", "BOS", "2025-26"),
+        (2028, 1, "BOS", "traded", "MIA", "2026-27"),
+    ]
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, bos_picks + _all_firsts("MIA"),
+        '[{"year":2028,"round":1}]')
+    assert out["ok"] is False
+    assert ("BOS cannot declare a 2028 first-round pick it does not own"
+            in out["error"])
+
+
+def test_trade_legality_latest_pick_vintage_rejects_stale_traded_holder(
+        monkeypatch, tmp_path):
+    mia_picks = [(y, 1, "MIA", "own", "MIA")
+                 for y in range(2027, 2034) if y != 2028]
+    mia_picks.append((2028, 1, "MIA", "traded", "DEN", "2026-27"))
+    picks = (_all_firsts("BOS") + mia_picks
+             + [(2028, 1, "BOS", "traded", "MIA", "2025-26")])
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, picks, '[{"year":2028,"round":1}]',
+        pick_sender="MIA")
+    assert out["ok"] is False
+    assert ("MIA cannot declare a 2028 first-round pick it does not own"
             in out["error"])
 
 
