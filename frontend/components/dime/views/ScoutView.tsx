@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { apiPath } from "@/lib/api";
+import { DataState } from "@/components/ds/DataState";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { BACKEND } from "@/lib/chat";
 
@@ -41,7 +42,7 @@ function SectionShell({ title, source, error, children }: { title: string; sourc
         <Source name={source} />
       </div>
       {error ? (
-        <p className="mt-3 text-[12.5px] text-ink-3">{error} — this section is unavailable; no substitute data is shown.</p>
+        <DataState tone="error" label={error} detail="This section is unavailable — no substitute data is shown." className="mt-3" />
       ) : (
         <div className="mt-3">{children}</div>
       )}
@@ -166,7 +167,7 @@ export default function ScoutView() {
 
       {!loading && error && team !== opponent && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 
