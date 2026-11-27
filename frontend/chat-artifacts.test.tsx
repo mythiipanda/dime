@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ArtifactBody, AssistantTurn, LiveAssistant, artifactToCopyText } from "./components/site/DimeHarness";
+import { ArtifactBody, artifactToCopyText } from "./components/site/harness/ArtifactsView";
+import { AssistantTurn, LiveAssistant } from "./components/site/harness/AnswerView";
 import { DimeStream, type DimeArtifact, type StreamSnapshot } from "./lib/dime-stream";
-import { assistantMessageFromSnapshot } from "./components/site/DimeHarness";
+import { assistantMessageFromSnapshot } from "./components/site/harness/types";
 
 function render(artifact: DimeArtifact): string {
   return renderToStaticMarkup(<ArtifactBody artifact={artifact} />);

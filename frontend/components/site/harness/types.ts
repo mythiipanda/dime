@@ -7,12 +7,9 @@ export const REFERENCE_TAB = "t1";
 export const FADE_UP = "fade-up 280ms cubic-bezier(0.23,1,0.32,1) both";
 
 export type ViewKey =
-  | "tonight"
-  | "explore"
   | "matchups"
   | "trades"
   | "awards"
-  | "saved"
   | "warehouse";
 
 export type AssistantFailure = { kind: string; message: string };

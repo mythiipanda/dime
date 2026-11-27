@@ -19,12 +19,9 @@ import {
 
 const VIEW_LABELS: { id: "chat" | ViewKey; label: string }[] = [
   { id: "chat", label: "Chat" },
-  { id: "tonight", label: "Tonight" },
-  { id: "explore", label: "Explore" },
   { id: "matchups", label: "Matchups" },
   { id: "trades", label: "Trades" },
   { id: "awards", label: "Awards" },
-  { id: "saved", label: "Saved" },
   { id: "warehouse", label: "Warehouse" },
 ];
 
