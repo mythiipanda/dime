@@ -80,9 +80,11 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
               <div className="flex items-baseline justify-between text-[12.5px]">
                 <span className="text-ink-2">{r.label}</span>
                 <span className="font-mono tabular-nums">
+                  <span className="mr-1 text-[10px] uppercase text-ink-3">{aName}</span>
                   <span className={aLead ? "font-semibold text-ink" : "text-ink-3"}>{r.fmt(r.away)}</span>
                   <span className="text-ink-3"> · </span>
                   <span className={!aLead ? "font-semibold text-ink" : "text-ink-3"}>{r.fmt(r.home)}</span>
+                  <span className="ml-1 text-[10px] uppercase text-ink-3">{bName}</span>
                 </span>
               </div>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5" aria-hidden>

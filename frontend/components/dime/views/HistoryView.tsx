@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
+import { Button } from "@/components/ds/Button";
 import ArtifactChart from "../ArtifactChart";
 
 type ArcSeason = {
@@ -213,9 +214,9 @@ export default function HistoryView() {
             aria-label="player name"
             className="h-8 w-0 flex-1 rounded-[7px] border border-line bg-surface px-2.5 text-[13px] text-ink placeholder:text-ink-3"
           />
-          <button type="submit" className="h-8 rounded-[7px] bg-[var(--accent)] px-3 text-[12.5px] font-medium text-white hover:opacity-90">
+          <Button type="submit" variant="accent" size="sm">
             career arc
-          </button>
+          </Button>
         </form>
 
         {careerLoading && <p className="mt-3 text-[12.5px] text-ink-3">Loading the arc…</p>}
