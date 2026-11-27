@@ -152,6 +152,15 @@ function InjuryNotes({ game }: { game: MatchupGame }) {
   );
 }
 
+function slateStaleness(dateIso: string): string | null {
+  if (!dateIso) return null;
+  const slate = new Date(dateIso + "T12:00:00Z").getTime();
+  if (Number.isNaN(slate)) return null;
+  const days = Math.floor((Date.now() - slate) / 86400000);
+  if (days <= 2) return null;
+  return `warehouse snapshot ${days} days behind today — a historical slate, not tonight's games`;
+}
+
 function slateState(m: MatchupGame): "live" | "final" | "upcoming" {
   if (/final/i.test(m.time)) return "final";
   if (/^Q/.test(m.time) || /^Halftime/i.test(m.time)) return "live";
@@ -314,6 +323,11 @@ export default function MatchupsView() {
                 ? ` · live as of ${new Date(data.fetched_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET`
                 : " · schedule from the nightly warehouse refresh"}
               {" · ratings and form from the warehouse, injuries from the latest report."}
+            </p>
+          )}
+          {data?.date && !data?.live && slateStaleness(data.date) && (
+            <p className="mt-1 text-[12px] text-orange">
+              {slateStaleness(data.date)}
             </p>
           )}
           <div className="mt-4 grid items-start gap-3 xl:grid-cols-[280px_1fr]">

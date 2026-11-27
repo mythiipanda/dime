@@ -58,6 +58,15 @@ function BlockError({ block, empty }: { block: { ok?: boolean; error?: string };
   return <p className="py-2 text-[12px] text-ink-3">{block.error ?? empty}</p>;
 }
 
+function staleness(dateText: string | undefined): string | null {
+  if (!dateText) return null;
+  const when = new Date(String(dateText).slice(0, 10) + "T12:00:00Z").getTime();
+  if (Number.isNaN(when)) return null;
+  const days = Math.floor((Date.now() - when) / 86400000);
+  if (days <= 5) return null;
+  return `warehouse snapshot — the latest result in the data is ${days} days behind today; this is a historical read, not this morning's`;
+}
+
 export default function MorningPage() {
   const [team, setTeam] = useState("NYK");
   const [data, setData] = useState<Morning | null>(null);
@@ -153,6 +162,9 @@ export default function MorningPage() {
         <div>
           <h2 className="text-[15px] font-medium">Morning page</h2>
           <p className="mt-0.5 text-[12px] text-ink-3">One team's overnight read: last result, next opponent, health, standings and the cap sheet.{data?.season ? ` · ${data.season}` : ""}</p>
+          {staleness(blocks?.last_result.game?.date) && (
+            <p className="mt-0.5 text-[12px] text-orange">{staleness(blocks?.last_result.game?.date)}</p>
+          )}
         </div>
         <select
           aria-label="Morning page team"
