@@ -340,6 +340,13 @@ def _era_feats(row: dict[str, Any]) -> dict[str, Any]:
     return feats
 
 
+def _era_qualified(gp: Any, min_pg: Any) -> bool:
+    try:
+        return float(gp) >= 25 and float(gp) * float(min_pg) >= 500
+    except (TypeError, ValueError):
+        return False
+
+
 def _era_pool(con, start_season: str | None, end_season: str | None) -> list[dict[str, Any]]:
     where = "gp >= 25 AND gp * min >= 500"
     params: list[Any] = []
@@ -455,12 +462,33 @@ def get_era_comps(player_id: str | int, season: str | None = None, k: int = 5,
                 return {
                     "tool": "get_era_comps", "ok": False,
                     "error": (f"no qualifying season for player {pid} in {season}; "
-                              f"era comps pool covers {span[0]} through {span[1]} with gp>=25, min>=500"),
+                              f"era comps pool covers {span[0]} through {span[1]} with gp>=25 and gp*min>=500 total minutes"),
                 }
             cols = ["player_id", "player_name", "team_abbreviation", "_season", "age", "gp", "min",
                     "pts", "reb", "ast", "stl", "blk", "tov", "fg3a", "fta",
                     "fg3_pct", "ft_pct", "ts_pct", "usg_pct", "pie"]
             row = dict(zip(cols, target_row))
+            if not _era_qualified(row["gp"], row["min"]):
+                qualifying = sorted({e["season"] for e in pool if str(e["pid"]) == str(pid)})
+                return {
+                    "tool": "get_era_comps",
+                    "ok": True,
+                    "qualified": False,
+                    "player": {"name": row["player_name"], "id": pid, "season": season},
+                    "rows": [],
+                    "qualification": {
+                        "gp": row["gp"],
+                        "min_pg": round(float(row["min"]), 1) if isinstance(row["min"], (int, float)) else row["min"],
+                        "total_min": round(float(row["gp"]) * float(row["min"]), 1) if isinstance(row["min"], (int, float)) and isinstance(row["gp"], (int, float)) else None,
+                        "rule": "gp>=25 and gp*min>=500 total minutes",
+                    },
+                    "qualifying_seasons": qualifying,
+                    "meta": {
+                        "source": "warehouse:silver_hist_player_seasons",
+                        "season": season,
+                        "window": [start_season, end_season],
+                    },
+                }
             target = {"sid": f"{pid}:{season}", "pid": pid, "name": row["player_name"],
                       "team": row["team_abbreviation"], "season": season,
                       "age": row["age"], "feats": _era_feats(row)}
@@ -523,6 +551,7 @@ def get_era_comps(player_id: str | int, season: str | None = None, k: int = 5,
     return {
         "tool": "get_era_comps",
         "ok": True,
+        "qualified": True,
         "player": {"name": target["name"], "id": pid, "season": season,
                    "archetype": target_arch,
                    "z": {f: round(zt[f], 4) for f in kept}},

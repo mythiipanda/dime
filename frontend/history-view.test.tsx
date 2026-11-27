@@ -1,0 +1,136 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { JSDOM } from "jsdom";
+
+const careerPayload = {
+  ok: true,
+  rows: [
+    { season: "1996-97", end_year: 1997, pts: 28.2, reb: 6.5, ast: 5.9, fg_pct: 0.49, fg3_pct: 0.37, min: 31.9, gp: 80, raptor: 5.1 },
+    { season: "2009-10", end_year: 2010, pts: 0.0, reb: 0.0, ast: 0.0, fg_pct: 0.0, fg3_pct: 0.0, min: 0.1, gp: 1, raptor: null },
+  ],
+  meta: { player_id: 893, player: "Michael Jordan" },
+};
+
+const compsPayload = {
+  ok: true,
+  qualified: true,
+  player: { name: "Michael Jordan", id: 893, season: "1996-97", archetype: "high-usage creator" },
+  rows: [
+    {
+      PLAYER: "Kobe Bryant",
+      PLAYER_ID: 977,
+      TEAM: "LAL",
+      season: "2008-09",
+      age: 30,
+      similarity: 90.9,
+      archetype: "high-usage creator",
+      shared_archetype: true,
+      drivers: [
+        { stat: "scoring volume (PTS/36)", target: 31.2, comp: 30.8 },
+        { stat: "free-throw efficiency", target: 0.833, comp: 0.856 },
+        { stat: "usage rate", target: 0.336, comp: 0.321 },
+      ],
+    },
+  ],
+  meta: { features: ["PTS36"], feature_labels: { PTS36: "scoring volume (PTS/36)" } },
+};
+
+const unqualifiedPayload = {
+  ok: true,
+  qualified: false,
+  player: { name: "Michael Jordan", id: 893, season: "2009-10" },
+  rows: [],
+  qualification: { gp: 1, min_pg: 0.1, total_min: 0.1, rule: "gp>=25 and gp*min>=500 total minutes" },
+  qualifying_seasons: ["1996-97"],
+  meta: { source: "warehouse:silver_hist_player_seasons", season: "2009-10" },
+};
+
+async function flush() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+}
+
+function clickSeasonRow(host: ParentNode, season: string) {
+  const rows = Array.from(host.querySelectorAll("tr")) as Element[];
+  const row = rows.find((r: Element) => (r.textContent ?? "").startsWith(season) && r.className.includes("cursor-pointer"));
+  assert.ok(row, `season row ${season} should render in the arc table`);
+  act(() => {
+    (row as HTMLElement).click();
+  });
+}
+
+async function boot(compsFor: (season: string) => unknown) {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/?tab=history" });
+  Object.assign(globalThis, {
+    window: dom.window,
+    document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement,
+    Element: dom.window.Element,
+    Node: dom.window.Node,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  });
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/history/career")) return Response.json(careerPayload);
+    if (url.includes("/history/era-comps")) {
+      const season = new URL(url).searchParams.get("season") ?? "";
+      return Response.json(compsFor(season));
+    }
+    if (url.includes("/history/leaders")) return Response.json({ ok: true, rows: [], meta: {} });
+    throw new Error(`Unexpected fetch ${url}`);
+  };
+  const { default: HistoryView } = await import("./components/dime/views/HistoryView");
+  const host = dom.window.document.getElementById("root")!;
+  const root = createRoot(host);
+  return { host, root, HistoryView, restore: () => { globalThis.fetch = previousFetch; } };
+}
+
+test("history comp cards lead with drivers, percent-format efficiency stats", async () => {
+  const { host, root, HistoryView, restore } = await boot(() => compsPayload);
+  try {
+    await act(async () => root.render(<HistoryView />));
+    await flush();
+    clickSeasonRow(host, "1996-97");
+    await flush();
+    const text = host.textContent ?? "";
+    assert.match(text, /Kobe Bryant/);
+    assert.match(text, /90\.9/);
+    assert.match(text, /scoring volume/);
+    assert.match(text, /31\.2/);
+    assert.match(text, /30\.8/);
+    assert.match(text, /83\.3%/);
+    assert.match(text, /85\.6%/);
+    assert.doesNotMatch(text, /0\.833/);
+    assert.match(text, /33\.6%/);
+    assert.match(text, /high-usage creator/);
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
+test("history unqualified season renders the server-disclosed honest-empty, no comp rows", async () => {
+  const { host, root, HistoryView, restore } = await boot(() => unqualifiedPayload);
+  try {
+    await act(async () => root.render(<HistoryView />));
+    await flush();
+    clickSeasonRow(host, "2009-10");
+    await flush();
+    const text = host.textContent ?? "";
+    assert.match(text, /does not meet the era comps qualification/i);
+    assert.match(text, /gp>=25 and gp\*min>=500/);
+    assert.match(text, /1 gp/);
+    assert.ok(text.includes("0 total minutes") || text.includes("minutes unavailable") === false);
+    assert.match(text, /qualifying seasons/);
+    assert.match(text, /1996-97/);
+    assert.doesNotMatch(text, /Kobe Bryant/);
+    assert.ok(!text.includes("No substitute data is shown"), "server-disclosed shortfall must not render the generic error state");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});

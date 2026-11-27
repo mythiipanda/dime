@@ -207,3 +207,29 @@ def test_synthetic_2009_season_note(monkeypatch):
         "cross-era comps unavailable"
         "; advanced metrics unavailable, box-score features only")
     assert "2025-26" not in res["meta"]["notes"]
+
+def test_era_comps_unqualified_target_is_honest_not_noise():
+    if not _hist_warehouse_ready():
+        pytest.skip("silver_hist_player_seasons missing/empty")
+    from shared.tools.player.comps import get_era_comps
+    res = get_era_comps.invoke({"player_id": 201191, "season": "2009-10", "k": 4})
+    assert res["ok"] is True
+    assert res.get("qualified") is False, "a 1-game 0.1mpg season must not silently produce comps"
+    assert not res.get("rows"), "non-qualifying seasons must not render comp rows"
+    q = res.get("qualification")
+    assert isinstance(q, dict)
+    assert q["gp"] == 1
+    assert q["total_min"] < 500
+    assert "rule" in q
+    assert isinstance(res.get("qualifying_seasons"), list)
+
+
+def test_era_comps_qualified_target_marks_qualified():
+    if not _hist_warehouse_ready():
+        pytest.skip("silver_hist_player_seasons missing/empty")
+    from shared.tools.player.comps import get_era_comps
+    res = get_era_comps.invoke({"player_id": "Michael Jordan", "season": "1996-97", "k": 3})
+    assert res["ok"] is True
+    assert res.get("qualified") is True
+    assert len(res["rows"]) == 3
+
