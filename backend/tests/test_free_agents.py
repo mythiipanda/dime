@@ -51,6 +51,9 @@ def test_official_2026_27_constants():
                 "apron1": 209_015_000, "apron2": 221_686_000}
     assert sf.CAP_2026_27 == expected
     assert vc.THRESHOLDS == {"season": "2026-27", **expected}
+    assert sf.EXCEPTIONS_2026_27 == {
+        "ntmle": 15_044_000, "tmle": 6_064_000,
+        "room": 9_366_000, "bae": 5_477_000}
 
 
 def test_build_frames():
@@ -69,6 +72,10 @@ def test_build_frames():
     assert row["PROJECTED_ROOM"] == expected_room
     assert row["MAX_ROOM"] == cap - 21_000_000 - 14 * sf.MIN_SALARY
     assert row["PROJECTED_ROOM"] < row["MAX_ROOM"]
+    assert row["NTMLE_EST"] == 16_548_400
+    assert row["TMLE_EST"] == 6_670_400
+    assert row["BAE_EST"] == 6_024_700
+    assert row["ROOM_EST"] == 10_302_600
     assert row["ESTIMATED"] is True
 
 
@@ -96,10 +103,22 @@ def test_tool_on_scratch(scratch):
     assert res["ok"]
     assert len(res["free_agents"]) == 2
     assert res["cap_room"][0]["TEAM"] == "BOS"
+    assert res["cap_room"][0]["TMLE_EST"] == 6_670_400
     assert res["meta"]["estimated"] is True
     league = get_free_agents.func(team="")
     assert league["ok"]
     assert len(league["free_agents"]) == 2
+
+
+def test_tool_accepts_cap_room_without_tmle(scratch):
+    fa, room = sf.build_frames(_contracts(), "2026_27", "2027_28")
+    store.save_frame("silver_free_agents", _result(fa), entity="league")
+    store.save_frame("silver_cap_room", _result(room.drop("TMLE_EST")),
+                     entity="league")
+    res = get_free_agents.func(team="BOS")
+    assert res["ok"]
+    assert res["cap_room"][0]["TEAM"] == "BOS"
+    assert "TMLE_EST" not in res["cap_room"][0]
 
 
 def test_tool_missing(scratch):

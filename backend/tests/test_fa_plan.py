@@ -26,7 +26,8 @@ def _seed(monkeypatch, tmp_path, with_room=True):
             "MAX_ROOM BIGINT, PROJECTED_CAP BIGINT, PROJECTED_TAX BIGINT, "
             "PROJECTED_APRON1 BIGINT, PROJECTED_APRON2 BIGINT, "
             "NTMLE_EST BIGINT, BAE_EST BIGINT, ROOM_EST BIGINT, "
-            "PLAYERS_UNDER_CONTRACT INTEGER, PENDING_OPTIONS INTEGER, "
+            "TMLE_EST BIGINT, PLAYERS_UNDER_CONTRACT INTEGER, "
+            "PENDING_OPTIONS INTEGER, "
             "ESTIMATED BOOLEAN, _fetched_at TIMESTAMP)")
     con.close()
     return path
@@ -43,7 +44,7 @@ def _load(path, fa_rows, room_row=None):
     if room_row:
         con.execute(
             "INSERT INTO silver_cap_room VALUES (?,?,?,?,?,?,?,?,?,?,?,?,"
-            "?,?,?,?,?,?,now())", room_row)
+            "?,?,?,?,?,?,?,now())", room_row)
     con.close()
 
 
@@ -64,9 +65,9 @@ def _okc_fa():
 
 def _okc_room():
     return ["OKC", "2027-28", 120_000_000, 10_000_000, 81_900_000,
-            5_000_000, -35_400_000, 55_000_000, 181_500_000,
-            221_152_800, 230_627_100, 244_609_200,
-            15_510_000, 6_270_000, 9_680_000, 8, 1, True]
+            5_000_000, -35_400_000, 55_000_000, 181_457_100,
+            220_470_800, 229_916_500, 243_854_600,
+            16_548_400, 6_024_700, 10_302_600, 6_670_400, 8, 1, True]
 
 
 def test_fa_rows_and_flags(monkeypatch, tmp_path):
@@ -82,9 +83,12 @@ def test_fa_rows_and_flags(monkeypatch, tmp_path):
     assert rows["Opt Guy"]["extension_eligible"] is False
     assert rows["Two Way"]["extension_eligible"] is False
     assert abs(rows["Star Wing"]["hold_share"] - 60_000_000
-               / 181_500_000) < 0.001
-    assert res["context"]["projected_cap"] == 181_500_000
-    assert res["exceptions"]["ntmle"] == 15_510_000
+               / 181_457_100) < 0.001
+    assert res["context"]["projected_cap"] == 181_457_100
+    assert res["exceptions"]["ntmle"] == 16_548_400
+    assert res["exceptions"]["tmle"] == 6_670_400
+    assert res["exceptions"]["bae"] == 6_024_700
+    assert res["exceptions"]["room"] == 10_302_600
 
 
 def test_scenario_arithmetic(monkeypatch, tmp_path):

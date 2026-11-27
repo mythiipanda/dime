@@ -12,12 +12,28 @@ _ROOM_COLS = ["TEAM", "COMMITTED_SALARY", "PENDING_OPTION_SALARY",
               "FA_HOLDS_EST", "INCOMPLETE_ROSTER_CHARGES",
               "PROJECTED_ROOM", "MAX_ROOM", "PROJECTED_CAP", "PROJECTED_TAX",
               "PROJECTED_APRON1", "PROJECTED_APRON2", "NTMLE_EST",
-              "BAE_EST", "ROOM_EST", "PLAYERS_UNDER_CONTRACT",
+              "BAE_EST", "ROOM_EST", "TMLE_EST", "PLAYERS_UNDER_CONTRACT",
               "PENDING_OPTIONS", "ESTIMATED"]
 
 
 def _rows(con, sql: str, params: list, cols: list[str]) -> list[dict]:
     return [dict(zip(cols, r)) for r in con.execute(sql, params).fetchall()]
+
+
+def _cap_room_rows(con, abbr: str) -> list[dict]:
+    have = {r[1] for r in con.execute(
+        "PRAGMA table_info(silver_cap_room)").fetchall()}
+    pick = [c for c in _ROOM_COLS if c in have]
+    if not pick:
+        return []
+    cols = ", ".join(chr(34) + c + chr(34) for c in pick)
+    if abbr:
+        return _rows(con,
+                     f"SELECT {cols} FROM silver_cap_room WHERE TEAM = ?",
+                     [abbr], pick)
+    order = (" ORDER BY PROJECTED_ROOM DESC"
+             if "PROJECTED_ROOM" in have else "")
+    return _rows(con, f"SELECT {cols} FROM silver_cap_room{order}", [], pick)
 
 
 @tool(description=(
@@ -63,35 +79,7 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                                [fa_year], _FA_COLS)
             cap_room = []
             if "silver_cap_room" in tables:
-                if abbr:
-                    cap_room = _rows(con,
-                                     'SELECT "TEAM", "COMMITTED_SALARY",'
-                                     ' "PENDING_OPTION_SALARY", "FA_HOLDS_EST",'
-                                     ' "INCOMPLETE_ROSTER_CHARGES",'
-                                     ' "PROJECTED_ROOM", "MAX_ROOM",'
-                                     ' "PROJECTED_CAP",'
-                                     ' "PROJECTED_TAX", "PROJECTED_APRON1",'
-                                     ' "PROJECTED_APRON2", "NTMLE_EST",'
-                                     ' "BAE_EST", "ROOM_EST",'
-                                     ' "PLAYERS_UNDER_CONTRACT",'
-                                     ' "PENDING_OPTIONS", "ESTIMATED"'
-                                     " FROM silver_cap_room WHERE TEAM = ?",
-                                     [abbr], _ROOM_COLS)
-                else:
-                    cap_room = _rows(con,
-                                     'SELECT "TEAM", "COMMITTED_SALARY",'
-                                     ' "PENDING_OPTION_SALARY", "FA_HOLDS_EST",'
-                                     ' "INCOMPLETE_ROSTER_CHARGES",'
-                                     ' "PROJECTED_ROOM", "MAX_ROOM",'
-                                     ' "PROJECTED_CAP",'
-                                     ' "PROJECTED_TAX", "PROJECTED_APRON1",'
-                                     ' "PROJECTED_APRON2", "NTMLE_EST",'
-                                     ' "BAE_EST", "ROOM_EST",'
-                                     ' "PLAYERS_UNDER_CONTRACT",'
-                                     ' "PENDING_OPTIONS", "ESTIMATED"'
-                                     " FROM silver_cap_room"
-                                     " ORDER BY PROJECTED_ROOM DESC",
-                                     [], _ROOM_COLS)
+                cap_room = _cap_room_rows(con, abbr)
             if not fa and not cap_room:
                 return {"tool": "get_free_agents", "ok": False,
                         "error": "no free-agent data; run seed_free_agents.py"}
