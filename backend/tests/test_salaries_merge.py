@@ -76,3 +76,18 @@ def test_empty_old_rows_returns_scrape():
     out = seed.merge_contracts(frame, [])
     assert out.height == 1
     assert "SALARY_2025_26" not in out.columns
+
+
+def test_moved_player_not_carried_under_old_team():
+    frame = _frame([_new("Stayer One", "BOS", 600), _new("Dual Three", "LAC", 950)])
+    out = seed.merge_contracts(frame, OLD)
+    rows = [r for r in out.to_dicts() if r["PLAYER_NAME"] == "Dual Three"]
+    assert len(rows) == 1
+    assert rows[0]["TEAM"] == "LAC"
+
+
+def test_departed_player_still_carried_when_absent_from_fresh_frame():
+    frame = _frame([_new("Stayer One", "BOS", 600), _new("Dual Three", "LAC", 950)])
+    out = seed.merge_contracts(frame, OLD)
+    names = {r["PLAYER_NAME"] for r in out.to_dicts()}
+    assert "Departed Two" in names

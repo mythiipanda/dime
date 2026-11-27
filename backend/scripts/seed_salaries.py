@@ -45,11 +45,13 @@ def merge_contracts(frame: pl.DataFrame, old_rows: list[dict]) -> pl.DataFrame:
 
     merged = []
     seen = set()
+    fresh_names = set()
     for row in frame.to_dicts():
         key = (row["PLAYER_NAME"], row["TEAM"])
         if key in seen:
             continue
         seen.add(key)
+        fresh_names.add(row["PLAYER_NAME"])
         old = prior.get(row["PLAYER_NAME"], {})
         for c in season_cols:
             if row.get(c) is None:
@@ -58,6 +60,8 @@ def merge_contracts(frame: pl.DataFrame, old_rows: list[dict]) -> pl.DataFrame:
 
     carried = 0
     for r in old_rows:
+        if r.get("PLAYER_NAME") in fresh_names:
+            continue
         team = TEAM_ABBR.get(r.get("TEAM") or "", r.get("TEAM"))
         if (r.get("PLAYER_NAME"), r.get("TEAM")) in seen:
             continue
