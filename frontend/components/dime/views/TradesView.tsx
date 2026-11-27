@@ -1,4 +1,6 @@
 "use client";
+import { writeCapHandoff, navigateToCap } from "@/lib/cap-handoff";
+import type { ScenarioMove } from "@/lib/capsheet-fixture";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
@@ -359,6 +361,36 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
     setLoadNote("no saved trade scenario found on any board");
   }
 
+  function sendToCapSheet(teamIndex: number) {
+    const team = teams[teamIndex];
+    const outgoing = pkgs[teamIndex]?.players ?? [];
+    const incomingIndex = (teamIndex + teams.length - 1) % teams.length;
+    const incoming = pkgs[incomingIndex]?.players ?? [];
+    if (!outgoing.length && !incoming.length) return;
+    const salaryOf = (name: string, ownerIndex: number): number | undefined => {
+      const roster = assets[teams[ownerIndex]];
+      return roster?.state === "ready" ? roster.players.find((player) => player.name === name)?.salary : undefined;
+    };
+    const season = TRADE_SEASON;
+    const moves: ScenarioMove[] = [
+      ...outgoing.map((name) => {
+        const amount = salaryOf(name, teamIndex);
+        return { kind: "trade_out" as const, player: name, ...(amount ? { amount } : {}) };
+      }),
+      ...incoming.map((name) => {
+        const amount = salaryOf(name, incomingIndex);
+        return { kind: "trade_in" as const, player: name, ...(amount ? { amount } : {}) };
+      }),
+    ];
+    writeCapHandoff({
+      team,
+      season,
+      moves,
+      source: `${teams.join(" ↔ ")} · ${outgoing.length + incoming.length} players`,
+    });
+    navigateToCap();
+  }
+
   const currentVerdict = check.state === "ok" ? check.rows.legal : check.state === "ok-legs" ? check.legal : null;
   const verdictDrift = snapshot && snapshot.verdict !== null && currentVerdict !== null && snapshot.verdict !== currentVerdict;
 
@@ -533,6 +565,14 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
             </div>
             {leg.match_rule && <div className="mt-0.5 text-[11px] text-ink-2">{leg.match_rule}</div>}
           </div>
+        )}
+        {(leg || check.state === "ok") && (
+          <button
+            className="w-full rounded-[7px] border border-line bg-surface px-3 py-1.5 text-left text-[11.5px] text-ink-2 shadow-hairline hover:bg-field"
+            onClick={() => sendToCapSheet(side)}
+          >
+            Open {abbr} in the cap sheet → post-trade roster as scenario moves
+          </button>
         )}
       </div>
     );
