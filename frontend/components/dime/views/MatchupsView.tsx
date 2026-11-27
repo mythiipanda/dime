@@ -17,7 +17,7 @@ type TeamPayload = {
   ts_pct: number | null;
   fg3_pct: number | null;
   form: ("W" | "L")[];
-  injuries: string[];
+  injuries: string[] | null;
 };
 
 type MatchupGame = {
@@ -109,26 +109,37 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
 }
 
 function InjuryNotes({ game }: { game: MatchupGame }) {
-  const sections = [
+  const sides = [
     { team: game.away, entries: game.away.injuries },
     { team: game.home, entries: game.home.injuries },
-  ].filter((s) => s.entries.length > 0);
-  if (sections.length === 0)
+  ];
+  const listed = sides.filter((s) => s.entries && s.entries.length > 0);
+  const unavailable = sides.filter((s) => s.entries === null);
+  if (listed.length === 0)
     return (
       <div className="mt-3 border-t border-line pt-3 text-[12.5px] text-ink-3">
-        No out or doubtful players listed for either team.
+        {unavailable.length === sides.length
+          ? "Injury report unavailable — no substitute data is shown."
+          : "No out or doubtful players listed for either team."}
+        {unavailable.length > 0 && unavailable.length < sides.length &&
+          ` Injury report unavailable for ${unavailable.map((s) => s.team.abbr).join(", ")}.`}
       </div>
     );
   return (
     <div className="mt-3 divide-y divide-line border-t border-line">
-      {sections.map((s) => (
+      {listed.map((s) => (
         <div key={s.team.abbr} className="py-2.5">
           <div className="text-[11px] font-medium uppercase tracking-wide text-ink-3">{s.team.abbr} injury report</div>
           <ul className="mt-1 space-y-1">
-            {s.entries.map((note, i) => (
+            {(s.entries ?? []).map((note, i) => (
               <li key={i} className="text-[13px] leading-[1.55] text-ink-2">{note}</li>
             ))}
           </ul>
+        </div>
+      ))}
+      {unavailable.map((s) => (
+        <div key={s.team.abbr} className="py-2.5 text-[12.5px] text-ink-3">
+          {s.team.abbr} injury report unavailable — no substitute data is shown.
         </div>
       ))}
     </div>

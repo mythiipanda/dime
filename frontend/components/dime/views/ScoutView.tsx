@@ -11,7 +11,7 @@ const TEAMS = [
   "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS",
 ];
 
-type Section = { source?: string; ok?: boolean; error?: string | null; rows?: unknown };
+type Section = { source?: string; ok?: boolean; error?: string | null; rows?: unknown; note?: string };
 type Dossier = {
   ok: boolean;
   season?: string;
@@ -46,6 +46,13 @@ function SectionShell({ title, source, error, children }: { title: string; sourc
       )}
     </section>
   );
+}
+
+function sectionError(section: Section | undefined, missing: boolean): string | null {
+  if (!missing) return null;
+  if (section?.error) return section.error;
+  if (section != null && section.rows == null && typeof section.note === "string") return section.note;
+  return "not available";
 }
 
 function pct1(v: number) {
@@ -162,7 +169,7 @@ export default function ScoutView() {
             </div>
           )}
 
-          <SectionShell title="Recent form" source={sections.recent_form?.source} error={!form ? "not available" : null}>
+          <SectionShell title="Recent form" source={sections.recent_form?.source} error={sectionError(sections.recent_form, !form)}>
             {form && (
               <div>
                 <div className="flex items-baseline gap-3 text-[13px]">
@@ -183,7 +190,7 @@ export default function ScoutView() {
             )}
           </SectionShell>
 
-          <SectionShell title="Four factors" source={sections.four_factors?.source} error={!factors ? "not available" : null}>
+          <SectionShell title="Four factors" source={sections.four_factors?.source} error={sectionError(sections.four_factors, !factors)}>
             {factors?.offense && factors?.defense && (
               <div className="grid grid-cols-2 gap-3">
                 {(["offense", "defense"] as const).map((side) => (
@@ -203,7 +210,7 @@ export default function ScoutView() {
             )}
           </SectionShell>
 
-          <SectionShell title="Shot profile" source={sections.shot_profile?.source} error={zones.length === 0 ? "not available" : null}>
+          <SectionShell title="Shot profile" source={sections.shot_profile?.source} error={sectionError(sections.shot_profile, zones.length === 0)}>
             <div className="space-y-2">
               {zones.map((z) => (
                 <div key={z.zone}>
@@ -221,7 +228,7 @@ export default function ScoutView() {
             </div>
           </SectionShell>
 
-          <SectionShell title="Top lineups" source={sections.top_lineups?.source} error={lineups.length === 0 ? "not available" : null}>
+          <SectionShell title="Top lineups" source={sections.top_lineups?.source} error={sectionError(sections.top_lineups, lineups.length === 0)}>
             <div className="divide-y divide-line">
               {lineups.slice(0, 5).map((l, i) => (
                 <div key={i} className="py-2">
@@ -237,7 +244,7 @@ export default function ScoutView() {
             </div>
           </SectionShell>
 
-          <SectionShell title="Rotation shape" source={sections.rotation?.source} error={sections.rotation?.error ?? (rotationPlayers.length === 0 ? "not available" : null)}>
+          <SectionShell title="Rotation shape" source={sections.rotation?.source} error={sectionError(sections.rotation, rotationPlayers.length === 0)}>
             <div className="divide-y divide-line">
               {(rotationPlayers as Array<Record<string, unknown>>).slice(0, 10).map((p, i) => {
                 const name = String(p.player ?? p.player_name ?? p.PLAYER ?? "?");
@@ -255,7 +262,7 @@ export default function ScoutView() {
             </div>
           </SectionShell>
 
-          <SectionShell title="Injury report" source={sections.injuries?.source} error={null}>
+          <SectionShell title="Injury report" source={sections.injuries?.source} error={sectionError(sections.injuries, sections.injuries?.rows == null)}>
             {injuries.length === 0 ? (
               <p className="text-[12.5px] text-ink-3">No injuries listed for the opponent.</p>
             ) : (
@@ -267,7 +274,7 @@ export default function ScoutView() {
             )}
           </SectionShell>
 
-          <SectionShell title="Season series" source={sections.head_to_head?.source} error={!h2h ? "not available" : null}>
+          <SectionShell title="Season series" source={sections.head_to_head?.source} error={sectionError(sections.head_to_head, !h2h)}>
             {h2h && (
               <div>
                 <div className="text-[13px] font-medium text-ink">season series: {h2h.record ?? "–"}</div>

@@ -42,7 +42,10 @@ def test_game_shape_and_team_stats(payload):
         for result in team["form"]:
             assert result in ("W", "L")
         assert len(team["form"]) <= 10
-        assert isinstance(team["injuries"], list)
+        injuries = team["injuries"]
+        assert injuries is None or isinstance(injuries, list)
+        if injuries is not None:
+            assert all(isinstance(note, str) for note in injuries)
 
 
 def test_records_present_when_ratings_join(payload):

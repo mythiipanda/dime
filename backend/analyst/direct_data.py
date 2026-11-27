@@ -572,7 +572,7 @@ def product_matchups(season: str = '') -> dict:
                 'ts_pct': (round(base['ts_pct'] * 100, 1) if base.get('ts_pct') is not None else None),
                 'fg3_pct': threes.get(team_id) if team_id else None,
                 'form': form.get(team_id, []) if team_id else [],
-                'injuries': injuries_by_team.get(base.get('team_name', ''), []) if base else [],
+                'injuries': injuries_by_team.get(base.get('team_name', '')) if base else None,
             }
 
         games = []
