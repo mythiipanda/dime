@@ -106,9 +106,14 @@ def test_dollar_column_semantics_cover_cap_tables():
         ("silver_cap_room", "PROJECTED_APRON2"),
         ("silver_cap_room", "PROJECTED_ROOM"),
         ("silver_cap_room", "FA_HOLDS_EST"),
+        ("silver_cap_room", "NTMLE_EST"),
+        ("silver_cap_room", "BAE_EST"),
+        ("silver_cap_room", "TMLE_EST"),
+        ("silver_cap_room", "ROSTER_CHARGE_MINIMUM"),
         ("silver_cap_players", "salary"),
         ("silver_contracts", "SALARY"),
         ("silver_hist_salaries", "SALARY"),
+        ("silver_salaries", "GUARANTEED"),
         ("silver_free_agents", "PRIOR_SALARY"),
         ("silver_free_agents", "CAP_HOLD_EST"),
         ("silver_cap_history", "salary_cap"),
@@ -119,6 +124,58 @@ def test_dollar_column_semantics_cover_cap_tables():
         unit, note = _column_semantics(table, column)
         assert unit == "usd_dollars", f"{table}.{column} unit={unit!r}"
         assert note, f"{table}.{column} missing note"
+
+
+def _numeric_census_type(type_name: object) -> bool:
+    upper = str(type_name or "").upper()
+    return any(token in upper for token in (
+        "INT", "DOUBLE", "FLOAT", "REAL", "DECIMAL", "NUMERIC"))
+
+
+def _money_valued_census_column(name: object, type_name: object) -> bool:
+    upper = str(name or "").upper()
+    if upper.startswith("_") or not _numeric_census_type(type_name):
+        return False
+    if upper.endswith("_PCT") or upper.endswith("_COUNT"):
+        return False
+    markers = (
+        "SALARY", "CAP", "TAX", "APRON", "ROOM", "HOLD", "CHARGE",
+        "MLE", "BAE", "GUARANTEE", "MONEY", "MINIMUM", "EXCEPTION",
+        "AMOUNT", "FLOOR", "BONUS", "INCENTIVE",
+    )
+    return any(marker in upper for marker in markers)
+
+
+def test_cap_table_money_census_is_structurally_complete():
+    from shared.tools.league.sql_schema import (
+        _clear_warehouse_schema_cache,
+        _column_semantics,
+        _get_warehouse_schema,
+    )
+
+    _clear_warehouse_schema_cache()
+    present, schema = _get_warehouse_schema()
+    related = {
+        "silver_contracts", "silver_free_agents", "silver_hist_salaries",
+        "silver_salaries",
+    }
+    census_tables = sorted(
+        set(t for t in present if t.startswith("silver_cap_"))
+        | (set(present) & related)
+    )
+    expected = {
+        "silver_cap_history", "silver_cap_players", "silver_cap_room",
+    } | related
+    assert expected <= set(census_tables)
+    omissions = []
+    for table in census_tables:
+        for column, metadata in schema[table].items():
+            if not _money_valued_census_column(column, metadata.get("type")):
+                continue
+            unit, note = _column_semantics(table, column)
+            if unit != "usd_dollars" or not note:
+                omissions.append(f"{table}.{column} unit={unit!r}")
+    assert not omissions
 
 
 def test_sql_exec_result_carries_declared_units_on_direct_projection():
