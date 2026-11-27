@@ -121,6 +121,37 @@ def test_tool_accepts_cap_room_without_tmle(scratch):
     assert "TMLE_EST" not in res["cap_room"][0]
 
 
+def test_tool_filters_cap_room_by_mapped_cap_season(scratch):
+    fa, room = sf.build_frames(_contracts(), "2026_27", "2027_28")
+    future_room = room.with_columns([
+        pl.lit("2028-29").alias("CAP_SEASON"),
+        pl.lit(20_000_000).cast(pl.Int64).alias("COMMITTED_SALARY"),
+    ])
+    store.save_frame("silver_free_agents", _result(fa), entity="league")
+    store.save_frame("silver_cap_room", _result(pl.concat([room, future_room])),
+                     entity="league")
+    current = get_free_agents.func(team="BOS", fa_year="2027")
+    assert current["ok"]
+    assert current["cap_season"] == "2027-28"
+    assert len(current["cap_room"]) == 1
+    assert current["cap_room"][0]["CAP_SEASON"] == "2027-28"
+    assert current["cap_room"][0]["COMMITTED_SALARY"] == 21_000_000
+    league = get_free_agents.func(team="", fa_year="2027")
+    assert len(league["cap_room"]) == 1
+    future = get_free_agents.func(team="BOS", fa_year="2028")
+    assert future["ok"]
+    assert future["cap_season"] == "2028-29"
+    assert len(future["cap_room"]) == 1
+    assert future["cap_room"][0]["CAP_SEASON"] == "2028-29"
+    assert future["cap_room"][0]["COMMITTED_SALARY"] == 20_000_000
+
+
+def test_tool_rejects_invalid_fa_year(scratch):
+    res = get_free_agents.func(team="BOS", fa_year="2027-28")
+    assert res["ok"] is False
+    assert "four-digit calendar year" in res["error"]
+
+
 def test_tool_missing(scratch):
     res = get_free_agents.func(team="BOS")
     assert res["ok"] is False
