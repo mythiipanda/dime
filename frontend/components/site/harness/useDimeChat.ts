@@ -8,6 +8,7 @@ import { cacheChatRun, loadChatRuns } from "@/lib/chat-persistence";
 import { modelDisplayName } from "@/lib/modelNames";
 import { streamDimeChat } from "@/lib/dime-stream";
 import { serializeViewContext } from "@/lib/view-context";
+import { clearChatDraft, loadChatDraft, saveChatDraft } from "@/lib/chat-drafts";
 import {
   assistantMessageFromSnapshot,
   REFERENCE_TAB,
@@ -42,7 +43,11 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
   const [modelsAttempt, setModelsAttempt] = useState(0);
   const showReference = activeTab === REFERENCE_TAB && messages.length === 0;
   const [live, setLive] = useState<LiveRun | null>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftState] = useState(() => loadChatDraft(options?.thread ?? "") ?? "");
+  const setDraft = (text: string) => {
+    setDraftState(text);
+    saveChatDraft(options?.thread ?? "", text);
+  };
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileNavShown, setMobileNavShown] = useState(false);
@@ -108,7 +113,8 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     liveQuestion.current = q;
     const turnText = context ? serializeViewContext(context, q) : q;
     appendMessage(tabId, { role: "user", text: turnText });
-    setDraft("");
+    setDraftState("");
+    clearChatDraft(options?.thread ?? "");
     setLive({
       id,
       startedAt,
