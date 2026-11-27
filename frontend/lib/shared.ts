@@ -94,6 +94,7 @@ export type SharedScenarioState =
   | { status: "ok-trade"; object: SharedTradeObject; evaluation: TradeLegsEvaluation | null }
   | { status: "ok-thread"; object: SharedThreadObject; transcript: TranscriptEntry[] }
   | { status: "ok-board"; object: SharedBoardObject; board: Board | null; metrics: BoardMetric[] }
+  | { status: "ok-artifact"; object: SharedArtifactObject; artifact: Record<string, unknown> | null; evidence: SharedArtifactEvidence[]; captured_at: string | null; unavailable: boolean }
   | { status: "archived"; object: { kind: string; title: string } }
   | { status: "not_found" }
   | { status: "invalid" }
@@ -140,6 +141,22 @@ function isTradeObject(value: { payload: Record<string, unknown> }): value is Sh
 function isTradeEvaluation(value: unknown): value is TradeLegsEvaluation {
   return !!value && typeof value === "object" && (Array.isArray((value as Record<string, unknown>).rows) || typeof (value as Record<string, unknown>).error === "string");
 }
+
+export type SharedArtifactEvidence = {
+  ref: string;
+  tool?: string;
+  meta?: Record<string, unknown> | null;
+  rows?: Record<string, unknown>[];
+  missing?: boolean;
+};
+
+export type SharedArtifactObject = {
+  kind: string;
+  title: string;
+  schema_version: number;
+  updated_at: string;
+  archived: boolean;
+};
 
 export type TranscriptEntry = {
   question: string;
@@ -260,6 +277,27 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
       board = null;
     }
     return { status: "ok-board", object, board, metrics };
+  }
+
+  if (envelope.kind === "artifact_ref") {
+    const body3 = envelope as unknown as Record<string, unknown>;
+    const artifact = body3.artifact && typeof body3.artifact === "object" ? body3.artifact as Record<string, unknown> : null;
+    const evidence = Array.isArray(body3.evidence) ? body3.evidence.filter((row): row is SharedArtifactEvidence => !!row && typeof row === "object") : [];
+    const object: SharedArtifactObject = {
+      kind: envelope.kind,
+      title: envelope.title,
+      schema_version: typeof body3.schema_version === "number" ? body3.schema_version : 1,
+      updated_at: envelope.updated_at,
+      archived: envelope.archived,
+    };
+    return {
+      status: "ok-artifact",
+      object,
+      artifact,
+      evidence,
+      captured_at: typeof body3.captured_at === "string" ? body3.captured_at : null,
+      unavailable: body3.unavailable === true || artifact === null,
+    };
   }
 
   if (envelope.kind !== "cap_scenario") return { status: "unsupported", kind: envelope.kind };
