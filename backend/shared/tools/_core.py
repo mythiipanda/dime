@@ -341,14 +341,69 @@ def _norm_name(s: object) -> str:
 _PLAYER_ROWS: list[dict] = []
 _PLAYER_NORMS: list[str] = []
 
+def _warehouse_player_rows(known_ids: set[int]) -> list[dict]:
+    rows: list[dict] = []
+    try:
+        con = store.read_connect()
+    except Exception:
+        return rows
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        salary_sources = [t for t in ("silver_salaries", "silver_contracts")
+                          if t in tables]
+        active_ids: set[int] = set()
+        for table in salary_sources:
+            columns = {r[1] for r in con.execute(
+                f"PRAGMA table_info({table})").fetchall()}
+            if "PLAYER_ID" not in columns or "PLAYER_NAME" not in columns:
+                continue
+            for pid, name in con.execute(
+                    f"SELECT DISTINCT PLAYER_ID, PLAYER_NAME FROM {table}"
+                    " WHERE PLAYER_ID IS NOT NULL").fetchall():
+                active_ids.add(int(pid))
+                if int(pid) not in known_ids:
+                    rows.append({"id": int(pid), "full_name": str(name or ""),
+                                 "_active": True})
+        try:
+            from ..contracts import warehouse_player_ids
+
+            for rec in warehouse_player_ids(con):
+                pid = rec.get("PLAYER_ID")
+                if pid is None or int(pid) in known_ids:
+                    continue
+                if any(int(r["id"]) == int(pid) for r in rows):
+                    continue
+                rows.append({"id": int(pid),
+                             "full_name": str(rec.get("PLAYER_NAME") or ""),
+                             "_active": int(pid) in active_ids})
+        except Exception:
+            pass
+    except Exception:
+        return rows
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    return rows
+
 def _build_player_index() -> None:
     try:
         from nba_api.stats.static import players as _players_mod
 
-        rows = _players_mod.get_players()
+        rows = list(_players_mod.get_players())
     except Exception:
         return
     try:
+        known_ids = {int(r["id"]) for r in rows if r.get("id") is not None}
+        for extra in _warehouse_player_rows(known_ids):
+            active = bool(extra.pop("_active", False))
+            full = extra.get("full_name", "")
+            parts = full.split()
+            extra["first_name"] = parts[0] if parts else ""
+            extra["last_name"] = " ".join(parts[1:]) if len(parts) > 1 else ""
+            extra["is_active"] = active
+            rows.append(extra)
         norms = [_norm_name(r.get("full_name", "")) for r in rows]
     except Exception:
         return
