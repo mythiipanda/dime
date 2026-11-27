@@ -218,3 +218,40 @@ test("walking a comp recenters the surface on that player-season and updates the
     restore();
   }
 });
+
+test("pin mode: pinning a season keeps it as the shape anchor while walking, URL carries the pin", async () => {
+  const { host, root, HistoryView, restore } = await boot(() => compsPayload);
+  try {
+    await act(async () => root.render(<HistoryView />));
+    await flush();
+    clickSeasonRow(host, "1996-97");
+    await flush();
+    const pinBtn = host.querySelector("[data-testid='pin-season']");
+    assert.ok(pinBtn, "comps panel carries a pin affordance");
+    act(() => { (pinBtn as HTMLElement).click(); });
+    await flush();
+    assert.match(host.textContent ?? "", /pinned: Jayson Tatum 1996-97/, "pin chip names the pinned player-season");
+    let url = (globalThis as any).window.location.href;
+    assert.ok(url.includes("pin_player=Jayson"), `URL carries the pin, got ${url}`);
+    assert.ok(url.includes("pin_season=1996-97"));
+    const walk = host.querySelector("[data-testid='walk-comp']");
+    act(() => { (walk as HTMLElement).click(); });
+    await flush();
+    assert.match(host.textContent ?? "", /pinned: Jayson Tatum 1996-97/, "pin survives the walk");
+    assert.match(host.textContent ?? "", /Kobe Bryant 2008-09/, "surface recentered");
+    const chart = host.querySelector("[data-testid='shape-chart']");
+    assert.ok(chart, "shape chart still renders after walking with a pin");
+    assert.equal(chart.getAttribute("data-mode"), "pin", "shape chart anchors to the pin once walked away");
+    assert.match(host.textContent ?? "", /vs pinned Jayson Tatum/, "pin overlay is labeled honestly");
+    const unpin = host.querySelector("[data-testid='unpin']");
+    assert.ok(unpin, "pin chip carries an unpin affordance");
+    act(() => { (unpin as HTMLElement).click(); });
+    await flush();
+    assert.doesNotMatch(host.textContent ?? "", /pinned:/, "unpin clears the anchor");
+    url = (globalThis as any).window.location.href;
+    assert.ok(!url.includes("pin_player"), "unpin clears the URL pin");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
