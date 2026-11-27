@@ -17,7 +17,10 @@ export const capScenarioPayloadSchema = Type.Object({
         player: Type.Optional(Type.String({ maxLength: 120 })),
         exercise: Type.Optional(Type.Boolean()),
         stretch: Type.Optional(Type.Boolean()),
-        season: Type.Optional(Type.String({ maxLength: 12 }))
+        season: Type.Optional(Type.String({ maxLength: 12 })),
+        exception: Type.Optional(Type.String({ maxLength: 24 })),
+        years: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
+        first_year_amount: Type.Optional(Type.Number())
     }, { additionalProperties: false }), { minItems: 1, maxItems: 40 })
 }, { additionalProperties: false });
 

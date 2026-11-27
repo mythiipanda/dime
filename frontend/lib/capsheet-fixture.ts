@@ -45,7 +45,7 @@ export type CapSheetResponse = {
 };
 
 export type ScenarioMove = {
-  kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision";
+  kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision" | "extend";
   label?: string;
   amount?: number;
   player?: string;
@@ -53,6 +53,9 @@ export type ScenarioMove = {
   exercise?: boolean;
   stretch?: boolean;
   from?: string;
+  exception?: "cap_room" | "mle" | "bae" | "minimum" | "bird";
+  years?: number;
+  first_year_amount?: number;
 };
 
 export type ScenarioResponse = {
