@@ -42,7 +42,7 @@ const AWARD_LABELS: Record<string, string> = {
 function driverLine(drivers: Driver[]): string {
   return drivers
     .slice(0, 3)
-    .map((d) => `${d.value} ${d.stat.toLowerCase()}`)
+    .map((d) => `${d.stat.trimEnd().endsWith("%") && d.value <= 1 ? (d.value * 100).toFixed(1) : d.value} ${d.stat.toLowerCase()}`)
     .join(" · ");
 }
 

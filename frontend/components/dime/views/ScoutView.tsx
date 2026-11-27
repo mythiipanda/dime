@@ -265,7 +265,7 @@ export default function ScoutView() {
               {(rotationPlayers as Array<Record<string, unknown>>).slice(0, 10).map((p, i) => {
                 const name = String(p.player ?? p.player_name ?? p.PLAYER ?? "?");
                 const mpg = typeof p.mpg === "number" ? p.mpg : typeof p.MPG === "number" ? p.MPG : null;
-                const pts = typeof p.pts === "number" ? p.pts : typeof p.PTS === "number" ? p.PTS : null;
+                const pts = typeof p.ppg === "number" ? p.ppg : typeof p.PPG === "number" ? p.PPG : null;
                 return (
                   <div key={i} className="flex items-baseline justify-between py-1.5 text-[12.5px]">
                     <span className="text-ink-2">{name}</span>
