@@ -92,7 +92,8 @@ export function shortSeason(season: string): string {
 
 export function moneyMillions(value: number | null | undefined): string {
   if (value == null) return "\u2013";
-  return `$${(value / 1e6).toFixed(1)}`;
+  const sign = value < 0 ? "\u2212" : "";
+  return `${sign}$${(Math.abs(value) / 1e6).toFixed(1)}M`;
 }
 
 export function describeScenarioMove(move: ScenarioMove): string {

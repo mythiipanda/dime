@@ -81,7 +81,7 @@ export function SharedScenarioView({
 }) {
   const moves = object.payload.moves;
   const steps = evaluation?.steps ?? [];
-  const aligned = steps.length === moves.length && steps.every((step, i) => step.step === i + 1);
+  const stepForMove = (index: number) => steps.find((step) => step.step === index + 1 && step.kind !== "payroll" && step.kind !== "post_move");
   const errors = (evaluation?.errors ?? []).filter(Boolean);
   const evaluationFailed = evaluation !== null && (evaluation.ok === false || errors.length > 0);
 
@@ -100,7 +100,7 @@ export function SharedScenarioView({
             <h2 className="text-[13px] font-semibold text-ink">Moves</h2>
             <ol className="mt-2 space-y-2">
               {moves.map((move, i) => {
-                const step = aligned ? steps[i] : undefined;
+                const step = stepForMove(i);
                 return (
                   <li key={i} className="flex items-baseline justify-between gap-3 text-[12.5px]">
                     <span className="min-w-0 text-ink-2">

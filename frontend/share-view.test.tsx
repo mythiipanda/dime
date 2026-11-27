@@ -61,8 +61,10 @@ test("shared cap scenario renders title, moves, evaluation and provenance read-o
     assert.match(text, /BOS/);
     assert.match(text, /waive Player One/);
     assert.match(text, /stretch/);
-    assert.match(text, /sign minimum signing/);
+    assert.match(text, /sign minimum signing \(\$2\.3M\)/);
     assert.match(text, /187\.4/);
+    const deltaCells = [...mounted.host.querySelectorAll("li")].map((li) => li.textContent ?? "");
+    assert.ok(deltaCells.some((cell) => cell.includes("waive Player One") && /−\$|\+\$/.test(cell)), `expected a signed delta on the waive row, got: ${deltaCells.join(" | ")}`);
     assert.match(text, /second apron/);
     assert.match(text, /evaluated live/i);
     assert.match(text, /read-only/i);
