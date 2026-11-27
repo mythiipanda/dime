@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { ScenarioMove, ScenarioResponse } from "./capsheet-fixture";
 
 export type SharedObject = {
@@ -42,7 +43,7 @@ function isScenarioResponse(value: unknown): value is ScenarioResponse {
   return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).errors);
 }
 
-export async function loadSharedScenario(
+export const loadSharedScenario = cache(async function loadSharedScenario(
   backend: string,
   token: string,
   fetchImpl: typeof fetch = fetch,
@@ -81,4 +82,4 @@ export async function loadSharedScenario(
     evaluation = null;
   }
   return { status: "ok", object, evaluation };
-}
+});

@@ -5,7 +5,8 @@ import type { ScenarioResponse } from "@/lib/capsheet-fixture";
 
 function money(value: number | null | undefined): string {
   if (value == null) return "–";
-  return `$${(value / 1e6).toFixed(1)}M`;
+  const sign = value < 0 ? "−" : "";
+  return `${sign}$${(Math.abs(value) / 1e6).toFixed(1)}M`;
 }
 
 function sharedDate(iso: string): string {
