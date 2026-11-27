@@ -917,21 +917,33 @@ def _draft_board(con, tables: set, season: str) -> dict:
         use = str(latest[0]) if latest and latest[0] else ""
     cite = {"table": "silver_draft_boards" + (" + silver_prospect_stats" if "silver_prospect_stats" in tables else ""),
             "as_of": _draft_as_of(con, "silver_draft_boards")}
+    board_kind = con.execute(
+        "SELECT CASE WHEN COUNT(*) FILTER (BOARD = 'big_board') > 0 THEN 'big_board' ELSE 'mock_draft' END "
+        "FROM silver_draft_boards WHERE _season = ?", [use]).fetchone()[0]
+    base_rows = con.execute(
+        'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL FROM silver_draft_boards '
+        'WHERE _season = ? AND BOARD = ? ORDER BY "ORDER" LIMIT 60', [use, board_kind]).fetchall()
+    stats_by_name: dict = {}
     if "silver_prospect_stats" in tables:
-        rows = con.execute(
-            'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL, s.GP, s.PTS, s.REB, s.AST, s.TS_PCT, s.USG / 100.0 '
-            'FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY lower(PLAYER_NAME), _season ORDER BY "ORDER") AS brn '
-            'FROM silver_draft_boards) b '
-            'LEFT JOIN ('
-            'SELECT PLAYER_NAME, _season, GP, PTS, REB, AST, TS_PCT, USG FROM ('
-            'SELECT *, ROW_NUMBER() OVER (PARTITION BY lower(PLAYER_NAME), _season ORDER BY GP DESC NULLS LAST) AS rn '
-            'FROM silver_prospect_stats) WHERE rn = 1'
-            ') s ON lower(s.PLAYER_NAME) = lower(b.PLAYER_NAME) AND s._season = b._season '
-            'WHERE b._season = ? AND b.brn = 1 ORDER BY b."ORDER" LIMIT 60', [use]).fetchall()
-    else:
-        rows = [r[:4] + (None,) * 6 for r in con.execute(
-            'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL FROM silver_draft_boards '
-            'WHERE _season = ? ORDER BY "ORDER" LIMIT 60', [use]).fetchall()]
+        for s in con.execute(
+                'SELECT PLAYER_NAME, TEAM, GP, PTS, REB, AST, TS_PCT, USG '
+                'FROM silver_prospect_stats WHERE _season = ?', [use]).fetchall():
+            stats_by_name.setdefault(str(s[0]).lower(), []).append(s)
+    def _match_stats(name: str, school: object):
+        candidates = stats_by_name.get(str(name).lower()) or []
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+        school_key = str(school or '').lower()
+        for c in candidates:
+            if school_key and str(c[1] or '').lower() == school_key:
+                return c
+        return None
+    rows = []
+    for r in base_rows:
+        s = _match_stats(r[1], r[3])
+        rows.append(tuple(r) + ((s[2], s[3], s[4], s[5], s[6], (s[7] or 0) / 100.0 if s and s[7] is not None else None) if s else (None,) * 6))
     board = [{"pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
               "gp": r[4], "pts": r[5], "reb": r[6], "ast": r[7], "ts_pct": r[8], "usg": r[9]}
              for r in rows]

@@ -12,6 +12,7 @@ import { Button } from "../../ds/Button";
 
 const money = (v: number | null | undefined) => v == null ? "—" : `$${(v / 1_000_000).toFixed(1)}M`;
 const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+const per_game = (v: number | null | undefined) => v == null ? "—" : v.toFixed(1);
 const TEAM_KEY = "dime_draft_team_v1";
 
 type Provenance = { table?: string; as_of?: string | null };
@@ -222,9 +223,9 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
                         <td className="py-2 pr-3 text-ink">{row.name}</td>
                         <td className="py-2 pr-3 text-ink-2">{row.position ?? "—"}</td>
                         <td className="py-2 pr-3 text-ink-2">{row.school ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{row.pts ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{row.reb ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{row.ast ?? "—"}</td>
+                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.pts)}</td>
+                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.reb)}</td>
+                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.ast)}</td>
                         <td className="py-2 pr-3 font-mono tabular-nums">{pct(row.ts_pct)}</td>
                         <td className="py-2 text-right font-mono tabular-nums">{pct(row.usg)}</td>
                       </tr>
