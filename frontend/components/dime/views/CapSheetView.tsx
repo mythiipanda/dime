@@ -128,7 +128,9 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
 
   const seasons = useMemo(() => {
     if (!sheet?.players?.length) return [] as string[];
-    return sheet.players[0].years.map((y) => y.season);
+    const all = sheet.players[0].years.map((y) => y.season);
+    const current = sheet.season ?? all[0];
+    return all.filter((season) => season >= current);
   }, [sheet]);
 
   function optionToggled(player: CapPlayer, season: string) {
@@ -290,12 +292,14 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                         <span className="text-[12.5px] text-ink">{player.player}</span>
                         <span className="ml-1.5 font-mono text-[9.5px] text-ink-3">{player.contract_type}</span>
                       </td>
-                      {player.years.map((year) => {
+                      {seasons.map((season) => {
+                        const year = player.years.find((y) => y.season === season);
+                        if (!year) return <td key={season} className="border-t border-line px-2 py-1.5 text-right font-mono tabular-nums text-ink-3">–</td>;
                         const declined = toggledOption(player, year.season);
                         const clickable = !!year.option && year.salary != null;
                         return (
                           <td
-                            key={year.season}
+                            key={season}
                             className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${
                               !year.guaranteed ? "text-ink-3" : "text-ink-2"
                             } ${declined ? "line-through opacity-40" : ""} ${clickable ? "cursor-pointer hover:bg-field" : ""}`}

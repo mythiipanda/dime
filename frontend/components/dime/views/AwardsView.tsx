@@ -56,6 +56,11 @@ function Board({ board }: { board: AwardBoard }) {
   return (
     <div>
       <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-hairline">
+        <div className="flex items-center gap-3 px-4 py-1.5">
+          <span className="w-5 shrink-0" />
+          <span className="min-w-0 flex-1 font-mono text-[9.5px] uppercase tracking-wide text-ink-3">player</span>
+          <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-wide text-ink-3">score</span>
+        </div>
         {board.candidates.map((c) => (
           <div key={c.player} className="px-4 py-3">
             <div className="flex items-center gap-3">
@@ -122,7 +127,12 @@ export default function AwardsView() {
     };
   }, []);
 
-  const boards = data?.awards ?? [];
+  const AWARD_ORDER = ["MVP", "DPOY", "ROY", "MIP", "6MOY"];
+  const boards = [...(data?.awards ?? [])].sort((a, b) => {
+    const ai = AWARD_ORDER.indexOf(a.award);
+    const bi = AWARD_ORDER.indexOf(b.award);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
   const active = boards.find((b) => b.award === tab) ?? boards.find((b) => b.ok) ?? boards[0];
 
   return (

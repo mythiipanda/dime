@@ -384,8 +384,8 @@ def _scout_recent_form(con, tables, tid, abbr, season):
            FROM silver_team_games g
            LEFT JOIN silver_team_games o
              ON o._season = g._season AND o.Game_ID = g.Game_ID
-            AND o._entity != g._entity
-           WHERE g._season = ? AND g._entity = ?
+            AND o._entity != g._entity AND o._entity LIKE 'team:%'
+           WHERE g._season = ? AND g._entity = ? AND g._entity LIKE 'team:%'
            ORDER BY strptime(g.GAME_DATE, '%b %d, %Y') DESC
            LIMIT 10""",
         [season, f"team:{tid}"],
@@ -414,8 +414,8 @@ def _scout_four_factors(con, tables, tid, season):
            FROM silver_team_games g
            LEFT JOIN silver_team_games o
              ON o._season = g._season AND o.Game_ID = g.Game_ID
-            AND o._entity != g._entity
-           WHERE g._season = ? AND g._entity = ?""",
+            AND o._entity != g._entity AND o._entity LIKE 'team:%'
+           WHERE g._season = ? AND g._entity = ? AND g._entity LIKE 'team:%'""",
         [season, f"team:{tid}"],
     ).fetchone()
     if not row or not row[0]:
@@ -429,8 +429,8 @@ def _scout_four_factors(con, tables, tid, season):
     def factors(fg, fg3, atts, t, orb, drb_opp, fts, p):
         return {
             "efg_pct": round((fg + 0.5 * fg3) / atts, 3) if atts else None,
-            "tov_pct": round(100.0 * t / p, 1) if p else None,
-            "oreb_pct": round(100.0 * orb / (orb + drb_opp), 1)
+            "tov_pct": round(t / p, 3) if p else None,
+            "oreb_pct": round(orb / (orb + drb_opp), 3)
             if (orb or 0) + (drb_opp or 0) else None,
             "ftr": round(fts / atts, 3) if atts else None,
         }

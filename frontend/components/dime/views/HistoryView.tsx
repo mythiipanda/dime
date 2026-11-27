@@ -224,7 +224,6 @@ export default function HistoryView() {
             <ArtifactChart
               series={series}
               xLabels={chartSeasons}
-              unit=""
               title={`${player} career trajectory`}
               subtitle="per-game scoring and RAPTOR impact by season — open 'view chart data' for the table"
               height={200}
