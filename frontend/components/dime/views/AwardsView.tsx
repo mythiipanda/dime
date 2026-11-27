@@ -157,13 +157,15 @@ export default function AwardsView({ onAsk }: { onAsk?: (text: string, context?:
             </span>
           )}
         </span>
-        {onAsk && active?.ok && (
+        {onAsk && active && (
           <span className="ml-auto">
             <Button
               size="sm"
               variant="secondary"
               onClick={() => onAsk(
-                `Break down the ${data?.season ?? ""} ${active.award} race — who leads, who is closing, and what the case against the favorite is.`,
+                active.candidates.length > 0
+                  ? `Break down the ${data?.season ?? ""} ${active.award} race — who leads, who is closing, and what the case against the favorite is.`
+                  : `The ${data?.season ?? ""} ${active.award} race has no qualified candidates in the warehouse yet — when do players typically become eligible, and who would be the early favorites from last season\'s form?`,
                 {
                   kind: "awards_race",
                   summary: `${active.award} race · ${data?.season ?? ""}`,
