@@ -30,6 +30,7 @@ export type SharedTradeObject = {
   payload: {
     legs: SharedTradeLeg[];
     season: string;
+    tpes?: { team: string; amount: number; kind?: string; origin_year?: number; exactness?: string }[];
   };
   schema_version: number;
   updated_at: string;
@@ -224,7 +225,7 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
       const response = await fetchImpl(`${backend}/api/trade/legs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ legs: object.payload.legs, season: object.payload.season }),
+        body: JSON.stringify({ legs: object.payload.legs, season: object.payload.season, tpes: object.payload.tpes }),
         cache: "no-store",
       });
       const body: unknown = await response.json().catch(() => null);

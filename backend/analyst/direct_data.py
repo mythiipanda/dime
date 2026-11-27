@@ -170,7 +170,7 @@ def product_history_leaders(season: str, category: str = 'pts') -> dict:
                      'normalization': 'z = (value - pool mean) / pool stdev within the season'}}
 
 @tool(description='Evaluate a multi-team trade construction through the CBA legality engine.')
-def product_trade_legs(legs: str, season: str = '2026-27') -> dict:
+def product_trade_legs(legs: str, season: str = '2026-27', tpes: str = '') -> dict:
     import json as _json
     from shared.tools import get_trade_legality
     if not legs:
@@ -185,7 +185,10 @@ def product_trade_legs(legs: str, season: str = '2026-27') -> dict:
         if not isinstance(leg, dict) or not leg.get('from') or not leg.get('to'):
             return {'ok': False, 'error': 'each leg needs from/to teams'}
     try:
-        return get_trade_legality.invoke({'legs': _json.dumps(parsed), 'season': season})
+        args = {'legs': _json.dumps(parsed), 'season': season}
+        if tpes:
+            args['tpe'] = tpes if isinstance(tpes, str) else _json.dumps(tpes)
+        return get_trade_legality.invoke(args)
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
 

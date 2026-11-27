@@ -60,6 +60,8 @@ type LegTeamRows = {
   issues?: string[];
 };
 
+type TpeRow = { team: string; amount: number; kind?: string; origin_year?: number; exactness?: string };
+
 type LegsResponse = {
   rows?: LegTeamRows[];
   meta?: { disclaimer?: string; salary_date?: string; rules?: unknown };
@@ -120,6 +122,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
   const [check, setCheck] = useState<CheckState>({ state: "idle" });
   const [fillers, setFillers] = useState<FillersState>({ state: "idle" });
   const [snapshot, setSnapshot] = useState<ScenarioSnapshot | null>(null);
+  const [inventory, setInventory] = useState<TpeRow[]>([]);
   const [loadNote, setLoadNote] = useState<string | null>(null);
   const checkSeq = useRef(0);
 
@@ -184,7 +187,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
     fetch(`${BACKEND}${apiPath("/trade/legs")}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ legs, season: TRADE_SEASON }),
+      body: JSON.stringify({ legs, season: TRADE_SEASON, tpes: inventory.length ? inventory : undefined }),
     })
       .then(response => response.json().then(data => ({ status: response.status, data })))
       .then(({ status, data }: { status: number; data: LegsResponse }) => {
@@ -373,6 +376,8 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       setTeams(artifact.teams.slice());
       setPkgs(artifact.packages.map(pkg => ({ players: (pkg.players ?? []).slice(), picks: (pkg.picks ?? []).slice() })));
       setSnapshot({ teams: artifact.teams.slice(), packages: artifact.packages, season: artifact.season, verdict: artifact.verdict ?? null });
+      const carried = (artifact as unknown as { tpes?: TpeRow[] }).tpes;
+      if (Array.isArray(carried)) setInventory(carried.filter(row => row && typeof row.team === "string" && typeof row.amount === "number"));
       setLoadNote(`loaded "${pin.artifact.title}" from "${board.title}"`);
       return;
     }
@@ -598,6 +603,29 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
                 {leg.tpe_creation.copy}
               </div>
             )}
+          </div>
+        )}
+        {inventory.some(row => row.team === abbr) && (
+          <div className="rounded-card border border-line bg-surface px-3 py-2 text-xs shadow-hairline">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-3">exception inventory</span>
+              <span className="font-mono text-[10px] text-ink-3">applied to evaluation</span>
+            </div>
+            <div className="mt-1 space-y-1">
+              {inventory.map((row, index) => row.team === abbr && (
+                <div key={index} className="flex items-center justify-between gap-2 text-[11px] text-ink-2">
+                  <span>
+                    {money(row.amount / 1_000_000)} {row.kind ?? "ordinary"} exception
+                    <span className="ml-1 text-ink-3">{(row.exactness ?? "user_declared").replace(/_/g, " ")}</span>
+                  </span>
+                  <button
+                    className="font-mono text-[10px] text-ink-3 hover:text-red"
+                    onClick={() => setInventory(rows => rows.filter((_, at) => at !== index))}
+                    title="Remove from inventory"
+                  >×</button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {(leg || check.state === "ok") && (
