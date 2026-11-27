@@ -116,7 +116,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 function sourceLabel(source?: string) {
-  if (!source) return null;
+  if (!source || source === "source not declared") return null;
   const head = source.split("·")[0].trim();
   return SOURCE_LABELS[head] ?? source.trim();
 }
