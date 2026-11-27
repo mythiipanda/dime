@@ -169,3 +169,42 @@ def test_single_numbered_part_not_consolidated():
     out = normalize_call_args("get_lineup_on_off", {"player_1": "Solo"}, None)
     assert "players" not in out
     assert out["player_1"] == "Solo"
+
+
+def test_product_compare_id_season_specs_survive_normalization():
+    kinds = {"product_compare": {"players": "player_season_spec_list"}}
+    out = argnorm.normalize_call_args(
+        "product_compare",
+        {"players": "1628369:2025-26,203999:2025-26"},
+        kinds)
+    assert out["players"] == "1628369:2025-26, 203999:2025-26"
+
+
+def test_product_compare_spec_season_is_canonicalized():
+    kinds = {"product_compare": {"players": "player_season_spec_list"}}
+    out = argnorm.normalize_call_args(
+        "product_compare",
+        {"players": "1628369:2025/26"},
+        kinds)
+    assert out["players"] == "1628369:2025-26"
+
+
+def test_product_compare_spec_rejects_names_and_bad_ids():
+    kinds = {"product_compare": {"players": "player_season_spec_list"}}
+    with pytest.raises(argnorm.ArgMiss):
+        argnorm.normalize_call_args(
+            "product_compare", {"players": "Jayson Tatum:2025-26"}, kinds)
+    with pytest.raises(argnorm.ArgMiss):
+        argnorm.normalize_call_args(
+            "product_compare", {"players": "1628369:not-a-season"}, kinds)
+
+
+def test_product_compare_manifest_wiring():
+    import json
+    manifest = json.loads((BACKEND / "analyst" / "tools" / "manifest.json").read_text())
+    kinds = {tool: dict(fields) for tool, fields in manifest.get("param_kinds", {}).items()}
+    out = argnorm.normalize_call_args(
+        "product_compare",
+        {"players": "1628369:2025-26,203999:2025-26"},
+        kinds)
+    assert out["players"] == "1628369:2025-26, 203999:2025-26"
