@@ -266,3 +266,9 @@ test("shot chart court strokes use a legible mid-tone, not a hairline token", ()
   assert.ok(!source.includes('const LINE = "var(--line-strong)"'), "court geometry must not render in the hairline token — illegible in light mode");
   assert.ok(source.includes("var(--ink-3)"), "court strokes use the mid-tone ink token");
 });
+
+test("scatter labels every point at low density and stays hover-only beyond it", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactScatter.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("points.length <= 8"), "static labels for all points when density is 8 or fewer");
+  assert.ok(source.includes("<title>"), "hover titles carry identity beyond that density");
+});
