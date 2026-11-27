@@ -173,7 +173,8 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                  "outcomes are not modeled"},
         {"rule": "roster charges", "checked": True,
          "note": "scenario charges fill offseason rosters to 12 at the "
-                 "target-season rookie minimum stored in silver_cap_room "
+                 "target-season rookie minimum salary used for "
+                 "incomplete-roster charges stored in silver_cap_room "
                  "and count each retained positive cap hold as one "
                  "occupied roster spot; legacy rows without that column "
                  "use the 1,493,539 projection as an approximation"},

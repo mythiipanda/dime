@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 
 def test_allowed_guidance_does_not_deny_bare_salary():
     paths = [
@@ -106,9 +108,14 @@ def test_dollar_column_semantics_cover_cap_tables():
         ("silver_cap_room", "PROJECTED_APRON2"),
         ("silver_cap_room", "PROJECTED_ROOM"),
         ("silver_cap_room", "FA_HOLDS_EST"),
+        ("silver_cap_room", "NTMLE_EST"),
+        ("silver_cap_room", "BAE_EST"),
+        ("silver_cap_room", "TMLE_EST"),
+        ("silver_cap_room", "ROSTER_CHARGE_MINIMUM"),
         ("silver_cap_players", "salary"),
         ("silver_contracts", "SALARY"),
         ("silver_hist_salaries", "SALARY"),
+        ("silver_salaries", "GUARANTEED"),
         ("silver_free_agents", "PRIOR_SALARY"),
         ("silver_free_agents", "CAP_HOLD_EST"),
         ("silver_cap_history", "salary_cap"),
@@ -119,6 +126,103 @@ def test_dollar_column_semantics_cover_cap_tables():
         unit, note = _column_semantics(table, column)
         assert unit == "usd_dollars", f"{table}.{column} unit={unit!r}"
         assert note, f"{table}.{column} missing note"
+    _, roster_note = _column_semantics("silver_cap_room", "ROSTER_CHARGE_MINIMUM")
+    assert roster_note == (
+        "minimum salary used for incomplete-roster charges in US dollars")
+
+
+def _numeric_census_type(type_name: object) -> bool:
+    upper = str(type_name or "").upper()
+    return any(token in upper for token in (
+        "INT", "DOUBLE", "FLOAT", "REAL", "DECIMAL", "NUMERIC"))
+
+
+def _money_valued_census_column(name: object, type_name: object) -> bool:
+    upper = str(name or "").upper()
+    if upper.startswith("_") or not _numeric_census_type(type_name):
+        return False
+    if upper.endswith("_PCT") or upper.endswith("_COUNT"):
+        return False
+    markers = (
+        "SALARY", "PAYROLL", "CAP", "TAX", "APRON", "ROOM", "HOLD",
+        "CHARGE", "MLE", "BAE", "GUARANTEE", "MONEY", "MINIMUM",
+        "EXCEPTION", "AMOUNT", "FLOOR", "BONUS", "INCENTIVE",
+    )
+    return any(marker in upper for marker in markers)
+
+
+def _money_census_table(name: object) -> bool:
+    table = str(name or "").lower()
+    return table.startswith("silver_cap_") or any(
+        marker in table for marker in (
+            "salary", "salaries", "contract", "free_agent"))
+
+
+def _present_money_census_schema() -> tuple[list[str], dict[str, dict[str, str]]]:
+    from shared import store
+
+    con = store.connect(read_only=True)
+    try:
+        present = {str(row[0]) for row in con.execute("SHOW TABLES").fetchall()}
+        tables = sorted(table for table in present if _money_census_table(table))
+        schema = {}
+        for table in tables:
+            schema[table] = {
+                str(row[1]): str(row[2])
+                for row in con.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+        return tables, schema
+    finally:
+        con.close()
+
+
+def test_cap_table_money_census_is_structurally_complete():
+    from shared.tools.league.sql_schema import _column_semantics
+
+    census_tables, schema = _present_money_census_schema()
+    assert census_tables, "no cap, salary, contract or free-agent tables present"
+    candidates = [
+        (table, column)
+        for table in census_tables
+        for column, type_name in schema[table].items()
+        if _money_valued_census_column(column, type_name)
+    ]
+    assert candidates, "no numeric money-valued census columns examined"
+    omissions = []
+    for table, column in candidates:
+        unit, note = _column_semantics(table, column)
+        if unit != "usd_dollars" or not note:
+            omissions.append(f"{table}.{column} unit={unit!r}")
+    assert not omissions, omissions
+
+
+def test_present_cap_room_money_columns_keep_declared_units():
+    from shared.tools.league.sql_schema import _column_semantics
+
+    census_tables, schema = _present_money_census_schema()
+    if "silver_cap_room" not in census_tables:
+        pytest.skip("silver_cap_room not present in warehouse")
+    actual = {
+        str(column).upper(): column
+        for column in schema["silver_cap_room"]
+    }
+    known_money_columns = (
+        "COMMITTED_SALARY", "PENDING_OPTION_SALARY", "FA_HOLDS_EST",
+        "INCOMPLETE_ROSTER_CHARGES", "ROSTER_CHARGE_MINIMUM",
+        "PROJECTED_ROOM", "MAX_ROOM", "PROJECTED_CAP", "PROJECTED_TAX",
+        "PROJECTED_APRON1", "PROJECTED_APRON2", "NTMLE_EST", "BAE_EST",
+        "ROOM_EST", "TMLE_EST",
+    )
+    present_known = [
+        upper for upper in known_money_columns if upper in actual]
+    assert present_known, "silver_cap_room has no known money columns"
+    omissions = []
+    for upper in present_known:
+        column = actual[upper]
+        unit, note = _column_semantics("silver_cap_room", column)
+        if unit != "usd_dollars" or not note:
+            omissions.append(f"silver_cap_room.{column} unit={unit!r}")
+    assert not omissions, omissions
 
 
 def test_sql_exec_result_carries_declared_units_on_direct_projection():
