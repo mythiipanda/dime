@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
+import { DataState } from "@/components/ds/DataState";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -49,8 +50,7 @@ function Board({ board }: { board: AwardBoard }) {
   if (!board.ok || board.candidates.length === 0) {
     return (
       <div className="rounded-card bg-surface px-5 py-8 text-center shadow-hairline">
-        <p className="text-[13px] text-ink-3">{board.error || "No projection available for this award yet."}</p>
-        <p className="mt-1 font-mono text-[11px] text-ink-3">No sample data is substituted.</p>
+        <DataState tone={board.error ? "error" : "absent"} label={board.error || "No projection available for this award yet."} detail="No substitute data is shown." />
       </div>
     );
   }
@@ -83,7 +83,7 @@ function Board({ board }: { board: AwardBoard }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 px-1 font-mono text-[11px] text-ink-3">
+      <p className="mt-2 px-1 text-[11px] text-ink-2">
         Warehouse z-score projection over the qualified pool — score is the weighted composite, not betting odds.
         {board.caveat ? ` ${board.caveat}.` : ""}
       </p>
@@ -170,7 +170,7 @@ export default function AwardsView() {
       {!loading && error && (
         <div className="px-4 pt-4">
           <div role="alert" className="rounded-card border border-line bg-surface px-5 py-8 text-center shadow-hairline">
-            <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+            <DataState tone="error" label={error} detail="No substitute data is shown." />
           </div>
         </div>
       )}

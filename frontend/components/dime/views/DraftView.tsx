@@ -1,5 +1,6 @@
 "use client";
 
+import { SourceLine } from "@/components/ds/SourceLine";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -51,7 +52,7 @@ function Section({ title, cite, pin, children, wide }: { title: string; cite?: P
         {pin && <PinButton artifact={pin} />}
       </div>
       <div className="min-h-12 flex-1">{children}</div>
-      <p className="mt-4 border-t border-line pt-3 font-mono text-[10px] text-ink-3">{cite?.table ?? "source unknown"}{cite?.as_of ? ` · as of ${String(cite.as_of).slice(0, 10)}` : ""}</p>
+      <SourceLine table={cite?.table} asOf={cite?.as_of ? String(cite.as_of) : null} />
     </section>
   );
 }

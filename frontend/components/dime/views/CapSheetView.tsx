@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
+import { DataState } from "@/components/ds/DataState";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -274,7 +275,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
 
       {!loading && error && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 
@@ -394,9 +395,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
               <h3 className="text-[13px] font-semibold text-ink">Scenario</h3>
               {moves.length > 0 && (
-                <p className="mt-1 font-mono text-[10px] text-ink-3">
-                  evaluation season {scenarioSeason ?? "mixed"}
-                </p>
+                <p className="mt-1 text-[11px] text-ink-2">evaluation season {scenarioSeason ?? "mixed"}</p>
               )}
               {moves.length === 0 ? (
                 <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-3">
@@ -419,13 +418,13 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                             {move.kind === "trade_in" && `trade in ${move.player}`}
                           </span>
                           {waiverStep?.estimate_basis && (
-                            <span className="mt-0.5 block font-mono text-[9.5px] leading-[1.45] text-ink-3">
+                            <span className="mt-0.5 block text-[11px] leading-[1.45] text-ink-2">
                               {waiverStep.estimate_basis}
                             </span>
                           )}
                         </div>
                         <button
-                          className="shrink-0 font-mono text-[10px] text-ink-3 underline-offset-2 hover:underline"
+                          className="shrink-0 text-[11px] text-ink-2 underline-offset-2 hover:underline"
                           onClick={() => setMoves((current) => current.filter((_, j) => j !== i))}
                         >
                           remove
@@ -464,7 +463,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   >
                     Load saved
                   </button>
-                  {saveState && <span className="w-full font-mono text-[10px] text-ink-3">{saveState}</span>}
+                  {saveState && <span className="w-full text-[11px] text-ink-2">{saveState}</span>}
                 </div>
               )}
               <form
@@ -517,7 +516,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   ))}
                 </div>
               ) : (
-                <p className="mt-2 text-[12.5px] text-ink-3">Apron state unavailable.</p>
+                <DataState tone="absent" label="Apron state unavailable." className="mt-2" />
               )}
             </section>
 
