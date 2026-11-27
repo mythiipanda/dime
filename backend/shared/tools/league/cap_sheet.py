@@ -12,7 +12,6 @@ from ..cap_rules import (
     used_expanded_matching,
 )
 from ..cap_sheet import option_column, season_column, unroll_team_sheet
-from ._helpers import _pkg
 from .cba_cap import (
     _locate_player_team,
     _match_trade_players,
@@ -20,9 +19,8 @@ from .cba_cap import (
     _payroll_source,
     _salary_date,
 )
+from .waivers import WAIVER_BASIS, resolve_waiver_timing, waiver_move
 
-_SALARY_COL_RE = _re.compile(r"SALARY_(\d{4})_(\d{2})$")
-_OPTION_COL_RE = _re.compile(r"OPTION_(\d{4})_(\d{2})$")
 _SEASON_LABEL_RE = _re.compile(r"\d{4}-\d{2}")
 
 
@@ -121,46 +119,6 @@ def _option_decline_move(con, team: str, season: str, player: str) -> tuple[dict
     detail = f"decline {matched[0]} {year['option']} option ({season})"
     return {"kind": "trade_out", "detail": detail, "amount": amount}, None
 
-
-def _season_label(year: int, suffix: int) -> str:
-    return f"{year}-{suffix:02d}"
-
-
-def _salary_year_columns(con) -> list[tuple[str, str]]:
-    cols = [r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()]
-    out: list[tuple[str, str]] = []
-    for col in cols:
-        m = _SALARY_COL_RE.fullmatch(col)
-        if m:
-            out.append((_season_label(int(m.group(1)), int(m.group(2))), col))
-    return sorted(out)
-
-
-def _player_contract_tail(con, player: str, team: str, season: str) -> dict[str, Any] | None:
-    tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-    if "silver_salaries" not in tables:
-        return None
-    year_cols = [pair for pair in _salary_year_columns(con) if pair[0] >= season]
-    if not year_cols:
-        return None
-    select_cols = ", ".join(c for _, c in year_cols)
-    sql = ("SELECT GUARANTEED, " + select_cols +
-           " FROM silver_salaries WHERE UPPER(TEAM) = UPPER(?) "
-           "AND LOWER(PLAYER_NAME) = LOWER(?) LIMIT 1")
-    try:
-        cur = con.execute(sql, [team, player])
-        names = [d[0] for d in cur.description]
-        row = cur.fetchone()
-    except Exception:
-        return None
-    if not row:
-        return None
-    data = dict(zip(names, row))
-    amounts = [float(data.get(col) or 0) for _, col in year_cols]
-    remaining = [a for a in amounts if a > 0]
-    return {"guaranteed": float(data.get("GUARANTEED") or 0),
-            "season_salary": float(amounts[0] or 0) if amounts else 0.0,
-            "years_remaining": len(remaining)}
 
 
 
@@ -278,6 +236,10 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(moves_in, list) or not moves_in:
         return {"ok": False, "error": "moves must be a non-empty list"}
     season, rejected_options = _scenario_season(requested_season, moves_in)
+    waiver_timing, waiver_timing_error = resolve_waiver_timing(
+        payload.get("waiver_date"), season)
+    if waiver_timing_error:
+        return {"ok": False, "error": waiver_timing_error}
     lines, lines_projected = cap_lines_for_season(con, season)
     try:
         pay_before, roster = _payroll(team, con, season)
@@ -355,20 +317,8 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 continue
             hit = next((p for p in roster if p["player"] == matched[0]), None)
             amount = int((hit or {}).get("salary") or 0)
-            tail = _player_contract_tail(con, matched[0], team, season)
-            guaranteed = float((tail or {}).get("guaranteed") or amount)
-            if stretch:
-                years = max(1, int((tail or {}).get("years_remaining") or 1))
-                spread = int(round(guaranteed / (2 * years + 1)))
-                relief = amount - spread
-                detail = f"waive {matched[0]} (stretched over {2 * years + 1}y)"
-                moves.append({"kind": "trade_out", "detail": detail,
-                              "amount": max(0, relief)})
-            else:
-                relief = max(0, int(round(amount - guaranteed)))
-                detail = f"waive {matched[0]} (dead money stays)"
-                moves.append({"kind": "trade_out", "detail": detail,
-                              "amount": relief})
+            moves.append(waiver_move(con, team, matched[0], amount, season, stretch,
+                                     timing=waiver_timing))
             roster_delta -= 1
         elif kind == "option_decision":
             player = str(raw.get("player") or "").strip()
@@ -437,4 +387,7 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "hard_cap": hard_cap, "issues": issues, "errors": errors,
             "matching": matching,
             "meta": {"source": _payroll_source(con), "salary_date": _salary_date(con),
-                     "requested_season": requested_season}}
+                     "requested_season": requested_season,
+                     **({"waiver_basis": WAIVER_BASIS,
+                         "waiver_timing": waiver_timing}
+                        if any(move.get("kind") == "waive" for move in moves) else {})}}

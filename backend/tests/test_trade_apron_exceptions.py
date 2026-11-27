@@ -270,7 +270,7 @@ def test_cap_scenario_expanded_matching_surfaces_first_apron_hard_cap(
           _roster("BOS", 190_000_000, [("Alpha One", 20_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 28_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One",
+        "team": "BOS", "trade_out_players": "Alpha One",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -287,7 +287,7 @@ def test_cap_scenario_expanded_matching_cannot_finish_above_first_apron(
           _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One",
+        "team": "BOS", "trade_out_players": "Alpha One",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -327,7 +327,7 @@ def test_cap_scenario_aggregation_without_expanded_matching_surfaces_hard_cap(
                   [("Alpha One", 15_000_000), ("Beta Two", 15_000_000)])
           + _roster("MIA", 145_000_000, [("Gamma Three", 25_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One, Beta Two",
+        "team": "BOS", "trade_out_players": "Alpha One, Beta Two",
         "in_players": "Gamma Three", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -1052,7 +1052,7 @@ def test_cap_scenario_crossing_first_apron_uses_post_move_strict_matching(
           _roster("BOS", 205_000_000, [("Alpha One", 25_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One",
+        "team": "BOS", "trade_out_players": "Alpha One",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -1072,7 +1072,7 @@ def test_cap_scenario_dropping_below_first_apron_uses_post_move_band(
           _roster("BOS", 212_000_000, [("Alpha One", 30_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 25_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One",
+        "team": "BOS", "trade_out_players": "Alpha One",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -1097,7 +1097,7 @@ def test_cap_scenario_second_apron_receiver_multiple_incoming_is_not_aggregation
                     [("Beta Two", 15_000_000),
                      ("Gamma Three", 15_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "PHX", "out_players": "Alpha One",
+        "team": "PHX", "trade_out_players": "Alpha One",
         "in_players": "Beta Two, Gamma Three", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -1122,7 +1122,7 @@ def test_cap_scenario_multiple_outgoing_players_remain_conservative(
                    ("Anchor Six", 1_000_000)])
           + _roster("MIA", 150_000_000, [("Beta Two", 25_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "PHX", "out_players": "Alpha One, Delta Four",
+        "team": "PHX", "trade_out_players": "Alpha One, Delta Four",
         "in_players": "Beta Two", "season": "2026-27",
     })
     assert out["ok"] is True
@@ -1144,7 +1144,7 @@ def test_cap_scenario_dropping_below_second_apron_clears_aggregation_ban(
                   [("Alpha One", 15_000_000), ("Beta Two", 15_000_000)])
           + _roster("MIA", 150_000_000, [("Gamma Three", 25_000_000)]))
     out = get_cap_scenario.invoke({
-        "team": "BOS", "out_players": "Alpha One, Beta Two",
+        "team": "BOS", "trade_out_players": "Alpha One, Beta Two",
         "in_players": "Gamma Three", "season": "2026-27",
     })
     assert out["ok"] is True
