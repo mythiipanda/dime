@@ -126,6 +126,9 @@ def test_dollar_column_semantics_cover_cap_tables():
         unit, note = _column_semantics(table, column)
         assert unit == "usd_dollars", f"{table}.{column} unit={unit!r}"
         assert note, f"{table}.{column} missing note"
+    _, roster_note = _column_semantics("silver_cap_room", "ROSTER_CHARGE_MINIMUM")
+    assert roster_note == (
+        "minimum salary used for incomplete-roster charges in US dollars")
 
 
 def _numeric_census_type(type_name: object) -> bool:
@@ -141,9 +144,9 @@ def _money_valued_census_column(name: object, type_name: object) -> bool:
     if upper.endswith("_PCT") or upper.endswith("_COUNT"):
         return False
     markers = (
-        "SALARY", "CAP", "TAX", "APRON", "ROOM", "HOLD", "CHARGE",
-        "MLE", "BAE", "GUARANTEE", "MONEY", "MINIMUM", "EXCEPTION",
-        "AMOUNT", "FLOOR", "BONUS", "INCENTIVE",
+        "SALARY", "PAYROLL", "CAP", "TAX", "APRON", "ROOM", "HOLD",
+        "CHARGE", "MLE", "BAE", "GUARANTEE", "MONEY", "MINIMUM",
+        "EXCEPTION", "AMOUNT", "FLOOR", "BONUS", "INCENTIVE",
     )
     return any(marker in upper for marker in markers)
 
@@ -178,15 +181,19 @@ def test_cap_table_money_census_is_structurally_complete():
 
     census_tables, schema = _present_money_census_schema()
     assert census_tables, "no cap, salary, contract or free-agent tables present"
+    candidates = [
+        (table, column)
+        for table in census_tables
+        for column, type_name in schema[table].items()
+        if _money_valued_census_column(column, type_name)
+    ]
+    assert candidates, "no numeric money-valued census columns examined"
     omissions = []
-    for table in census_tables:
-        for column, type_name in schema[table].items():
-            if not _money_valued_census_column(column, type_name):
-                continue
-            unit, note = _column_semantics(table, column)
-            if unit != "usd_dollars" or not note:
-                omissions.append(f"{table}.{column} unit={unit!r}")
-    assert not omissions
+    for table, column in candidates:
+        unit, note = _column_semantics(table, column)
+        if unit != "usd_dollars" or not note:
+            omissions.append(f"{table}.{column} unit={unit!r}")
+    assert not omissions, omissions
 
 
 def test_present_cap_room_money_columns_keep_declared_units():
@@ -215,7 +222,7 @@ def test_present_cap_room_money_columns_keep_declared_units():
         unit, note = _column_semantics("silver_cap_room", column)
         if unit != "usd_dollars" or not note:
             omissions.append(f"silver_cap_room.{column} unit={unit!r}")
-    assert not omissions
+    assert not omissions, omissions
 
 
 def test_sql_exec_result_carries_declared_units_on_direct_projection():

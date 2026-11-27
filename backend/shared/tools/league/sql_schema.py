@@ -219,7 +219,7 @@ _COLUMN_UNITS: dict[str, tuple[str, str]] = {
     "PENDING_OPTION_SALARY": ("usd_dollars", "salary in US dollars pending player/team option decisions"),
     "FA_HOLDS_EST": ("usd_dollars", "estimated free-agent cap holds in US dollars"),
     "INCOMPLETE_ROSTER_CHARGES": ("usd_dollars", "roster charges in US dollars for incomplete rosters"),
-    "ROSTER_CHARGE_MINIMUM": ("usd_dollars", "minimum roster charge in US dollars"),
+    "ROSTER_CHARGE_MINIMUM": ("usd_dollars", "minimum salary used for incomplete-roster charges in US dollars"),
     "PROJECTED_ROOM": ("usd_dollars", "projected cap room in US dollars"),
     "MAX_ROOM": ("usd_dollars", "maximum achievable cap room in US dollars"),
     "PROJECTED_CAP": ("usd_dollars", "projected salary cap in US dollars"),
