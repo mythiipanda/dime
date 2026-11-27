@@ -919,10 +919,15 @@ def _draft_board(con, tables: set, season: str) -> dict:
             "as_of": _draft_as_of(con, "silver_draft_boards")}
     if "silver_prospect_stats" in tables:
         rows = con.execute(
-            'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL, s.GP, s.PTS, s.REB, s.AST, s.TS_PCT, s.USG '
-            'FROM silver_draft_boards b '
-            'LEFT JOIN silver_prospect_stats s ON lower(s.PLAYER_NAME) = lower(b.PLAYER_NAME) AND s._season = b._season '
-            'WHERE b._season = ? ORDER BY b."ORDER" LIMIT 60', [use]).fetchall()
+            'SELECT b."ORDER", b.PLAYER_NAME, b.POSITION, b.SCHOOL, s.GP, s.PTS, s.REB, s.AST, s.TS_PCT, s.USG / 100.0 '
+            'FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY lower(PLAYER_NAME), _season ORDER BY "ORDER") AS brn '
+            'FROM silver_draft_boards) b '
+            'LEFT JOIN ('
+            'SELECT PLAYER_NAME, _season, GP, PTS, REB, AST, TS_PCT, USG FROM ('
+            'SELECT *, ROW_NUMBER() OVER (PARTITION BY lower(PLAYER_NAME), _season ORDER BY GP DESC NULLS LAST) AS rn '
+            'FROM silver_prospect_stats) WHERE rn = 1'
+            ') s ON lower(s.PLAYER_NAME) = lower(b.PLAYER_NAME) AND s._season = b._season '
+            'WHERE b._season = ? AND b.brn = 1 ORDER BY b."ORDER" LIMIT 60', [use]).fetchall()
     else:
         rows = [r[:4] + (None,) * 6 for r in con.execute(
             'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL FROM silver_draft_boards '
