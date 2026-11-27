@@ -60,20 +60,30 @@ const chartAnnotationSchema = Type.Object({
     text: label
 }, { additionalProperties: false });
 
+export const artifactSourceSelectorSchema = Type.Object({
+    ref: Type.String({ minLength: 1 }),
+    rows: Type.Optional(Type.Array(Type.Integer({ minimum: 0 }), { minItems: 1 })),
+    columns: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }))
+}, { additionalProperties: false });
+
+const optionalSources = Type.Optional(Type.Array(artifactSourceSelectorSchema, { minItems: 1 }));
+
 const artifactSchemas = {
     table: Type.Object({
         kind: Type.Literal("table"),
         title: label,
         columns: Type.Array(tableColumnSchema, { minItems: 1 }),
         rows: Type.Array(Type.Unknown(), { minItems: 1 }),
-        footnote: optionalLabel
+        footnote: optionalLabel,
+        sources: optionalSources
     }, { additionalProperties: false }),
     compare: Type.Object({
         kind: Type.Literal("compare"),
         title: label,
         aName: label,
         bName: label,
-        rows: Type.Array(compareRowSchema, { minItems: 1 })
+        rows: Type.Array(compareRowSchema, { minItems: 1 }),
+        sources: optionalSources
     }, { additionalProperties: false }),
     chart: Type.Object({
         kind: Type.Literal("chart"),
@@ -88,13 +98,15 @@ const artifactSchemas = {
         marks: Type.Optional(Type.Array(chartMarkSchema)),
         annotations: Type.Optional(Type.Array(chartAnnotationSchema)),
         labelValues: Type.Optional(Type.Boolean()),
-        footnote: optionalLabel
+        footnote: optionalLabel,
+        sources: optionalSources
     }, { additionalProperties: false }),
     shot_chart: Type.Object({
         kind: Type.Literal("shot_chart"),
         title: label,
         zones: Type.Array(shotZoneSchema, { minItems: 1 }),
-        footnote: optionalLabel
+        footnote: optionalLabel,
+        sources: optionalSources
     }, { additionalProperties: false }),
     scatter: Type.Object({
         kind: Type.Literal("scatter"),
@@ -104,7 +116,8 @@ const artifactSchemas = {
         xMid: Type.Optional(numberValue),
         yMid: Type.Optional(numberValue),
         points: Type.Array(scatterPointSchema, { minItems: 1 }),
-        footnote: optionalLabel
+        footnote: optionalLabel,
+        sources: optionalSources
     }, { additionalProperties: false })
 } as const;
 
