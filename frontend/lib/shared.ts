@@ -57,6 +57,7 @@ export type TradeLegsEvaluation = {
 export type SharedScenarioState =
   | { status: "ok"; object: SharedObject; evaluation: ScenarioResponse | null }
   | { status: "ok-trade"; object: SharedTradeObject; evaluation: TradeLegsEvaluation | null }
+  | { status: "ok-thread"; object: SharedThreadObject; transcript: TranscriptEntry[] }
   | { status: "archived"; object: { kind: string; title: string } }
   | { status: "not_found" }
   | { status: "invalid" }
@@ -104,6 +105,27 @@ function isTradeEvaluation(value: unknown): value is TradeLegsEvaluation {
   return !!value && typeof value === "object" && (Array.isArray((value as Record<string, unknown>).rows) || typeof (value as Record<string, unknown>).error === "string");
 }
 
+export type TranscriptEntry = {
+  question: string;
+  answer: string;
+  tables: { tool?: string; meta?: { source?: string; season?: string; fetched_at?: string } }[];
+  created_at: string;
+};
+
+export type SharedThreadObject = {
+  kind: string;
+  title: string;
+  schema_version: number;
+  updated_at: string;
+  archived: boolean;
+};
+
+function isTranscriptEntry(value: unknown): value is TranscriptEntry {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  return typeof entry.question === "string" && typeof entry.answer === "string";
+}
+
 function isScenarioResponse(value: unknown): value is ScenarioResponse {
   return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).errors);
 }
@@ -144,6 +166,19 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
       evaluation = null;
     }
     return { status: "ok-trade", object, evaluation };
+  }
+
+  if (envelope.kind === "thread_grant") {
+    const body2 = envelope as unknown as Record<string, unknown>;
+    const transcript = Array.isArray(body2.transcript) ? body2.transcript.filter(isTranscriptEntry) : [];
+    const object: SharedThreadObject = {
+      kind: envelope.kind,
+      title: envelope.title,
+      schema_version: typeof body2.schema_version === "number" ? body2.schema_version : 1,
+      updated_at: envelope.updated_at,
+      archived: envelope.archived,
+    };
+    return { status: "ok-thread", object, transcript };
   }
 
   if (envelope.kind !== "cap_scenario") return { status: "unsupported", kind: envelope.kind };
