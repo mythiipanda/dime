@@ -78,11 +78,17 @@ export default function ScenarioMoveList({
                   <p key={entry.index} className="text-[12px] text-ink-2">{labels.describe(entry.move)}</p>
                 ))}
               </div>
-              <p className="mt-1 text-[10.5px] leading-[1.4] text-ink-3">
-                One transaction — its legs move as a unit.
-                {meta?.verdict === true && " Evaluated legal at import."}
-                {meta?.verdict === false && " Evaluated illegal at import."}
-              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10.5px] leading-[1.4] text-ink-3">One transaction — its legs move as a unit.</span>
+                {meta?.verdict != null && (
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.verdict ? "bg-green-tint text-green" : "bg-red/10 text-red"}`}
+                    title={meta.evaluated_at ? `Both teams' states frozen at evaluation — ${meta.evaluated_at.slice(0, 10)}` : "Both teams' states frozen at evaluation"}
+                  >
+                    {meta.verdict ? "legal" : "illegal"} at import{meta.evaluated_at ? ` · ${meta.evaluated_at.slice(0, 10)}` : ""}
+                  </span>
+                )}
+              </div>
             </div>
           );
         }
