@@ -2,7 +2,12 @@ import os
 import random
 from itertools import product
 
-from shared.tools.cap_rules import CAP, allowed_incoming, hard_cap_consequences
+from shared.tools.cap_rules import (
+    CAP,
+    allowed_incoming,
+    hard_cap_consequences,
+    matching_election,
+)
 from shared.tools.league.cba_cap import _outgoing_needed
 from shared.tools.league.trade_legality import (
     _evaluate_team,
@@ -16,6 +21,17 @@ MATCHING_CUSHION = 250_000
 EXPANDED_MATCHING_CUSHION = 9_096_000
 EXPANDED_LOW_MAX = 8_846_000
 EXPANDED_MID_MAX = 35_384_000
+STANDARD_MATCH_RULE = ("standard TPE matching: 100% of outgoing salary plus "
+                       "applicable cushion")
+AGGREGATED_STANDARD_MATCH_RULE = (
+    "aggregated standard TPE matching: 100% of aggregated outgoing salary "
+    "plus applicable cushion")
+CAP_ROOM_MATCH_RULE = "cap room plus outgoing salary plus $250k (under the cap)"
+DECLARED_TPE_MATCH_RULE = (
+    "declared TPE capacity: separate non-combined exception bin")
+NO_SALARY_MATCH_RULE = "no salary matching required (no incoming player salary)"
+NO_AVAILABLE_MATCH_RULE = ("no available salary-matching structure "
+                           "(no outgoing player salary)")
 
 
 def _assignment_oracle(salaries, capacities, required_bins, matching_limit=None):
@@ -83,17 +99,20 @@ def test_placement_fits_generated_inputs_match_assignment_oracle():
 
 def _expected_allowed_incoming(outgoing, over_apron1, cap_room):
     if over_apron1:
-        return outgoing
+        return outgoing, "100% (above the first apron)"
     if outgoing <= EXPANDED_LOW_MAX:
         matched = outgoing * 2 + MATCHING_CUSHION
+        rule = "200% plus $250k (below the first apron)"
     elif outgoing <= EXPANDED_MID_MAX:
         matched = outgoing + EXPANDED_MATCHING_CUSHION
+        rule = "outgoing salary plus $9.096M (below the first apron)"
     else:
         matched = outgoing * 5 // 4 + MATCHING_CUSHION
+        rule = "125% plus $250k (below the first apron)"
     room_allowance = outgoing + cap_room + MATCHING_CUSHION
     if cap_room > 0 and room_allowance > matched:
-        return room_allowance
-    return matched
+        return room_allowance, CAP_ROOM_MATCH_RULE
+    return matched, rule
 
 
 def _money_edges():
@@ -102,6 +121,106 @@ def _money_edges():
     values = {0, 1, 249_999, 250_000, low - 1, low, low + 1,
               mid - 1, mid, mid + 1, 60_000_000}
     return sorted(values)
+
+
+def test_allowed_incoming_rule_identity_at_scaled_band_boundaries():
+    cases = (
+        (EXPANDED_LOW_MAX, EXPANDED_LOW_MAX * 2 + MATCHING_CUSHION,
+         "200% plus $250k (below the first apron)"),
+        (EXPANDED_LOW_MAX + 1,
+         EXPANDED_LOW_MAX + 1 + EXPANDED_MATCHING_CUSHION,
+         "outgoing salary plus $9.096M (below the first apron)"),
+        (EXPANDED_MID_MAX, EXPANDED_MID_MAX + EXPANDED_MATCHING_CUSHION,
+         "outgoing salary plus $9.096M (below the first apron)"),
+        (EXPANDED_MID_MAX + 1,
+         (EXPANDED_MID_MAX + 1) * 5 // 4 + MATCHING_CUSHION,
+         "125% plus $250k (below the first apron)"),
+    )
+    for outgoing, expected_allow, expected_rule in cases:
+        assert allowed_incoming(outgoing, False) == (
+            expected_allow, expected_rule), (
+            f"boundary rule identity changed: outgoing={outgoing!r}")
+
+
+def _expected_matching_election(incoming, outgoing, cap_room=0,
+                                cushion=MATCHING_CUSHION, outgoing_count=1,
+                                expanded_matching=False,
+                                uses_declared_tpe=False):
+    simultaneous = ("aggregated_standard" if outgoing_count > 1
+                    else "standard_simultaneous")
+    if incoming <= 0:
+        base = "no_salary_matching"
+    elif expanded_matching:
+        base = "expanded"
+    elif cap_room > 0 and incoming <= outgoing + cap_room + cushion:
+        base = "cap_room"
+    elif outgoing > 0 and incoming <= outgoing + cushion:
+        base = simultaneous
+    elif uses_declared_tpe and outgoing > 0:
+        base = simultaneous
+    elif uses_declared_tpe:
+        base = "declared_tpe"
+    elif outgoing > 0 and incoming > outgoing + cushion:
+        base = "expanded"
+    else:
+        base = "no_available_structure"
+    mechanisms = [base]
+    if uses_declared_tpe and base != "declared_tpe":
+        mechanisms.append("declared_tpe")
+    return {"matching_structure": "+".join(mechanisms),
+            "matching_mechanisms": mechanisms,
+            "expanded_required": bool(expanded_matching)}
+
+
+def test_matching_election_oracle_matches_production_vector_matrix():
+    vectors = (
+        ({"incoming": 0, "outgoing": 20_000_000}, "no_salary_matching"),
+        ({"incoming": 20_100_000, "outgoing": 20_000_000},
+         "standard_simultaneous"),
+        ({"incoming": 20_250_000, "outgoing": 20_000_000},
+         "standard_simultaneous"),
+        ({"incoming": 20_100_000, "outgoing": 20_000_000,
+          "cap_room": 14_961_000}, "cap_room"),
+        ({"incoming": 30_000_000, "outgoing": 20_000_000,
+          "cap_room": 14_961_000}, "cap_room"),
+        ({"incoming": 30_100_000, "outgoing": 30_000_000,
+          "outgoing_count": 2}, "aggregated_standard"),
+        ({"incoming": 20_250_001, "outgoing": 20_000_000,
+          "expanded_matching": True}, "expanded"),
+        ({"incoming": 20_000_001, "outgoing": 20_000_000, "cushion": 0,
+          "expanded_matching": True}, "expanded"),
+        ({"incoming": 22_000_000, "outgoing": 20_000_000,
+          "uses_declared_tpe": True}, "standard_simultaneous"),
+        ({"incoming": 8_000_000, "outgoing": 0,
+          "uses_declared_tpe": True}, "declared_tpe"),
+        ({"incoming": 8_000_000, "outgoing": 0},
+         "no_available_structure"),
+    )
+    for vector, structure in vectors:
+        expected = _expected_matching_election(**vector)
+        actual = matching_election(**vector)
+        case = f"vector={vector!r} actual={actual!r} expected={expected!r}"
+        assert expected["matching_mechanisms"][0] == structure, case
+        assert actual["matching_structure"] == expected["matching_structure"], case
+        assert actual["matching_mechanisms"] == expected["matching_mechanisms"], case
+        assert actual["expanded_required"] == expected["expanded_required"], case
+
+
+def _expected_operative_match_rule(expanded_rule, election):
+    selected = election["matching_mechanisms"][0]
+    if selected == "standard_simultaneous":
+        return STANDARD_MATCH_RULE
+    if selected == "aggregated_standard":
+        return AGGREGATED_STANDARD_MATCH_RULE
+    if selected == "cap_room":
+        return CAP_ROOM_MATCH_RULE
+    if selected == "declared_tpe":
+        return DECLARED_TPE_MATCH_RULE
+    if selected == "no_salary_matching":
+        return NO_SALARY_MATCH_RULE
+    if selected == "no_available_structure":
+        return NO_AVAILABLE_MATCH_RULE
+    return expanded_rule
 
 
 def test_generated_matching_inverse_and_monotonicity():
@@ -113,13 +232,14 @@ def test_generated_matching_inverse_and_monotonicity():
             rooms = (0, 1, rng.randint(2, 30_000_000))
             for room in rooms:
                 allow, rule = allowed_incoming(outgoing, over_apron1, room)
-                expected_allow = _expected_allowed_incoming(
+                expected_allow, expected_rule = _expected_allowed_incoming(
                     outgoing, over_apron1, room)
-                assert allow == expected_allow, (
-                    "matching allowance differs from the 2026-27 band: "
+                assert (allow, rule) == (expected_allow, expected_rule), (
+                    "matching allowance or rule differs from the 2026-27 band: "
                     f"outgoing={outgoing!r} over_apron1={over_apron1!r} "
-                    f"cap_room={room!r} allow={allow!r} "
-                    f"expected={expected_allow!r} rule={rule!r}")
+                    f"cap_room={room!r} allow={allow!r} rule={rule!r} "
+                    f"expected_allow={expected_allow!r} "
+                    f"expected_rule={expected_rule!r}")
                 assert allow >= outgoing, (
                     "matching allowance below outgoing: "
                     f"outgoing={outgoing!r} over_apron1={over_apron1!r} "
@@ -194,9 +314,11 @@ def test_hard_cap_trigger_truth_table_at_apron_boundaries():
             assert result["hard_cap"] == "+".join(result["aprons"]), case
             assert set(result["violations"]) == expected_violations, case
             assert len(result["issues"]) == len(expected_violations), case
-            assert (("hard-capped at the first apron" in joined_issues)
+            assert (("would exceed the first apron" in joined_issues
+                     and "transaction is prohibited" in joined_issues)
                     == ("first apron" in expected_violations)), case
-            assert (("hard-capped at the second apron" in joined_issues)
+            assert (("would exceed the second apron" in joined_issues
+                     and "transaction is prohibited" in joined_issues)
                     == ("second apron" in expected_violations)), case
 
 
@@ -207,7 +329,10 @@ def _generated_tpe(rng, index):
     return {"team": "BOS", "amount": rng.randint(2_000_000, 14_000_000),
             "kind": kind, "origin_year": origin_year,
             "origin_season": f"{origin_year}-{(origin_year + 1) % 100:02d}",
-            "status": status, "legacy_defaults": False}
+            "status": status, "legacy_defaults": False,
+            "timing_basis": "season_approximate", "as_of_date": None,
+            "origin_date": None, "expiry_date": None,
+            "effective_expiry_date": None, "expiry_date_derived": False}
 
 
 def _integration_input(rng):
@@ -234,16 +359,19 @@ def _integration_input(rng):
 
 
 def _expected_expanded_matching(salaries, in_total, outgoing, room_before,
-                                capacities, required_bins):
+                                capacities, required_bins,
+                                cushion=MATCHING_CUSHION):
     if outgoing <= 0 or in_total <= outgoing:
         return False
-    if room_before > 0 and in_total <= outgoing + room_before + MATCHING_CUSHION:
+    if in_total <= outgoing + cushion:
+        return False
+    if room_before > 0 and in_total <= outgoing + room_before + cushion:
         return False
     if not capacities:
         return True
-    strict_limit = outgoing
+    strict_limit = outgoing + cushion
     if room_before > 0:
-        strict_limit += room_before + MATCHING_CUSHION
+        strict_limit += room_before
     return not _assignment_oracle(
         salaries, [strict_limit] + capacities, required_bins, strict_limit)
 
@@ -258,19 +386,41 @@ def test_expanded_matching_generated_inputs_match_strict_assignment_oracle():
         required_bins = sum(1 << (index + 1) for index in range(tpe_count))
         outgoing = rng.randint(0, 24)
         room_before = rng.choice((0, rng.randint(0, 12)))
+        cushion = rng.randint(0, 3)
         in_total = sum(salaries)
         expected = _expected_expanded_matching(
             salaries, in_total, outgoing, room_before, capacities,
-            required_bins)
+            required_bins, cushion)
         actual = _expanded_matching_use(
             salaries, in_total, outgoing, room_before, capacities,
-            required_bins)
+            required_bins, cushion)
         assert actual == expected, (
             "expanded matching mismatch: "
             f"salaries={salaries!r} in_total={in_total!r} "
             f"outgoing={outgoing!r} room_before={room_before!r} "
-            f"capacities={capacities!r} required_bins={required_bins!r} "
+            f"cushion={cushion!r} capacities={capacities!r} "
+            f"required_bins={required_bins!r} "
             f"actual={actual!r} expected={expected!r}")
+
+
+def test_expanded_matching_standard_cushion_exact_boundaries():
+    cases = (
+        (20_250_000, 20_000_000, 0, MATCHING_CUSHION, False),
+        (20_250_001, 20_000_000, 0, MATCHING_CUSHION, True),
+        (20_000_000, 20_000_000, 0, 0, False),
+        (20_000_001, 20_000_000, 0, 0, True),
+        (30_250_000, 20_000_000, 10_000_000, MATCHING_CUSHION, False),
+        (30_250_001, 20_000_000, 10_000_000, MATCHING_CUSHION, True),
+    )
+    for incoming, outgoing, room, cushion, expected in cases:
+        actual = _expanded_matching_use(
+            [incoming], incoming, outgoing, room, [], 0, cushion)
+        oracle = _expected_expanded_matching(
+            [incoming], incoming, outgoing, room, [], 0, cushion)
+        assert oracle == expected
+        assert actual == expected, (
+            f"incoming={incoming!r} outgoing={outgoing!r} room={room!r} "
+            f"cushion={cushion!r} actual={actual!r} expected={expected!r}")
 
 
 def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
@@ -290,13 +440,19 @@ def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
         required_bins = sum(
             1 << (index + 1) for index in range(len(expected_capacities)))
         room_before = max(0, CAP["cap"] - side["pay_before"])
-        expected_allow = _expected_allowed_incoming(
+        expected_allow, expected_band_rule = _expected_allowed_incoming(
             side["out_total"], expected_over_apron1, room_before)
         expected_fit = _assignment_oracle(
             salaries, [expected_allow] + expected_capacities, required_bins)
+        cushion = 0 if expected_over_apron1 else MATCHING_CUSHION
         expected_expanded = _expected_expanded_matching(
             salaries, side["in_total"], side["out_total"], room_before,
-            expected_capacities, required_bins)
+            expected_capacities, required_bins, cushion)
+        expected_election = _expected_matching_election(
+            side["in_total"], side["out_total"], room_before, cushion,
+            len(side["out_names"]), expected_expanded, bool(team_tpes))
+        expected_match_rule = _expected_operative_match_rule(
+            expected_band_rule, expected_election)
         expected_aprons = set()
         if len(side["out_names"]) > 1 or cash_out or any(
                 item["kind"] == "sign_and_trade" for item in team_tpes):
@@ -321,8 +477,92 @@ def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
         assert capacities == expected_capacities, case
         assert row["allowed_incoming"] == expected_allow, case
         assert row["matching_ok"] == expected_fit, case
+        assert row["matching_structure"] == (
+            expected_election["matching_structure"]), case
+        assert row["matching_mechanisms"] == (
+            expected_election["matching_mechanisms"]), case
+        assert row["expanded_required"] == expected_expanded, case
+        assert row["match_rule"] == expected_match_rule, case
         assert actual_aprons == expected_aprons, case
-        assert (("hard-capped at the first apron" in joined_issues)
+        assert (("would exceed the first apron" in joined_issues
+                 and "transaction is prohibited" in joined_issues)
                 == first_violation), case
-        assert (("hard-capped at the second apron" in joined_issues)
+        assert (("would exceed the second apron" in joined_issues
+                 and "transaction is prohibited" in joined_issues)
                 == second_violation), case
+
+
+def _vector_side(pay_before, outgoing, incoming_salaries, outgoing_count=1):
+    in_rows = [{"player": f"Incoming {index}", "salary": salary}
+               for index, salary in enumerate(incoming_salaries, 1)]
+    return {"out_names": [f"Outgoing {index}"
+                          for index in range(outgoing_count, 0, -1)],
+            "out_total": outgoing,
+            "in_names": [row["player"] for row in in_rows],
+            "in_rows": in_rows,
+            "in_total": sum(incoming_salaries),
+            "pay_before": pay_before}
+
+
+def _evaluate_vector(pay_before, outgoing, incoming_salaries, outgoing_count=1):
+    side = _vector_side(pay_before, outgoing, incoming_salaries,
+                        outgoing_count)
+    return _evaluate_team(
+        "BOS", side, [], [], [], None, None, 0, 2026)
+
+
+def test_evaluate_team_propagates_least_restrictive_rule_identity_vectors():
+    cases = (
+        (195_000_000, 20_000_000, [20_100_000], 1,
+         "standard_simultaneous", STANDARD_MATCH_RULE, False, "", []),
+        (195_000_000, 20_000_000, [20_250_000], 1,
+         "standard_simultaneous", STANDARD_MATCH_RULE, False, "", []),
+        (195_000_000, 20_000_000, [20_250_001], 1,
+         "expanded", "outgoing salary plus $9.096M (below the first apron)",
+         True, "first apron", []),
+        (209_000_000, 20_000_000, [20_100_000], 1,
+         "expanded", "100% (above the first apron)",
+         True, "first apron", ["first apron"]),
+        (209_100_000, 20_000_000, [20_000_000], 1,
+         "standard_simultaneous", STANDARD_MATCH_RULE, False, "", []),
+        (150_000_000, 20_000_000, [20_100_000], 1,
+         "cap_room", CAP_ROOM_MATCH_RULE, False, "", []),
+    )
+    for (payroll, outgoing, incoming, outgoing_count, structure,
+         match_rule, expanded, hard_cap, violations) in cases:
+        row, issues = _evaluate_vector(
+            payroll, outgoing, incoming, outgoing_count)
+        case = (f"payroll={payroll!r} outgoing={outgoing!r} "
+                f"incoming={incoming!r} row={row!r} issues={issues!r}")
+        assert row["matching_structure"] == structure, case
+        assert row["matching_mechanisms"] == [structure], case
+        assert row["match_rule"] == match_rule, case
+        assert row["expanded_required"] is expanded, case
+        assert row["hard_cap"] == hard_cap, case
+        assert row["hard_cap_violations"] == violations, case
+
+
+def test_evaluate_team_aggregated_standard_is_only_second_apron_trigger():
+    row, issues = _evaluate_vector(
+        195_000_000, 20_000_000, [20_100_000], outgoing_count=2)
+    assert row["matching_structure"] == "aggregated_standard"
+    assert row["matching_mechanisms"] == ["aggregated_standard"]
+    assert row["match_rule"] == AGGREGATED_STANDARD_MATCH_RULE
+    assert row["expanded_required"] is False
+    assert row["hard_cap"] == "second apron"
+    assert row["hard_cap_causes"] == {"second apron": ["aggregation"]}
+    assert row["hard_cap_violations"] == []
+    assert not any("first apron" in issue for issue in issues)
+
+
+def test_evaluate_team_cap_room_precedes_aggregated_standard_but_aggregation_remains():
+    row, issues = _evaluate_vector(
+        150_000_000, 20_000_000, [20_100_000], outgoing_count=2)
+    assert row["matching_structure"] == "cap_room"
+    assert row["matching_mechanisms"] == ["cap_room"]
+    assert row["match_rule"] == CAP_ROOM_MATCH_RULE
+    assert row["expanded_required"] is False
+    assert row["hard_cap"] == "second apron"
+    assert row["hard_cap_causes"] == {"second apron": ["aggregation"]}
+    assert row["hard_cap_violations"] == []
+    assert not any("first apron" in issue for issue in issues)

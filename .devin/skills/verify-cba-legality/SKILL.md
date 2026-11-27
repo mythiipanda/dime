@@ -12,9 +12,15 @@ traded-player-exception (TPE), or hard-cap decision logic.
 
 Property: for every generated team-side input, `matching_ok` is true exactly when
 each incoming player salary can be assigned to one non-combined salary-matching or
-active TPE capacity, every applicable hard-cap trigger is represented in
-`hard_cap`, and a hard-cap issue appears exactly when post-trade payroll is
-strictly above the triggered apron.
+active TPE capacity, the least-restrictive matching election is reported with the
+correct operative `match_rule`, every applicable hard-cap trigger is represented
+in `hard_cap`, and a hard-cap issue appears exactly when post-trade payroll is
+strictly above the triggered apron. Standard simultaneous matching covers 100% of
+outgoing salary plus the applicable cushion: $250,000 at or below the first apron
+and $0 above it. Cap-room absorption is elected before that simultaneous band,
+expanded matching is required only after the standard band is exceeded, and
+aggregated standard matching is a second-apron trigger rather than an expanded
+or first-apron trigger.
 
 Harm: a break can tell an analyst that an illegal trade is legal, reject a legal
 trade, or hide a first/second-apron hard cap that changes the team's subsequent
@@ -44,7 +50,7 @@ stdlib seeded generation instead of adding a runtime or CI-only dependency.
 
 ## Coverage record
 
-Sync commit: `69edfc43c113c7d2bec33b6d1ca3ef2104b66e3b`
+Sync commit: `bb8e52d6c05ee1529c9760c7a57c8e76a24dd9ab`
 
 Covered files and functions at that commit:
 
@@ -52,7 +58,7 @@ Covered files and functions at that commit:
 | --- | --- |
 | `backend/shared/tools/league/trade_legality.py` | `_placement_fits`, `_expanded_matching_use`, `_tpe_usage`, `_public_tpe`, `_evaluate_team` |
 | `backend/shared/tools/league/cba_cap.py` | `_outgoing_needed` |
-| `backend/shared/tools/cap_rules.py` | `allowed_incoming`, `used_expanded_matching`, `apron_state`, `hard_cap_consequences` |
+| `backend/shared/tools/cap_rules.py` | `allowed_incoming`, `used_expanded_matching`, `matching_election`, `operative_match_rule`, `apron_state`, `hard_cap_consequences` |
 
 The covered input domain is nonnegative integer salaries, TPE amounts, capacities,
 cap room, payrolls, active current-year/prior-year TPE rows, cash-out presence,
@@ -65,10 +71,12 @@ The exhaustive core checks all 23,360 combinations of up to three salaries in
 `{0,1,2}`, one to three bins with capacities in `{0,1,2,3}`, and every
 required-bin mask. Randomized checks extend that to as many as five salaries,
 four bins, larger small-integer capacities, optional strict matching limits,
-direct expanded-matching detection, exact 2026-27 matching-band arithmetic,
-matching inverse/monotonicity cases, all 64 hard-cap trigger boolean
-combinations at six apron-boundary payrolls, and 600 seeded `_evaluate_team`
-team-side cases.
+direct expanded-matching detection, exact 2026-27 matching-band arithmetic and
+rule identity at the $8,846,000 and $35,384,000 scaled-band boundaries, a fixed
+least-restrictive matching-election vector matrix, matching inverse/monotonicity
+cases, all 64 hard-cap trigger boolean combinations at six apron-boundary
+payrolls, deterministic propagated `match_rule` vectors, and 600 seeded
+`_evaluate_team` team-side cases.
 
 ## Read a failure
 
@@ -112,7 +120,7 @@ Before relying on the harness after pulling new work, compare the covered files
 with the sync commit:
 
 ```sh
-git diff 69edfc43c113c7d2bec33b6d1ca3ef2104b66e3b -- backend/shared/tools/cap_rules.py backend/shared/tools/league/cba_cap.py backend/shared/tools/league/trade_legality.py
+git diff bb8e52d6c05ee1529c9760c7a57c8e76a24dd9ab -- backend/shared/tools/cap_rules.py backend/shared/tools/league/cba_cap.py backend/shared/tools/league/trade_legality.py
 ```
 
 If the diff is empty, the coverage record is current. If it is not empty, inspect
@@ -124,5 +132,7 @@ time passed or the files were touched.
 
 When changing this harness, prove it is still able to fail on a scratch variant
 of the real code, then revert the scratch variant and rerun the clean check.
-Useful scratches include removing the TPE cushion, flipping a capacity comparison,
-or dropping one hard-cap trigger.
+Useful scratches include flipping a scaled-band boundary comparison, removing the
+standard or TPE cushion, disabling cap-room absorption, flipping a capacity
+comparison, bypassing strict assignment absorption, or dropping one hard-cap
+trigger.
