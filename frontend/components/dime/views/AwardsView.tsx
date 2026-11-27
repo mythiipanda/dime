@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
+import { DataState } from "@/components/ds/DataState";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -40,7 +42,7 @@ const AWARD_LABELS: Record<string, string> = {
 function driverLine(drivers: Driver[]): string {
   return drivers
     .slice(0, 3)
-    .map((d) => `${d.value} ${d.stat.toLowerCase()}`)
+    .map((d) => `${d.stat.trimEnd().endsWith("%") && d.value <= 1 ? (d.value * 100).toFixed(1) : d.value} ${d.stat.toLowerCase()}`)
     .join(" · ");
 }
 
@@ -48,8 +50,7 @@ function Board({ board }: { board: AwardBoard }) {
   if (!board.ok || board.candidates.length === 0) {
     return (
       <div className="rounded-card bg-surface px-5 py-8 text-center shadow-hairline">
-        <p className="text-[13px] text-ink-3">{board.error || "No projection available for this award yet."}</p>
-        <p className="mt-1 font-mono text-[11px] text-ink-3">No sample data is substituted.</p>
+        <DataState tone={board.error ? "error" : "absent"} label={board.error || "No projection available for this award yet."} detail="No substitute data is shown." />
       </div>
     );
   }
@@ -62,15 +63,20 @@ function Board({ board }: { board: AwardBoard }) {
           <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-wide text-ink-3">score</span>
         </div>
         {board.candidates.map((c) => (
-          <div key={c.player} className="px-4 py-3">
+          <div key={c.player} className={`px-4 py-3 ${c.rank === 1 ? "bg-field/40" : ""}`}>
             <div className="flex items-center gap-3">
-              <span className="w-5 shrink-0 font-mono text-[12px] tabular-nums text-ink-3">{c.rank}</span>
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink" title={`${c.player} · ${c.team}`}>
+              <span className={`w-5 shrink-0 font-mono text-[12px] tabular-nums ${c.rank === 1 ? "font-semibold text-accent" : "text-ink-3"}`}>{c.rank}</span>
+              <span className={`min-w-0 flex-1 truncate text-[13px] text-ink ${c.rank === 1 ? "font-semibold" : "font-medium"}`} title={`${c.player} · ${c.team}`}>
                 {c.player}
                 <span className="ml-2 font-mono text-[11px] font-normal text-ink-3">{c.team}</span>
               </span>
-              <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink-2" title="projection score (z-weighted composite)">
+              <span className={`shrink-0 font-mono text-[12px] tabular-nums ${c.rank === 1 ? "font-semibold text-ink" : "text-ink-2"}`} title="projection score (z-weighted composite)">
                 {c.score.toFixed(2)}
+                {c.rank > 1 && board.candidates[0] && (
+                  <span className="ml-1 text-[10px] text-ink-3" title="gap to the projection leader">
+                    −{(board.candidates[0].score - c.score).toFixed(2)}
+                  </span>
+                )}
               </span>
             </div>
             <div className="mt-0.5 truncate pl-8 font-mono text-[11.5px] tabular-nums text-ink-3" title={driverLine(c.drivers)}>
@@ -82,7 +88,7 @@ function Board({ board }: { board: AwardBoard }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 px-1 font-mono text-[11px] text-ink-3">
+      <p className="mt-2 px-1 text-[11px] text-ink-2">
         Warehouse z-score projection over the qualified pool — score is the weighted composite, not betting odds.
         {board.caveat ? ` ${board.caveat}.` : ""}
       </p>
@@ -150,8 +156,18 @@ export default function AwardsView() {
 
       {loading && (
         <div className="px-4 pt-4">
-          <div className="rounded-card bg-surface px-5 py-8 text-center text-[13px] text-ink-3 shadow-hairline">
-            Loading award projections…
+  <div className="divide-y divide-line overflow-hidden rounded-card bg-surface shadow-hairline" aria-label="loading award projections">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-3.5 w-5" />
+                  <Skeleton className="h-3.5 w-44" />
+                  <Skeleton className="ml-auto h-3.5 w-8" />
+                </div>
+                <Skeleton className="ml-8 mt-2 h-3 w-64" />
+                <Skeleton className="ml-8 mt-1.5 h-3 w-52" />
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -159,7 +175,7 @@ export default function AwardsView() {
       {!loading && error && (
         <div className="px-4 pt-4">
           <div role="alert" className="rounded-card border border-line bg-surface px-5 py-8 text-center shadow-hairline">
-            <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+            <DataState tone="error" label={error} detail="No substitute data is shown." />
           </div>
         </div>
       )}
@@ -184,7 +200,7 @@ export default function AwardsView() {
 
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-4 pb-8">
             {active && (
-              <div key={active.award} style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <div key={active.award} style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
                 <Board board={active} />
               </div>
             )}

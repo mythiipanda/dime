@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
+import { DataState } from "@/components/ds/DataState";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -85,18 +87,21 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
                   <span className="text-ink-3"> · </span>
                   <span className={!aLead ? "font-semibold text-ink" : "text-ink-3"}>{r.fmt(r.home)}</span>
                   <span className="ml-1 text-[10px] uppercase text-ink-3">{bName}</span>
+                  {Math.abs(r.away - r.home) > 0 && (
+                    <span className="ml-1.5 text-[10px] font-medium text-accent">Δ {r.fmt(Math.abs(r.away - r.home))}</span>
+                  )}
                 </span>
               </div>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5" aria-hidden>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line-strong"}`}
+                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.away) / max) * 100)}%` }}
                   />
                 </div>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line-strong"}`}
+                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.home) / max) * 100)}%` }}
                   />
                 </div>
@@ -104,11 +109,6 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
             </div>
           );
         })}
-      </div>
-      <div className="flex items-center gap-1.5 py-2.5 text-[11px] text-ink-3">
-        <span className="inline-block size-2 rounded-[2px] bg-ink" /> {aName}
-        <span className="ml-2 inline-block size-2 rounded-[2px] bg-line-strong" /> {bName}
-        <span className="ml-1">solid marks the leader</span>
       </div>
     </div>
   );
@@ -152,12 +152,27 @@ function InjuryNotes({ game }: { game: MatchupGame }) {
   );
 }
 
+function slateStaleness(dateIso: string): string | null {
+  if (!dateIso) return null;
+  const slate = new Date(dateIso + "T12:00:00Z").getTime();
+  if (Number.isNaN(slate)) return null;
+  const days = Math.floor((Date.now() - slate) / 86400000);
+  if (days <= 2) return null;
+  return `warehouse snapshot ${days} days behind today — a historical slate, not tonight's games`;
+}
+
+function slateState(m: MatchupGame): "live" | "final" | "upcoming" {
+  if (/final/i.test(m.time)) return "final";
+  if (/^Q/.test(m.time) || /^Halftime/i.test(m.time)) return "live";
+  return "upcoming";
+}
+
 function MatchupDetail({ game }: { game: MatchupGame }) {
   const rows = statRows(game.away, game.home);
   return (
     <div
       className="rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5"
-      style={{ animation: "fade-up 200ms cubic-bezier(0.23,1,0.32,1) both" }}
+      style={{ animation: "fade-up 200ms var(--ease-out-strong) both" }}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="text-[14px] font-medium text-ink">
@@ -182,7 +197,7 @@ function MatchupDetail({ game }: { game: MatchupGame }) {
           <MatchupBars rows={rows} aName={game.away.abbr} bName={game.home.abbr} />
         </div>
       ) : (
-        <div className="mt-3 text-[12.5px] text-ink-3">Team ratings are unavailable for this matchup.</div>
+        <DataState tone="absent" label="Team ratings are unavailable for this matchup." className="mt-3" />
       )}
 
       <div className="mt-1 space-y-2 border-t border-line pt-3">
@@ -247,7 +262,19 @@ export default function MatchupsView() {
     };
   }, []);
 
-  const games = data?.games ?? [];
+  const games = useMemo(() => {
+    const list = [...(data?.games ?? [])];
+    const rank = (m: MatchupGame) => (slateState(m) === "live" ? 0 : slateState(m) === "upcoming" ? 1 : 2);
+    const minutes = (m: MatchupGame) => {
+      const hit = m.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!hit) return 0;
+      let h = parseInt(hit[1], 10) % 12;
+      if (/pm/i.test(hit[3])) h += 12;
+      return h * 60 + parseInt(hit[2], 10);
+    };
+    list.sort((a, b) => rank(a) - rank(b) || minutes(a) - minutes(b));
+    return list;
+  }, [data]);
   const active = games.find((m) => m.id === activeId) ?? games[0];
 
   return (
@@ -267,14 +294,17 @@ export default function MatchupsView() {
       </div>
 
       {loading && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Loading tonight&rsquo;s slate…
+        <div className="mt-4 grid items-start gap-3 xl:grid-cols-[280px_1fr]" aria-label="loading tonight's slate">
+          <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[54px] rounded-[10px]" />)}
+          </div>
+          <Skeleton className="h-[420px] rounded-[10px]" />
         </div>
       )}
 
       {!loading && error && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 
@@ -295,6 +325,11 @@ export default function MatchupsView() {
               {" · ratings and form from the warehouse, injuries from the latest report."}
             </p>
           )}
+          {data?.date && !data?.live && slateStaleness(data.date) && (
+            <p className="mt-1 text-[12px] text-orange">
+              {slateStaleness(data.date)}
+            </p>
+          )}
           <div className="mt-4 grid items-start gap-3 xl:grid-cols-[280px_1fr]">
             <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
               {games.map((m) => {
@@ -309,11 +344,24 @@ export default function MatchupsView() {
                       selected ? "bg-hover-2" : "bg-surface hover:bg-hover"
                     }`}
                   >
-                    <div className={`text-[13px] font-medium ${selected ? "text-ink" : "text-ink-2"}`}>
-                      {m.away.abbr} <span className="font-normal text-ink-3">@</span> {m.home.abbr}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className={`text-[13px] font-medium ${selected ? "text-ink" : "text-ink-2"}`}>
+                        {m.away.abbr} <span className="font-normal text-ink-3">@</span> {m.home.abbr}
+                      </div>
+                      {m.away_score != null && m.home_score != null && (
+                        <span className={`font-mono text-[12.5px] tabular-nums ${slateState(m) === "live" ? "font-semibold text-ink" : "text-ink-2"}`}>
+                          {m.away_score}–{m.home_score}
+                        </span>
+                      )}
                     </div>
-                    <div className="mt-0.5 text-[11.5px] tabular-nums text-ink-3">
-                      {m.time}{m.network ? ` · ${m.network}` : ""}
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] tabular-nums text-ink-3">
+                      {slateState(m) === "live" && (
+                        <span className="inline-block size-1.5 rounded-full bg-accent motion-safe:animate-pulse" aria-label="live" />
+                      )}
+                      <span className={slateState(m) === "live" ? "font-medium text-accent" : ""}>
+                        {m.time}
+                      </span>
+                      {m.network ? ` · ${m.network}` : ""}
                     </div>
                   </button>
                 );

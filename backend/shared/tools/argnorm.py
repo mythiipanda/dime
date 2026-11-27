@@ -182,6 +182,21 @@ def _normalize_player(value: object, field: str) -> object:
     return tail if tail != raw else value
 
 
+def _normalize_player_season_spec(value: object, field: str) -> object:
+    raw = str(value or "").strip()
+    pid_text, sep, own = raw.partition(":")
+    if not pid_text.isdigit():
+        raise ArgMiss(field, "player_season_spec", value,
+                      hint="specs are <player_id> or <player_id>:<season>")
+    if not sep:
+        return pid_text
+    canon = canonical_season(own.strip())
+    if canon is None:
+        raise ArgMiss(field, "player_season_spec", value,
+                      hint="specs are <player_id> or <player_id>:<season>")
+    return f"{pid_text}:{canon}"
+
+
 def _normalize_team(value: object, field: str) -> object:
     raw = str(value or "").strip()
     key = " ".join(raw.lower().split())
@@ -272,7 +287,8 @@ def _normalize_game_id(value: object, field: str) -> object:
 def _normalize_one(tool_name: str, field: str, kind: str, value: object) -> object:
     if value is None:
         return value
-    if kind in ("season_list", "player_list", "team_list", "table_list"):
+    if kind in ("season_list", "player_list", "team_list", "table_list",
+                "player_season_spec_list"):
         if kind == "season_list" and (
                 isinstance(value, int)
                 or re.fullmatch(r"\d{1,2}", str(value).strip())):
@@ -296,6 +312,8 @@ def _normalize_one(tool_name: str, field: str, kind: str, value: object) -> obje
         return canon
     if kind == "player":
         return _normalize_player(value, field)
+    if kind == "player_season_spec":
+        return _normalize_player_season_spec(value, field)
     if kind == "team":
         return _normalize_team(value, field)
     if kind == "entity":

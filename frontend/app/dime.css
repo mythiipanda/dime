@@ -13,7 +13,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .dime-sidebar { flex: 0 0 224px; width: 224px; display: flex; flex-direction: column; padding: 0 8px; transition: width 220ms var(--ease-out-strong), flex-basis 220ms var(--ease-out-strong); overflow-y: auto; }
 .dime-sidebar.is-collapsed { flex-basis: 52px; width: 52px; }
 .sidebar-row { display: flex; align-items: center; gap: 9px; padding: 7px 9px; min-height: 34px; width: 100%; border-radius: 7px; color: var(--ink-2); font-size: 13px; white-space: nowrap; text-align: left; }
-.sidebar-row:hover, .sidebar-row[aria-current=page] { background: var(--hover-2); color: var(--ink); }
+.sidebar-row:hover { background: var(--hover-2); color: var(--ink); }
+.sidebar-row[aria-current=page] { background: var(--hover-2); color: var(--ink); box-shadow: inset 2px 0 0 var(--accent); font-weight: 500; }
 .dime-sidebar.is-collapsed .sidebar-copy { display: none; }
 .dime-main { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--page); display: flex; flex-direction: column; overflow: hidden; }
 .dime-header { height: 44px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 0 10px; flex-shrink: 0; }

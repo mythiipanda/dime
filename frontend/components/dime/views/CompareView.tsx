@@ -1,5 +1,6 @@
 "use client";
 
+import { SourceLine } from "@/components/ds/SourceLine";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -46,7 +47,7 @@ function Section({ title, cite, artifact, children, wide }: { title: string; cit
         {artifact && <PinButton artifact={artifact} />}
       </div>
       {children}
-      <p className="mt-4 border-t border-line pt-3 font-mono text-[10px] text-ink-3">{cite?.table ?? "source unknown"}{cite?.as_of ? ` · as of ${String(cite.as_of).slice(0, 10)}` : ""}</p>
+      <SourceLine table={cite?.table} asOf={cite?.as_of ? String(cite.as_of) : null} />
     </section>
   );
 }
@@ -87,7 +88,7 @@ function PlayerSearch({ onPick, disabled }: { onPick: (player: ResolvePlayer) =>
             <li key={player.id}>
               <button type="button" role="option" aria-selected="false" className="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] hover:bg-inset" onMouseDown={event => event.preventDefault()} onClick={() => { onPick(player); setQuery(""); setResults([]); setOpen(false); }}>
                 <span>{player.full_name}</span>
-                {player.is_active === false && <span className="font-mono text-[10px] text-ink-3">retired</span>}
+                {player.is_active === false && <span className="text-[11px] text-ink-2">retired</span>}
               </button>
             </li>
           ))}

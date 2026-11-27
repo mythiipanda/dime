@@ -1,5 +1,6 @@
 "use client";
 
+import { SourceLine } from "@/components/ds/SourceLine";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -11,6 +12,7 @@ import { Button } from "../../ds/Button";
 
 const money = (v: number | null | undefined) => v == null ? "—" : `$${(v / 1_000_000).toFixed(1)}M`;
 const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+const per_game = (v: number | null | undefined) => v == null ? "—" : v.toFixed(1);
 const TEAM_KEY = "dime_draft_team_v1";
 
 type Provenance = { table?: string; as_of?: string | null };
@@ -51,7 +53,7 @@ function Section({ title, cite, pin, children, wide }: { title: string; cite?: P
         {pin && <PinButton artifact={pin} />}
       </div>
       <div className="min-h-12 flex-1">{children}</div>
-      <p className="mt-4 border-t border-line pt-3 font-mono text-[10px] text-ink-3">{cite?.table ?? "source unknown"}{cite?.as_of ? ` · as of ${String(cite.as_of).slice(0, 10)}` : ""}</p>
+      <SourceLine table={cite?.table} asOf={cite?.as_of ? String(cite.as_of) : null} />
     </section>
   );
 }
@@ -221,9 +223,9 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
                         <td className="py-2 pr-3 text-ink">{row.name}</td>
                         <td className="py-2 pr-3 text-ink-2">{row.position ?? "—"}</td>
                         <td className="py-2 pr-3 text-ink-2">{row.school ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{row.pts ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{row.reb ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{row.ast ?? "—"}</td>
+                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.pts)}</td>
+                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.reb)}</td>
+                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.ast)}</td>
                         <td className="py-2 pr-3 font-mono tabular-nums">{pct(row.ts_pct)}</td>
                         <td className="py-2 text-right font-mono tabular-nums">{pct(row.usg)}</td>
                       </tr>

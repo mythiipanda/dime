@@ -11,7 +11,7 @@ function Chevron({ dir }: { dir: 1 | -1 }) {
   return (
     <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden
-      style={{ transform: dir === 1 ? "rotate(180deg)" : "none", transition: "transform 150ms cubic-bezier(0.16,1,0.3,1)" }}>
+      style={{ transform: dir === 1 ? "rotate(180deg)" : "none", transition: "transform 150ms var(--ease-link)" }}>
       <path d="M6 9l6 6 6-6" />
     </svg>
   );
@@ -177,7 +177,7 @@ export default function LineupsView() {
                   open && (
                     <tr key={`${l.id}-x`} className="border-b border-line bg-page">
                       <td colSpan={COLS.length} className="px-4 py-3.5">
-                        <div style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
+                        <div style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
                           <ShotDist l={l} />
                         </div>
                       </td>
@@ -195,7 +195,7 @@ export default function LineupsView() {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 px-1 font-mono text-[11px] text-ink-3">Ratings per 100 possessions. Click a row for shot mix.</p>
+        <p className="mt-2 px-1 text-[11px] text-ink-2">Ratings per 100 possessions. Click a row for shot mix.</p>
       </div>
     </div>
   );

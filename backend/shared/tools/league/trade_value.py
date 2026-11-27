@@ -16,8 +16,11 @@ from .cba_cap import (
     _hard_cap_consequences,
     _locate_player_team,
     _match_trade_players,
+    _matching_election,
     _norm_trade_teams,
+    _operative_match_rule,
     _payroll,
+    _payroll_proxy_meta,
     _payroll_source,
     _salary_date,
     _season_player_team,
@@ -181,10 +184,12 @@ def _trade_match_sides(team_a: str, players_a: str, team_b: str,
 
 def _trade_side_rows(team: str, side: tuple, payroll: int, state: dict,
                      allow: int, rule: str, needed: int,
-                     hard_cap: str) -> dict[str, Any]:
+                     hard_cap: str,
+                     election: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"team": team.upper(), "out": side[0], "players": side[1],
             "payroll": payroll, "allowed_in": allow, "match_rule": rule,
             "outgoing_needed": needed, "hard_cap": hard_cap,
+            **(election or {}),
             **{k: v for k, v in state.items()}}
 
 
@@ -282,8 +287,18 @@ def get_trade_check(
     allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]), room_b)
     need_a = _outgoing_needed(out_b, bool(state_a["over_apron1"]), room_a)
     need_b = _outgoing_needed(out_a, bool(state_b["over_apron1"]), room_b)
-    expanded_a = _used_expanded_matching(out_b, out_a, room_a)
-    expanded_b = _used_expanded_matching(out_a, out_b, room_b)
+    cushion_a = 0 if state_a["over_apron1"] else 250_000
+    cushion_b = 0 if state_b["over_apron1"] else 250_000
+    expanded_a = _used_expanded_matching(
+        out_b, out_a, room_a, cushion=cushion_a)
+    expanded_b = _used_expanded_matching(
+        out_a, out_b, room_b, cushion=cushion_b)
+    election_a = _matching_election(
+        out_b, out_a, room_a, cushion_a, len(names_a), expanded_a)
+    election_b = _matching_election(
+        out_a, out_b, room_b, cushion_b, len(names_b), expanded_b)
+    rule_a = _operative_match_rule(rule_a, election_a)
+    rule_b = _operative_match_rule(rule_b, election_b)
     hard_cap_a = _hard_cap_consequences(
         team_a.upper(), pay_after_a, aggregates=len(names_a) > 1,
         expanded_matching=expanded_a)
@@ -297,10 +312,10 @@ def get_trade_check(
     return {"tool": "get_trade_check", "ok": True,
             "rows": {"team_a": _trade_side_rows(
                          team_a, side_a, pay_a, state_a, allow_a, rule_a,
-                         need_a, hard_cap_a["hard_cap"]),
+                         need_a, hard_cap_a["hard_cap"], election_a),
                      "team_b": _trade_side_rows(
                          team_b, side_b, pay_b, state_b, allow_b, rule_b,
-                         need_b, hard_cap_b["hard_cap"]),
+                         need_b, hard_cap_b["hard_cap"], election_b),
                      "legal": not issues, "issues": issues,
                      "checks": _trade_check_checks(team_a, rule_a, team_b,
                                                    rule_b),
@@ -312,7 +327,8 @@ def get_trade_check(
                      "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
                      "Confirm with a cap specialist."},
             "meta": {"source": source, "rules": "v1-simplified",
-                     "salary_date": salary_date, "season": season}}
+                     "salary_date": salary_date, "season": season,
+                     **_payroll_proxy_meta()}}
 
 
 _TRADE_PARTNER_PACKAGE_MAX = 3
@@ -423,6 +439,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
             "rows": rows,
             "meta": {"source": source, "salary_date": salary_date,
                      "season": season, "rules": "v1-simplified",
+                     **_payroll_proxy_meta(),
                      "player": name, "player_team": team_a,
                      "player_salary": incoming, "max_return_salary": allow_a,
                      "match_rule_in": rule_a,

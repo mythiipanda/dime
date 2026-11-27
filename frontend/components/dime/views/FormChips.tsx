@@ -9,7 +9,7 @@ export default function FormChips({ form }: { form: Form }) {
         <span
           key={i}
           className={`flex size-5 items-center justify-center rounded-[5px] text-[10px] font-medium ${
-            r === "W" ? "bg-hover-2 text-ink" : "bg-field text-ink-3"
+            r === "W" ? "bg-ink text-surface" : "bg-field text-ink-3"
           }`}
         >
           {r}

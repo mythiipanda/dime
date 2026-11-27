@@ -2,7 +2,36 @@ import duckdb
 import pytest
 
 
-def _seed(monkeypatch, tmp_path, salaries, picks=None):
+def _write_vintaged_picks(con, picks):
+    con.execute(
+        "CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, "
+        "ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, "
+        "HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED BOOLEAN, "
+        "CONDITIONAL BOOLEAN, SUMMARY VARCHAR, LAST_EDITED VARCHAR, "
+        "_source VARCHAR, _season VARCHAR, _fetched_at VARCHAR, "
+        "_entity VARCHAR)")
+    for row in picks:
+        season = row[5] if len(row) > 5 else "2026-27"
+        con.execute(
+            "INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?, "
+            "'', false, false, '', '', 'thedraftday:picks', ?, "
+            "'2026-10-01T00:00:00+00:00', '')",
+            list(row[:5]) + [season])
+
+
+def _write_legacy_picks(con, picks):
+    con.execute(
+        "CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, "
+        "ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, "
+        "HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED BOOLEAN, "
+        "CONDITIONAL BOOLEAN, SUMMARY VARCHAR, LAST_EDITED VARCHAR)")
+    for row in picks:
+        con.execute(
+            "INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?, "
+            "'', false, false, '', '')", list(row[:5]))
+
+
+def _seed(monkeypatch, tmp_path, salaries, picks=None, legacy_picks=False):
     from shared import store
 
     path = tmp_path / "legality.duckdb"
@@ -17,16 +46,10 @@ def _seed(monkeypatch, tmp_path, salaries, picks=None):
                 "INSERT INTO silver_salaries VALUES (?, ?, ?, '2026-27', "
                 "'2026-10-01')", [name, team, salary])
         if picks is not None:
-            con.execute(
-                "CREATE TABLE silver_future_picks (DRAFT_YEAR INTEGER, "
-                "ROUND INTEGER, ORIG_TEAM VARCHAR, STATUS VARCHAR, "
-                "HELD_BY VARCHAR, PROTECTION VARCHAR, POOLED VARCHAR, "
-                "CONDITIONAL VARCHAR, SUMMARY VARCHAR, LAST_EDITED VARCHAR, "
-                "_season VARCHAR)")
-            for row in picks:
-                con.execute(
-                    "INSERT INTO silver_future_picks VALUES (?, ?, ?, ?, ?, "
-                    "'', '', '', '', '', '2026-27')", list(row))
+            if legacy_picks:
+                _write_legacy_picks(con, picks)
+            else:
+                _write_vintaged_picks(con, picks)
     finally:
         con.close()
     monkeypatch.setattr(store, "DB_PATH", path)
@@ -94,6 +117,111 @@ def test_trade_legality_stepien_consecutive_firsts(monkeypatch, tmp_path):
     assert any("Stepien" in i for i in out["issues"])
 
 
+def _balanced_pick_trade(monkeypatch, tmp_path, picks, declared_picks,
+                         pick_sender="BOS", legacy_picks=False):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=picks, legacy_picks=legacy_picks)
+    if pick_sender == "BOS":
+        legs = ('[{"from":"BOS","to":"MIA","players":"Alpha One",'
+                f'"picks":{declared_picks}}},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]')
+    else:
+        legs = ('[{"from":"MIA","to":"BOS","players":"Beta Two",'
+                f'"picks":{declared_picks}}},'
+                '{"from":"BOS","to":"MIA","players":"Alpha One"}]')
+    return get_trade_legality.invoke({
+        "legs": legs,
+        "season": "2026-27",
+    })
+
+
+def test_trade_legality_owned_pick_remains_valid(monkeypatch, tmp_path):
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, _all_firsts("BOS") + _all_firsts("MIA"),
+        '[{"year":2028,"round":1}]')
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    check = next(row for row in out["checks"]
+                 if row["rule"] == "pick ownership")
+    assert check["checked"] is True
+    limitation = ("same-year multiple firsts are validated only at year grain "
+                  "because the leg input does not identify the original team "
+                  "of a same-year first")
+    assert "pooled/conditional picks are not modeled" in check["note"]
+    assert limitation in check["note"]
+    assert "pooled/conditional picks are not modeled" in out["meta"]["disclaimer"]
+    assert limitation in out["meta"]["disclaimer"]
+    assert out["meta"]["pick_vintage_basis"] == "warehouse_vintage"
+    assert out["meta"]["pick_vintage_season"] == "2026-27"
+
+
+def test_trade_legality_unvintaged_pick_inventory_falls_back(
+        monkeypatch, tmp_path):
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, _all_firsts("BOS") + _all_firsts("MIA"),
+        '[{"year":2028,"round":1}]', legacy_picks=True)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    assert out["meta"]["pick_vintage_basis"] == "unvintaged_fallback"
+    assert "pick_vintage_season" not in out["meta"]
+
+
+def test_trade_legality_rejects_pick_team_does_not_own(
+        monkeypatch, tmp_path):
+    bos_picks = [(y, 1, "BOS", "own", "BOS")
+                 for y in range(2027, 2034) if y != 2028]
+    bos_picks.append((2028, 1, "BOS", "traded", "MIA"))
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, bos_picks + _all_firsts("MIA"),
+        '[{"year":2028,"round":1}]')
+    assert out["ok"] is False
+    assert ("cannot declare a 2028 first-round pick it does not own"
+            in out["error"])
+
+
+def test_trade_legality_latest_pick_vintage_rejects_stale_own(
+        monkeypatch, tmp_path):
+    bos_picks = [(y, 1, "BOS", "own", "BOS")
+                 for y in range(2027, 2034) if y != 2028]
+    bos_picks += [
+        (2028, 1, "BOS", "own", "BOS", "2025-26"),
+        (2028, 1, "BOS", "traded", "MIA", "2026-27"),
+    ]
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, bos_picks + _all_firsts("MIA"),
+        '[{"year":2028,"round":1}]')
+    assert out["ok"] is False
+    assert ("BOS cannot declare a 2028 first-round pick it does not own"
+            in out["error"])
+
+
+def test_trade_legality_latest_pick_vintage_rejects_stale_traded_holder(
+        monkeypatch, tmp_path):
+    mia_picks = [(y, 1, "MIA", "own", "MIA")
+                 for y in range(2027, 2034) if y != 2028]
+    mia_picks.append((2028, 1, "MIA", "traded", "DEN", "2026-27"))
+    picks = (_all_firsts("BOS") + mia_picks
+             + [(2028, 1, "BOS", "traded", "MIA", "2025-26")])
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, picks, '[{"year":2028,"round":1}]',
+        pick_sender="MIA")
+    assert out["ok"] is False
+    assert ("MIA cannot declare a 2028 first-round pick it does not own"
+            in out["error"])
+
+
+def test_trade_legality_rejects_duplicate_pick_without_inventory(
+        monkeypatch, tmp_path):
+    out = _balanced_pick_trade(
+        monkeypatch, tmp_path, None,
+        '[{"year":2028,"round":1},{"year":2028,"round":1}]')
+    assert out["ok"] is False
+    assert "more than once" in out["error"]
+
+
 def test_trade_legality_pick_beyond_seven_years(monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
     _seed(monkeypatch, tmp_path,
@@ -144,21 +272,73 @@ def test_trade_legality_three_team(monkeypatch, tmp_path):
     assert out["legal"] is True, out["issues"]
 
 
-def test_trade_legality_snt_minimum_years(monkeypatch, tmp_path):
+def _snt_legality(monkeypatch, tmp_path, years):
     from shared.tools import get_trade_legality
     _seed(monkeypatch, tmp_path,
           _roster("BOS", 140_000_000, [("Alpha One", 10_000_000)])
           + _roster("MIA", 140_000_000, [("Beta Two", 15_000_000)]))
-    out = get_trade_legality.invoke({
+    return get_trade_legality.invoke({
         "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
                 '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
         "sign_and_trade": '{"player":"Alpha One","new_salary":15000000,'
-                          '"years":2}',
+                          f'"years":{years}}}',
         "season": "2026-27",
     })
+
+
+def test_trade_legality_snt_minimum_years(monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 2)
     assert out["ok"] is True
     assert out["legal"] is False
     assert any("3 seasons" in i for i in out["issues"])
+
+
+def test_trade_legality_snt_maximum_years(monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 5)
+    assert out["ok"] is True
+    assert out["legal"] is False
+    assert any("cannot exceed 4 seasons" in i for i in out["issues"])
+
+
+def test_trade_legality_snt_four_years_remain_valid(monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 4)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+
+
+def test_trade_legality_snt_discloses_unvalidated_first_year_guarantee(
+        monkeypatch, tmp_path):
+    out = _snt_legality(monkeypatch, tmp_path, 3)
+    disclosure = ("first-season full guarantee required by 2023 CBA Art. VII "
+                  "sec. 8(e)(1) is not validated")
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    snt_check = next(check for check in out["checks"]
+                     if check["rule"] == "sign-and-trade")
+    assert disclosure in snt_check["note"]
+    assert disclosure in out["meta"]["disclaimer"]
+
+
+@pytest.mark.parametrize(("payload", "message"), [
+    ('[]', "JSON object"),
+    ('{"player":"Alpha One","years":3}', "missing new_salary"),
+    ('{"player":"Alpha One","new_salary":0,"years":3}', "positive integer"),
+    ('{"player":"Alpha One","new_salary":-1,"years":3}', "positive integer"),
+    ('{"player":"Alpha One","new_salary":15000000.5,"years":3}',
+     "positive integer"),
+    ('{"player":"Alpha One","new_salary":15000000,"years":0}',
+     "positive integer"),
+])
+def test_trade_legality_snt_input_validation(payload, message):
+    from shared.tools import get_trade_legality
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "sign_and_trade": payload,
+        "season": "2026-27",
+    })
+    assert out["ok"] is False
+    assert message in out["error"]
 
 
 def _cash_legality(monkeypatch, tmp_path, cash):
