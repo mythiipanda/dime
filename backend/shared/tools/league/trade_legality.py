@@ -34,6 +34,12 @@ _TPE_KINDS = {
     "snt": "sign_and_trade",
     "snt_generated": "sign_and_trade",
 }
+_SNT_GUARANTEE_DISCLOSURE = (
+    "first-season full guarantee required by 2023 CBA Art. VII sec. 8(e)(1) "
+    "is not validated")
+_SNT_OPTION_YEAR_DISCLOSURE = (
+    "years is treated as total declared seasons; non-option seasons cannot be "
+    "distinguished, so option-year treatment is unsupported")
 
 
 def _parse_json_arg(text: str, label: str) -> tuple[Any, str | None]:
@@ -268,16 +274,30 @@ def _public_tpe(tpe: dict[str, Any], over_apron1: bool) -> dict[str, Any]:
             "legacy_defaults": tpe["legacy_defaults"]}
 
 
-def _parse_snt(value: Any) -> dict[str, Any] | None:
-    if not value:
-        return None
-    if isinstance(value, list):
-        value = value[0] if value else None
-    if not isinstance(value, dict) or not str(value.get("player") or "").strip():
-        return None
-    return {"player": str(value["player"]).strip(),
-            "new_salary": int(value.get("new_salary") or 0),
-            "years": int(value.get("years") or 0)}
+def _parse_snt(value: Any) -> tuple[dict[str, Any] | None, str | None]:
+    if value is None:
+        return None, None
+    if not isinstance(value, dict):
+        return None, "sign_and_trade must be a JSON object"
+    keys = ("player", "new_salary", "years")
+    missing = [key for key in keys if key not in value]
+    if missing:
+        return None, f"sign_and_trade missing {', '.join(missing)}"
+    null_keys = [key for key in keys if value[key] is None]
+    if null_keys:
+        return None, (f"sign_and_trade has explicit null for "
+                      f"{', '.join(null_keys)}")
+    player = value["player"]
+    if not isinstance(player, str) or not player.strip():
+        return None, "sign_and_trade player must be a non-empty string"
+    new_salary = _strict_integer(value["new_salary"])
+    if new_salary is None or new_salary <= 0:
+        return None, "sign_and_trade new_salary must be a positive integer"
+    years = _strict_integer(value["years"])
+    if years is None or years <= 0:
+        return None, "sign_and_trade years must be a positive integer"
+    return {"player": player.strip(), "new_salary": new_salary,
+            "years": years}, None
 
 
 def _pick_inventory(con, season_start: int) -> dict[str, set[int]] | None:
@@ -664,13 +684,19 @@ def _snt_result(snt: dict[str, Any] | None,
     if not snt:
         return [], None
     issues: list[str] = []
-    if snt["years"] and snt["years"] < 3:
+    if snt["years"] < 3:
         issues.append("sign-and-trade contracts must run at least 3 seasons")
+    if snt["years"] > 4:
+        issues.append("sign-and-trade contracts cannot exceed 4 seasons")
+    unvalidated_note = (f"{_SNT_GUARANTEE_DISCLOSURE}; prior-team and "
+                        "preseason eligibility not modeled")
     if receiver:
         note = (f"{snt['player']} to {receiver}; {receiver} is "
-                "hard-capped at the first apron")
+                "hard-capped at the first apron; "
+                f"{unvalidated_note}")
     else:
-        note = f"{snt['player']} is not moving teams"
+        note = (f"{snt['player']} is not moving teams; "
+                f"{unvalidated_note}")
     return issues, {"rule": "sign-and-trade", "checked": True, "note": note}
 
 
@@ -751,9 +777,13 @@ def _build_checks(team_rows: dict[str, Any],
 @tool(description='Trade legality verdict across 2+ teams. "legs" is a JSON array:\n'
     '[{"from":"BOS","to":"DEN","players":"Jayson Tatum, Sam Hauser",'
     '"picks":[{"year":2028,"round":1,"protection":"top-4"},{"year":2030,"round":1,"swap":true}]}].\n'
-    'Optional "sign_and_trade" = {"player":"...","new_salary":0,"years":3} '
-    '(3-year minimum, BYC handled), "cash" = [{"from","to","amount"}] '
-    'with positive integer amounts between trade parties, '
+    'Optional "sign_and_trade" = {"player":"...","new_salary":15000000,"years":3} '
+    '(positive salary, 3-4 season term, BYC handled; '
+    + _SNT_GUARANTEE_DISCLOSURE
+    + '; prior-team and preseason eligibility not modeled; '
+    + _SNT_OPTION_YEAR_DISCLOSURE + '), '
+    '"cash" = [{"from","to","amount"}] with positive integer amounts '
+    'between trade parties, '
     '"tpe" = [{"team","amount","kind":"ordinary|sign_and_trade",'
     '"origin_season":"YYYY-YY"}]; rows are declared uses, not inventory. '
     'Present keys must be non-null; omit unused optional keys. Amount and '
@@ -788,7 +818,10 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
     tpe_rows, tpe_err = _parse_tpe(tpe_value)
     if tpe_err:
         return _trade_error(tpe_err)
-    snt = _parse_snt(snt_value)
+    snt_input = snt_value if str(sign_and_trade or "").strip() else None
+    snt, snt_err = _parse_snt(snt_input)
+    if snt_err:
+        return _trade_error(snt_err)
     if snt and not _snt_in_moves(snt, moves):
         return _trade_error(
             f"sign_and_trade player {snt['player']} is not in any leg")
@@ -831,8 +864,10 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
                      "season": state["season"],
                      "disclaimer": "Estimate only. Covers matching, apron "
                      "aggregation, hard caps, typed TPE restrictions, cash "
-                     "bans, sign-and-trade minimums/BYC, Stepien and "
+                     "bans, sign-and-trade terms/BYC, Stepien and "
                      "frozen-pick rules. Skips "
-                     "no-trade clauses, trade kickers, poison-pill and "
-                     "minimum-salary exceptions. Confirm with a cap "
+                     "no-trade clauses, trade kickers, poison-pill, and "
+                     "minimum-salary exceptions; sign-and-trade "
+                     f"{_SNT_GUARANTEE_DISCLOSURE}; prior-team/preseason "
+                     "eligibility not modeled. Confirm with a cap "
                      "specialist."}}
