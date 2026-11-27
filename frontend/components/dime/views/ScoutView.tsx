@@ -31,7 +31,7 @@ type H2HGame = { date: string; matchup: string; wl: string; pts: number | null; 
 
 function Source({ name }: { name?: string }) {
   if (!name) return null;
-  return <span className="font-mono text-[10px] text-ink-3">{name}</span>;
+  return <span className="text-[11px] text-ink-2">{name}</span>;
 }
 
 function SectionShell({ title, source, error, children }: { title: string; source?: string; error?: string | null; children: React.ReactNode }) {
