@@ -32,3 +32,35 @@ test("compare bars share one baseline and encode the honest ratio", async () => 
   await act(async () => root.unmount());
   dom.window.close();
 });
+
+test("sign-bearing rows diverge from a visible zero line, negative bars grow left", async () => {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/" });
+  const host = dom.window.document.getElementById("root")!;
+  const { default: ArtifactCompare } = await import("./components/dime/ArtifactCompare");
+  const root = createRoot(host);
+  await act(async () => root.render(
+    <ArtifactCompare
+      aName="Nikola Jokić"
+      bName="Blake Example"
+      rows={[{ label: "Plus-minus", a: -482, b: 523, fmt: (v) => String(v) }]}
+    />
+  ));
+  const span = 523 - -482;
+  const zero = (-(-482) / span) * 100;
+  const track = host.querySelector(".relative.mt-1\\.5");
+  assert.ok(track, "track renders");
+  const zeroLineEl = track!.querySelector(".w-px") as HTMLElement | null;
+  assert.ok(zeroLineEl, "zero line renders");
+  assert.ok(Math.abs(parseFloat(zeroLineEl!.style.left) - zero) < 0.5, `zero line at ${zero.toFixed(1)}% (got ${zeroLineEl!.style.left})`);
+  const bars = [...track!.querySelectorAll(":scope > div.rounded-full")] as HTMLElement[];
+  assert.equal(bars.length, 2, "two diverging bars");
+  const negBarEl = bars.find((el) => el.classList.contains("bg-ink") && !el.classList.contains("bg-ink-3"))!;
+  const magnitude = (482 / span) * 100;
+  assert.ok(Math.abs(parseFloat(negBarEl.style.width) - magnitude) < 0.5, `negative bar width ${magnitude.toFixed(1)}% (got ${negBarEl.style.width})`);
+  assert.ok(Math.abs(parseFloat(negBarEl.style.left) - (zero - magnitude)) < 0.5, "negative bar ends at the zero line");
+  const posBarEl = bars.find((el) => el.className.includes("bg-ink-3") && el !== zeroLineEl)!;
+  assert.ok(posBarEl, "positive bar renders");
+  assert.ok(Math.abs(parseFloat(posBarEl.style.left) - zero) < 0.5, "positive bar starts at the zero line");
+  await act(async () => root.unmount());
+  dom.window.close();
+});
