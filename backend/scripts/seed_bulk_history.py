@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import os
 import sys
 from pathlib import Path
@@ -23,12 +24,17 @@ PLAYER_ADV_COLS = ["player_id", "ts_pct", "efg_pct", "usg_pct", "off_rating",
                    "def_rating", "net_rating", "pie", "pace"]
 PLAYER_JOIN_KEY = ["player_id", "team_abbreviation"]
 
+def completed_end_year(today: datetime.date | None = None) -> int:
+    now = today or datetime.date.today()
+    return now.year if now.month >= 6 else now.year - 1
+
+
 DATASETS = {
     "hist_gamelogs": {
         "table": "silver_hist_gamelogs",
         "source": SOURCE_GAMES,
         "entity": "season:{season}",
-        "years": range(1997, 2010),
+        "years": range(1997, completed_end_year() + 1),
         "file": "nba_stats_team_game_logs/team_game_logs_{year}.parquet",
         "min_rows": 1400,
         "transform": "hist_gamelogs",
@@ -37,7 +43,7 @@ DATASETS = {
         "table": "silver_hist_player_seasons",
         "source": SOURCE_PLAYER_SEASONS,
         "entity": "league",
-        "years": range(1997, 2015),
+        "years": range(1997, completed_end_year() + 1),
         "file": "nba_stats_player_season_stats/player_season_stats_{year}.parquet",
         "min_rows": 300,
         "transform": "player_seasons",
@@ -46,7 +52,7 @@ DATASETS = {
         "table": "silver_hist_team_seasons",
         "source": SOURCE_TEAM_SEASONS,
         "entity": "league",
-        "years": range(1997, 2027),
+        "years": range(1997, completed_end_year() + 1),
         "file": "nba_stats_team_season_stats/team_season_stats_{year}.parquet",
         "min_rows": 300,
         "transform": "team_seasons",
@@ -118,6 +124,7 @@ def run_dataset(name: str, spec: dict, years: list[int], force: bool,
     written = 0
     skipped = 0
     failures: list[str] = []
+    newest = max(years) if years else 0
     for year in years:
         season = label(year)
         entity = spec["entity"].format(season=season)
@@ -127,9 +134,17 @@ def run_dataset(name: str, spec: dict, years: list[int], force: bool,
         try:
             frame = transform(spec["transform"], read_frame(spec, year))
         except Exception as exc:
+            if year == newest:
+                print(f"{name} {season}: newest-year upstream not yet available, skipping ({exc})")
+                skipped += 1
+                continue
             failures.append(f"{name} {season}: fetch/transform failed ({exc})")
             continue
         if frame.height < spec["min_rows"]:
+            if year == newest:
+                print(f"{name} {season}: newest-year upstream partial ({frame.height} rows), skipping")
+                skipped += 1
+                continue
             failures.append(
                 f"{name} {season}: only {frame.height} rows, "
                 f"expected at least {spec['min_rows']}"
