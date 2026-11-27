@@ -20,6 +20,16 @@ export type ProjectionCapHold = {
   fa_type: string;
 };
 
+export type ProjectionException = {
+  exception: string;
+  amount: number;
+  used: number;
+  remaining: number;
+  hard_caps: boolean;
+  exceeds: number | null;
+  unavailable: boolean;
+};
+
 export type ProjectionSeason = {
   season: string;
   pay_before: number;
@@ -37,6 +47,7 @@ export type ProjectionSeason = {
   ordering_notes: string[];
   lines: { cap: number; tax: number; apron1: number; apron2: number };
   lines_projected: boolean;
+  exceptions?: ProjectionException[];
   cap_holds?: number;
   cap_holds_exactness?: string;
   cap_hold_details?: ProjectionCapHold[];

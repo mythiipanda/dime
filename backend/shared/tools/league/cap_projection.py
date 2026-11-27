@@ -256,6 +256,32 @@ def _renounce_effect(holds: dict[str, Any], raw: dict[str, Any], index: int) -> 
             "player_key": name.lower()}, None
 
 
+_EXCEPTION_AMOUNTS_2026_27 = {"mle": 15_044_000, "bae": 5_477_000, "room": 9_366_000}
+_CAP_BASE_2026_27 = 164_961_000
+
+
+def _exceptions_block(lines: dict[str, Any], effects: list[dict[str, Any]],
+                      pay_after: int) -> list[dict[str, Any]]:
+    ratio = lines["cap"] / _CAP_BASE_2026_27 if lines.get("cap") else 1.0
+    rows = []
+    for name, base in _EXCEPTION_AMOUNTS_2026_27.items():
+        amount = int(round(base * ratio, -3))
+        signings = [e for e in effects
+                    if e["kind"] == "signing" and e.get("exception") == name]
+        used = sum(int(e["delta"]) for e in signings)
+        over = next((int(e["delta"]) for e in signings if int(e["delta"]) > amount), 0)
+        rows.append({
+            "exception": name,
+            "amount": amount,
+            "used": used,
+            "remaining": max(0, amount - used),
+            "hard_caps": bool(signings) and name in ("mle", "bae"),
+            "exceeds": over or None,
+            "unavailable": pay_after > lines["apron1"] and name in ("mle", "bae"),
+        })
+    return rows
+
+
 def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     team = str(payload.get("team") or "").strip().upper()
     base_season = str(payload.get("season") or "").strip() or "2026-27"
@@ -445,6 +471,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                         for e in sorted(effects, key=lambda e: e["move"])],
             "moves_in_season": len(season_moves),
             "ordering_notes": ordering_notes,
+            "exceptions": _exceptions_block(lines, effects, pay_after),
             **({"cap_holds": holds_by_season[season]["total"],
                 "cap_holds_exactness": holds_by_season[season]["exactness"],
                 "cap_hold_details": [{"player": str(r.get("PLAYER_NAME") or r.get("player") or ""),
@@ -465,6 +492,10 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             f"cap holds are included in payroll for {', '.join(hold_seasons)} ({holds_by_season[hold_seasons[0]]['source']}"
             + (f", {unknown_total} unpriced" if unknown_total else "")
             + ") — a renounced hold leaves the books entirely; re-signing a renounced player at a new salary is a separate signing move")
+    disclosures.append(
+        "exception usage reflects scenario moves only — league-wide exception consumption "
+        "is not derivable from seeded transaction data; the room exception's cap-room-first "
+        "ordering and the bae consecutive-year rule are disclosed, not enforced")
     if len(seasons) > 1:
         disclosures.append("incomplete-roster minimum charges are not yet projected — the cap sheet includes them for the current season")
     if truncated:
