@@ -19,6 +19,7 @@ const TURN_END_STEER_MIN_CHARS = 240;
 const SUBMIT_FORCE_REMAINING_MS = 60_000;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
+const HARD_KILL_GRACE_MS = 5_000;
 const ABANDON_SENTINEL = Symbol("abandon-sentinel");
 const TRACE_RESULT_PREVIEW_CHARS = 4096;
 
@@ -1214,6 +1215,26 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
+                let runSettled = false;
+                let hardKillTimer: ReturnType<typeof setTimeout> | undefined;
+                controller.signal.addEventListener("abort", () => {
+                    hardKillTimer = setTimeout(() => {
+                        if (runSettled)
+                            return;
+                        if (bridgePid !== undefined)
+                            try {
+                                process.kill(bridgePid, "SIGKILL");
+                            }
+                            catch {
+                            }
+                        try {
+                            session?.dispose();
+                        }
+                        catch {
+                        }
+                    }, HARD_KILL_GRACE_MS);
+                    hardKillTimer.unref();
+                }, { once: true });
                 try {
                     if (!Value.Check(analystContextSchema, input) || !input.q.trim())
                         throw new Error("Invalid product context");
@@ -1678,6 +1699,9 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }
                 }
                 finally {
+                    runSettled = true;
+                    if (hardKillTimer)
+                        clearTimeout(hardKillTimer);
                     if (budgetNudge)
                         clearTimeout(budgetNudge);
                     if (compositionDirective)
