@@ -383,7 +383,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                 </thead>
                 <tbody>
                   {sheet.players.map((player) => (
-                    <tr key={player.player_id} className="group">
+                    <tr key={player.player_id ?? `unsigned-${player.player}`} className="group">
                       <td className="sticky left-0 z-10 max-w-[220px] border-t border-line bg-surface px-2 py-1.5 leading-snug">
                         <span className="text-[12.5px] text-ink">{player.player}</span>
                         <span className="ml-1.5 font-mono text-[9.5px] text-ink-3">{player.contract_type}</span>
