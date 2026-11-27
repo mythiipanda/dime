@@ -72,6 +72,32 @@ describe("viewTargetForArtifact", () => {
     assert.equal(compare?.tab, "compare");
   });
 
+  it("keys on provenance capability, the shape production artifacts actually carry", () => {
+    const artifact: DimeArtifact = {
+      kind: "table",
+      title: "Boston Celtics BOS cap ledger",
+      source: "dime warehouse · silver_cap_room",
+      provenance: { origin: "warehouse", capability: "get_cap_ledger", warehouseId: "silver_cap_room", liveSources: [] },
+      columns: [{ key: "a", label: "A" }],
+      rows: [],
+    };
+    const target = viewTargetForArtifact(artifact);
+    assert.equal(target?.tab, "cap");
+    assert.equal(target?.team, "BOS");
+  });
+
+  it("renders no target for production-shaped artifacts without a capability", () => {
+    const artifact: DimeArtifact = {
+      kind: "table",
+      title: "League leaders",
+      source: "dime warehouse · silver_leaders_pts",
+      provenance: { origin: "warehouse", warehouseId: "silver_leaders_pts", liveSources: [] },
+      columns: [{ key: "a", label: "A" }],
+      rows: [],
+    };
+    assert.equal(viewTargetForArtifact(artifact), null);
+  });
+
   it("uses the team_card name when present", () => {
     const card: DimeArtifact = {
       kind: "team_card",

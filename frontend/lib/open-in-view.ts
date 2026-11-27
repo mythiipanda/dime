@@ -46,7 +46,7 @@ function artifactTeam(artifact: DimeArtifact): string | undefined {
 }
 
 export function viewTargetForArtifact(artifact: DimeArtifact): ViewTarget | null {
-  const tool = sourceTool(artifact.source);
+  const tool = artifact.provenance?.capability ?? sourceTool(artifact.source);
   if (CAP_TOOLS.has(tool)) return { tab: "cap", team: artifactTeam(artifact) };
   if (TRADE_TOOLS.has(tool)) return { tab: "trades", team: artifactTeam(artifact) };
   if (MATCHUP_TOOLS.has(tool)) return { tab: "matchups", team: artifactTeam(artifact) };
