@@ -54,6 +54,15 @@ def test_allowed_incoming_cap_room_upgrade():
     assert "cap room" in rule
 
 
+def test_allowed_incoming_zero_outgoing_has_no_simultaneous_capacity():
+    unavailable, rule = allowed_incoming(0, False)
+    assert unavailable == 0
+    assert rule == ("no available salary-matching structure "
+                    "(no outgoing player salary)")
+    assert allowed_incoming(0, False, cap_room=1)[0] == 250_001
+    assert allowed_incoming(1, False)[0] == 250_002
+
+
 def test_used_expanded_matching():
     assert used_expanded_matching(30_000_000, 20_000_000) is True
     assert used_expanded_matching(20_000_000, 20_000_000) is False
