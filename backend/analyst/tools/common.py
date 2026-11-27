@@ -124,6 +124,30 @@ def _apply_future(future: asyncio.Future[Any], value: Any, error: Exception | No
         future.set_exception(error)
 
 
+
+def disclose_scoped_season(result: Any, normed: dict[str, Any]) -> Any:
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        return result
+    meta = result.get("meta")
+    if isinstance(meta, dict) and isinstance(meta.get("season"), str) and meta["season"].strip():
+        return result
+    from shared.tools.argnorm import canonical_season, _FIELD_KINDS
+    values = set()
+    for field, kind in _FIELD_KINDS.items():
+        if kind != "season" or field not in normed:
+            continue
+        canon = canonical_season(normed[field])
+        if canon:
+            values.add(canon)
+    if len(values) != 1:
+        return result
+    if not isinstance(meta, dict):
+        meta = {}
+        result["meta"] = meta
+    meta["season"] = sorted(values)[0]
+    return result
+
+
 async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any]) -> dict[str, Any]:
     loop = asyncio.get_running_loop()
     future: asyncio.Future[Any] = loop.create_future()
@@ -154,7 +178,7 @@ async def _bounded_live_call(orig: Any, name: str, args: dict[str, Any]) -> dict
     raw = future.result()
     if not isinstance(raw, dict):
         return enrich_error(name, {"tool": name, "ok": False, "error": str(raw)})
-    return raw
+    return disclose_scoped_season(raw, args)
 
 
 async def _execute_tool_bounded(tools: dict[str, Any], name: str,
@@ -163,7 +187,7 @@ async def _execute_tool_bounded(tools: dict[str, Any], name: str,
         normed, miss = _normalize_or_result(name, arguments)
         if miss is not None:
             return miss
-        return asyncio.run(tools[name].ainvoke(normed))
+        return disclose_scoped_season(asyncio.run(tools[name].ainvoke(normed)), normed)
 
     if name not in _get_network_sources():
         result = await asyncio.to_thread(_invoke)
@@ -184,7 +208,7 @@ def call_sync(orig: Any, name: str, args: dict[str, Any], include_exc_type: bool
         res = orig.invoke(normed)
         if not isinstance(res, dict):
             return {"tool": name, "ok": False, "error": str(res)}
-        return res
+        return disclose_scoped_season(res, normed)
     except Exception as exc:
         msg = f"{type(exc).__name__}: {exc}" if include_exc_type else str(exc)
         return {"tool": name, "ok": False, "error": msg}
@@ -206,7 +230,7 @@ def call_async_in_sync(orig: Any, name: str, args: dict[str, Any]) -> dict[str, 
             res = asyncio.run(orig.ainvoke(normed))
         if not isinstance(res, dict):
             return {"tool": name, "ok": False, "error": str(res)}
-        return res
+        return disclose_scoped_season(res, normed)
     except Exception as exc:
         return {"tool": name, "ok": False, "error": str(exc)}
 
