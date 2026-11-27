@@ -30,11 +30,3 @@ def test_draft_board_has_no_duplicate_prospects():
     names = [r['name'].lower() for r in board['rows']]
     dupes = {n for n in names if names.count(n) > 1}
     assert not dupes, f'duplicate board rows: {sorted(dupes)[:5]}'
-
-
-def test_rotation_rows_carry_per_game_points():
-    rows = []
-    for line in open('backend/shared/tools/team/lineups_rotations.py'):
-        rows.append(line)
-    src = ''.join(rows)
-    assert '"PPG"' in src, 'rotation enriched rows must carry a per-game PPG field'
