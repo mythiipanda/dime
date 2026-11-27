@@ -284,7 +284,14 @@ export default function HistoryView() {
                 </tbody>
               </table>
             </div>
-            <p className="mt-2 text-[11px] text-ink-2">click a season row for its era-relative neighbors · sources per row from the career arc tool</p>
+            <p className="mt-2 text-[11px] text-ink-2">
+              click a season row for its era-relative neighbors · sources per row from the career arc tool
+              {(() => {
+                const lastCovered = [...arc].reverse().find((row) => row.raptor != null);
+                const hasGap = lastCovered && arc.some((row) => row.season > lastCovered.season);
+                return hasGap ? ` · raptor coverage ends ${lastCovered.season} — later seasons show –` : "";
+              })()}
+            </p>
           </div>
         )}
       </section>
