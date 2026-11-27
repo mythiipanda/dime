@@ -133,17 +133,9 @@ export function DimeShell() {
         {tab === "matchups" && <div className="tools-view"><MatchupsView onAsk={askBoard} /></div>}
         {tab === "scout" && <div className="tools-view"><ScoutView onAsk={askBoard} /></div>}
         {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard} /></div>}
-<<<<<<< HEAD
+        {tab === "planner" && <div className="tools-view"><PlannerView /></div>}
         {tab === "history" && <div className="tools-view"><HistoryView onAsk={askBoard} /></div>}
         {tab === "awards" && <div className="tools-view"><AwardsView onAsk={askBoard} /></div>}
-||||||| parent of 2cc00e8f (planner: multi-year cap projection endpoint and read-only planner grid — slice 3)
-        {tab === "history" && <div className="tools-view"><HistoryView /></div>}
-        {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
-=======
-        {tab === "planner" && <div className="tools-view"><PlannerView /></div>}
-        {tab === "history" && <div className="tools-view"><HistoryView /></div>}
-        {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
->>>>>>> 2cc00e8f (planner: multi-year cap projection endpoint and read-only planner grid — slice 3)
       </div>
     </main>
     <DimeCommandPalette open={palette} entries={entries} onClose={() => setPalette(false)} />
