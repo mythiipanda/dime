@@ -14,31 +14,50 @@ Lineup unit identity columns are `GROUP_ID` / `GROUP_NAME` (uppercase in `silver
 
 ## Single-pass lineup screens
 
-A "every five-man unit with at least N minutes, ranked" ask resolves in ONE aggregate query against `silver_hist_lineups` — never enumerate teams or players in a loop. The table is already lineup-unit grain with `min` and `net_rating` per `_season`/`team_abbreviation`:
+A "every five-man unit with at least N minutes, ranked" ask resolves in ONE aggregate query against `silver_hist_lineups` — never enumerate teams or players in a loop. The table is variant-row grain: exact minute floors come from `measure_type='base'` totals rows; join matching `measure_type='advanced'` totals rows on `group_id`, `team_id`, `_season`, `season_type`, and `per_mode` for `net_rating`/`poss`:
 
 ```sql
-SELECT group_name, ROUND(min, 1) AS mins, ROUND(net_rating, 1) AS net
-FROM silver_hist_lineups
-WHERE _season = '2024-25' AND min >= 100
+WITH base_units AS (
+  SELECT group_id, group_name, team_id, _season, season_type, per_mode, min
+  FROM silver_hist_lineups
+  WHERE _season = '2024-25'
+    AND season_type = 'regular-season'
+    AND measure_type = 'base'
+    AND per_mode = 'totals'
+    AND min >= 100
+), advanced_units AS (
+  SELECT group_id, team_id, _season, season_type, per_mode, net_rating, poss
+  FROM silver_hist_lineups
+  WHERE measure_type = 'advanced'
+    AND per_mode = 'totals'
+)
+SELECT b.group_name, ROUND(b.min, 1) AS mins, a.poss, ROUND(a.net_rating, 1) AS net
+FROM base_units b
+JOIN advanced_units a
+  ON a.group_id = b.group_id
+ AND a.team_id = b.team_id
+ AND a._season = b._season
+ AND a.season_type = b.season_type
+ AND a.per_mode = b.per_mode
 ORDER BY net_rating DESC
 ```
 
-(verified executable — returns league-best units directly; add `team_abbreviation = 'DEN'` for one team, and note units can appear in duplicate rows so `SELECT DISTINCT` or `GROUP BY group_name` when counting). If the result looks thin, lower the minutes cutoff in the SAME query — do not start per-team follow-up loops; each round trip costs budget the write-up phase needs.
+(verified executable — returns league-best units directly; add `team_abbreviation = 'DEN'` to the base filter for one team. Units can appear in up to 28 variant rows, so the base/advanced variant separation and join keys are required; `SELECT DISTINCT` does not collapse non-identical variants). If the result looks thin, lower the minutes cutoff in the SAME query — do not start per-team follow-up loops; each round trip costs budget the write-up phase needs.
 
 ## 0. Tools and when they matter
 
 | Tool | Answers | Reach for it when |
 |---|---|---|
-| `get_lineups` / `get_lineup_stats` | One team's five-man units by minutes and their ratings. | Rotation-structure questions — closing unit, starters, most-used combinations. Set `season_type`, `measure_type`, `per_mode` deliberately. |
-| `get_lineup_leaders` | Best/worst qualifying units league-wide or per team. | "Their best five" or league context for one unit's rating. Respect `min_minutes` — the floor already prunes noise. |
+| `get_lineups` / `get_lineup_stats` | One team's five-man units by minutes and their ratings. | Rotation-structure questions — closing unit, starters, most-used combinations. `get_lineups` takes `season_type`, `measure_type`, `per_mode`; `get_lineup_stats` takes `min_possessions`. |
+| `get_lineup_leaders` | Best/worst qualifying units league-wide. | "Their best five" or league context for one unit's rating. Respect `min_minutes` — the floor already prunes noise. |
 | `get_lineup_matchup_matrix` | Two teams' five-man units head-to-head on shared minutes. | "How does our best lineup fare against theirs" — cells carry sample flags. |
 | `get_wowy` | Two players' four-state with/without-you splits. | The 2-man matrix in §2 — it returns all four quadrants directly. |
 | `get_on_off` | One player's on/off possession-level splits on a team. | Individual impact within a rotation; attribute carefully (teammate context matters). |
-| `get_lineup_on_off` | On/off splits for an arbitrary 2-5 player unit — the unit's results together vs with members missing. | "How does the team do when these three share the floor" — the generalized version of pair WOWY for any unit size. |
+| `get_lineup_on_off` | On/off splits for an arbitrary 2-5 player unit — together vs all other team possessions; with exactly two players it also carries the four-way split. | "How does the team do when these three share the floor" — the generalized version of pair WOWY for any unit size. |
 | `get_availability_impact` | Game-level played-vs-missed splits: team record, win pct, and margin when a player sits vs plays; optional `teammate` per-game conditioning; blank `player` = league win-drop ranking. | "How do they do without X" / games-missed questions — the game-grain complement to on/off's possession grain. |
 | `get_on_off_leaders` | Stint-level on/off splits: league board (on-minus-off net gap, possession floors), team board by on-court possessions, single-player split, or `pair` 2x2. | On-off net-rating gaps and stint-based with/without asks — the stint-source answer where `get_on_off`/`get_wowy` disagree with official numbers. |
 | `get_rotation_check` / `get_stint_timeline` | Rotation patterns, closing units, stint order per game. | Staggering and substitution-pattern questions; playoff-tightening checks in §4. |
-| `get_scout_pack` | Compact opponent dossier: record, roster, lineups, leaders. | First pass before drilling into unit-level detail. |
+| `get_scout_pack` | Compact opponent dossier: record, ratings, top lineups, injuries. | First pass before drilling into unit-level detail. |
 
 ## 1. Sample-Size Caveats on 5-Man Lineups
 
@@ -59,9 +78,9 @@ When evaluating fit between two focal players $A$ and $B$, construct the full $2
 | **$A \text{ OFF}, B \text{ ON}$** | $B$ leads solo / staggered | **Non-star survival check**: does the offense collapse or survive? |
 | **$A \text{ OFF}, B \text{ OFF}$** | Deep bench / garbage time | Baseline noise filter; check score-margin leverage. |
 
-Use `get_wowy` or `get_on_off`, or query stint/possession tables in `run_python` to compute possession-weighted Net Rating, ORTG, DRTG, TS%, and Pace across all four quadrants.
+Use `get_wowy` for lineup-row four-state ratings; for possession-level four-state splits, use `get_on_off_leaders` pair mode or query stint/possession tables in `run_python` for Net Rating, ORTG, and DRTG.
 
-When a task asks for a WOWY matrix or star-off split from `silver_hist_possessions` itself, the schema is: `game_id`, `period`, `possession_number`, `offense_team_id`/`defense_team_id` (numeric TEAM_IDs), `off_player_1..5`/`def_player_1..5` (player IDs in each on-court lineup), `points`, `possession_start_type`, `count_as_possession`, `garbage`, `season`. There are no `player_name`, `possession_id`, `opportunity_id` or `team_id_offense` columns — a player is ON for a team's offense when their ID is in `off_player_1..5` on a row where `offense_team_id` is the team, and the 2-man state is the pair's joint presence across the team's off/def player slots. Filter `count_as_possession='true'` and `garbage=0`, then `100*AVG(points)` is the team's ORTG over its offensive rows.
+When a task asks for a WOWY matrix or star-off split from `silver_hist_possessions` itself, the relevant columns are: `game_id`, `period`, `possession_number`, `offense_team_id`/`defense_team_id` (numeric TEAM_IDs), `off_player_1..5`/`def_player_1..5` (player IDs in each on-court lineup), `points`, `possession_start_type`, `count_as_possession`, `is_garbage_time`, `season`. There are no `player_name`, `possession_id`, `opportunity_id` or `team_id_offense` columns — a player is ON for a team's offense when their ID is in `off_player_1..5` on a row where `offense_team_id` is the team, and the 2-man state is the pair's joint presence across the team's off/def player slots. Filter `count_as_possession='true' AND is_garbage_time='false'` (both string-typed), then `100*AVG(points)` is the team's ORTG over its offensive rows.
 
 ## 3. Non-Star Survival Minutes & Staggering
 
@@ -72,7 +91,7 @@ When a task asks for a WOWY matrix or star-off split from `silver_hist_possessio
 
 Regular-season depth often masks playoff vulnerabilities:
 - Top rotations compress from 9–10 players in the regular season to **7–8 core players** in competitive playoff series, with star minutes rising from ~34–36 MPG to ~39–43 MPG.
-- Compare regular-season vs playoff lineup concentration (top-3 lineup share of total minutes, starter vs bench minute split) using `get_lineup_stats`, `get_stint_timeline`, and `get_rotation_check`.
+- Compare regular-season vs playoff lineup concentration (top-3 lineup share of total minutes, starter vs bench minute split) using variant-filtered `silver_hist_lineups` rows for units and playoff boxscore rows for player minutes.
 - Present 5-man lineup comparisons in a `table` artifact (including `MIN`, `POSS`, `ORTG`, `DRTG`, `NET_RTG`) and 2-man WOWY splits in a `compare` or `table` artifact.
 
 ## 5. Canonical `group_id` Keys
@@ -89,7 +108,7 @@ Asks that track how a rotation stretches or tightens *within* a season ("first N
 - **Window selection**: rank the team's regular-season games (`silver_hist_gamelogs`, `GAME_ID LIKE '002%'`) by `game_date` then `game_id`; the first-N and last-N windows are positional slices of that ordering, and the season must contain enough unique games to fill both windows without overlap.
 - **Minutes grain**: join `silver_boxscores` on team/season/game; keep one row per game-player. Boxscore minutes come as `MM:SS` text — split on `:` and take `minutes + seconds/60`; a blank/`DNP` cell is `0`, not NULL-excluded.
 - **Shares and concentration**: aggregate each player's minutes inside the window, take `share_i = min_i / total_minutes` over *all* positive-minute players (no per-player floor — the denominator is total actual player-minutes including overtime). Report `top8_share = Σ` of the 8 largest shares, `HHI = Σ share_i²`, and `effective_players = 1/HHI`. Compare the two windows' deltas; concentration rising means HHI up and effective players down.
-- **Unit concentration**: for 5-man concentration asks, group `silver_hist_lineups` by the canonical key of §5 with the stated minute/possession floors, then report unit count, total possessions, the possession-weighted mean `net_rating` *and* the simple mean, the most-used unit's minute share, and the weighted mean recomputed without it.
+- **Unit concentration**: for 5-man concentration asks, qualify units from `silver_hist_lineups` `measure_type='base'` rows in one `season_type` with `per_mode='totals'` and the stated minute floor, then join matching `measure_type='advanced'` totals rows on `group_id`, `team_id`, `_season`, `season_type`, and `per_mode` for `net_rating`/`poss`. Group that base-minute/advanced-rating row set by the canonical key of §5 with the stated possession floors, then report unit count, total possessions, the possession-weighted mean `net_rating` *and* the simple mean, the most-used unit's minute share from base minutes, and the weighted mean recomputed without it.
 
 ## 7. Lineup Continuity Across Seasons
 
