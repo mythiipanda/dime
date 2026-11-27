@@ -7,12 +7,13 @@ export function cardSectionCitation(section: PlayerCardSectionPayload): string {
   return parts.join(" · ");
 }
 
-export function CardSection({ section }: { section: PlayerCardSectionPayload }) {
+export function CardSection({ section, sharedCitation }: { section: PlayerCardSectionPayload; sharedCitation?: string }) {
   const citation = cardSectionCitation(section);
+  const showCitation = citation && citation !== sharedCitation;
   return <div className="border-t border-line pt-4">
     <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
       <p className="text-sm font-medium text-ink">{section.label}</p>
-      <p className="text-xs text-ink-3">{citation || "Source not declared"}</p>
+      {showCitation && <p className="text-xs text-ink-3">{citation}</p>}
     </div>
     {section.fields && section.fields.length > 0 && <dl className="mb-3 space-y-1.5">
       {section.fields.map((item, i) => <div key={`${item.column}-${i}`} className="flex flex-wrap items-baseline justify-between gap-2">
