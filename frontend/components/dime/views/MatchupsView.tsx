@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
@@ -152,6 +152,12 @@ function InjuryNotes({ game }: { game: MatchupGame }) {
   );
 }
 
+function slateState(m: MatchupGame): "live" | "final" | "upcoming" {
+  if (/final/i.test(m.time)) return "final";
+  if (/^Q/.test(m.time) || /^Halftime/i.test(m.time)) return "live";
+  return "upcoming";
+}
+
 function MatchupDetail({ game }: { game: MatchupGame }) {
   const rows = statRows(game.away, game.home);
   return (
@@ -247,7 +253,19 @@ export default function MatchupsView() {
     };
   }, []);
 
-  const games = data?.games ?? [];
+  const games = useMemo(() => {
+    const list = [...(data?.games ?? [])];
+    const rank = (m: MatchupGame) => (slateState(m) === "live" ? 0 : slateState(m) === "upcoming" ? 1 : 2);
+    const minutes = (m: MatchupGame) => {
+      const hit = m.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!hit) return 0;
+      let h = parseInt(hit[1], 10) % 12;
+      if (/pm/i.test(hit[3])) h += 12;
+      return h * 60 + parseInt(hit[2], 10);
+    };
+    list.sort((a, b) => rank(a) - rank(b) || minutes(a) - minutes(b));
+    return list;
+  }, [data]);
   const active = games.find((m) => m.id === activeId) ?? games[0];
 
   return (
@@ -312,11 +330,24 @@ export default function MatchupsView() {
                       selected ? "bg-hover-2" : "bg-surface hover:bg-hover"
                     }`}
                   >
-                    <div className={`text-[13px] font-medium ${selected ? "text-ink" : "text-ink-2"}`}>
-                      {m.away.abbr} <span className="font-normal text-ink-3">@</span> {m.home.abbr}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <div className={`text-[13px] font-medium ${selected ? "text-ink" : "text-ink-2"}`}>
+                        {m.away.abbr} <span className="font-normal text-ink-3">@</span> {m.home.abbr}
+                      </div>
+                      {m.away_score != null && m.home_score != null && (
+                        <span className={`font-mono text-[12.5px] tabular-nums ${slateState(m) === "live" ? "font-semibold text-ink" : "text-ink-2"}`}>
+                          {m.away_score}–{m.home_score}
+                        </span>
+                      )}
                     </div>
-                    <div className="mt-0.5 text-[11.5px] tabular-nums text-ink-3">
-                      {m.time}{m.network ? ` · ${m.network}` : ""}
+                    <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] tabular-nums text-ink-3">
+                      {slateState(m) === "live" && (
+                        <span className="inline-block size-1.5 rounded-full bg-accent motion-safe:animate-pulse" aria-label="live" />
+                      )}
+                      <span className={slateState(m) === "live" ? "font-medium text-accent" : ""}>
+                        {m.time}
+                      </span>
+                      {m.network ? ` · ${m.network}` : ""}
                     </div>
                   </button>
                 );
