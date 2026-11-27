@@ -5437,6 +5437,37 @@
         "type": "object"
       }
     },
+    "product_scout_dossier": {
+      "name": "product_scout_dossier",
+      "description": "Assemble the opponent-scout dossier: form, four factors, shot profile, lineups, rotation, injuries, head-to-head.",
+      "args_schema": {
+        "description": "Assemble the opponent-scout dossier: form, four factors, shot profile, lineups, rotation, injuries, head-to-head.",
+        "properties": {
+          "team": {
+            "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
+            "title": "Team",
+            "type": "string"
+          },
+          "opponent": {
+            "description": "Opposing team's 3-letter abbreviation, e.g. 'NYK'.",
+            "title": "Opponent",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "description": "Season id 'YYYY-YY' (e.g. '2026-27'); omit for the latest season.",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team",
+          "opponent"
+        ],
+        "title": "product_scout_dossier",
+        "type": "object"
+      }
+    },
     "product_cap_sheet": {
       "name": "product_cap_sheet",
       "description": "Read one team multi-year cap sheet: per-player contract matrix, per-season totals, apron state.",

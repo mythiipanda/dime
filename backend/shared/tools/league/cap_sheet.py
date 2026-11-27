@@ -11,6 +11,7 @@ from ..cap_rules import (
     scenario_trace,
     used_expanded_matching,
 )
+from ..cap_sheet import unroll_team_sheet
 from ._helpers import _pkg
 from .cba_cap import (
     _locate_player_team,
@@ -36,27 +37,6 @@ def _salary_year_columns(con) -> list[tuple[str, str]]:
         if m:
             out.append((_season_label(int(m.group(1)), int(m.group(2))), col))
     return sorted(out)
-
-
-def _option_flag_columns(con) -> dict[str, str]:
-    cols = [r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()]
-    out: dict[str, str] = {}
-    for col in cols:
-        m = _OPTION_COL_RE.fullmatch(col)
-        if m:
-            out[_season_label(int(m.group(1)), int(m.group(2)))] = col
-    return out
-
-
-def _decode_option(raw: Any) -> str | None:
-    text = str(raw or "").strip().lower()
-    if not text:
-        return None
-    if "player" in text:
-        return "player"
-    if "team" in text:
-        return "team"
-    return None
 
 
 def _player_contract_tail(con, player: str, team: str, season: str) -> dict[str, Any] | None:
@@ -128,74 +108,47 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
     tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     if "silver_salaries" not in tables:
         return {"ok": False, "error": "silver_salaries not in warehouse"}
-    year_cols = _salary_year_columns(con)
-    option_cols = _option_flag_columns(con)
-    if not year_cols:
-        return {"ok": False, "error": "silver_salaries has no multi-year salary columns"}
-    select_cols = ", ".join(c for _, c in year_cols)
-    opt_select = ", ".join(sorted(option_cols.values()))
-    sql = ("SELECT PLAYER_NAME, PLAYER_ID, TEAM, GUARANTEED, " + select_cols
-           + (", " + opt_select if opt_select else "")
-           + " FROM silver_salaries WHERE UPPER(TEAM) = UPPER(?)")
     try:
-        cur = con.execute(sql, [team])
+        cur = con.execute(
+            "SELECT * FROM silver_salaries WHERE UPPER(TEAM) = UPPER(?)", [team])
         names = [d[0] for d in cur.description]
-        raw = [dict(zip(names, r)) for r in cur.fetchall()]
+        rows = [dict(zip(names, r)) for r in cur.fetchall()]
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:200]}
-    seasons = [label for label, _ in year_cols]
-    players: list[dict[str, Any]] = []
-    totals: dict[str, dict[str, Any]] = {
-        label: {"committed": 0, "pending_option": 0, "dead_money": 0,
-                "cap_holds": 0, "incomplete_roster_charges": 0}
-        for label in seasons}
-    for row in raw:
-        pool = float(row.get("GUARANTEED") or 0)
-        years: list[dict[str, Any]] = []
-        for label, col in year_cols:
-            amount = row.get(col)
-            if not isinstance(amount, (int, float)) or not amount:
-                continue
-            opt_col = option_cols.get(label)
-            option = _decode_option(row.get(opt_col)) if opt_col else None
-            guaranteed = pool >= float(amount) and option != "team"
-            if option == "team":
-                totals[label]["pending_option"] += int(amount)
-            else:
-                totals[label]["committed"] += int(amount)
-            if option != "team":
-                pool = max(0.0, pool - float(amount))
-            years.append({"season": label, "salary": int(amount),
-                          "option": option, "guaranteed": bool(guaranteed)})
-        if years:
-            players.append({"player": str(row.get("PLAYER_NAME") or ""),
-                            "player_id": row.get("PLAYER_ID"),
-                            "contract_type": "", "years": years})
-    players.sort(key=lambda p: -(p["years"][0]["salary"] if p["years"] else 0))
-    for label in seasons:
-        entry = totals[label]
-        entry["payroll"] = entry["committed"] + entry["dead_money"]
+    if not rows:
+        return {"ok": False, "error": f"no silver_salaries rows for {team}"}
+    sheet = unroll_team_sheet(rows, season)
+    totals: dict[str, dict[str, Any]] = {}
+    for label in sheet["seasons"]:
+        base = sheet["totals"].get(label, {"committed": 0, "pending_option": 0})
+        totals[label] = {"committed": base["committed"],
+                         "pending_option": base["pending_option"],
+                         "dead_money": 0, "cap_holds": 0,
+                         "incomplete_roster_charges": 0}
     holds_note = "cap_holds and incomplete_roster_charges populate only when silver_cap_room covers the season"
     if "silver_cap_room" in tables:
         try:
-            rows = con.execute(
+            holds = con.execute(
                 "SELECT CAP_SEASON, FA_HOLDS_EST, INCOMPLETE_ROSTER_CHARGES "
                 "FROM silver_cap_room WHERE UPPER(TEAM) = UPPER(?)", [team]).fetchall()
-            for r in rows:
+            for r in holds:
                 label = str(r[0])
                 if label in totals:
                     totals[label]["cap_holds"] = int(r[1] or 0)
                     totals[label]["incomplete_roster_charges"] = int(r[2] or 0)
-                    totals[label]["payroll"] += int(r[1] or 0) + int(r[2] or 0)
         except Exception:
             pass
+    for label, entry in totals.items():
+        entry["payroll"] = (entry["committed"] + entry["dead_money"]
+                            + entry["cap_holds"] + entry["incomplete_roster_charges"])
     lines, projected = cap_lines_for_season(con, season)
     committed_now = totals.get(season, {}).get("payroll", 0)
     return {"ok": True, "team": str(team).upper(), "season": season,
             "lines": lines, "lines_projected": projected,
-            "players": players, "totals": totals,
+            "players": sheet["players"], "totals": totals,
             "state": apron_state(int(committed_now), lines),
-            "meta": {"holds_note": holds_note, "season_columns": seasons}}
+            "meta": {"holds_note": holds_note, "season_columns": sheet["seasons"],
+                     "unrolling": "shared.tools.cap_sheet"}}
 
 
 def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
