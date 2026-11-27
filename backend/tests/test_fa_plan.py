@@ -33,15 +33,15 @@ def _seed(monkeypatch, tmp_path, with_room=True):
     return path
 
 
-def _load(path, fa_rows, room_row=None):
+def _load(path, fa_rows, room_rows=None, fa_year=2027):
     import duckdb
     con = duckdb.connect(str(path))
     for f in fa_rows:
         con.execute(
             "INSERT INTO silver_free_agents VALUES (?,?,?,?,?,?,?,now())",
-            [f["player"], f["team"], f.get("slug"), 2027, f["fa_type"],
+            [f["player"], f["team"], f.get("slug"), fa_year, f["fa_type"],
              f["prior"], f["hold"]])
-    if room_row:
+    for room_row in room_rows or []:
         con.execute(
             "INSERT INTO silver_cap_room VALUES (?,?,?,?,?,?,?,?,?,?,?,?,"
             "?,?,?,?,?,?,?,now())", room_row)
@@ -65,14 +65,23 @@ def _okc_fa():
 
 def _okc_room():
     return ["OKC", "2027-28", 120_000_000, 10_000_000, 81_900_000,
-            5_000_000, -35_400_000, 55_000_000, 181_457_100,
+            8_910_090, 42_547_010, 51_274_140, 181_457_100,
             220_470_800, 229_916_500, 243_854_600,
             16_548_400, 6_024_700, 10_302_600, 6_670_400, 8, 1, True]
 
 
+def _okc_room_2028():
+    row = list(_okc_room())
+    row[1] = "2028-29"
+    row[2] = 100_000_000
+    row[6] = 62_547_010
+    row[7] = 71_274_140
+    return row
+
+
 def test_fa_rows_and_flags(monkeypatch, tmp_path):
     path = _seed(monkeypatch, tmp_path)
-    _load(path, _okc_fa(), _okc_room())
+    _load(path, _okc_fa(), [_okc_room()])
     res = get_fa_plan.invoke({"team": "OKC", "fa_year": "2027"})
     assert res["ok"] is True
     rows = {r["player"]: r for r in res["rows"]}
@@ -85,6 +94,8 @@ def test_fa_rows_and_flags(monkeypatch, tmp_path):
     assert abs(rows["Star Wing"]["hold_share"] - 60_000_000
                / 181_457_100) < 0.001
     assert res["context"]["projected_cap"] == 181_457_100
+    assert res["context"]["max_room"] == 51_274_140
+    assert res["cap_season"] == "2027-28"
     assert res["exceptions"]["ntmle"] == 16_548_400
     assert res["exceptions"]["tmle"] == 6_670_400
     assert res["exceptions"]["bae"] == 6_024_700
@@ -93,17 +104,62 @@ def test_fa_rows_and_flags(monkeypatch, tmp_path):
 
 def test_scenario_arithmetic(monkeypatch, tmp_path):
     path = _seed(monkeypatch, tmp_path)
-    _load(path, _okc_fa(), _okc_room())
+    _load(path, _okc_fa(), [_okc_room()])
     res = get_fa_plan.invoke({"team": "OKC", "fa_year": "2027"})
     scen = {(s["scenario"], s["player"]): s for s in res["scenarios"]}
-    assert scen[("keep_all", None)]["projected_room"] == -35_400_000
+    assert scen[("keep_all", None)]["projected_room"] == -34_261_510
     assert scen[("keep_all", None)]["path"] == "over_cap"
-    assert scen[("renounce_all", None)]["projected_room"] == 55_000_000
+    assert scen[("keep_all", None)]["cap_holds_retained"] == 81_900_000
+    assert scen[("keep_all", None)]["cap_holds_renounced"] == 0
+    assert scen[("keep_all", None)]["roster_charges"] == 3_818_610
+    assert scen[("renounce_all", None)]["projected_room"] == 42_547_010
     assert scen[("renounce_all", None)]["path"] == "under_cap"
-    assert scen[("renounce", "Star Wing")]["projected_room"] == 24_600_000
-    assert scen[("keep_only", "Star Wing")]["projected_room"] == -5_000_000
+    assert scen[("renounce_all", None)]["cap_holds_retained"] == 0
+    assert scen[("renounce_all", None)]["cap_holds_renounced"] == 81_900_000
+    assert scen[("renounce_all", None)]["roster_charges"] == 8_910_090
+    assert scen[("renounce", "Star Wing")]["projected_room"] == 24_465_620
+    assert scen[("renounce", "Star Wing")]["cap_holds_renounced"] \
+        == 60_000_000
+    assert scen[("renounce", "Star Wing")]["roster_charges"] == 5_091_480
+    assert scen[("keep_only", "Star Wing")]["projected_room"] \
+        == -16_180_120
+    assert scen[("keep_only", "Star Wing")]["cap_holds_retained"] \
+        == 60_000_000
+    assert scen[("keep_only", "Star Wing")]["cap_holds_renounced"] \
+        == 21_900_000
+    assert scen[("keep_only", "Star Wing")]["roster_charges"] == 7_637_220
     assert scen[("renounce", "Cheap Guard")]["projected_room"] \
-        == -29_400_000
+        == -29_534_380
+    assert scen[("renounce", "Cheap Guard")]["cap_holds_renounced"] \
+        == 6_000_000
+
+
+def test_fa_year_maps_to_matching_cap_season(monkeypatch, tmp_path):
+    path = _seed(monkeypatch, tmp_path)
+    _load(path, _okc_fa(), [_okc_room(), _okc_room_2028()], fa_year=2028)
+    res = get_fa_plan.invoke({"team": "OKC", "fa_year": "2028"})
+    assert res["ok"] is True
+    assert res["cap_season"] == "2028-29"
+    assert res["context"]["committed_salary"] == 100_000_000
+    scen = {(s["scenario"], s["player"]): s for s in res["scenarios"]}
+    assert scen[("keep_all", None)]["projected_room"] == -14_261_510
+    assert scen[("renounce_all", None)]["projected_room"] == 62_547_010
+
+
+def test_missing_mapped_cap_season_does_not_fall_back(monkeypatch, tmp_path):
+    path = _seed(monkeypatch, tmp_path)
+    _load(path, [], [_okc_room()])
+    res = get_fa_plan.invoke({"team": "OKC", "fa_year": "2028"})
+    assert res["ok"] is False
+    assert "2028-29" in res["error"]
+    assert "seed_free_agents" in res["error"]
+
+
+def test_invalid_fa_year_rejected(monkeypatch, tmp_path):
+    _seed(monkeypatch, tmp_path)
+    res = get_fa_plan.invoke({"team": "OKC", "fa_year": "2027-28"})
+    assert res["ok"] is False
+    assert "four-digit calendar year" in res["error"]
 
 
 def test_missing_room_still_emits_fa_rows(monkeypatch, tmp_path):

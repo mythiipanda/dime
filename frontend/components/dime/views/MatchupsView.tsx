@@ -251,7 +251,7 @@ export default function MatchupsView() {
   const active = games.find((m) => m.id === activeId) ?? games[0];
 
   return (
-    <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-8">
+    <div className="mx-auto w-full max-w-[1120px] px-4 py-6 sm:px-8">
       <div className="flex items-baseline justify-between">
         <h1 className="text-[15px] font-semibold text-ink">
           Matchups
@@ -295,31 +295,33 @@ export default function MatchupsView() {
               {" · ratings and form from the warehouse, injuries from the latest report."}
             </p>
           )}
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {games.map((m) => {
-              const selected = m.id === active.id;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setActiveId(m.id)}
-                  aria-pressed={selected}
-                  className={`select-none rounded-[10px] p-3 text-left shadow-hairline transition-[background-color,transform] duration-150 active:scale-[0.98] ${
-                    selected ? "bg-hover-2" : "bg-surface hover:bg-hover"
-                  }`}
-                >
-                  <div className={`text-[13px] font-medium ${selected ? "text-ink" : "text-ink-2"}`}>
-                    {m.away.abbr} <span className="font-normal text-ink-3">@</span> {m.home.abbr}
-                  </div>
-                  <div className="mt-0.5 text-[11.5px] tabular-nums text-ink-3">
-                    {m.time}{m.network ? ` · ${m.network}` : ""}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3">
-            <MatchupDetail key={active.id} game={active} />
+          <div className="mt-4 grid items-start gap-3 xl:grid-cols-[280px_1fr]">
+            <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
+              {games.map((m) => {
+                const selected = m.id === active.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setActiveId(m.id)}
+                    aria-pressed={selected}
+                    className={`select-none rounded-[10px] p-3 text-left shadow-hairline transition-[background-color,transform] duration-150 active:scale-[0.98] ${
+                      selected ? "bg-hover-2" : "bg-surface hover:bg-hover"
+                    }`}
+                  >
+                    <div className={`text-[13px] font-medium ${selected ? "text-ink" : "text-ink-2"}`}>
+                      {m.away.abbr} <span className="font-normal text-ink-3">@</span> {m.home.abbr}
+                    </div>
+                    <div className="mt-0.5 text-[11.5px] tabular-nums text-ink-3">
+                      {m.time}{m.network ? ` · ${m.network}` : ""}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="xl:sticky xl:top-6">
+              <MatchupDetail key={active.id} game={active} />
+            </div>
           </div>
         </>
       )}

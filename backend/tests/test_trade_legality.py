@@ -200,6 +200,49 @@ def test_trade_legality_snt_input_validation(payload, message):
     assert message in out["error"]
 
 
+def _cash_legality(monkeypatch, tmp_path, cash):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]))
+    return get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "cash": cash,
+        "season": "2026-27",
+    })
+
+
+def test_trade_legality_valid_cash_between_parties(monkeypatch, tmp_path):
+    out = _cash_legality(
+        monkeypatch, tmp_path,
+        '[{"from":"BOS","to":"MIA","amount":1000000}]')
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    rows = {row["team"]: row for row in out["rows"]}
+    assert rows["BOS"]["cash_out"] == 1_000_000
+    assert rows["MIA"]["cash_in"] == 1_000_000
+
+
+@pytest.mark.parametrize("amount", [-1_000_000, 0])
+def test_trade_legality_rejects_nonpositive_cash(
+        monkeypatch, tmp_path, amount):
+    out = _cash_legality(
+        monkeypatch, tmp_path,
+        f'[{{"from":"BOS","to":"MIA","amount":{amount}}}]')
+    assert out["ok"] is False
+    assert "positive integer" in out["error"]
+
+
+def test_trade_legality_rejects_cash_outside_trade_parties(
+        monkeypatch, tmp_path):
+    out = _cash_legality(
+        monkeypatch, tmp_path,
+        '[{"from":"LAL","to":"BOS","amount":1000000}]')
+    assert out["ok"] is False
+    assert "not a trade party" in out["error"]
+
+
 def test_trade_legality_same_team_leg_rejected():
     from shared.tools import get_trade_legality
     out = get_trade_legality.invoke({
