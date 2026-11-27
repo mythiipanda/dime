@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { describeScenarioMove } from "@/lib/capsheet-fixture";
-import type { SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
+import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
+import { ArtifactBody } from "@/components/site/harness/ArtifactsView";
 import type { ScenarioResponse } from "@/lib/capsheet-fixture";
 
 function money(value: number | null | undefined): string {
@@ -425,6 +426,91 @@ export function SharedThreadView({
           <h2 className="text-[13px] font-semibold text-ink">About this link</h2>
           <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
             This is a snapshot of the thread as it existed when the owner shared it — anything added to the conversation afterwards is not visible here. This is a read-only view; the thread can't be continued or edited here.
+          </p>
+        </section>
+      </div>
+    </SharedFrame>
+  );
+}
+function evidenceMetaLine(ev: SharedArtifactEvidence): string {
+  const meta = ev.meta ?? {};
+  const parts = [
+    ev.tool ?? "source",
+    typeof meta.source === "string" ? `source ${meta.source}` : "",
+    typeof meta.season === "string" ? `season ${meta.season}` : "",
+    typeof meta.fetched_at === "string" ? `fetched ${meta.fetched_at.slice(0, 10)}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+export function SharedArtifactView({
+  object,
+  artifact,
+  evidence,
+  capturedAt,
+  unavailable,
+}: {
+  object: SharedArtifactObject;
+  artifact: Record<string, unknown> | null;
+  evidence: SharedArtifactEvidence[];
+  capturedAt: string | null;
+  unavailable: boolean;
+}) {
+  const provenance = artifact && typeof artifact.provenance === "object" && artifact.provenance !== null ? artifact.provenance as Record<string, unknown> : null;
+  return (
+    <SharedFrame label="shared artifact">
+      <div className="mt-6">
+        <h1 className="text-[22px] font-semibold tracking-tight text-ink">{object.title}</h1>
+        <p className="mt-1 text-[12.5px] text-ink-3">
+          {capturedAt ? `captured ${sharedDate(capturedAt)}` : `shared ${sharedDate(object.updated_at)}`}
+        </p>
+      </div>
+
+      <div className="mt-6 space-y-4">
+        {unavailable || !artifact ? (
+          <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+            <h2 className="text-[13px] font-semibold text-ink">This artifact can&apos;t be resolved</h2>
+            <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
+              The analysis run this artifact points into is no longer available on the server. The link itself is valid — the underlying data is gone.
+            </p>
+          </section>
+        ) : (
+          <>
+            <section className="rounded-[10px] bg-surface shadow-hairline">
+              <ArtifactBody artifact={artifact as never} />
+            </section>
+
+            {provenance && (
+              <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+                <h2 className="text-[13px] font-semibold text-ink">Provenance</h2>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-ink-2">
+                  {typeof provenance.capability === "string" && <span>{provenance.capability}</span>}
+                  {typeof provenance.dataset === "string" && <span>{provenance.dataset}</span>}
+                  {typeof provenance.season === "string" && <span>{provenance.season}</span>}
+                  {typeof provenance.as_of === "string" && <span>as of {provenance.as_of.slice(0, 10)}</span>}
+                </div>
+              </section>
+            )}
+
+            {evidence.length > 0 && (
+              <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+                <h2 className="text-[13px] font-semibold text-ink">Pinned evidence</h2>
+                <div className="mt-2 space-y-1">
+                  {evidence.map((ev, i) => (
+                    <p key={i} className="font-mono text-[10.5px] leading-[1.6] text-ink-3">
+                      {ev.missing ? `${ev.ref} — source record no longer resolvable` : evidenceMetaLine(ev)}
+                    </p>
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
+
+        <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+          <h2 className="text-[13px] font-semibold text-ink">About this link</h2>
+          <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
+            This artifact is pinned to the exact evidence rows it was built from, captured when the analysis ran. Where the warehouse has been refreshed since, the numbers reflect the capture-time snapshot — the pinned evidence above shows what the figures rest on. This is a read-only view.
           </p>
         </section>
       </div>

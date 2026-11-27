@@ -316,3 +316,61 @@ test("loadSharedScenario filters malformed transcript entries", async () => {
   assert.equal(result.status, "ok-thread");
   if (result.status === "ok-thread") assert.equal(result.transcript.length, 2);
 });
+const artifactShared = {
+  kind: "artifact_ref",
+  title: "pinned cap ledger",
+  payload: { artifact_index: 0 },
+  artifact: {
+    kind: "memo",
+    text: "The ledger case rests on capture-time figures.",
+    provenance: { capability: "sql_exec", dataset: "silver_salaries", season: "2026-27" },
+  },
+  evidence: [
+    { ref: "r1", tool: "sql_exec", meta: { source: "warehouse", season: "2026-27", fetched_at: "2026-11-27T10:00:00Z" }, rows: [{ player: "Player One" }] },
+    { ref: "r2", missing: true },
+  ],
+  captured_at: "2026-11-27T10:00:00.000Z",
+  schema_version: 1,
+  updated_at: "2026-11-27T12:00:00.000Z",
+  archived: false,
+};
+
+test("shared artifact renders body, provenance, evidence and capture honesty read-only", async () => {
+  const { SharedArtifactView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedArtifactView object={artifactShared} artifact={artifactShared.artifact} evidence={artifactShared.evidence} capturedAt={artifactShared.captured_at} unavailable={false} />);
+  try {
+    const text = mounted.host.textContent!;
+    assert.match(text, /pinned cap ledger/);
+    assert.match(text, /capture-time figures/);
+    assert.match(text, /sql_exec/);
+    assert.match(text, /silver_salaries/);
+    assert.match(text, /no longer resolvable/);
+    assert.match(text, /capture-time snapshot/);
+    assert.equal(mounted.host.querySelectorAll("button, input, select, textarea").length, 0);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("shared artifact unavailable state renders honestly", async () => {
+  const { SharedArtifactView } = await import("./components/dime/views/SharedScenarioView");
+  const mounted = await mountView(<SharedArtifactView object={artifactShared} artifact={null} evidence={[]} capturedAt={null} unavailable={true} />);
+  try {
+    assert.match(mounted.host.textContent!, /no longer available/);
+  }
+  finally {
+    await mounted.cleanup();
+  }
+});
+
+test("loadSharedScenario dispatches artifact_ref with evidence and capture time", async () => {
+  const { loadSharedScenario } = await import("./lib/shared");
+  const result = await loadSharedScenario("http://backend", "tok", async () => Response.json(artifactShared));
+  assert.equal(result.status, "ok-artifact");
+  if (result.status === "ok-artifact") {
+    assert.equal(result.evidence.length, 2);
+    assert.equal(result.unavailable, false);
+    assert.equal(result.captured_at, "2026-11-27T10:00:00.000Z");
+  }
+});
