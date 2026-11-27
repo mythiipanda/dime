@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr, contract_details, resolve_salary_column, salary_records
-from .._core import coerce_team_id, team_error_message
+from .._core import coerce_team_id, team_error_message, warehouse_identity_meta
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables
 
@@ -437,6 +437,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
             "meta": {"source": source, "season": season or "2026-27",
+                     **warehouse_identity_meta(),
                      "salary_date": salary_date,
                      **{k: v for k, v in CAP.items()}}}
 
@@ -473,6 +474,7 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
     res = {"tool": "get_cap_table", "ok": True,
            "rows": rows,
            "meta": {"source": source, "season": season or season_used or "2026-27",
+                    **warehouse_identity_meta(),
                     "salary_date": salary_date,
                     **{k: v for k, v in CAP.items()}}}
     if missing:

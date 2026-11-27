@@ -886,6 +886,7 @@ test("a resolved artifact keeps provenance the run declared", () => {
     capability: "fixture_capability",
     season: "fixture-season",
     asOf: "2000-01-01",
+    as_of: "2000-01-01",
     liveSources: ["https://fixture.invalid/source"],
   });
   assert.equal(chunk.artifact.source, "live sources");

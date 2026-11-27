@@ -83,6 +83,20 @@ def test_fewer_than_ten_rows_uses_all(monkeypatch):
     _assert_last10(_run(monkeypatch, rows), 30.0, gp=5)
 
 
+def test_meta_preserves_upstream_lineage_and_warehouse_identity(monkeypatch):
+    monkeypatch.setattr(_core, "last_completed_season", lambda: "2025-26")
+    monkeypatch.setattr(player, "_opp_tier_splits", lambda frame, season: [])
+    lineage = {"source": "warehouse", "cached": True, "rows": 1,
+               "warehouse_id": "fixture-warehouse",
+               "live_fallback": {"outcome": "stale", "live_source": "nba_api"}}
+    monkeypatch.setattr(player, "_warehouse_or_live",
+                        lambda *a, **k: ([_row(_iso(1), 10)], lineage.copy()))
+    res = player.get_splits.invoke({"player_id": 123, "season": "2025-26"})
+    assert res["meta"]["cached"] is True
+    assert res["meta"]["warehouse_id"] == "fixture-warehouse"
+    assert res["meta"]["live_fallback"]["outcome"] == "stale"
+
+
 def test_empty_rows_returns_error(monkeypatch):
     res = _run(monkeypatch, [])
     assert res["ok"] is False

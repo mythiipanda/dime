@@ -939,6 +939,13 @@ def season_to_date_meta(season: str | None,
     return out
 
 
+def warehouse_identity_meta() -> dict[str, str]:
+    try:
+        return store.warehouse_identity()
+    except Exception:
+        return {}
+
+
 def _bound_warehouse_read(table, where, params):
 
     with store.write_guard():

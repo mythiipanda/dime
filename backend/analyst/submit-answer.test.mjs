@@ -1220,6 +1220,40 @@ test("player cards resolve identity, exact values and declared units from one so
   assert.deepEqual(input, original);
 });
 
+test("player card provenance resolves warehouse, live and undeclared metadata honestly", () => {
+  const validate = source => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [playerCardInput()] }, () => source).artifacts[0].provenance;
+  const warehouse = playerCardSource();
+  warehouse.response.structuredContent.meta = {
+    season: "2026-27", source: "warehouse", dataset: "warehouse",
+    warehouse_id: "fixture-warehouse", as_of: "2026-06-18",
+    sql: "SELECT player, team, pts FROM fixture WHERE player = ?"
+  };
+  assert.deepEqual(validate(warehouse), {
+    capability: "sql_exec", origin: "warehouse", live_sources: [],
+    warehouse_id: "fixture-warehouse", dataset: "warehouse",
+    season: "2026-27", as_of: "2026-06-18",
+    sql: "SELECT player, team, pts FROM fixture WHERE player = ?"
+  });
+
+  const live = playerCardSource();
+  live.response.structuredContent.meta = {
+    season: "2026-27", source: "nba_api_plydsh", fetched_at: "2026-06-18T12:00:00Z", cached: false,
+    sql: "SELECT player, team, pts FROM fixture WHERE player = ?"
+  };
+  assert.deepEqual(validate(live), {
+    capability: "sql_exec", origin: "live", live_sources: ["nba_api"],
+    dataset: "nba_api_plydsh", season: "2026-27", as_of: "2026-06-18T12:00:00Z",
+    sql: "SELECT player, team, pts FROM fixture WHERE player = ?"
+  });
+  live.response.structuredContent.meta.source = "espn+nba_api+warehouse";
+  assert.deepEqual(validate(live).live_sources, ["nba_api", "espn"]);
+
+  const undeclared = playerCardSource();
+  assert.equal(validate(undeclared).origin, "undeclared");
+  assert.deepEqual(validate(undeclared).live_sources, []);
+  assert.equal(validate(undeclared).warehouse_id, undefined);
+});
+
 test("player cards reject forged values, units, row joins and invalid selectors", () => {
   const source = playerCardSource();
   const validate = artifact => validateAnswerSubmission({ blocks: [{ text: "Fixture only" }], artifacts: [artifact] }, () => source);
@@ -1309,7 +1343,11 @@ function teamCardInput(overrides = {}) {
 function teamCardSource() {
   const source = makeSourceRecord("team-src", { rows: [{ team_name: "Example City Club", wins: 42, losses: 22, net_rating: 4.1 }] });
   source.response.structuredContent.declared_column_semantics = { net_rating: { unit: "points/100 possessions" } };
-  source.response.structuredContent.meta = { season: "2026-27" };
+  source.response.structuredContent.meta = {
+    season: "2026-27", source: "warehouse", dataset: "warehouse",
+    warehouse_id: "fixture-team-warehouse", as_of: "2026-06-18",
+    sql: "SELECT team_name, wins, losses, net_rating FROM fixture_team"
+  };
   return source;
 }
 
@@ -1339,7 +1377,12 @@ test("team cards resolve identity, metrics and sections with per-section provena
   assert.equal(card.teamName, "Example City Club");
   assert.equal(card.sourceRef, "team-src");
   assert.deepEqual(card.metrics[2], { column: "net_rating", label: "Net Rtg", value: 4.1, unit: "points/100 possessions" });
-  assert.equal(card.provenance.season, "2026-27");
+  assert.deepEqual(card.provenance, {
+    capability: "sql_exec", origin: "warehouse", live_sources: [],
+    warehouse_id: "fixture-team-warehouse", dataset: "warehouse",
+    season: "2026-27", as_of: "2026-06-18",
+    sql: "SELECT team_name, wins, losses, net_rating FROM fixture_team"
+  });
   assert.equal(card.sections.length, 3);
   const [capSection, fourFactorSection, pickSection] = card.sections;
   assert.deepEqual(capSection.metrics, [{ column: "total_salary", label: "Payroll", value: 187000000 }, { column: "apron_room", label: "Apron room", value: -12000000 }]);

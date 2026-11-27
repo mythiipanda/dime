@@ -12,6 +12,7 @@ from ..cap_rules import (
     used_expanded_matching,
 )
 from ..cap_sheet import option_column, season_column, unroll_team_sheet
+from .._core import warehouse_identity_meta
 from .cba_cap import (
     _locate_player_team,
     _match_trade_players,
@@ -223,6 +224,7 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
             "state": state,
             "meta": {"holds_note": holds_note, "season_columns": sheet["seasons"],
                      "unrolling": "shared.tools.cap_sheet",
+                     **warehouse_identity_meta(),
                      "source": _payroll_source(con), "salary_date": _salary_date(con),
                      "season": season}}
 
