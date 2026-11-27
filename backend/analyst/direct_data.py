@@ -4,27 +4,27 @@ from langchain_core.tools import tool
 @tool(description='List the supported warehouse-backed board metrics.')
 def product_board_metrics() -> dict:
     from analyst.boards import metrics
-    return metrics()
+    return _stamp_ok(metrics())
 
 @tool(description='Fill a bounded player board with read-only warehouse values and citations.')
 def product_board_fill(payload: dict) -> dict:
     from analyst.boards import fill
-    return fill(payload)
+    return _stamp_ok(fill(payload))
 
 @tool(description='Seed a player board deterministically from one warehouse metric.')
 def product_board_seed(payload: dict) -> dict:
     from analyst.boards import seed
-    return seed(payload)
+    return _stamp_ok(seed(payload))
 
 @tool(description='Read a bounded public warehouse table schema and sample.')
 def product_table_detail(table: str, season: str = '') -> dict:
     from analyst.dataset_engine import warehouse_table
-    return warehouse_table(table, season)
+    return _stamp_ok(warehouse_table(table, season))
 
 @tool(description='Read the cached schedule and warehouse team ratings snapshot.')
 def product_home() -> dict:
     from analyst.dataset_engine import home_snapshot
-    return home_snapshot()
+    return _stamp_ok(home_snapshot())
 
 @tool(description='Append an existing product chat row to the state database.')
 def product_save_chat(thread: str, role: str, content: str, owner: str) -> dict:
@@ -41,19 +41,19 @@ def product_save_run(thread: str, question: str, answer: str, owner: str, run_id
 @tool(description='List existing product state threads for one owner.')
 def product_threads(owner: str) -> dict:
     from shared import store
-    return {"threads": store.list_threads(owner=owner)}
+    return {"ok": True, "threads": store.list_threads(owner=owner)}
 
 @tool(description='List existing product state runs for one owner and thread.')
 def product_runs(thread: str, owner: str) -> dict:
     from shared import store
-    return {"runs": store.list_runs(thread, owner=owner)}
+    return {"ok": True, "runs": store.list_runs(thread, owner=owner)}
 
 @tool(description='Read the data engine warehouse identity and semantic baseline.')
 def product_warehouse_identity() -> dict:
     from shared import store
     from shared.semantic_baseline import SEMANTIC_BASELINE
     identity = store.warehouse_identity()
-    return {"warehouse": {"warehouse_id": identity["warehouse_id"], "sha256": identity["warehouse_sha256"], "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}, "semantic_baseline": dict(SEMANTIC_BASELINE)}
+    return {"ok": True, "warehouse": {"warehouse_id": identity["warehouse_id"], "sha256": identity["warehouse_sha256"], "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}, "semantic_baseline": dict(SEMANTIC_BASELINE)}
 
 @tool(description='Check the existing ratings readiness contract.')
 def product_warehouse_health() -> dict:
@@ -75,22 +75,22 @@ def product_warehouse_health() -> dict:
 @tool(description='Read or fetch a dataset using the existing Python season and source semantics.')
 def product_dataset(name: str, season: str = '2025-26', player_id: int = 0, team_id: int = 0, game_id: str = '', game_date: str = '', stat: str = 'PTS', ids: str = '', player_a: str = '', player_b: str = '', fmt: str = 'json') -> dict:
     from analyst.dataset_engine import dataset
-    return dataset(name, season, player_id, team_id, game_id, game_date, stat, ids, player_a, player_b, fmt)
+    return _stamp_ok(dataset(name, season, player_id, team_id, game_id, game_date, stat, ids, player_a, player_b, fmt))
 
 @tool(description='Read the cached existing dataset freshness report.')
 def product_freshness() -> dict:
     from analyst.dataset_engine import datasets_freshness
-    return datasets_freshness()
+    return _stamp_ok(datasets_freshness())
 
 @tool(description='Run the existing read-only SQL rerun operation.')
 async def product_rerun(sql: str) -> dict:
     from shared.tools.league import rerun_sql
-    return await rerun_sql(sql)
+    return _stamp_ok(await rerun_sql(sql))
 
 @tool(description='Resolve NBA entities using the existing resolver.')
 def product_resolve(query: str) -> dict:
     from shared.tools import resolve_entity
-    return resolve_entity.invoke({'query': query})
+    return _stamp_ok(resolve_entity.invoke({'query': query}))
 
 @tool(description='Check a trade using the existing Python domain implementation.')
 def product_trade(team_a: str, players_a: str, team_b: str, players_b: str, season: str = '2025-26') -> dict:
@@ -470,10 +470,16 @@ def product_debate(a: str, b: str, season: str = '2025-26') -> dict:
 def _decoded(result):
     return json.loads(result) if isinstance(result, str) else result
 
+def _stamp_ok(result):
+    if isinstance(result, dict):
+        result.setdefault("ok", True)
+    return result
+
+
 @tool(description='Read the current today data.')
 def product_today(season: str = '2025-26') -> dict:
     from shared.tools.today import get_today
-    return _decoded(get_today.invoke({'season':season}))
+    return _stamp_ok(_decoded(get_today.invoke({'season':season})))
 
 
 def _live_scoreboard_games(timeout: float = 8.0) -> tuple[list, str | None]:
@@ -723,23 +729,23 @@ def product_scout_dossier(team: str, opponent: str, season: str = '') -> dict:
 @tool(description='Read the current watchlist data.')
 def product_watchlist(season: str = '2025-26') -> dict:
     from shared.tools.watchlist import get_watchlist
-    return _decoded(get_watchlist.invoke({'season':season}))
+    return _stamp_ok(_decoded(get_watchlist.invoke({'season':season})))
 
 @tool(description='Apply the current direct product watchlist addition.')
 def product_watchlist_add(entity_type: str, entity_id: str, season: str = '2025-26') -> dict:
     from shared.tools.watchlist import add_watchlist_item
-    return _decoded(add_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id,season=season)))
+    return _stamp_ok(_decoded(add_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id,season=season))))
 
 @tool(description='Apply the current direct product watchlist removal.')
 def product_watchlist_remove(entity_type: str, entity_id: str) -> dict:
     from shared.tools.watchlist import remove_watchlist_item
-    return _decoded(remove_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id)))
+    return _stamp_ok(_decoded(remove_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id))))
 
 @tool(description='Read and normalize current leaderboard deltas.')
 def product_movers(season: str = '2025-26', days: int = 7) -> dict:
     from shared.tools.league import get_leaderboard_deltas
     from shared.tools.today import normalize_movers
-    return normalize_movers(_decoded(get_leaderboard_deltas.invoke(dict(season=season,days=days))), season)
+    return _stamp_ok(normalize_movers(_decoded(get_leaderboard_deltas.invoke(dict(season=season,days=days))), season))
 
 @tool(description='Read the existing morning briefing.')
 def product_briefing(season: str = '2025-26') -> dict:
@@ -921,8 +927,19 @@ def _draft_board(con, tables: set, season: str) -> dict:
         "SELECT CASE WHEN COUNT(*) FILTER (BOARD = 'big_board') > 0 THEN 'big_board' ELSE 'mock_draft' END "
         "FROM silver_draft_boards WHERE _season = ?", [use]).fetchone()[0]
     base_rows = con.execute(
-        'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL FROM silver_draft_boards '
-        'WHERE _season = ? AND BOARD = ? ORDER BY "ORDER" LIMIT 60', [use, board_kind]).fetchall()
+        'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL, PLAYER_SLUG FROM silver_draft_boards '
+        'WHERE _season = ? AND BOARD = ? ORDER BY "ORDER"', [use, board_kind]).fetchall()
+    deduped_rows = []
+    seen_keys = set()
+    for index, row in enumerate(base_rows):
+        slug = str(row[4] or "")
+        key = slug if slug else f"row:{index}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped_rows.append(row[:4])
+        if len(deduped_rows) == 60:
+            break
     stats_by_name: dict = {}
     if "silver_prospect_stats" in tables:
         for s in con.execute(
@@ -936,18 +953,21 @@ def _draft_board(con, tables: set, season: str) -> dict:
         if len(candidates) == 1:
             return candidates[0]
         school_key = str(school or '').lower()
-        for c in candidates:
-            if school_key and str(c[1] or '').lower() == school_key:
-                return c
+        matches = [c for c in candidates if school_key and str(c[1] or '').lower() == school_key]
+        if matches:
+            return max(matches, key=lambda c: float(c[2] or 0))
         return None
     rows = []
-    for r in base_rows:
+    for r in deduped_rows:
         s = _match_stats(r[1], r[3])
-        rows.append(tuple(r) + ((s[2], s[3], s[4], s[5], s[6], (s[7] or 0) / 100.0 if s and s[7] is not None else None) if s else (None,) * 6))
-    board = [{"pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
+        stat_values = (s[2], s[3], s[4], s[5], s[6], s[7]) if s else (None,) * 6
+        rows.append(tuple(r) + stat_values)
+    board = [{"board_order": int(r[0]), "pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
               "gp": r[4], "pts": r[5], "reb": r[6], "ast": r[7], "ts_pct": r[8], "usg": r[9]}
              for r in rows]
-    return {"ok": bool(board), "season": use, "rows": board, "provenance": cite,
+    order_semantics = "rank" if board_kind == "big_board" else "pick"
+    return {"ok": bool(board), "season": use, "board": board_kind, "order_semantics": order_semantics,
+            "rows": board, "provenance": cite,
             **({"error": "no board rows for season"} if not board else {})}
 
 def _draft_free_agents(con, tables: set) -> dict:

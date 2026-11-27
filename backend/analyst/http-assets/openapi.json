@@ -5,6 +5,289 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/objects": {
+          "post": {
+                "tags": [
+                      "objects"
+                ],
+                "operationId": "objects_create",
+                "summary": "Create a persisted object (cap scenario) with capability tokens",
+                "parameters": [
+                      {
+                            "name": "x-dime-owner",
+                            "in": "header",
+                            "required": true,
+                            "schema": {
+                                  "type": "string"
+                            }
+                      }
+                ],
+                "requestBody": {
+                      "required": true,
+                      "content": {
+                            "application/json": {
+                                  "schema": {
+                                        "type": "object",
+                                        "required": [
+                                              "kind",
+                                              "title",
+                                              "payload"
+                                        ],
+                                        "properties": {
+                                              "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                          "cap_scenario"
+                                                    ]
+                                              },
+                                              "title": {
+                                                    "type": "string",
+                                                    "maxLength": 256
+                                              },
+                                              "payload": {
+                                                    "type": "object"
+                                              }
+                                        },
+                                        "additionalProperties": false
+                                  }
+                            }
+                      }
+                },
+                "responses": {
+                      "201": {
+                            "description": "Created object with owner and share tokens"
+                      },
+                      "401": {
+                            "description": "Owner identity missing"
+                      },
+                      "422": {
+                            "description": "Validation failed"
+                      },
+                      "429": {
+                            "description": "Rate limited"
+                      }
+                }
+          },
+          "get": {
+                "tags": [
+                      "objects"
+                ],
+                "operationId": "objects_list",
+                "summary": "List the owner's objects (metadata only)",
+                "parameters": [
+                      {
+                            "name": "x-dime-owner",
+                            "in": "header",
+                            "required": true,
+                            "schema": {
+                                  "type": "string"
+                            }
+                      },
+                      {
+                            "name": "kind",
+                            "in": "query",
+                            "required": false,
+                            "schema": {
+                                  "type": "string"
+                            }
+                      }
+                ],
+                "responses": {
+                      "200": {
+                            "description": "Object metadata list"
+                      }
+                }
+          }
+    },
+    "/api/objects/{object_id}": {
+          "get": {
+                "tags": [
+                      "objects"
+                ],
+                "operationId": "objects_get",
+                "summary": "Read one owned object including its payload",
+                "parameters": [
+                      {
+                            "name": "object_id",
+                            "in": "path",
+                            "required": true,
+                            "schema": {
+                                  "type": "string",
+                                  "pattern": "^obj-[a-f0-9]{32}$"
+                            }
+                      },
+                      {
+                            "name": "x-owner-token",
+                            "in": "header",
+                            "required": true,
+                            "schema": {
+                                  "type": "string"
+                            }
+                      }
+                ],
+                "responses": {
+                      "200": {
+                            "description": "Owned object"
+                      },
+                      "401": {
+                            "description": "Token missing"
+                      },
+                      "403": {
+                            "description": "Token rejected"
+                      },
+                      "404": {
+                            "description": "Not found"
+                      },
+                      "422": {
+                            "description": "Malformed id"
+                      }
+                }
+          },
+          "patch": {
+                "tags": [
+                      "objects"
+                ],
+                "operationId": "objects_patch",
+                "summary": "Update title, payload or archived flag",
+                "parameters": [
+                      {
+                            "name": "object_id",
+                            "in": "path",
+                            "required": true,
+                            "schema": {
+                                  "type": "string",
+                                  "pattern": "^obj-[a-f0-9]{32}$"
+                            }
+                      },
+                      {
+                            "name": "x-owner-token",
+                            "in": "header",
+                            "required": true,
+                            "schema": {
+                                  "type": "string"
+                            }
+                      }
+                ],
+                "requestBody": {
+                      "required": true,
+                      "content": {
+                            "application/json": {
+                                  "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                              "title": {
+                                                    "type": "string",
+                                                    "maxLength": 256
+                                              },
+                                              "payload": {
+                                                    "type": "object"
+                                              },
+                                              "archived": {
+                                                    "type": "boolean"
+                                              }
+                                        },
+                                        "additionalProperties": false
+                                  }
+                            }
+                      }
+                },
+                "responses": {
+                      "200": {
+                            "description": "Updated object"
+                      },
+                      "401": {
+                            "description": "Token missing"
+                      },
+                      "403": {
+                            "description": "Token rejected"
+                      },
+                      "404": {
+                            "description": "Not found"
+                      },
+                      "422": {
+                            "description": "Validation failed"
+                      },
+                      "429": {
+                            "description": "Rate limited"
+                      }
+                }
+          }
+    },
+    "/api/objects/{object_id}/rotate-share": {
+          "post": {
+                "tags": [
+                      "objects"
+                ],
+                "operationId": "objects_rotate_share",
+                "summary": "Rotate the public share token; the previous link dies",
+                "parameters": [
+                      {
+                            "name": "object_id",
+                            "in": "path",
+                            "required": true,
+                            "schema": {
+                                  "type": "string",
+                                  "pattern": "^obj-[a-f0-9]{32}$"
+                            }
+                      },
+                      {
+                            "name": "x-owner-token",
+                            "in": "header",
+                            "required": true,
+                            "schema": {
+                                  "type": "string"
+                            }
+                      }
+                ],
+                "responses": {
+                      "200": {
+                            "description": "New read token"
+                      },
+                      "401": {
+                            "description": "Token missing"
+                      },
+                      "403": {
+                            "description": "Token rejected"
+                      },
+                      "404": {
+                            "description": "Not found"
+                      },
+                      "429": {
+                            "description": "Rate limited"
+                      }
+                }
+          }
+    },
+    "/s/{read_token}": {
+          "get": {
+                "tags": [
+                      "objects"
+                ],
+                "operationId": "objects_shared_read",
+                "summary": "Public read-only resolution of a share link; owner fields stripped",
+                "parameters": [
+                      {
+                            "name": "read_token",
+                            "in": "path",
+                            "required": true,
+                            "schema": {
+                                  "type": "string"
+                            }
+                      }
+                ],
+                "responses": {
+                      "200": {
+                            "description": "Shared object payload"
+                      },
+                      "404": {
+                            "description": "Not found"
+                      },
+                      "422": {
+                            "description": "Malformed token"
+                      }
+                }
+          }
+    },
     "/api/boards/metrics": {
       "get": {
         "tags": [

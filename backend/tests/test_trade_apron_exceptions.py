@@ -1375,6 +1375,84 @@ def test_cap_scenario_dropping_below_first_apron_uses_post_move_band(
     assert out["matching"]["legal"] is True
 
 
+def _split_even(total):
+    high = total // 2 + total % 2
+    return high, total - high
+
+
+def _boundary_seed_rows(payroll, outgoing_stars, incoming_stars, anchor_count):
+    anchors = [(f"Anchor {index}", 1_000_000)
+               for index in range(4, 4 + anchor_count)]
+    return (_roster("PHX", payroll, outgoing_stars + anchors)
+            + _roster("MIA", 150_000_000, incoming_stars))
+
+
+@pytest.mark.parametrize("offset", [-1, 0, 1])
+def test_cap_scenario_multiple_incoming_second_apron_boundary_not_aggregation(
+        monkeypatch, tmp_path, offset):
+    from shared.tools import get_cap_scenario
+    from shared.tools.cap_rules import CAP
+
+    payroll = CAP["apron2"] + offset
+    outgoing = 30_000_000 + offset
+    first_in, second_in = _split_even(outgoing)
+    _seed(monkeypatch, tmp_path,
+          _boundary_seed_rows(
+              payroll, [("Alpha One", outgoing)],
+              [("Beta Two", first_in), ("Gamma Three", second_in)], 3))
+    out = get_cap_scenario.invoke({
+        "team": "PHX", "trade_out_players": "Alpha One",
+        "in_players": "Beta Two, Gamma Three", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == payroll
+    assert out["summary"]["room_apron2"] == -offset
+    assert out["summary"]["over_apron2"] == (offset == 1)
+    assert out["summary"]["hard_cap"] == ""
+    assert out["matching"]["incoming"] == outgoing
+    assert out["matching"]["outgoing"] == outgoing
+    assert out["matching"]["legal"] is True
+    assert not any("aggregate" in issue or "aggregation" in issue
+                   for issue in out["issues"])
+
+
+@pytest.mark.parametrize(
+    "offset,legal,match_rule",
+    [(-1, True, AGGREGATED_STANDARD_MATCH_RULE),
+     (0, True, AGGREGATED_STANDARD_MATCH_RULE),
+     (1, False, "no aggregation (above the second apron)")])
+def test_cap_scenario_multiple_outgoing_second_apron_boundary_aggregates(
+        monkeypatch, tmp_path, offset, legal, match_rule):
+    from shared.tools import get_cap_scenario
+    from shared.tools.cap_rules import CAP
+
+    payroll = CAP["apron2"] + offset
+    outgoing = 30_000_000 + offset
+    first_out, second_out = _split_even(outgoing)
+    _seed(monkeypatch, tmp_path,
+          _boundary_seed_rows(
+              payroll,
+              [("Alpha One", first_out), ("Delta Four", second_out)],
+              [("Beta Two", outgoing)], 4))
+    out = get_cap_scenario.invoke({
+        "team": "PHX", "trade_out_players": "Alpha One, Delta Four",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == payroll
+    assert out["summary"]["room_apron2"] == -offset
+    assert out["summary"]["over_apron2"] == (offset == 1)
+    assert out["summary"]["hard_cap"] == "second apron"
+    assert out["matching"]["incoming"] == outgoing
+    assert out["matching"]["outgoing"] == outgoing
+    assert out["matching"]["legal"] is legal
+    assert out["matching"]["match_rule"] == match_rule
+    assert out["matching"]["allowed_incoming"] == (outgoing if legal else 0)
+    aggregation_ban = any("cannot aggregate salaries above the second apron"
+                          in issue for issue in out["issues"])
+    assert aggregation_ban is (offset == 1)
+
+
 def test_cap_scenario_second_apron_receiver_multiple_incoming_is_not_aggregation(
         monkeypatch, tmp_path):
     from shared.tools import get_cap_scenario
