@@ -80,6 +80,7 @@ def run():
         node_suite(env, suite, "--test")
 
     node_suite(environment("boards-routes"), "boards-route.test.mjs", "--test")
+    node_suite(environment("route-table"), "route-table.test.mjs", "--test")
 
     env = environment("persistence")
     subprocess.run([sys.executable, "-B", str(module / "persistence_fixture.py"), "prepare"],
