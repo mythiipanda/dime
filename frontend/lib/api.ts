@@ -277,7 +277,9 @@ export async function postChatStream(
   options?: { diagnostics?: boolean },
 ): Promise<void> {
   const STALL_MS = 90_000;
-  const MAX_RUN_MS = 480_000;
+  const FALLBACK_RUN_MS = 480_000;
+  const SERVER_GRACE_MS = 15_000;
+  let maxRunMs = FALLBACK_RUN_MS;
   const ctrl = new AbortController();
   const startedAt = Date.now();
   let lastByte = startedAt;
@@ -288,7 +290,7 @@ export async function postChatStream(
     if (now - lastByte > STALL_MS) {
       cause = "idle";
       ctrl.abort();
-    } else if (now - startedAt > MAX_RUN_MS) {
+    } else if (now - startedAt > maxRunMs) {
       cause = "ceiling";
       ctrl.abort();
     }
@@ -302,7 +304,7 @@ export async function postChatStream(
       return "No response from the server for 90s. The backend may be down - try again in a moment.";
     }
     if (cause === "ceiling") {
-      return "The request timed out after 8 minutes. Try a simpler question or try again.";
+      return "This run is taking longer than the live window, but it continues on the server - reload this thread in a few minutes to see the completed answer.";
     }
     return "Request cancelled.";
   }
@@ -329,6 +331,10 @@ export async function postChatStream(
     }
     return;
   }
+  const serverRunMs = Number(res.headers.get("x-dime-run-timeout-ms"));
+  if (Number.isFinite(serverRunMs) && serverRunMs > 0) {
+    maxRunMs = serverRunMs + SERVER_GRACE_MS;
+  }
   const contentType = res.headers.get("content-type") || "";
   if (!res.ok || !res.body || !contentType.includes("text/event-stream")) {
     clearInterval(watchdog);
@@ -353,7 +359,7 @@ export async function postChatStream(
       if (cause === "idle") {
         handlers.onError("No response from the server for 90s. The backend may be down - try again in a moment.");
       } else if (cause === "ceiling") {
-        handlers.onError("The request timed out after 8 minutes. Try a simpler question or try again.");
+        handlers.onError("This run is taking longer than the live window, but it continues on the server - reload this thread in a few minutes to see the completed answer.");
       } else if ((e as Error)?.name !== "AbortError") {
         handlers.onError("Connection to the backend dropped. Try again.");
       }
