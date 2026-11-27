@@ -101,16 +101,17 @@ def _trade_guard_vintage_error(con, season: str) -> str | None:
 
 def _trade_guard_team_error(con, team: str, players: str,
                             season: str | None = None) -> str | None:
+    team_code = canonical_team_abbr(team)
     for player in [x.strip() for x in str(players).split(",") if x.strip()]:
         actual = _season_player_team(con, player, season) if season else None
         if not actual:
             row = con.execute(
                 "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
                 [player]).fetchone()
-            actual = str(row[0] or "").upper() if row and row[0] else ""
-        if actual and actual != team.upper():
+            actual = canonical_team_abbr(row[0]) if row and row[0] else ""
+        if actual and actual != team_code:
             return (f"salary data lists {player} with {actual}, "
-                    f"not {team.upper()} in season {season}; "
+                    f"not {team_code} in season {season}; "
                     "trade math was not calculated")
     return None
 
@@ -399,7 +400,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
             return {"tool": "get_trade_partners", "ok": False,
                     "error": f"no {season} salary for {record['PLAYER_NAME']}"}
         name = str(record["PLAYER_NAME"])
-        team_a = str(record["TEAM"] or "").upper()
+        team_a = canonical_team_abbr(record["TEAM"])
         incoming = int(record["salary"])
         pay_a, _ = _payroll(team_a, con, season)
         room_a = max(0, CAP["cap"] - pay_a)
@@ -413,7 +414,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
             allow_a, rule_a = strict_a, rule_strict_a
         rows: list[dict] = []
         no_fit: list[str] = []
-        partners = sorted({str(r["TEAM"]).upper() for r in records
+        partners = sorted({canonical_team_abbr(r["TEAM"]) for r in records
                            if r.get("TEAM")} - {team_a})
         for team in partners:
             if restrict and team not in restrict:
@@ -634,7 +635,7 @@ def _trade_rating_rows(con, warehouse: _TradeWarehouse,
         row = dict(zip(names, r))
         abbr = id_to_abbr.get(row["TEAM_ID"], "")
         if abbr:
-            ratings[str(abbr).upper()] = row
+            ratings[canonical_team_abbr(abbr)] = row
     return ratings
 
 
@@ -762,7 +763,7 @@ def _trade_value_pick(desc: str, giving_abbr: str, ratings: dict,
         gaps.append(f"{desc}: unparseable pick, valued at 0")
         return entry
     if is_frp:
-        net_rank = (ratings.get(giving_abbr.upper(), {}) or {}).get(
+        net_rank = (ratings.get(canonical_team_abbr(giving_abbr), {}) or {}).get(
             "NET_RATING_RANK")
         _trade_first_round_slot(entry, net_rank, giving_abbr, prot, curve_m)
     else:
@@ -799,7 +800,7 @@ def _trade_grades(winner: str, delta: float, total_a: float, total_b: float,
 
 
 def _trade_timeline(ratings: dict, team_abbr: str) -> tuple[str, list]:
-    r = ratings.get(team_abbr.upper(), {})
+    r = ratings.get(canonical_team_abbr(team_abbr), {})
     needs = [name for name, col in _TRADE_NEED_COLUMNS
              if isinstance(r.get(col), (int, float)) and r[col] >= 20]
     net_rank = r.get("NET_RATING_RANK")
@@ -982,7 +983,7 @@ def get_trade_value(
     total_a = _trade_side_total(players_a, picks_list_a)
     total_b = _trade_side_total(players_b, picks_list_b)
     delta = round(total_a - total_b, 1)
-    abbr_a, abbr_b = team_a.upper(), team_b.upper()
+    abbr_a, abbr_b = canonical_team_abbr(team_a), canonical_team_abbr(team_b)
     winner = abbr_a if delta >= 0.5 else abbr_b if delta <= -0.5 else "even"
 
     fit = {abbr_a: _trade_fit(abbr_a, players_b, ratings),

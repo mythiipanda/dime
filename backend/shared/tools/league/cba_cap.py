@@ -145,7 +145,7 @@ def _stale_candidate_team(cand: tuple, con: object) -> str:
 
 def _resolve_stale_trade_player(want: str, team: str,
                                 con: object = None) -> tuple[str, int] | None:
-    target = str(team or "").upper()
+    target = canonical_team_abbr(team)
     w = str(want or "").strip()
     if not w or not target:
         return None
@@ -164,7 +164,7 @@ def _resolve_stale_trade_player(want: str, team: str,
                     c_first = cname.lower().split()[0] if cname.split() else ""
                     if not _first_name_compatible(wl_first, c_first):
                         continue
-                if str(_stale_candidate_team(cand, live)).upper() == target:
+                if canonical_team_abbr(_stale_candidate_team(cand, live)) == target:
                     return cname, int(cand[1] or 0)
     except Exception:
         return None
@@ -189,13 +189,13 @@ def _locate_player_team(name: str, con: object, season: str | None = None) -> tu
     for cand in (exact + subs + fuzzy)[:1]:
         cname, csal, cteam = str(cand[0]), int(cand[1] or 0), str(cand[2] or "")
         cur = _stale_candidate_team(cand, con)
-        return cname, str(cur or cteam).upper(), csal
+        return cname, canonical_team_abbr(cur or cteam), csal
     return None
 
 
 def _norm_trade_teams(team_a: str, team_b: str) -> tuple[str, str] | None:
-    a = _resolve_team_abbr(team_a) or str(team_a or "").strip().upper()
-    b = _resolve_team_abbr(team_b) or str(team_b or "").strip().upper()
+    a = canonical_team_abbr(_resolve_team_abbr(team_a) or team_a)
+    b = canonical_team_abbr(_resolve_team_abbr(team_b) or team_b)
     if a and b and a == b:
         return None
     return a, b
@@ -214,7 +214,7 @@ def _auto_correct_side(unks: list[str], old_team: str, plist: str,
     if len(new_teams) != 1:
         return None
     new_team = new_teams.pop()
-    if new_team == str(old_team).upper():
+    if canonical_team_abbr(new_team) == canonical_team_abbr(old_team):
         return None
     matched = _match_trade_players(new_team, plist, con, season)
     corrections = [
@@ -242,6 +242,7 @@ def _payroll(team: str, con: object = None,
         con = _pkg().store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        team_code = canonical_team_abbr(team)
         if "silver_salaries" in tables:
             scols = [r[1] for r in con.execute(
                 "PRAGMA table_info(silver_salaries)").fetchall()]
@@ -252,7 +253,6 @@ def _payroll(team: str, con: object = None,
                     f"silver_salaries has no salary column for season "
                     f"{season or 'unknown'}")
             records = salary_records(con, salary_season=season)
-            team_code = canonical_team_abbr(team)
             team_cache: dict[str, str] = {}
             rows = []
             players = []
@@ -277,11 +277,10 @@ def _payroll(team: str, con: object = None,
             if rows:
                 return sum(r[1] or 0 for r in rows), players
         if "silver_cap_players" in tables:
-            rows = con.execute(
-                """SELECT player, salary FROM silver_cap_players
-                WHERE team = ?""",
-                [team.upper()],
-            ).fetchall()
+            cap_rows = con.execute(
+                "SELECT player, salary, team FROM silver_cap_players").fetchall()
+            rows = [(r[0], r[1]) for r in cap_rows
+                    if canonical_team_abbr(r[2]) == team_code]
         else:
             rows = []
     finally:

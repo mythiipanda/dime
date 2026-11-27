@@ -2,6 +2,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from ...contracts import canonical_team_abbr
 from ._helpers import _owned_connection, _pkg
 from .cba_cap import CAP, _payroll_source, _salary_date, _resolve_team_abbr
 from .draft_contracts import _contract_norm
@@ -47,6 +48,7 @@ def _cap_band(cap_share: float) -> str:
 
 def _team_rows(team: str, prod: list[dict], cap: list[dict],
                have: set[str], use_w: dict[str, float]) -> list[dict]:
+    team = canonical_team_abbr(team)
     prod_by_name: dict[str, dict] = {}
     for r in prod:
         prod_by_name.setdefault(_contract_norm(r.get("PLAYER")), r)
@@ -68,8 +70,9 @@ def _team_rows(team: str, prod: list[dict], cap: list[dict],
                "cap_band": _cap_band(cap_share),
                "gp": gp, "mpg": mpg, "rotation": rotation,
                "value_score": score, "value_per_m": vpd}
-        if p and str(p.get("TEAM") or "").upper() != team:
-            row["production_team"] = str(p.get("TEAM")).upper()
+        production_team = canonical_team_abbr(p.get("TEAM")) if p else ""
+        if p and production_team != team:
+            row["production_team"] = production_team
         if p is None:
             row["no_production"] = True
         out.append(row)
@@ -119,12 +122,13 @@ def _summary(rows: list[dict]) -> dict[str, Any]:
 def get_value_contracts(team: str = "", season: str | None = None,
                         benchmark_team: str = "") -> dict[str, Any]:
     raw_team = str(team or "").strip()
-    team = (_resolve_team_abbr(raw_team) or "").upper()
+    team = (_resolve_team_abbr(canonical_team_abbr(raw_team)) or "").upper()
     if not team and raw_team:
         return {"tool": "get_value_contracts", "ok": False,
                 "error": team_error_message(raw_team)}
-    bench = (_resolve_team_abbr(str(benchmark_team or "")) or "").upper() \
-        if str(benchmark_team or "").strip() else ""
+    raw_bench = str(benchmark_team or "").strip()
+    bench = (_resolve_team_abbr(canonical_team_abbr(raw_bench)) or "").upper() \
+        if raw_bench else ""
     with _owned_connection(None, read_only=True) as con:
         if not season:
             try:
@@ -144,8 +148,9 @@ def get_value_contracts(team: str = "", season: str | None = None,
         from shared.contracts import salary_records
         wanted = ({team, bench} - {""}) if team else set()
         cap = [r for r in salary_records(con)
-               if not wanted or str(r.get("TEAM") or "").upper() in wanted]
-        if team and not any(str(r.get("TEAM")).upper() == team for r in cap):
+               if not wanted or canonical_team_abbr(r.get("TEAM")) in wanted]
+        if team and not any(canonical_team_abbr(r.get("TEAM")) == team
+                            for r in cap):
             return {"tool": "get_value_contracts", "ok": False,
                     "error": season_rows_error(con, "silver_salaries",
                                                season, team)}
@@ -156,14 +161,14 @@ def get_value_contracts(team: str = "", season: str | None = None,
              for c, w in _PROD_WEIGHTS.items()}
     if team:
         rows = _team_rows(team, prod, [c for c in cap
-                                       if str(c.get("TEAM")).upper() == team],
+                                       if canonical_team_abbr(c.get("TEAM")) == team],
                           have, use_w)
     else:
         rows = []
-        for t in sorted({str(c.get("TEAM") or "").upper() for c in cap
+        for t in sorted({canonical_team_abbr(c.get("TEAM")) for c in cap
                          if str(c.get("TEAM") or "").strip()}):
             rows.extend(_team_rows(t, prod, [c for c in cap
-                                             if str(c.get("TEAM")).upper() == t],
+                                             if canonical_team_abbr(c.get("TEAM")) == t],
                                    have, use_w))
     checks = [
         {"rule": "value proxy", "checked": True,
@@ -202,7 +207,7 @@ def get_value_contracts(team: str = "", season: str | None = None,
     if bench:
         brows = _team_rows(bench, prod,
                            [c for c in cap
-                            if str(c.get("TEAM")).upper() == bench],
+                            if canonical_team_abbr(c.get("TEAM")) == bench],
                            have, use_w)
         if not brows:
             out["benchmark"] = {"team": bench,
