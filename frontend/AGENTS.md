@@ -24,6 +24,21 @@ Radix overlay DOM tests need the DOM installed before importing components; quer
 portaled content through `document`, not only the React root. Use the existing replay
 fixtures for provider-free UI checks; do not burn model quota to inspect layout.
 
+## Design skills
+
+Two craft skills are part of the frontend workflow; invoke them at their gates,
+not retroactively:
+
+- `plan-design-review` — the design gate BEFORE opening a UI PR. Run its
+  seven passes (information architecture, interaction states, user journey,
+  AI-slop risk, design-system alignment, responsive/accessibility, unresolved
+  decisions) against the diff or plan; unresolved findings block opening, not
+  just merge. Zero-finding passes are reported, never skipped.
+- `impeccable` (vendored in `.devin/skills/impeccable/`, upstream
+  pbakaus/impeccable) — the polish pass AFTER build correctness is green.
+  Read its SKILL.md and the `polish`/`harden`/`audit` references before the
+  pass; its craft-floor reference applies to every UI edit.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know
