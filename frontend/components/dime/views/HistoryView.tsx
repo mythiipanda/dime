@@ -165,6 +165,8 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     return pp && ps ? { player: pp, season: ps } : null;
   });
   const [pinZ, setPinZ] = useState<Record<string, number> | null>(null);
+  const [winStart, setWinStart] = useState<string>(() => initialParams?.get("window")?.split("..")[0] ?? "");
+  const [winEnd, setWinEnd] = useState<string>(() => initialParams?.get("window")?.split("..")[1] ?? "");
   const [leaderSeason, setLeaderSeason] = useState("1996-97");
   const [category, setCategory] = useState<string>("pts");
   const [leaders, setLeaders] = useState<LeadersResponse | null>(null);
@@ -211,7 +213,8 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     let cancelled = false;
     setCompsLoading(true);
     setCompsError(null);
-    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=12`)}`)
+    const windowParams = `${winStart ? `&start=${encodeURIComponent(winStart)}` : ""}${winEnd ? `&end=${encodeURIComponent(winEnd)}` : ""}`;
+    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=12${windowParams}`)}`)
       .then(async (response) => {
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new Error(body?.error || `era comps request failed (${response.status})`);
@@ -237,7 +240,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     return () => {
       cancelled = true;
     };
-  }, [selectedSeason, player]);
+  }, [selectedSeason, player, winStart, winEnd]);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,9 +287,11 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
       params.delete("pin_player");
       params.delete("pin_season");
     }
+    if (winStart || winEnd) params.set("window", `${winStart}..${winEnd}`);
+    else params.delete("window");
     const url = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState(null, "", url);
-  }, [player, selectedSeason, pin]);
+  }, [player, selectedSeason, pin, winStart, winEnd]);
 
   const walkTo = (name: string, season: string) => {
     if (typeof window !== "undefined") {
@@ -309,6 +314,9 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
       const pp = params.get("pin_player");
       const ps = params.get("pin_season");
       setPin(pp && ps ? { player: pp, season: ps } : null);
+      const w = params.get("window")?.split("..") ?? [];
+      setWinStart(w[0] ?? "");
+      setWinEnd(w[1] ?? "");
       if (urlPlayer && urlPlayer !== player) {
         setQuery(urlPlayer);
         setPendingSeason(urlSeason);
@@ -612,6 +620,39 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
               </div>
             </div>
           )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-3">
+            <span className="font-mono text-[10px]">pool window{winStart || winEnd ? ` ${winStart || "…"}..${winEnd || "…"}` : ""}:</span>
+            <select
+              value={winStart}
+              data-testid="window-start"
+              aria-label="pool window start season"
+              onChange={(e) => setWinStart(e.target.value)}
+              className="h-6 rounded-[6px] border border-line bg-surface px-1 font-mono text-[10.5px] text-ink-2"
+            >
+              <option value="">from 1996-97</option>
+              {SEASONS.map((season) => <option key={season} value={season}>{season}</option>)}
+            </select>
+            <select
+              value={winEnd}
+              data-testid="window-end"
+              aria-label="pool window end season"
+              onChange={(e) => setWinEnd(e.target.value)}
+              className="h-6 rounded-[6px] border border-line bg-surface px-1 font-mono text-[10.5px] text-ink-2"
+            >
+              <option value="">to present</option>
+              {SEASONS.map((season) => <option key={season} value={season}>{season}</option>)}
+            </select>
+            {(winStart || winEnd) && (
+              <button
+                type="button"
+                data-testid="window-clear"
+                className="font-mono text-[10px] text-accent underline-offset-2 hover:underline"
+                onClick={() => { setWinStart(""); setWinEnd(""); }}
+              >
+                clear
+              </button>
+            )}
+          </div>
           <p className="mt-2 font-mono text-[10px] leading-[1.6] text-ink-3">
             similarity = 100/(1+d/20) over within-season z-scores — each feature standardized inside its own season's qualified pool, so the match is era-relative shape, not raw level
           </p>

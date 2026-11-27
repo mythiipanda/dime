@@ -255,3 +255,45 @@ test("pin mode: pinning a season keeps it as the shape anchor while walking, URL
     restore();
   }
 });
+
+test("era-window lens narrows the comp pool and rides the URL", async () => {
+  const seen: string[] = [];
+  const { host, root, HistoryView, restore } = await boot(() => compsPayload);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    seen.push(String(input));
+    return originalFetch(input);
+  };
+  try {
+    await act(async () => root.render(<HistoryView />));
+    await flush();
+    clickSeasonRow(host, "1996-97");
+    await flush();
+    assert.ok(host.querySelector("[data-testid='window-start']"), "window start control renders");
+    assert.ok(host.querySelector("[data-testid='window-end']"), "window end control renders");
+    const win = (globalThis as any).window;
+    const startSel = host.querySelector("[data-testid='window-start']") as any;
+    const endSel = host.querySelector("[data-testid='window-end']") as any;
+    const setSel = (sel: any, value: string) => {
+      (Object.getOwnPropertyDescriptor(win.HTMLSelectElement.prototype, "value") as any).set.call(sel, value);
+      sel.dispatchEvent(new win.Event("change", { bubbles: true }));
+    };
+    act(() => { setSel(startSel, "2003-04"); });
+    await flush();
+    act(() => { setSel(endSel, "2010-11"); });
+    await flush();
+    const compsCalls = seen.filter((u) => u.includes("/history/era-comps"));
+    assert.ok(
+      compsCalls.some((u) => u.includes("start=2003-04") && u.includes("end=2010-11")),
+      `comps refetch carries the window, got ${compsCalls.join(" | ")}`,
+    );
+    const url = win.location.href;
+    assert.ok(url.includes("window=2003-04"), `URL carries the window lens, got ${url}`);
+    assert.ok(url.includes("2010-11"));
+    assert.match(host.textContent ?? "", /window 2003-04/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await act(async () => root.unmount());
+    restore();
+  }
+});
