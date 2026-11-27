@@ -588,7 +588,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
             </div>
           )}
           {!compsLoading && !compsError && comps?.qualified !== false && comps?.rows && comps.rows.length > 0 && (
-            <div className="mt-2">
+            <div key={`${player}-${selectedSeason}-${winStart}-${winEnd}`} className="view-fade mt-2">
               {(() => {
                 const features = comps.meta?.features ?? [];
                 const labels = comps.meta?.feature_labels ?? {};
