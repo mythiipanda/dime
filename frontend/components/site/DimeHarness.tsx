@@ -3,9 +3,7 @@
 import type { ComponentType } from "react";
 import AwardsView from "@/components/dime/views/AwardsView";
 import ExploreView from "@/components/dime/views/ExploreView";
-import LineupsView from "@/components/dime/views/LineupsView";
 import MatchupsView from "@/components/dime/views/MatchupsView";
-import PropsView from "@/components/dime/views/PropsView";
 import SavedView from "@/components/dime/views/SavedView";
 import TonightView from "@/components/dime/views/TonightView";
 import TradesView from "@/components/dime/views/TradesView";
@@ -33,16 +31,14 @@ const VIEWS: Record<ViewKey, ComponentType> = {
   tonight: TonightView,
   explore: ExploreView,
   matchups: MatchupsView,
-  lineups: LineupsView,
   trades: TradesView,
   awards: AwardsView,
-  props: PropsView,
   saved: SavedView,
   warehouse: WarehouseView,
 };
 
-const SHELLED_VIEWS: ReadonlySet<ViewKey> = new Set(["props", "saved", "warehouse"]);
-const FLEX_VIEWS: ReadonlySet<ViewKey> = new Set(["lineups", "trades", "awards"]);
+const SHELLED_VIEWS: ReadonlySet<ViewKey> = new Set(["saved", "warehouse"]);
+const FLEX_VIEWS: ReadonlySet<ViewKey> = new Set(["trades", "awards"]);
 
 function renderView(key: ViewKey) {
   const View = VIEWS[key];

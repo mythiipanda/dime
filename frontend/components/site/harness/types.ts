@@ -10,10 +10,8 @@ export type ViewKey =
   | "tonight"
   | "explore"
   | "matchups"
-  | "lineups"
   | "trades"
   | "awards"
-  | "props"
   | "saved"
   | "warehouse";
 

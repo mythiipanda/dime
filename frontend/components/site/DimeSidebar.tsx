@@ -88,10 +88,8 @@ const NAV_GROUPS: { key: string; label: string; icon: ReactNode }[][] = [
   ],
   [
     { key: "matchups", label: "Matchups", icon: <ArrowRightLeft size={18} /> },
-    { key: "lineups", label: "Lineups", icon: <UserGroup size={18} /> },
     { key: "trades", label: "Trades", icon: <ArrowLeftRight size={18} /> },
     { key: "awards", label: "Awards", icon: <Trophy size={18} /> },
-    { key: "props", label: "Props", icon: <Target size={18} /> },
   ],
   [
     { key: "saved", label: "Saved", icon: <Bookmark size={18} /> },
