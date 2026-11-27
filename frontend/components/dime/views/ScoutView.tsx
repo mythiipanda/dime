@@ -224,19 +224,23 @@ export default function ScoutView() {
 
           <SectionShell title="Shot profile" source={sections.shot_profile?.source} error={sectionError(sections.shot_profile, zones.length === 0)}>
             <div className="space-y-2">
-              {zones.map((z) => (
-                <div key={z.zone}>
-                  <div className="flex items-baseline justify-between text-[12.5px]">
-                    <span className="text-ink-2">{z.zone}</span>
-                    <span className="font-mono tabular-nums text-ink-3">
-                      {(z.share * 100).toFixed(1)}% of shots · {(z.fg_pct * 100).toFixed(1)}% fg
-                    </span>
+              {(() => {
+                const maxShare = Math.max(...zones.map((x) => x.share), 0.01);
+                return zones.map((z) => (
+                  <div key={z.zone}>
+                    <div className="flex items-baseline justify-between text-[12.5px]">
+                      <span className="text-ink-2">
+                        {z.zone}
+                        <span className="ml-2 font-mono tabular-nums text-ink">{(z.share * 100).toFixed(1)}%</span>
+                      </span>
+                      <span className="font-mono tabular-nums text-ink-3">{(z.fg_pct * 100).toFixed(1)}% fg</span>
+                    </div>
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-field" aria-hidden>
+                      <div className="h-full rounded-full bg-ink" style={{ width: `${Math.max(3, (z.share / maxShare) * 100)}%` }} />
+                    </div>
                   </div>
-                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-field" aria-hidden>
-                    <div className="h-full rounded-full bg-ink" style={{ width: `${Math.max(3, z.share * 100 * 2.5)}%` }} />
-                  </div>
-                </div>
-              ))}
+                ));
+              })()}
             </div>
           </SectionShell>
 
