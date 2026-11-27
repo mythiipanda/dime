@@ -34,8 +34,10 @@ const compsPayload = {
       ],
     },
   ],
-  meta: { features: ["PTS36"], feature_labels: { PTS36: "scoring volume (PTS/36)" } },
+  meta: { features: ["PTS36", "REB36", "AST36"], feature_labels: { PTS36: "scoring volume (PTS/36)", REB36: "rebounding (REB/36)", AST36: "playmaking (AST/36)" } },
 };
+(compsPayload.player as Record<string, unknown>).z = { PTS36: 2.1, REB36: -0.4, AST36: 1.2 };
+(compsPayload.rows[0] as Record<string, unknown>).z = { PTS36: 2.0, REB36: -0.3, AST36: 0.9 };
 
 const unqualifiedPayload = {
   ok: true,
@@ -129,6 +131,40 @@ test("history unqualified season renders the server-disclosed honest-empty, no c
     assert.match(text, /1996-97/);
     assert.doesNotMatch(text, /Kobe Bryant/);
     assert.ok(!text.includes("No substitute data is shown"), "server-disclosed shortfall must not render the generic error state");
+  } finally {
+    await act(async () => root.unmount());
+    restore();
+  }
+});
+
+test("history shape chart renders paired z-profile bars for the selected comp", async () => {
+  const { host, root, HistoryView, restore } = await boot(() => compsPayload);
+  try {
+    await act(async () => root.render(<HistoryView />));
+    await flush();
+    clickSeasonRow(host, "1996-97");
+    await flush();
+    const region = host.querySelector("[data-testid='shape-chart']");
+    assert.ok(region, "shape chart should render with the comp cards");
+    const text = region.textContent ?? "";
+    assert.match(text, /scoring volume/);
+    assert.match(text, /rebounding/);
+    assert.match(text, /playmaking/);
+    const bars = region.querySelectorAll("[data-z]");
+    assert.ok(bars.length >= 6, "each feature renders a target and a comp bar");
+    const target = Array.from(bars).find((b) => b.getAttribute("data-z") === "2.1" && b.getAttribute("data-side") === "target");
+    assert.ok(target, "target bar carries its z value");
+    const width = (target as HTMLElement).style.width;
+    assert.ok(width.endsWith("%"), "bar width is proportional");
+    const pct = parseFloat(width);
+    assert.ok(pct > 30 && pct <= 50, `z=2.1 clamped-at-3 width should be ~35% of the full track, got ${width}`);
+    assert.match(host.textContent ?? "", /shape profile/);
+    const targetBar = Array.from(bars).find((b) => b.getAttribute("data-side") === "target" && b.getAttribute("data-z") === "2.1") as HTMLElement;
+    const compBar = Array.from(bars).find((b) => b.getAttribute("data-side") === "comp" && b.getAttribute("data-z") === "2.0") as HTMLElement;
+    assert.ok(compBar, "comp bar carries its z value");
+    assert.equal(targetBar.style.left, compBar.style.left, "same-sign bars must anchor on the same side of center — overlap is the match");
+    assert.equal(targetBar.style.right, compBar.style.right);
+    assert.notEqual(targetBar.style.left, "", "positive z anchors left edge at center (extends right)");
   } finally {
     await act(async () => root.unmount());
     restore();
