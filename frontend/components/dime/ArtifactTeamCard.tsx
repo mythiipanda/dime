@@ -28,9 +28,9 @@ export default function ArtifactTeamCard({ artifact }: { artifact: TeamCardArtif
       <p className="text-xs text-ink-3">Selected from source rows. Not a verification.</p>
       <Popover><PopoverTrigger asChild><Button size="sm" variant="quiet"><Database size={14} aria-hidden="true" />Inspect source values</Button></PopoverTrigger>
         <PopoverContent align="end" aria-label={`Source values for ${artifact.teamName}`} className="w-80 bg-surface text-ink">
-          <PopoverTitle>Source values</PopoverTitle><PopoverDescription>Raw values and declared units, without conversion. Labels and conclusions are not verified.</PopoverDescription>
+          <PopoverTitle>Source values</PopoverTitle><PopoverDescription>Source-selected values with declared units. Labels and conclusions are not verified.</PopoverDescription>
           <dl className="mt-3 grid grid-cols-[64px_minmax(0,1fr)] gap-2 text-xs"><dt className="text-ink-3">Reference</dt><dd className="break-all font-mono">{artifact.sourceRef}</dd><dt className="text-ink-3">Row index</dt><dd>{artifact.sourceRow} (zero-based)</dd><dt className="text-ink-3">Identity</dt><dd className="break-all">{artifact.nameColumn}</dd></dl>
-          <dl className="mt-3 space-y-2 border-t border-line pt-3 text-xs">{artifact.metrics.map((metric, i) => <div key={i} className="flex flex-wrap justify-between gap-2"><dt className="break-all font-mono text-ink-2">{metric.column}</dt><dd className="break-words tabular-nums">{metric.value === null ? "Not available" : String(metric.value)} · {metric.unit || "Unit not declared"}</dd></div>)}</dl>
+          <dl className="mt-3 space-y-2 border-t border-line pt-3 text-xs">{artifact.metrics.map((metric, i) => <div key={i} className="flex flex-wrap justify-between gap-2"><dt className="break-all font-mono text-ink-2">{metric.column}</dt><dd className="break-words tabular-nums">{metric.value === null ? "Not available" : formatHeadlineMetric(metric.value, metric.unit)} · {metric.unit || "Unit not declared"}</dd></div>)}</dl>
           {artifact.sections && <CardSectionSources sections={artifact.sections} />}
         </PopoverContent>
       </Popover>

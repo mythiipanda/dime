@@ -5,6 +5,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from .. import store
 from .count_evidence import count_evidence_meta
 from .league import (
     RERUN_ROW_CAP,
@@ -311,6 +312,7 @@ async def sql_exec(sql: str) -> dict[str, Any]:
         "meta": meta,
     }
     result["meta"].update(count_evidence_meta(query, out_columns, rows))
+    result["meta"].update(store.warehouse_identity())
     schema_tables: dict[str, Any] = {}
     if tables:
         _present, columns = _get_warehouse_schema()

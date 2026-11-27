@@ -63,8 +63,24 @@ export function resolveFields(row: Record<string, unknown>, selectors: { column:
 
 export function resolveProvenance(record: SourceRecord, data: Record<string, unknown>) {
     const meta = objectValue(data?.meta);
+    const warehouseId = typeof meta?.warehouse_id === "string" ? meta.warehouse_id : undefined;
+    const warehouseSha256 = typeof meta?.warehouse_sha256 === "string" ? meta.warehouse_sha256 : undefined;
+    const declaredLiveSources = Array.isArray(meta?.live_sources)
+        ? meta.live_sources.filter((source): source is string => typeof source === "string")
+        : [];
+    const liveSources = declaredLiveSources.length > 0
+        ? declaredLiveSources
+        : meta?.lineage_kind === "live" && typeof meta?.source === "string"
+            ? [meta.source]
+            : [];
+    const origin = warehouseId && liveSources.length > 0
+        ? "mixed"
+        : warehouseId ? "warehouse" : liveSources.length > 0 ? "live" : "undeclared";
     return {
-        capability: record.tool, origin: "undeclared",
+        capability: record.tool, origin,
+        ...(warehouseId ? { warehouse_id: warehouseId } : {}),
+        ...(warehouseSha256 ? { warehouse_sha256: warehouseSha256 } : {}),
+        ...(liveSources.length > 0 ? { live_sources: liveSources } : {}),
         ...(typeof meta?.source === "string" ? { dataset: meta.source } : {}),
         ...(typeof meta?.season === "string" ? { season: meta.season } : {}),
         ...(typeof meta?.as_of === "string" ? { as_of: meta.as_of } : {}),

@@ -144,6 +144,19 @@ def unit_synthetic_warehouse(monkeypatch, tmp_path):
             con.execute(
                 f"INSERT INTO {table} VALUES (42, 71, 14, 25)"
             )
+        con.execute(
+            "CREATE TABLE silver_cap_room (TEAM VARCHAR, COMMITTED_SALARY BIGINT, "
+            "PROJECTED_APRON2 BIGINT)"
+        )
+        con.execute(
+            "INSERT INTO silver_cap_room VALUES ('LAL', 201332759, 221686000)"
+        )
+        con.execute(
+            "CREATE TABLE silver_cap_players (team VARCHAR, player VARCHAR, salary BIGINT)"
+        )
+        con.execute(
+            "INSERT INTO silver_cap_players VALUES ('LAL', 'Example Player', 42000000)"
+        )
     finally:
         con.close()
 
@@ -324,6 +337,27 @@ def test_sql_exec_carries_proven_column_units(
         "AST": "total_assists",
     }
     assert "PerMode48.default='Totals'" in tot_sem["PTS"]["note"]
+
+
+def test_sql_exec_declares_cap_money_units_and_warehouse_identity(
+        unit_synthetic_warehouse) -> None:
+    cap = run_sql(
+        "SELECT TEAM, COMMITTED_SALARY AS payroll, "
+        "PROJECTED_APRON2 AS apron2_line FROM silver_cap_room WHERE TEAM = 'LAL'"
+    )
+    player = run_sql(
+        "SELECT player, salary FROM silver_cap_players WHERE team = 'LAL'"
+    )
+
+    assert cap["rows"] == [{
+        "TEAM": "LAL", "payroll": 201332759, "apron2_line": 221686000,
+    }]
+    assert cap["declared_column_semantics"]["payroll"]["unit"] == "usd_dollars"
+    assert cap["declared_column_semantics"]["apron2_line"]["unit"] == "usd_dollars"
+    assert player["declared_column_semantics"]["salary"]["unit"] == "usd_dollars"
+    assert cap["meta"]["warehouse_id"] == "configured-runtime"
+    assert len(cap["meta"]["warehouse_sha256"]) == 64
+    assert player["meta"]["warehouse_id"] == "configured-runtime"
 
 
 def test_sql_exec_carries_hist_exact_totals(

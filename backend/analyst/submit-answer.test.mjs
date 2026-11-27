@@ -1316,7 +1316,11 @@ function teamCardSource() {
 test("team cards resolve identity, metrics and sections with per-section provenance", () => {
   const header = teamCardSource();
   const cap = makeSourceRecord("cap-src", { rows: [{ total_salary: 187000000, apron_room: -12000000, cap_status: "Above first apron" }] });
-  cap.response.structuredContent.meta = { season: "2026-27", source: "bref_cap" };
+  cap.response.structuredContent.units = {
+    total_salary: "usd_dollars",
+    apron_room: "usd_dollars",
+  };
+  cap.response.structuredContent.meta = { season: "2026-27", source: "orojas119/nba-salary-cap (estimated)", warehouse_id: "configured-runtime", warehouse_sha256: "abc123" };
   const fourFactors = makeSourceRecord("4f-src", { rows: [{ efg_pct: 0.56, rank_efg: 4, tov_pct: 0.128 }] });
   fourFactors.response.structuredContent.meta = { season: "2026-27", source: "nba_four_factors" };
   const picks = makeSourceRecord("picks-src", { rows: [{ pick_summary: "Own 2027-2032" }] });
@@ -1342,9 +1346,12 @@ test("team cards resolve identity, metrics and sections with per-section provena
   assert.equal(card.provenance.season, "2026-27");
   assert.equal(card.sections.length, 3);
   const [capSection, fourFactorSection, pickSection] = card.sections;
-  assert.deepEqual(capSection.metrics, [{ column: "total_salary", label: "Payroll", value: 187000000 }, { column: "apron_room", label: "Apron room", value: -12000000 }]);
+  assert.deepEqual(capSection.metrics, [{ column: "total_salary", label: "Payroll", value: 187000000, unit: "usd_dollars" }, { column: "apron_room", label: "Apron room", value: -12000000, unit: "usd_dollars" }]);
   assert.deepEqual(capSection.fields, [{ column: "cap_status", label: "Cap status", value: "Above first apron" }]);
-  assert.equal(capSection.provenance.dataset, "bref_cap");
+  assert.equal(capSection.provenance.origin, "warehouse");
+  assert.equal(capSection.provenance.warehouse_id, "configured-runtime");
+  assert.equal(capSection.provenance.warehouse_sha256, "abc123");
+  assert.equal(capSection.provenance.dataset, "orojas119/nba-salary-cap (estimated)");
   assert.equal(fourFactorSection.metrics[1].value, 4);
   assert.equal(fourFactorSection.provenance.dataset, "nba_four_factors");
   assert.equal(pickSection.fields[0].value, "Own 2027-2032");
