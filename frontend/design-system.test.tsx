@@ -323,3 +323,16 @@ test("table artifact rows type admits null, matching the renderer and real data"
   const source = readFileSync(new URL("./lib/stream/types.ts", import.meta.url), "utf8");
   assert.ok(source.includes("rows: (string | number | null)[][]"), "the row type widened to reality");
 });
+
+test("the shell exposes a skip-to-content link as the first focusable stop", () => {
+  const shell = readFileSync(new URL("./components/shell/DimeShell.tsx", import.meta.url), "utf8");
+  const anchor = shell.indexOf('href="#dime-main-content"');
+  const sidebar = shell.indexOf("<SidebarNav");
+  assert.ok(anchor > -1, "skip link present");
+  assert.ok(anchor < sidebar, "skip link precedes the sidebar in tab order");
+  assert.match(shell, /id="dime-main-content"[^>]*tabIndex=\{-1\}/);
+  const css = readFileSync(new URL("./app/dime.css", import.meta.url), "utf8");
+  const hidden = css.match(/\.skip-to-content\s*\{([^}]+)\}/)![1];
+  assert.match(hidden, /left:\s*-9999px/);
+  assert.match(css, /\.skip-to-content:focus-visible\s*\{[^}]*left:\s*\d/);
+});

@@ -10,6 +10,9 @@ button, summary, select { cursor: pointer; }
 button:disabled { cursor: default; }
 button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .dime-shell { display: flex; height: 100dvh; padding: 8px 8px 8px 0; background: var(--canvas); overflow: hidden; }
+.skip-to-content { position: absolute; top: 10px; left: -9999px; z-index: 60; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); color: var(--ink); font-size: 13px; text-decoration: none; box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); }
+.skip-to-content:focus-visible { left: 14px; }
+.dime-main:focus { outline: none; }
 .dime-sidebar { flex: 0 0 224px; width: 224px; display: flex; flex-direction: column; padding: 0 8px; transition: width 220ms var(--ease-out-strong), flex-basis 220ms var(--ease-out-strong); overflow-y: auto; }
 .dime-sidebar.is-collapsed { flex-basis: 52px; width: 52px; }
 .sidebar-row { display: flex; align-items: center; gap: 9px; padding: 7px 9px; min-height: 34px; width: 100%; border-radius: 7px; color: var(--ink-2); font-size: 13px; white-space: nowrap; text-align: left; }
