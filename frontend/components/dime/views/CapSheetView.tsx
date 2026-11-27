@@ -51,7 +51,7 @@ function scenarioSeasonForMoves(moves: ScenarioMove[]): string | null {
   return seasons.size === 1 ? Array.from(seasons)[0] : null;
 }
 
-export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void }) {
+export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [team, setTeam] = useState(() => initialTeamParam() ?? "BOS");
   const [sheet, setSheet] = useState<CapSheetResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -237,6 +237,20 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   }
 
   const state = scenario?.state ?? sheet?.state;
+
+  function scenarioContext(): import("@/lib/view-context").ViewContext {
+    const evaluationSeason = scenario?.season ?? scenarioSeason ?? DEFAULT_SCENARIO_SEASON;
+    return {
+      kind: "cap_scenario",
+      summary: `${sheet?.team ?? team} cap scenario · ${evaluationSeason} · ${moves.length} move${moves.length === 1 ? "" : "s"}`,
+      entities: {
+        team: sheet?.team ?? team,
+        season: evaluationSeason,
+        moves,
+        ...(scenario ? { payroll_after: scenario.pay_after } : {}),
+      },
+    };
+  }
 
   function serializeScenario(): string {
     const lines = moves.map((move) => {
@@ -511,7 +525,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   {onAsk && (
                     <button
                       className="h-7 rounded-[7px] bg-[var(--accent)] px-2.5 text-[11.5px] font-medium text-white hover:opacity-90"
-                      onClick={() => onAsk(serializeScenario())}
+                      onClick={() => onAsk(serializeScenario(), scenarioContext())}
                     >
                       Ask about this scenario
                     </button>

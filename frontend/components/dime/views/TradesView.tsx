@@ -106,7 +106,7 @@ function seedPartner(seeded: string): string {
   return NBA_TEAM_ABBRS.find(abbr => abbr !== seeded) ?? "DAL";
 }
 
-export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }) {
+export default function TradesView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [teams, setTeams] = useState<string[]>(() => {
     const seeded = initialTeamParam();
     if (!seeded) return ["DAL", "NYK"];
@@ -284,6 +284,21 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
     const names = pkg.players.slice();
     if (pkg.picks.length > 0) names.push(`${pkg.picks.length} pick${pkg.picks.length === 1 ? "" : "s"}`);
     return names.length ? names.join(", ") : "nothing";
+  };
+
+  const tradeContext = (): import("@/lib/view-context").ViewContext => {
+    const legal = check.state === "ok" ? check.rows.legal : check.state === "ok-legs" ? check.legal : null;
+    const issues = check.state === "ok" ? check.rows.issues : check.state === "ok-legs" ? check.issues : [];
+    return {
+      kind: "trade",
+      summary: `${teams.join(" ↔ ")} trade · ${TRADE_SEASON}`,
+      entities: {
+        teams,
+        season: TRADE_SEASON,
+        packages: teams.map((abbr, index) => ({ team: abbr, players: (pkgs[index] ?? emptyPackage()).players, picks: (pkgs[index] ?? emptyPackage()).picks })),
+        ...(legal !== null ? { legal, issues } : {}),
+      },
+    };
   };
 
   const buildAskText = () => {
@@ -650,7 +665,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string) => void }
             <button
               className="h-7 rounded-[7px] border border-line bg-surface px-2.5 text-xs font-medium text-ink-2 hover:bg-hover disabled:opacity-40"
               disabled={pkgs.filter(pkg => pkg.players.length > 0).length < 2}
-              onClick={() => onAsk(buildAskText())}
+              onClick={() => onAsk(buildAskText(), tradeContext())}
             >
               Ask Dime about this trade
             </button>
