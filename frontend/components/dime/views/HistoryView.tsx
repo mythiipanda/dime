@@ -356,9 +356,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           {!compsLoading && !compsError && comps?.qualified === false && comps.qualification && (
             <div className="mt-2 rounded-[8px] bg-field p-3 text-[12.5px] text-ink-2">
               <p>
-                {player}&apos;s {selectedSeason} does not meet the era comps qualification
-                minimum ({comps.qualification.rule} — this season: {comps.qualification.gp} gp,{" "}
-                {comps.qualification.total_min != null ? `${Math.round(comps.qualification.total_min)} total minutes` : "minutes unavailable"}).
+                {`${player}'s ${selectedSeason} does not meet the era comps qualification minimum (${comps.qualification.rule} — this season: ${comps.qualification.gp} gp, ${comps.qualification.total_min != null ? `${Math.round(comps.qualification.total_min)} total minutes` : "minutes unavailable"}).`}
               </p>
               {comps.qualifying_seasons && comps.qualifying_seasons.length > 0 && (
                 <p className="mt-1.5">
