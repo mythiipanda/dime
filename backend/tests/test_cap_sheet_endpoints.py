@@ -110,10 +110,39 @@ def test_sheet_shape_boston(con):
     assert "2026-27" in totals
     entry = totals["2026-27"]
     for key in ("committed", "pending_option", "dead_money", "cap_holds",
-                "incomplete_roster_charges", "payroll"):
+                "incomplete_roster_charges", "payroll", "component_availability"):
         assert key in entry
     assert entry["payroll"] == entry["committed"] + entry["dead_money"] + entry["cap_holds"] + entry["incomplete_roster_charges"] or entry["payroll"] >= entry["committed"]
+    assert entry["component_availability"]["dead_money"] is False
     assert {"over_tax", "over_apron1", "over_apron2", "room_apron1", "room_apron2", "room_under_apron2"} <= set(out["state"])
+
+
+def test_sheet_component_availability_marks_cap_room_coverage():
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_salary_con()
+    try:
+        con.execute(
+            "CREATE TABLE silver_cap_room ("
+            "TEAM VARCHAR, CAP_SEASON VARCHAR, FA_HOLDS_EST BIGINT, "
+            "INCOMPLETE_ROSTER_CHARGES BIGINT, PROJECTED_CAP BIGINT, "
+            "PROJECTED_TAX BIGINT, PROJECTED_APRON1 BIGINT, PROJECTED_APRON2 BIGINT)")
+        con.execute(
+            "INSERT INTO silver_cap_room VALUES "
+            "('TST', '2027-28', 1000000, 2000000, 180000000, 220000000, 230000000, 240000000)")
+        out = cap_sheet_rows(con, "TST", "2026-27")
+    finally:
+        con.close()
+    assert out["ok"] is True
+    covered = out["totals"]["2027-28"]
+    uncovered = out["totals"]["2026-27"]
+    assert covered["component_availability"]["cap_holds"] is True
+    assert covered["component_availability"]["incomplete_roster_charges"] is True
+    assert uncovered["component_availability"]["cap_holds"] is False
+    assert uncovered["component_availability"]["incomplete_roster_charges"] is False
+    assert covered["payroll"] == 48_000_000
+    assert covered["payroll"] == (covered["committed"] + covered["dead_money"]
+                                  + covered["cap_holds"]
+                                  + covered["incomplete_roster_charges"])
 
 
 def test_sheet_multi_year_matrix(con):

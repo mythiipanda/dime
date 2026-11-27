@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { DataState } from "@/components/ds/DataState";
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { getClientId } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -26,11 +27,136 @@ const TEAMS = [
 
 function money(value: number | null | undefined): string {
   if (value == null) return "–";
-  return `$${(value / 1e6).toFixed(1)}`;
+  const sign = value < 0 ? "−" : "";
+  return `${sign}$${(Math.abs(value) / 1e6).toFixed(1)}M`;
+}
+
+function exactMoney(value: number | null | undefined): string {
+  if (value == null) return "–";
+  const sign = value < 0 ? "−" : "";
+  return `${sign}$${Math.abs(value).toLocaleString("en-US")}`;
 }
 
 function shortSeason(season: string): string {
   return `’${season.slice(5)}`;
+}
+
+type CapTotals = CapSheetResponse["totals"][string];
+
+type YearTotals = {
+  committed: number;
+  pending: number;
+  payroll: number;
+  base: CapTotals;
+};
+
+type AvailabilityKey = "dead_money" | "cap_holds" | "incomplete_roster_charges";
+
+function componentAvailable(base: CapTotals, key: AvailabilityKey): boolean {
+  const declared = base.component_availability?.[key];
+  if (typeof declared === "boolean") return declared;
+  if (key === "dead_money") return base.dead_money !== 0;
+  if (key === "cap_holds") return base.cap_holds !== 0;
+  return base.incomplete_roster_charges !== 0;
+}
+
+type BreakdownRow = {
+  label: string;
+  amount: number | null;
+  status: "counted" | "excluded" | "undeclared";
+};
+
+function payrollBreakdownRows(totals: YearTotals, includePending: boolean): BreakdownRow[] {
+  const deadMoneyAvailable = componentAvailable(totals.base, "dead_money");
+  const capHoldsAvailable = componentAvailable(totals.base, "cap_holds");
+  const rosterChargesAvailable = componentAvailable(totals.base, "incomplete_roster_charges");
+  const rows: BreakdownRow[] = [
+    { label: "Committed salary", amount: totals.committed, status: "counted" },
+    { label: "Team-option salary", amount: totals.pending, status: includePending ? "counted" : "excluded" },
+    { label: "Dead money", amount: deadMoneyAvailable ? totals.base.dead_money : null, status: deadMoneyAvailable ? "counted" : "undeclared" },
+    { label: "Cap holds", amount: capHoldsAvailable ? totals.base.cap_holds : null, status: capHoldsAvailable ? "counted" : "undeclared" },
+    { label: "Minimum-roster charges", amount: rosterChargesAvailable ? totals.base.incomplete_roster_charges : null, status: rosterChargesAvailable ? "counted" : "undeclared" },
+  ];
+  const explained = totals.committed
+    + (includePending ? Math.max(0, totals.pending) : 0)
+    + (deadMoneyAvailable ? totals.base.dead_money : 0)
+    + (capHoldsAvailable ? totals.base.cap_holds : 0)
+    + (rosterChargesAvailable ? totals.base.incomplete_roster_charges : 0);
+  const unattributed = totals.payroll - explained;
+  if (unattributed !== 0) rows.push({ label: "Unattributed amount", amount: unattributed, status: "counted" });
+  return rows;
+}
+
+function PayrollMathPopover({ team, season, totals, lines, includePending, children }: {
+  team: string;
+  season: string;
+  totals: YearTotals;
+  lines: CapSheetResponse["lines"][string] | undefined;
+  includePending: boolean;
+  children: ReactNode;
+}) {
+  const rows = payrollBreakdownRows(totals, includePending);
+  const counted = rows.filter((row) => row.status === "counted");
+  const excluded = rows.filter((row) => row.status === "excluded");
+  const undeclaredRows = rows.filter((row) => row.status === "undeclared");
+  const renderRows = (items: BreakdownRow[], muted = false) => (
+    <div className="mt-1.5 space-y-1">
+      {items.map((row) => (
+        <div key={row.label} className="flex items-baseline justify-between gap-4 text-[12px]">
+          <span className="text-ink-2">{row.label}</span>
+          <span className={`shrink-0 tabular-nums ${muted ? "text-ink-3" : "text-ink"}`}>{exactMoney(row.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
+  const capRoom = lines ? lines.cap - totals.payroll : null;
+  const apronRoom = lines ? lines.apron2 - totals.payroll : null;
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label={`Payroll math for ${season}`}
+        className="w-full cursor-pointer rounded-[4px] text-right font-medium tabular-nums text-current underline decoration-line decoration-dotted underline-offset-4 transition-colors hover:text-ink"
+      >
+        {children}
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" aria-label={`Payroll components for ${season}`} className="w-80 bg-surface text-ink">
+        <PopoverTitle>{team} payroll · {season}</PopoverTitle>
+        <PopoverDescription className="text-[12px] leading-[1.5]">
+          Exact US dollars. Unavailable components are omitted rather than shown as zero. Exceptions do not add to payroll by themselves; only salary signed with them does.
+        </PopoverDescription>
+        <div className="border-t border-line pt-2">
+          <p className="text-[11px] font-medium text-ink-3">Counted in payroll</p>
+          {renderRows(counted)}
+          <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-2 text-[12.5px]">
+            <span className="font-medium text-ink">Payroll estimate</span>
+            <span className="shrink-0 font-medium tabular-nums text-ink">{exactMoney(totals.payroll)}</span>
+          </div>
+        </div>
+        {excluded.length > 0 && (
+          <div className="border-t border-line pt-2">
+            <p className="text-[11px] font-medium text-ink-3">Outside this estimate</p>
+            {renderRows(excluded, true)}
+          </div>
+        )}
+        {undeclaredRows.length > 0 && (
+          <div className="border-t border-line pt-2">
+            <p className="text-[11px] font-medium text-ink-3">Not available</p>
+            {renderRows(undeclaredRows, true)}
+          </div>
+        )}
+        {lines && (
+          <div className="border-t border-line pt-2">
+            <p className="text-[11px] font-medium text-ink-3">Room math</p>
+            <div className="mt-1.5 space-y-1 text-[12px]">
+              <div className="flex items-baseline justify-between gap-4"><span className="text-ink-2">Salary cap</span><span className="shrink-0 tabular-nums text-ink">{exactMoney(lines.cap)}</span></div>
+              <div className="flex items-baseline justify-between gap-4"><span className="text-ink-2">Cap room estimate</span><span className="shrink-0 tabular-nums text-ink">{exactMoney(capRoom)}</span></div>
+              <div className="flex items-baseline justify-between gap-4"><span className="text-ink-2">Room under second apron</span><span className="shrink-0 tabular-nums text-ink">{exactMoney(apronRoom)}</span></div>
+            </div>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function useFixture(): boolean {
@@ -324,7 +450,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
           <div className="min-w-0 flex-1 rounded-[10px] bg-surface shadow-hairline">
             <div className="flex items-center justify-between px-4 pt-3">
               <span className="text-[13px] font-semibold text-ink">
-                {sheet.team} · committed money by season
+                {sheet.team} · payroll estimate by season
               </span>
               <label className="flex items-center gap-1.5 text-[11.5px] text-ink-2">
                 <input
@@ -333,11 +459,11 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   onChange={(e) => setIncludePending(e.target.checked)}
                   className="size-3 accent-[var(--accent)]"
                 />
-                include pending options
+                count team-option salary
               </label>
             </div>
             <div className="overflow-x-auto p-3">
-              <table className="w-full min-w-[640px] border-separate border-spacing-0 text-[12px]">
+              <table aria-label={`${sheet.team} cap sheet by season`} className="w-full min-w-[640px] border-separate border-spacing-0 text-[12px]">
                 <thead>
                   <tr>
                     <th className="sticky left-0 z-10 bg-surface px-2 py-1.5 text-left font-mono text-[10px] font-normal uppercase tracking-wide text-ink-3">
@@ -387,8 +513,8 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                 <tfoot>
                   {(["committed", "payroll"] as const).map((row) => (
                     <tr key={row}>
-                      <td className={`sticky left-0 z-10 border-t border-line bg-surface px-2 py-1.5 font-mono text-[10px] uppercase tracking-wide ${row === "payroll" ? "text-ink" : "text-ink-3"}`}>
-                        {row}
+                      <td className={`sticky left-0 z-10 border-t border-line bg-surface px-2 py-1.5 text-[11px] ${row === "payroll" ? "font-medium text-ink" : "text-ink-3"}`}>
+                        {row === "payroll" ? "payroll estimate" : "committed salary"}
                       </td>
                       {seasons.map((season) => {
                         const totals = yearTotals(season);
@@ -396,17 +522,36 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                         const lines = sheet.lines[season];
                         const over = row === "payroll" && value != null && lines && value > lines.apron2;
                         return (
-                          <td key={season} className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${row === "payroll" ? "font-medium text-ink" : "text-ink-2"} ${over ? "text-red" : ""}`}>
-                            {money(value)}
+                          <td key={season} className={`border-t border-line px-2 py-1.5 text-right tabular-nums ${row === "payroll" ? "font-medium text-ink" : "text-ink-2"} ${over ? "text-red" : ""}`}>
+                            {row === "payroll" && totals ? (
+                              <PayrollMathPopover team={sheet.team} season={season} totals={totals} lines={lines} includePending={includePending}>
+                                {money(value)}
+                              </PayrollMathPopover>
+                            ) : money(value)}
                           </td>
                         );
                       })}
                     </tr>
                   ))}
+                  <tr>
+                    <td className="sticky left-0 z-10 border-t border-line bg-surface px-2 py-1 text-[10.5px] text-ink-3">
+                      cap room estimate
+                    </td>
+                    {seasons.map((season) => {
+                      const lines = sheet.lines[season];
+                      const totals = yearTotals(season);
+                      const room = lines && totals ? lines.cap - totals.payroll : null;
+                      return (
+                        <td key={season} className="border-t border-line px-2 py-1 text-right text-[10.5px] tabular-nums text-ink-3">
+                          {money(room)}
+                        </td>
+                      );
+                    })}
+                  </tr>
                   {(["cap", "tax", "apron1", "apron2"] as const).map((line) => (
                     <tr key={line}>
-                      <td className="sticky left-0 z-10 border-t border-line bg-surface px-2 py-1 font-mono text-[9.5px] uppercase tracking-wide text-ink-3">
-                        {line === "apron1" ? "apron 1" : line === "apron2" ? "apron 2" : line}
+                      <td className="sticky left-0 z-10 border-t border-line bg-surface px-2 py-1 text-[10.5px] text-ink-3">
+                        {line === "cap" ? "salary cap" : line === "tax" ? "tax line" : line === "apron1" ? "first apron" : "second apron"}
                       </td>
                       {seasons.map((season) => {
                         const lines = sheet.lines[season];
@@ -414,7 +559,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                         const threshold = lines?.[line];
                         const breached = threshold != null && totals != null && totals.payroll > threshold;
                         return (
-                          <td key={season} className={`border-t border-line px-2 py-1 text-right font-mono text-[10.5px] tabular-nums ${breached ? "text-red" : "text-ink-3"}`}>
+                          <td key={season} className={`border-t border-line px-2 py-1 text-right text-[10.5px] tabular-nums ${breached ? "text-red" : "text-ink-3"}`}>
                             {money(threshold)}
                           </td>
                         );
@@ -424,11 +569,12 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                 </tfoot>
               </table>
             </div>
-            <p className="px-4 pb-3 font-mono text-[10px] leading-[1.6] text-ink-3">
-              {sheet.meta.source} · salaries as of {sheet.meta.salary_date}
-              {" · "}p/t = player/team option, click an option cell to toggle it in the scenario
-              {" · "}lines beyond 2027-28 projected at a 7% growth assumption
-            </p>
+            <div className="px-4 pb-3 text-[11px] leading-[1.55] text-ink-3">
+              <p>{sheet.meta.source} · salaries as of {sheet.meta.salary_date}</p>
+              <p className="mt-1">
+                Payroll estimate uses committed salary plus available dead money, cap holds and minimum-roster charges. Select a payroll figure for exact season math; team-option salary is counted only when enabled. Lines beyond 2027-28 use a 7% growth assumption. p/t = player/team option.
+              </p>
+            </div>
           </div>
 
           <aside className="w-full shrink-0 space-y-3 lg:sticky lg:top-6 lg:w-[280px] lg:self-start">
@@ -472,7 +618,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   {scenarioError && <p className="text-[11.5px] text-red">{scenarioError}</p>}
                   {scenario && (
                     <p className="border-t border-line pt-1.5 font-mono text-[11px] tabular-nums text-ink">
-                      payroll after: {money(scenario.pay_after)}M
+                      payroll after: {money(scenario.pay_after)}
                     </p>
                   )}
                 </div>

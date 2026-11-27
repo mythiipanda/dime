@@ -33,6 +33,13 @@ export type CapSheetResponse = {
     cap_holds: number;
     incomplete_roster_charges: number;
     payroll: number;
+    component_availability?: {
+      committed?: boolean;
+      pending_option?: boolean;
+      dead_money?: boolean;
+      cap_holds?: boolean;
+      incomplete_roster_charges?: boolean;
+    };
   }>;
   state: {
     over_tax: boolean;
@@ -157,17 +164,32 @@ export const capSheetFixture: CapSheetResponse = {
     player("Neemias Queta", 1629674, "Minimum", 2524525, [null, "team", null, null, null, null]),
   ],
   totals: Object.fromEntries(
-    SEASONS.map((season, i) => [
-      season,
-      {
-        committed: 198000000 + i * 8400000,
-        pending_option: i >= 2 ? 62786682 : 0,
-        dead_money: i === 0 ? 0 : 0,
-        cap_holds: i === 1 ? 4100000 : 0,
-        incomplete_roster_charges: 0,
-        payroll: 198000000 + i * 8400000,
-      },
-    ]),
+    SEASONS.map((season, i) => {
+      const committed = 198000000 + i * 8400000;
+      const pendingOption = i === 1 ? 2726487 : i === 3 ? 12653520 : 0;
+      const deadMoney = 0;
+      const capHolds = i === 1 ? 4100000 : 0;
+      const rosterCharges = i === 1 ? 1234567 : 0;
+      const capRoomCovered = i === 1;
+      return [
+        season,
+        {
+          committed,
+          pending_option: pendingOption,
+          dead_money: deadMoney,
+          cap_holds: capHolds,
+          incomplete_roster_charges: rosterCharges,
+          payroll: committed + deadMoney + capHolds + rosterCharges,
+          component_availability: {
+            committed: true,
+            pending_option: true,
+            dead_money: false,
+            cap_holds: capRoomCovered,
+            incomplete_roster_charges: capRoomCovered,
+          },
+        },
+      ];
+    }),
   ),
   state: { over_tax: true, over_apron1: false, over_apron2: false, room_under_apron2: 23686000 },
   meta: { source: "basketball-reference contracts", salary_date: "2026-11-20", season: "2026-27" },

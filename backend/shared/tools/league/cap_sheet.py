@@ -195,7 +195,14 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
         totals[label] = {"committed": base["committed"],
                          "pending_option": base["pending_option"],
                          "dead_money": 0, "cap_holds": 0,
-                         "incomplete_roster_charges": 0}
+                         "incomplete_roster_charges": 0,
+                         "component_availability": {
+                             "committed": True,
+                             "pending_option": True,
+                             "dead_money": False,
+                             "cap_holds": False,
+                             "incomplete_roster_charges": False,
+                         }}
     holds_note = "cap_holds and incomplete_roster_charges populate only when silver_cap_room covers the season"
     if "silver_cap_room" in tables:
         try:
@@ -207,6 +214,8 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                 if label in totals:
                     totals[label]["cap_holds"] = int(r[1] or 0)
                     totals[label]["incomplete_roster_charges"] = int(r[2] or 0)
+                    totals[label]["component_availability"]["cap_holds"] = True
+                    totals[label]["component_availability"]["incomplete_roster_charges"] = True
         except Exception:
             pass
     for label, entry in totals.items():
