@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
 import { DataState } from "@/components/ds/DataState";
+import { Button } from "@/components/ds/Button";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -167,7 +168,7 @@ function slateState(m: MatchupGame): "live" | "final" | "upcoming" {
   return "upcoming";
 }
 
-function MatchupDetail({ game }: { game: MatchupGame }) {
+function MatchupDetail({ game, onAsk }: { game: MatchupGame; onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const rows = statRows(game.away, game.home);
   return (
     <div
@@ -212,11 +213,37 @@ function MatchupDetail({ game }: { game: MatchupGame }) {
       </div>
 
       <InjuryNotes game={game} />
+
+      {onAsk && (
+        <div className="mt-3 flex justify-end border-t border-line pt-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onAsk(
+              `Who has the edge in ${game.away.abbr} @ ${game.home.abbr}? Break down the matchup — ratings, form, pace and the injury picture.`,
+              {
+                kind: "matchup",
+                summary: `${game.away.abbr} @ ${game.home.abbr} · ${game.date}`,
+                entities: {
+                  teams: [game.away.abbr, game.home.abbr],
+                  away: { abbr: game.away.abbr, name: game.away.name, record: game.away.record, net_rating: game.away.net_rating, off_rating: game.away.off_rating, def_rating: game.away.def_rating, pace: game.away.pace, form: game.away.form, injuries: game.away.injuries },
+                  home: { abbr: game.home.abbr, name: game.home.name, record: game.home.record, net_rating: game.home.net_rating, off_rating: game.home.off_rating, def_rating: game.home.def_rating, pace: game.home.pace, form: game.home.form, injuries: game.home.injuries },
+                  date: game.date,
+                  time: game.time,
+                  ...(game.away_score != null && game.home_score != null ? { score: { away: game.away_score, home: game.home_score } } : {}),
+                },
+              },
+            )}
+          >
+            Ask Dime about this matchup
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-export default function MatchupsView() {
+export default function MatchupsView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [data, setData] = useState<MatchupsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -368,7 +395,7 @@ export default function MatchupsView() {
               })}
             </div>
             <div className="xl:sticky xl:top-6">
-              <MatchupDetail key={active.id} game={active} />
+              <MatchupDetail key={active.id} game={active} onAsk={onAsk} />
             </div>
           </div>
         </>

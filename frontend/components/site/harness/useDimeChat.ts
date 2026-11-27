@@ -7,6 +7,7 @@ import { getModels } from "@/lib/api";
 import { cacheChatRun, loadChatRuns } from "@/lib/chat-persistence";
 import { modelDisplayName } from "@/lib/modelNames";
 import { streamDimeChat } from "@/lib/dime-stream";
+import { serializeViewContext } from "@/lib/view-context";
 import {
   assistantMessageFromSnapshot,
   REFERENCE_TAB,
@@ -98,7 +99,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     setMessagesByTab((m) => ({ ...m, [tabId]: [...(m[tabId] ?? []), message] }));
   };
 
-  const submit = (raw?: string) => {
+  const submit = (raw?: string, context?: import("@/lib/view-context").ViewContext) => {
     const q = (raw ?? draft).trim();
     if (!q || live || historyLoading || (!options?.replay && !modelOptions.some(item => item.id === model && item.available !== false))) return;
     options?.onSubmit?.();
@@ -110,7 +111,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     const id = liveId.current;
     const startedAt = Date.now();
     liveQuestion.current = q;
-    appendMessage(tabId, { role: "user", text: q });
+    appendMessage(tabId, { role: "user", text: context ? serializeViewContext(context, q) : q });
     setDraft("");
     setLive({
       id,
@@ -145,7 +146,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
           if (thread && !options?.replay) { cacheChatRun(thread, q, snap); options?.onRunDone?.(q); }
         },
       },
-      { signal: ctrl.signal, model, thread, replay: options?.replay },
+      { signal: ctrl.signal, model, thread, replay: options?.replay, ...(context ? { context } : {}) },
     );
   };
 
