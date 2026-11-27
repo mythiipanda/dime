@@ -51,6 +51,11 @@ test("in-process Pi + QuickJS + Python MCP over local OpenAI SSE, source reuse a
     for await(const event of analyst.stream(context)) events.push(event);
     assert(!events.some(e=>e.type === "failure"),JSON.stringify(events));
     assert.equal(events.find(e=>e.type === "answer")?.text,"Synthetic answer");
+    const statuses=events.filter(e=>e.type === "status").map(e=>e.text);
+    assert.equal(statuses[0],"Reading the question");
+    assert(statuses.slice(1).every(text=>text === "Weighing the evidence"),JSON.stringify(statuses));
+    const kindOrder=events.map(e=>e.type);
+    assert(kindOrder.indexOf("status")<kindOrder.indexOf("answer"),JSON.stringify(kindOrder));
     const sources=events.filter(e=>e.type === "source").map(e=>e.record);
     assert.equal(sources.length,2);
     assert.equal(JSON.parse(sources[0].response.content[0].text).ok,false);
@@ -247,6 +252,29 @@ test("execution-reported failures keep evidence artifacts outside conversation h
     const artifact=JSON.parse(readFileSync(join(sourcesDir,runId+".json"),"utf8"));
     assert.deepEqual(artifact.sources.map(record=>record.ref),["src-failure"]);
     assert.deepEqual(artifact.source_refs,["src-failure"]);
+  } finally {
+    await rm(dir,{recursive:true,force:true});
+  }
+});
+
+test("status events pass through the product stream before the final answer",async()=>{
+  const dir=await mkdtemp(join(tmpdir(),"dime-status-stream-"));
+  try {
+    const execution={async *stream(){
+      yield {type:"status",text:"Reading the question"};
+      yield {type:"tool_call",name:"get_leaders",args:{stat:"pts"}};
+      yield {type:"tool_result",name:"get_leaders",status:"ok",rows:10};
+      yield {type:"status",text:"Weighing the evidence"};
+      yield {type:"answer",text:"Done"};
+      yield {type:"closed"};
+    }};
+    const {analyst}=continuityHarness(dir,execution);
+    const events=await drainEvents(analyst.stream({q:"status probe",thread:"t-status",client:"owner-a"},undefined,continuityRun(200)));
+    const statuses=events.filter(e=>e.type==="status");
+    assert.deepEqual(statuses.map(e=>e.data.text),["Reading the question","Weighing the evidence"]);
+    const order=events.map(e=>e.type);
+    assert(order.indexOf("status")<order.indexOf("final_answer"),JSON.stringify(order));
+    assert(order.lastIndexOf("status")<order.indexOf("final_answer"),JSON.stringify(order));
   } finally {
     await rm(dir,{recursive:true,force:true});
   }

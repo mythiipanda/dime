@@ -365,6 +365,9 @@ export type AnalystEvent = {
     type: "token";
     text: string;
 } | {
+    type: "status";
+    text: string;
+} | {
     type: "tool_call";
     name: string;
     args?: unknown;
@@ -1355,8 +1358,11 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     }, deps.retryTimeBudgetMs);
                     let notFoundCorrections = 0;
                     let scannedToolResults = 0;
+                    let turnCount = 0;
                     const correctedNotFoundNames = new Set<string>();
                     session.subscribe(event => {
+                        if (event.type === "turn_start")
+                            emit({ type: "status", text: turnCount++ === 0 ? "Reading the question" : "Weighing the evidence" });
                         const mapped = analystEventFrom(event);
                         if (mapped)
                             emit(mapped);

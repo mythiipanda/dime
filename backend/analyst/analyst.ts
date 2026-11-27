@@ -31,6 +31,11 @@ export type ProductEvent = {
         text: string;
     };
 } | {
+    type: "status";
+    data: {
+        text: string;
+    };
+} | {
     type: "tool_call";
     data: {
         node: "tools";
@@ -165,6 +170,8 @@ function mapExecutionEvent(event: AnalystEvent, state: RunState): ProductEvent |
         case "token":
             state.streamed = true;
             return { type: "token", data: { text: event.text } };
+        case "status":
+            return { type: "status", data: { text: event.text } };
         case "failure":
             state.failed = true;
             return { type: "failure", data: { kind: event.kind, message: event.message } };
