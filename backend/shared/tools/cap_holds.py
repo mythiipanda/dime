@@ -45,13 +45,15 @@ _ROOKIE_SCALE_VALUES = {
 _ROUNDING_VALUES = {ROUND_EXACT, ROUND_HALF_UP, ROUND_FLOOR, ROUND_CEILING}
 _MAX_TIERS = {25, 30, 35}
 
-_BASE_FACT_INPUTS = (
+CAP_HOLD_FACT_INPUTS = (
     "years_of_service",
     "rights_classification",
     "rookie_scale_status",
     "max_player_tier",
+    "completed_two_way_contract",
+    "restricted_free_agent",
 )
-_BASE_AMOUNT_INPUTS = (
+CAP_HOLD_REQUIRED_AMOUNT_INPUTS = (
     "prior_salary",
     "final_prior_contract_salary",
     "target_salary_cap",
@@ -59,14 +61,38 @@ _BASE_AMOUNT_INPUTS = (
     "applicable_minimum",
     "target_unreimbursed_minimum",
 )
-_RFA_AMOUNT_INPUTS = (
+CAP_HOLD_TWO_WAY_AMOUNT_INPUTS = (
+    "target_zero_yos_minimum",
+)
+CAP_HOLD_DECLINED_OPTION_AMOUNT_INPUTS = (
+    "declined_option_amount",
+)
+CAP_HOLD_RFA_AMOUNT_INPUTS = (
     "qualifying_offer",
     "maximum_qualifying_offer",
     "first_refusal_exercise_notice",
 )
+CAP_HOLD_DYNAMIC_AMOUNT_INPUTS = (
+    *CAP_HOLD_TWO_WAY_AMOUNT_INPUTS,
+    *CAP_HOLD_DECLINED_OPTION_AMOUNT_INPUTS,
+    *CAP_HOLD_RFA_AMOUNT_INPUTS,
+)
+CAP_HOLD_METADATA_INPUTS = (
+    "input_exactness",
+    "provenance",
+)
+CAP_HOLD_CONTROL_INPUTS = (
+    "integer_rounding",
+)
 
 
-def _require_amounts(values: Mapping[str, int | None]) -> None:
+def _require_amounts(values: Mapping[str, int | None],
+                     optional_names: tuple[str, ...] = ()) -> None:
+    optional = set(optional_names)
+    missing = [name for name, value in values.items()
+               if value is None and name not in optional]
+    if missing:
+        raise ValueError("required amount inputs cannot be null: " + ", ".join(missing))
     bad = [name for name, value in values.items()
            if value is not None
            and (not isinstance(value, int) or isinstance(value, bool) or value < 0)]
@@ -89,29 +115,41 @@ def _validate_core(rights_classification: str, rookie_scale_status: str,
         raise ValueError("years_of_service must be a non-negative integer")
 
 
+def _validate_boolean_inputs(values: Mapping[str, bool]) -> None:
+    bad = [name for name, value in values.items() if not isinstance(value, bool)]
+    if bad:
+        raise ValueError("boolean inputs must be true or false: " + ", ".join(bad))
+
+
 def _validate_state(completed_two_way_contract: bool,
                     target_zero_yos_minimum: int | None,
                     declined: bool, declined_option_amount: int | None,
                     restricted_free_agent: bool,
                     rfa_amounts: Mapping[str, int | None]) -> None:
+    _validate_boolean_inputs({
+        "completed_two_way_contract": completed_two_way_contract,
+        "restricted_free_agent": restricted_free_agent,
+    })
     if declined and declined_option_amount is None:
         raise ValueError("declined_option_amount is required for a declined rookie-scale option")
     if not declined and declined_option_amount is not None:
         raise ValueError("declined_option_amount requires declined rookie-scale option status")
     if completed_two_way_contract and target_zero_yos_minimum is None:
         raise ValueError("target_zero_yos_minimum is required for a completed two-way contract")
+    if not completed_two_way_contract and target_zero_yos_minimum is not None:
+        raise ValueError("target_zero_yos_minimum requires completed_two_way_contract=True")
     if not restricted_free_agent and any(value is not None for value in rfa_amounts.values()):
         raise ValueError("restricted free-agent amounts require restricted_free_agent=True")
 
 
 def _input_names(two_way: bool, declined: bool, rfa_amounts: Mapping[str, int | None]) -> tuple[list[str], list[str]]:
-    amounts = list(_BASE_AMOUNT_INPUTS)
-    facts = list(_BASE_FACT_INPUTS)
+    amounts = list(CAP_HOLD_REQUIRED_AMOUNT_INPUTS)
+    facts = list(CAP_HOLD_FACT_INPUTS)
     if two_way:
-        amounts.append("target_zero_yos_minimum")
+        amounts.extend(CAP_HOLD_TWO_WAY_AMOUNT_INPUTS)
     if declined:
-        amounts.append("declined_option_amount")
-    amounts.extend(name for name in _RFA_AMOUNT_INPUTS if rfa_amounts.get(name) is not None)
+        amounts.extend(CAP_HOLD_DECLINED_OPTION_AMOUNT_INPUTS)
+    amounts.extend(name for name in CAP_HOLD_RFA_AMOUNT_INPUTS if rfa_amounts.get(name) is not None)
     return facts, amounts
 
 
@@ -124,11 +162,11 @@ def _metadata(input_exactness: Mapping[str, str], provenance: Mapping[str, str],
     bad = [name for name in names if input_exactness[name] not in _EXACTNESS_VALUES]
     if bad:
         raise ValueError("unsupported exactness metadata for: " + ", ".join(bad))
-    missing_provenance = [name for name in amount_names if not str(provenance.get(name) or "").strip()]
+    missing_provenance = [name for name in names if not str(provenance.get(name) or "").strip()]
     if missing_provenance:
-        raise ValueError("missing provenance for amount inputs: " + ", ".join(missing_provenance))
+        raise ValueError("missing provenance for inputs: " + ", ".join(missing_provenance))
     exactness = {name: input_exactness[name] for name in names}
-    sources = {name: str(provenance[name]) for name in amount_names}
+    sources = {name: str(provenance[name]) for name in names}
     return exactness, sources
 
 
@@ -313,7 +351,7 @@ def calculate_cap_hold(*, prior_salary: int, final_prior_contract_salary: int,
         "declined_option_amount": declined_option_amount,
         **rfa_amounts,
     }
-    _require_amounts(amounts)
+    _require_amounts(amounts, CAP_HOLD_DYNAMIC_AMOUNT_INPUTS)
     fact_names, amount_names = _input_names(completed_two_way_contract, declined, rfa_amounts)
     exactness, sources = _metadata(input_exactness, provenance, fact_names, amount_names)
     if rights_classification == RIGHTS_UNKNOWN and not completed_two_way_contract:
