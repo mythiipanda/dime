@@ -1,4 +1,5 @@
 import { apiPath } from "./api";
+import { BACKEND } from "./chat";
 import type { ScenarioMove } from "./capsheet-fixture";
 
 export type ProjectionEffect = {
@@ -45,7 +46,7 @@ export type ProjectionResponse = {
 
 export async function fetchProjection(team: string, season: string, moves: ScenarioMove[]): Promise<ProjectionResponse | null> {
   try {
-    const response = await fetch(apiPath("/cap/projection"), {
+    const response = await fetch(`${BACKEND}${apiPath("/cap/projection")}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ team, season, moves }),
