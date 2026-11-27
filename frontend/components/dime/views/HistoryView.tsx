@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
+import { DataState } from "@/components/ds/DataState";
 import { Button } from "@/components/ds/Button";
 import ArtifactChart from "../ArtifactChart";
 
@@ -193,13 +195,15 @@ export default function HistoryView() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-8">
+    <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-8">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-[15px] font-semibold text-ink">History</h1>
         <span className="font-mono text-[10px] text-ink-3">{`1996-97 → ${SEASONS[0]} · era-relative throughout`}</span>
       </div>
 
-      <section className="mt-4 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
+      <div className="mt-4 xl:grid xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start xl:gap-4">
+      <div>
+      <section className="rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
         <form
           className="flex items-center gap-1.5"
           onSubmit={(e) => {
@@ -219,9 +223,16 @@ export default function HistoryView() {
           </Button>
         </form>
 
-        {careerLoading && <p className="mt-3 text-[12.5px] text-ink-3">Loading the arc…</p>}
+        {careerLoading && (
+          <div className="mt-3" aria-label="loading the arc">
+            <Skeleton className="h-[200px] rounded-[8px]" />
+            <div className="mt-3 space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[18px]" />)}
+            </div>
+          </div>
+        )}
         {careerError && !careerLoading && (
-          <p role="alert" className="mt-3 text-[12.5px] text-red">{careerError}. No sample data is substituted.</p>
+          <DataState tone="error" label={careerError} detail="No substitute data is shown." className="mt-3" />
         )}
 
         {!careerLoading && !careerError && arc.length > 0 && (
@@ -271,12 +282,12 @@ export default function HistoryView() {
 
       {selectedSeason && (
         <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">
-            era-relative neighbors — {player} {selectedSeason}
+          <h3 className="text-[13px] font-semibold text-ink">
+            Era-relative neighbors — {player} {selectedSeason}
           </h3>
           {compsLoading && <p className="mt-2 text-[12.5px] text-ink-3">Scoring the pool…</p>}
           {compsError && !compsLoading && (
-            <p role="alert" className="mt-2 text-[12.5px] text-red">{compsError}. No substitute data is shown.</p>
+            <DataState tone="error" label={compsError} detail="No substitute data is shown." className="mt-2" />
           )}
           {!compsLoading && !compsError && comps?.rows && (
             <div className="mt-2 divide-y divide-line">
@@ -297,10 +308,12 @@ export default function HistoryView() {
           </p>
         </section>
       )}
+      </div>
 
-      <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
+      <div className="xl:sticky xl:top-6">
+      <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5 xl:mt-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">era leaderboard</h3>
+          <h3 className="text-[13px] font-semibold text-ink">Era leaderboard</h3>
           <div className="ml-auto flex items-center gap-1.5 text-[12px]">
             <select
               value={leaderSeason}
@@ -323,7 +336,7 @@ export default function HistoryView() {
 
         {leadersLoading && <p className="mt-2 text-[12.5px] text-ink-3">Ranking the pool…</p>}
         {leadersError && !leadersLoading && (
-          <p role="alert" className="mt-2 text-[12.5px] text-red">{leadersError}. No substitute data is shown.</p>
+          <DataState tone="error" label={leadersError} detail="No substitute data is shown." className="mt-2" />
         )}
         {!leadersLoading && !leadersError && leaders?.rows && (
           <div className="mt-2 divide-y divide-line">
@@ -347,6 +360,8 @@ export default function HistoryView() {
           </p>
         )}
       </section>
+      </div>
+      </div>
     </div>
   );
 }

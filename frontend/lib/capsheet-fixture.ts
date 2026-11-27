@@ -57,6 +57,7 @@ export type ScenarioMove = {
 
 export type ScenarioResponse = {
   ok: boolean;
+  season: string;
   steps: { step: number; kind: string; detail: string; delta: number; payroll: number }[];
   pay_after: number;
   state: { over_tax: boolean; over_apron1: boolean; over_apron2: boolean; room_under_apron2?: number };
@@ -127,6 +128,7 @@ export const capSheetFixture: CapSheetResponse = {
 
 export const capScenarioFixture: ScenarioResponse = {
   ok: true,
+  season: "2026-27",
   steps: [
     { step: 0, kind: "payroll", detail: "BOS committed", delta: 0, payroll: 198000000 },
     { step: 1, kind: "signing", detail: "Free Agent X", delta: 12000000, payroll: 210000000 },

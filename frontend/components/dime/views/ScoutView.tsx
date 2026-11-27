@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { apiPath } from "@/lib/api";
+import { DataState } from "@/components/ds/DataState";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { BACKEND } from "@/lib/chat";
 
 const TEAMS = [
@@ -36,11 +38,11 @@ function SectionShell({ title, source, error, children }: { title: string; sourc
   return (
     <section className="rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
       <div className="flex items-baseline justify-between">
-        <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">{title}</h3>
+        <h3 className="text-[13px] font-semibold text-ink">{title}</h3>
         <Source name={source} />
       </div>
       {error ? (
-        <p className="mt-3 text-[12.5px] text-ink-3">{error} — this section is unavailable; no substitute data is shown.</p>
+        <DataState tone="error" label={error} detail="This section is unavailable — no substitute data is shown." className="mt-3" />
       ) : (
         <div className="mt-3">{children}</div>
       )}
@@ -154,22 +156,26 @@ export default function ScoutView() {
       )}
 
       {loading && team !== opponent && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Assembling the dossier…
+        <div className="mt-4 grid items-start gap-3 xl:grid-cols-2" aria-label="assembling the dossier">
+          <Skeleton className="h-[86px] rounded-[10px] xl:col-span-2" />
+          <Skeleton className="h-[300px] rounded-[10px]" />
+          <Skeleton className="h-[180px] rounded-[10px]" />
+          <Skeleton className="h-[240px] rounded-[10px]" />
+          <Skeleton className="h-[200px] rounded-[10px]" />
         </div>
       )}
 
       {!loading && error && team !== opponent && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 
       {!loading && !error && data && team !== opponent && (
-        <div className="mt-4 grid items-start gap-3 xl:grid-cols-2">
+        <div key={`${team}-${opponent}`} className="mt-4 grid items-start gap-3 xl:grid-cols-2" style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
           {data.edge && (
             <div className="rounded-[10px] bg-surface p-4 text-[13px] leading-[1.6] text-ink-2 shadow-hairline sm:p-5 xl:col-span-2">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-3">edge</span>
+              <span className="text-[13px] font-semibold text-ink">Edge</span>
               <p className="mt-1">{data.edge}</p>
               {data.season && <p className="mt-1 font-mono text-[10.5px] text-ink-3">season {data.season} · warehouse-nightly freshness</p>}
             </div>
@@ -201,7 +207,7 @@ export default function ScoutView() {
               <div className="grid grid-cols-2 gap-3">
                 {(["offense", "defense"] as const).map((side) => (
                   <div key={side}>
-                    <div className="font-mono text-[10px] uppercase tracking-wide text-ink-3">{side}</div>
+                    <div className="text-[11.5px] font-medium capitalize text-ink-2">{side}</div>
                     <div className="mt-1 space-y-1">
                       {Object.entries(factors[side]!).map(([k, v]) => (
                         <div key={k} className="flex justify-between text-[12.5px]">

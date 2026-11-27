@@ -115,8 +115,11 @@ def salary_records(con, season: str | None = None, salary_season: str | None = N
                     primary = match_record(records, row['PLAYER_NAME'], row.get('PLAYER_ID'), row['TEAM'], salary=row.get('salary'))
                     if primary is None:
                         records.append(row)
-                    elif primary['salary'] is None:
-                        primary['salary'] = row['salary']
+                    else:
+                        if primary['salary'] is None:
+                            primary['salary'] = row['salary']
+                        if primary.get('PLAYER_ID') is None and row.get('PLAYER_ID') is not None:
+                            primary['PLAYER_ID'] = row['PLAYER_ID']
             if not include_fallback:
                 return records
     return records
@@ -135,8 +138,9 @@ def match_record(records: list[dict], name: str, player_id=None, team: str = '',
         if len(hits) == 1:
             return hits[0]
         if hits:
-            hits = [r for r in hits if canonical_team_abbr(r.get('TEAM')) == team_code]
-            return hits[0] if len(hits) == 1 else None
+            team_hits = [r for r in hits if canonical_team_abbr(r.get('TEAM')) == team_code]
+            if len(team_hits) == 1:
+                return team_hits[0]
     hits = [r for r in records if normalize_name(r.get('PLAYER_NAME', r.get('PLAYER'))) == normalize_name(name)
             and (player_id is None or r.get('PLAYER_ID') is None or r['PLAYER_ID'] == player_id)]
     if len(hits) == 1:

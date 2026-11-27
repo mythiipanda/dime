@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Skeleton } from "@/components/ds/Skeleton";
 import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
+import { DataState } from "@/components/ds/DataState";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -35,6 +37,15 @@ function useFixture(): boolean {
     && new URLSearchParams(window.location.search).get("fixture") === "cap";
 }
 
+const DEFAULT_SCENARIO_SEASON = "2026-27";
+
+function scenarioSeasonForMoves(moves: ScenarioMove[]): string | null {
+  const optionMoves = moves.filter((move) => move.kind === "option_decision");
+  if (optionMoves.length === 0 || optionMoves.length !== moves.length) return DEFAULT_SCENARIO_SEASON;
+  const seasons = new Set(optionMoves.map((move) => move.season || DEFAULT_SCENARIO_SEASON));
+  return seasons.size === 1 ? Array.from(seasons)[0] : null;
+}
+
 export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void }) {
   const [team, setTeam] = useState(() => initialTeamParam() ?? "BOS");
   const [sheet, setSheet] = useState<CapSheetResponse | null>(null);
@@ -49,6 +60,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const [signingAmount, setSigningAmount] = useState("");
   const [signingLabel, setSigningLabel] = useState("");
   const fixture = useFixture();
+  const scenarioSeason = useMemo(() => scenarioSeasonForMoves(moves), [moves]);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,17 +104,23 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       setScenarioError(null);
       return;
     }
+    if (scenarioSeason === null) {
+      setScenario(null);
+      setScenarioError("Option decisions span multiple seasons. Evaluate one season at a time.");
+      setEvaluating(false);
+      return;
+    }
     let cancelled = false;
     setEvaluating(true);
     if (fixture) {
-      setScenario(capScenarioFixture);
+      setScenario({ ...capScenarioFixture, season: scenarioSeason });
       setEvaluating(false);
       return;
     }
     fetch(`${BACKEND}${apiPath("/cap/scenario")}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ team, season: "2026-27", moves }),
+      body: JSON.stringify({ team, season: scenarioSeason, moves }),
     })
       .then(async (response) => {
         const body = await response.json().catch(() => null);
@@ -124,7 +142,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
     return () => {
       cancelled = true;
     };
-  }, [moves, team, fixture]);
+  }, [moves, team, fixture, scenarioSeason]);
 
   const seasons = useMemo(() => {
     if (!sheet?.players?.length) return [] as string[];
@@ -176,7 +194,8 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       if (move.kind === "trade_out") return `- trade out ${move.player}`;
       return `- trade in ${move.player}`;
     });
-    return `Cap scenario for ${sheet?.team ?? team} (2026-27):\n${lines.join("\n")}\nPost-scenario payroll: ${scenario ? money(scenario.pay_after) : "not evaluated"}. Analyze this scenario: what restrictions trigger, what is the apron exposure, and what are the basketball consequences?`;
+    const evaluationSeason = scenario?.season ?? scenarioSeason ?? "mixed seasons";
+    return `Cap scenario for ${sheet?.team ?? team} (${evaluationSeason}):\n${lines.join("\n")}\nPost-scenario payroll: ${scenario ? money(scenario.pay_after) : "not evaluated"}. Analyze this scenario: what restrictions trigger, what is the apron exposure, and what are the basketball consequences?`;
   }
 
   function saveToBoard() {
@@ -190,7 +209,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       kind: "cap_scenario",
       title: `${sheet?.team ?? team} cap scenario — ${moves.length} move${moves.length === 1 ? "" : "s"}`,
       team: sheet?.team ?? team,
-      season: sheet?.season ?? "2026-27",
+      season: scenario?.season ?? scenarioSeason ?? sheet?.season ?? DEFAULT_SCENARIO_SEASON,
       moves,
       pay_after: scenario?.pay_after ?? null,
       pinned_from: "cap_sheet_view",
@@ -240,22 +259,31 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
       </div>
 
       {loading && (
-        <div className="mt-4 rounded-[10px] bg-surface p-8 text-center text-[13px] text-ink-3 shadow-hairline">
-          Loading the cap sheet…
+        <div className="mt-4 flex flex-col gap-3 lg:flex-row" aria-label="loading the cap sheet">
+          <div className="min-w-0 flex-1 rounded-[10px] bg-surface p-4 shadow-hairline">
+            <Skeleton className="h-4 w-52" />
+            <div className="mt-4 space-y-2.5">
+              {Array.from({ length: 12 }).map((_, i) => <Skeleton key={i} className="h-[22px]" />)}
+            </div>
+          </div>
+          <div className="w-full shrink-0 space-y-3 lg:w-[300px]">
+            <Skeleton className="h-[150px] rounded-[10px]" />
+            <Skeleton className="h-[110px] rounded-[10px]" />
+          </div>
         </div>
       )}
 
       {!loading && error && (
         <div role="alert" className="mt-4 rounded-[10px] border border-line bg-surface p-8 text-center shadow-hairline">
-          <p className="text-[13px] text-red">{error}. No sample data is substituted.</p>
+          <DataState tone="error" label={error} detail="No substitute data is shown." />
         </div>
       )}
 
       {!loading && !error && sheet && (
-        <div className="mt-4 flex flex-col gap-3 lg:flex-row">
+        <div key={team} className="mt-4 flex flex-col gap-3 lg:flex-row" style={{ animation: "fade-up 180ms var(--ease-out-strong) both" }}>
           <div className="min-w-0 flex-1 rounded-[10px] bg-surface shadow-hairline">
             <div className="flex items-center justify-between px-4 pt-3">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-3">
+              <span className="text-[13px] font-semibold text-ink">
                 {sheet.team} · committed money by season
               </span>
               <label className="flex items-center gap-1.5 text-[11.5px] text-ink-2">
@@ -365,7 +393,12 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
 
           <aside className="w-full shrink-0 space-y-3 lg:w-[280px]">
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">scenario</h3>
+              <h3 className="text-[13px] font-semibold text-ink">Scenario</h3>
+              {moves.length > 0 && (
+                <p className="mt-1 font-mono text-[10px] text-ink-3">
+                  evaluation season {scenarioSeason ?? "mixed"}
+                </p>
+              )}
               {moves.length === 0 ? (
                 <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-3">
                   No moves yet. Toggle an option cell or add a signing below — the grid re-prices instantly.
@@ -456,7 +489,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
             </section>
 
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">apron state</h3>
+              <h3 className="text-[13px] font-semibold text-ink">Apron state</h3>
               {state ? (
                 <div className="mt-2 space-y-1 text-[12px]">
                   {([
@@ -473,12 +506,12 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                   ))}
                 </div>
               ) : (
-                <p className="mt-2 text-[12.5px] text-ink-3">Apron state unavailable.</p>
+                <DataState tone="absent" label="Apron state unavailable." className="mt-2" />
               )}
             </section>
 
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">restrictions</h3>
+              <h3 className="text-[13px] font-semibold text-ink">Restrictions</h3>
               {scenario?.restrictions?.length ? (
                 <div className="mt-2 space-y-2">
                   {scenario.restrictions.map((r, i) => (
