@@ -7,6 +7,7 @@ import { initialTeamParam } from "@/lib/open-in-view";
 import { DataState } from "@/components/ds/DataState";
 import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
+import { consumeCapHandoff } from "@/lib/cap-handoff";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -55,6 +56,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [includePending, setIncludePending] = useState(false);
+  const [handoffNote, setHandoffNote] = useState<string | null>(null);
   const [moves, setMoves] = useState<ScenarioMove[]>([]);
   const [scenario, setScenario] = useState<ScenarioResponse | null>(null);
   const [scenarioError, setScenarioError] = useState<string | null>(null);
@@ -66,6 +68,13 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
   const fixture = useFixture();
   const scenarioSeason = useMemo(() => scenarioSeasonForMoves(moves), [moves]);
 
+  useEffect(() => {
+    const handoff = consumeCapHandoff();
+    if (!handoff) return;
+    setTeam(handoff.team);
+    setMoves(handoff.moves);
+    setHandoffNote(handoff.source ? `Imported from the trade machine — ${handoff.source}. The trade is a one-way copy: edits here don't affect it.` : null);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -449,6 +458,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string) => void
                     );
                   })}
                   {evaluating && <p className="text-[11.5px] text-ink-3">evaluating…</p>}
+                  {handoffNote && <p className="text-[11px] leading-[1.45] text-ink-3">{handoffNote}</p>}
                   {scenarioError && <p className="text-[11.5px] text-red">{scenarioError}</p>}
                   {scenario && (
                     <p className="border-t border-line pt-1.5 font-mono text-[11px] tabular-nums text-ink">
