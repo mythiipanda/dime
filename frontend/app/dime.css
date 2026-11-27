@@ -50,6 +50,9 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .citation-chip { display: inline-flex; align-items: center; vertical-align: middle; gap: 4px; margin: 0 3px; border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; background: var(--field); color: var(--ink-2); font-size: 10px; line-height: 1.5; font-weight: 400; cursor: pointer; }
 .citation-chip:hover, .citation-chip[aria-expanded=true] { background: var(--hover-2); border-color: var(--line-strong); color: var(--ink); }
 .citation-card { max-width: calc(100vw - 32px); }
+.failure-retry { flex-shrink: 0; padding: 5px 12px; border: 1px solid var(--red); border-radius: 7px; background: var(--surface); color: var(--red); font-size: 11px; font-weight: 500; transition: background 150ms, color 150ms; }
+.failure-retry:hover { background: var(--red); color: var(--surface); }
+
 .composer-dock { flex-shrink: 0; padding: 12px max(24px, calc((100% - 760px) / 2)) 18px; background: var(--page); margin-top: auto; }
 .workspace-page { max-width: 1200px; margin: 0 auto; padding: 40px; }
 .workspace-embedded { display: flex; height: calc(100dvh - 240px); min-height: 520px; }

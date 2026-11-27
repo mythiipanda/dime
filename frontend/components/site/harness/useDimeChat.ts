@@ -7,7 +7,7 @@ import { getModels } from "@/lib/api";
 import { cacheChatRun, loadChatRuns } from "@/lib/chat-persistence";
 import { modelDisplayName } from "@/lib/modelNames";
 import { streamDimeChat } from "@/lib/dime-stream";
-import { serializeViewContext } from "@/lib/view-context";
+import { serializeViewContext, splitViewContext } from "@/lib/view-context";
 import { clearChatDraft, loadChatDraft, saveChatDraft } from "@/lib/chat-drafts";
 import {
   assistantMessageFromSnapshot,
@@ -99,11 +99,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     setMessagesByTab((m) => ({ ...m, [tabId]: [...(m[tabId] ?? []), message] }));
   };
 
-  const submit = (raw?: string, context?: import("@/lib/view-context").ViewContext) => {
-    const q = (raw ?? draft).trim();
-    if (!q || live || historyLoading || (!options?.replay && !modelOptions.some(item => item.id === model && item.available !== false))) return;
-    options?.onSubmit?.();
-    const tabId = thread ?? activeTab;
+  const runSubmission = (q: string, context: import("@/lib/view-context").ViewContext | undefined, tabId: string) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -112,9 +108,6 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     const startedAt = Date.now();
     liveQuestion.current = q;
     const turnText = context ? serializeViewContext(context, q) : q;
-    appendMessage(tabId, { role: "user", text: turnText });
-    setDraftState("");
-    clearChatDraft(options?.thread ?? "");
     setLive({
       id,
       startedAt,
@@ -150,6 +143,35 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
       },
       { signal: ctrl.signal, model, thread, replay: options?.replay, ...(context ? { context } : {}) },
     );
+  };
+
+  const canSubmit = () => !live && !historyLoading && (options?.replay || modelOptions.some(item => item.id === model && item.available !== false));
+
+  const submit = (raw?: string, context?: import("@/lib/view-context").ViewContext) => {
+    const q = (raw ?? draft).trim();
+    if (!q || !canSubmit()) return;
+    options?.onSubmit?.();
+    const tabId = thread ?? activeTab;
+    const turnText = context ? serializeViewContext(context, q) : q;
+    appendMessage(tabId, { role: "user", text: turnText });
+    setDraftState("");
+    clearChatDraft(options?.thread ?? "");
+    runSubmission(q, context, tabId);
+  };
+
+  const retry = (index: number) => {
+    const tabId = thread ?? activeTab;
+    const msgs = messagesByTab[tabId] ?? [];
+    const failedMsg = msgs[index];
+    if (!failedMsg || failedMsg.role !== "assistant" || !failedMsg.failure || !canSubmit()) return;
+    let userText: string | null = null;
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (msgs[i].role === "user") { userText = msgs[i].text; break; }
+    }
+    if (!userText) return;
+    const { context, text } = splitViewContext(userText);
+    setMessagesByTab((m) => ({ ...m, [tabId]: (m[tabId] ?? []).filter((_, i) => i !== index) }));
+    runSubmission(text, context ?? undefined, tabId);
   };
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -315,5 +337,6 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     addTab,
     closeTab,
     submit,
+    retry,
   };
 }
