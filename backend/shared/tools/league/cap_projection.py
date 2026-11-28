@@ -146,7 +146,7 @@ def _waive_effects(con, team: str, raw: dict[str, Any], index: int, target: str,
                                 "detail": f"{name} dead money (approximate allocation)",
                                 "delta": per_year, "roster_delta": 0,
                                 "exactness": "proxy", "season": season,
-                                "disclosure": "per-year guarantee allocations unavailable — remaining guaranteed spread evenly across the contract's listed years"})
+                                "disclosure": "per-year guarantee allocations unavailable; remaining guaranteed spread evenly across the contract's listed years"})
     return effects, name, None
 
 
@@ -164,7 +164,7 @@ def _trade_in_effects(con, team: str, raw: dict[str, Any], index: int, target: s
         return [{"move": index, "kind": "trade_in", "detail": f"in {cname}",
                  "delta": int(csal or 0), "roster_delta": 1, "exactness": "unresolved",
                  "season": target,
-                 "disclosure": "no contract schedule — first-season salary only"}], None
+                 "disclosure": "no contract schedule; first-season salary only"}], None
     effects = []
     for season in seasons:
         if season < target:
@@ -208,7 +208,7 @@ def _extend_effects(raw: dict[str, Any], index: int, target: str,
                         "detail": f"{schedule['player']} extension year {offset + 1}",
                         "delta": int(first_amount), "roster_delta": 1 if season == start else 0,
                         "exactness": "unvalidated", "season": season,
-                        "disclosure": "extension amounts are flat and unvalidated against max-extension rules — validation depth is a later slice"})
+                        "disclosure": "extension amounts are flat and unvalidated against max-extension rules; validation depth is a later slice"})
     return effects, None
 
 
@@ -252,13 +252,13 @@ def _renounce_effect(holds: dict[str, Any], raw: dict[str, Any], index: int) -> 
             match = row
             break
     if match is None:
-        return None, f"{raw.get('player')} has no active cap hold to renounce — renounce applies to expired contracts with retained rights"
+        return None, f"{raw.get('player')} has no active cap hold to renounce. Renounce applies to expired contracts with retained rights"
     amount = hold_amount(match)
     if not amount:
-        return None, f"{match.get('PLAYER_NAME')}'s hold amount is unknown — the derivation could not price it, so renouncing is honestly unavailable rather than zero-freed"
+        return None, f"{match.get('PLAYER_NAME')}'s hold amount is unknown; the derivation could not price it, so renouncing is honestly unavailable rather than zero-freed"
     name = str(match.get("PLAYER_NAME") or match.get("player"))
     return {"move": index, "kind": "renounce",
-            "detail": f"renounce {name} — cap hold released",
+            "detail": f"renounce {name}: cap hold released",
             "delta": -amount, "roster_delta": 0,
             "exactness": holds["exactness"] if holds["exactness"] in ("estimated", "partially_unknown") else "unvalidated",
             "player_key": name.lower()}, None
@@ -318,7 +318,7 @@ def _tpe_disclosures(rows: list, season: str, team: str,
             "kind": str(raw.get("kind") or "ordinary"),
             "exactness": str(raw.get("exactness") or "user_declared"),
             "status": status,
-            "note": ("exception disclosure only — no payroll effect; season-grain expiry is "
+            "note": ("exception disclosure only, no payroll effect; season-grain expiry is "
                      "approximate, exact dates are not carried"),
         })
     return out
@@ -426,7 +426,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                     forward = [s for s in seasons if s > target][:term_years - 1]
                     for year_index, season in enumerate(forward, start=2):
                         continuation = {k: v for k, v in effect.items() if k not in ("season", "exception")}
-                        continuation["detail"] = f"{effect['detail']} — year {year_index} of {term_years}"
+                        continuation["detail"] = f"{effect['detail']}, year {year_index} of {term_years}"
                         continuation["roster_delta"] = 0
                         continuation["continuation"] = True
                         add_effect(season, continuation)
@@ -591,7 +591,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         })
 
     disclosures = [
-        "signings without a stated term project as one-year deals; multi-year signings carry flat annual salary across the term — raise structure is not modeled",
+        "signings without a stated term project as one-year deals; multi-year signings carry flat annual salary across the term. Raise structure is not modeled",
         "apron and tax comparisons use committed-payroll proxies per the cap-rules derivation contract, not full CBA Apron Team Salary",
     ]
     hold_seasons = [s for s in seasons if holds_by_season[s]["rows"]]
@@ -600,13 +600,13 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         disclosures.append(
             f"cap holds are included in payroll for {', '.join(hold_seasons)} ({holds_by_season[hold_seasons[0]]['source']}"
             + (f", {unknown_total} unpriced" if unknown_total else "")
-            + ") — a renounced hold leaves the books entirely; re-signing a renounced player at a new salary is a separate signing move")
+            + "). A renounced hold leaves the books entirely; re-signing a renounced player at a new salary is a separate signing move")
     disclosures.append(
-        "exception usage reflects scenario moves only — league-wide exception consumption "
+        "exception usage reflects scenario moves only. League-wide exception consumption "
         "is not derivable from seeded transaction data; the room exception's cap-room-first "
         "ordering and the bae consecutive-year rule are disclosed, not enforced")
     if len(seasons) > 1:
-        disclosures.append("incomplete-roster minimum charges are not yet projected — the cap sheet includes them for the current season")
+        disclosures.append("incomplete-roster minimum charges are not yet projected; the cap sheet includes them for the current season")
     if truncated:
         disclosures.append(f"seasons beyond warehouse salary coverage are excluded: {', '.join(truncated)}")
     return declare_money({

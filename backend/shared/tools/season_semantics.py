@@ -19,7 +19,7 @@ _ENCODINGS: dict[str, dict[str, str]] = {
         "format": "YYYY-YY",
         "anchor": "start_year",
         "note": "canonical warehouse season label; the leading year is the start year; "
-                "present on nearly every silver table — the one season filter key that works warehouse-wide",
+                "present on nearly every silver table, the one season filter key that works warehouse-wide",
         "source": "shared/store.py save_frame writes FetchMeta.season; "
                   "scripts/seed_history.py season_label(end_year)",
     },

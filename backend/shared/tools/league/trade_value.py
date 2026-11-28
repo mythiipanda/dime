@@ -239,7 +239,7 @@ def _tpe_creation_block(outgoing: int, incoming: int, pay_before: int,
         "amount": amount,
         "expiry": "one year from the trade execution date",
         "condition": ("would generate only if this construction is executed as a "
-                      "non-simultaneous trade — a simultaneous execution forfeits the exception"),
+                      "non-simultaneous trade; a simultaneous execution forfeits the exception"),
         "copy": (f"If executed as a non-simultaneous trade, this construction would generate "
                  f"a ${amount / 1_000_000:.1f}M trade exception expiring one year from the "
                  f"execution date. Executed simultaneously, it generates nothing."),

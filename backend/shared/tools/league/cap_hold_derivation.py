@@ -805,7 +805,7 @@ def derive_cap_holds(con, fa_year: object, team: str = "") -> dict[str, Any]:
             "count": len(divergent),
             "players": divergent[:10],
             "meaning": "consumer-time derivation disagrees with seeder-written CAP_HOLD; "
-                       "freshly-derived values win — the warehouse seed predates input changes",
+                       "freshly-derived values win; the warehouse seed predates input changes",
         }
     return result
 
