@@ -200,7 +200,7 @@ def product_trade_partners(player: str, season: str = '2026-27', teams: str = ''
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
 
-@tool(description='Read one team multi-year cap sheet: players is roster-only; dead money lives in labeled dead_money/dead_money_detail components, with per-season totals and apron state.')
+@tool(description='Read one team multi-year cap sheet: players is contract inventory for rows counting as standard in at least one horizon season, with years[].counts_as_standard marking per-season inclusion; dead money lives in labeled dead_money/dead_money_detail components, with per-season totals and apron state.')
 def product_cap_sheet(team: str, season: str = '2026-27') -> dict:
     from shared import store
     from shared.contracts import canonical_team_abbr

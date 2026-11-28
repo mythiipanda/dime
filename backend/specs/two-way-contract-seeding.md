@@ -146,7 +146,14 @@ Use case-insensitive detail parsing:
   as two-way and a known standard state resumes as standard. A claimed waive is
   not terminated-contract evidence;
 - preserve every waive event, even when the waived contract was not itself a
-  two-way contract, because it is needed to connect later dead-money rows.
+  two-way contract, because it is needed to connect later dead-money rows;
+- bind a waive to the contract instance active at the waive time. When an
+  unclaimed standard or unknown-contract waive is followed by a later standard
+  signing or conversion on the same team, that later signing starts a new
+  standard-contract instance. The current row counts as roster payroll, while
+  the prior waived obligation remains dead-money evidence. An intermediate
+  two-way stint does not erase that pairing; conversely, a waive known to apply
+  to a two-way contract does not create standard-contract dead-money evidence.
 
 When the waived contract's type is outside reconstruction coverage, an
 `AwardOnWaivers` row still blocks terminated-contract inference for that waive,
@@ -175,8 +182,15 @@ Keep two concepts distinct:
    - `roster`: standard-contract salary counting as roster payroll;
    - `two_way`: active two-way compensation excluded from Team Salary and the
      standard-roster count;
-   - `dead_money`: terminated-contract obligation counting as dead salary.
-2. `CONTRACT_TYPE`, if present, describes the underlying contract type
+   - `dead_money`: terminated-contract obligation counting as dead salary;
+   - `unknown`: the seeder could not declare the row's cap-ledger role. This is
+     not a roster declaration and must fall through to compatibility
+     reconstruction.
+2. `RESURRECTED`, if present and true, marks a roster row whose current standard
+   contract followed a same-team waiver of an earlier contract instance. It does
+   not change the row's roster treatment; it preserves prior-obligation
+   disclosure when transaction reconstruction is unavailable or incomplete.
+3. `CONTRACT_TYPE`, if present, describes the underlying contract type
    (`standard`, `two_way`, or a more specific source type). It is useful
    evidence, but it must not replace `ROW_KIND`, because one player can have a
    terminated standard-contract dead-money row and an active two-way row at the
@@ -200,12 +214,21 @@ synthetic key only if it is stable across reseeds; otherwise contract identity
 is unavailable and must be disclosed rather than invented. This is why exact
 coexistence cannot be reconstructed for every legacy row.
 
-Explicit `ROW_KIND` is authoritative for the row's cap-ledger role: `roster`
-counts as roster payroll, `two_way` is excluded as two-way compensation, and
-`dead_money` counts as dead salary. `CONTRACT_TYPE='two_way'` is exclusion
-evidence only when `ROW_KIND` is absent or undeclared. Transaction
+Recognized explicit `ROW_KIND` is authoritative for the row's cap-ledger role:
+`roster` counts as roster payroll, `two_way` is excluded as two-way
+compensation, and `dead_money` counts as dead salary. Values are read
+case-insensitively after trimming the full Python whitespace class and
+normalizing hyphens to underscores, so a tab/newline-polluted kind cannot fall
+between the Python and SQL predicates. `ROW_KIND='unknown'` is an explicit lack
+of declaration rather than a recognized role: it falls through to transaction
+reconstruction, never counts as roster payroll merely because a salary row is
+present, and produces an honest `amount_unknown` dead-money detail when
+reconstruction cannot resolve the obligation. `CONTRACT_TYPE='two_way'` is
+exclusion evidence only when `ROW_KIND` is absent or undeclared. Transaction
 reconstruction is only a compatibility fallback for those incompletely
-annotated rows; it must not override an explicit row kind.
+annotated rows; it must not override a recognized explicit row kind. Detection
+of both `ROW_KIND` and `RESURRECTED` is column-optional because older
+warehouses may lack one or both columns.
 
 ## Clayton end state
 
@@ -304,8 +327,24 @@ The evaluator-side compatibility path:
 - recognizes conversion back `to an NBA Contract` as standard-contract treatment;
 - preserves terminated-contract evidence after a later two-way waiver or
   conversion, except when the underlying waive was claimed;
+- keeps transaction rows with missing or malformed dates when their details are
+  contract-state evidence, ordering them after dated rows and degrading the
+  resulting classification to the disclosed-unknown path rather than silently
+  reconstructing empty evidence;
+- matches transaction-state and salary-row identity by `PLAYER_ID` whenever both
+  sides carry one; normalized suffixless names are fallback-only when either
+  side lacks an ID, so Gary Payton and Gary Payton II do not collide;
 - recognizes the Clayton pattern when a player was waived by the salary-row team
-  before signing a two-way contract elsewhere.
+  before signing a two-way contract elsewhere;
+- recognizes same-team waive-then-standard-resign chains in reconstruction. The
+  waive binds the contract instance active at waive time, including across an
+  intermediate two-way stint; the later standard signing starts a new instance
+  whose row counts as roster payroll, while the prior obligation is surfaced as
+  prior-dead-money evidence. Explicit `ROW_KIND='roster'` plus
+  `RESURRECTED=true` receives the same treatment even when transaction evidence
+  is absent. The original amount is normally unavailable in the warehouse, so
+  the evidence is a null-salary `amount_unknown` detail unless explicit dead
+  rows already carry a corrected amount.
 
 The dead-money inference is deliberately narrow. It infers the current salary as
 Memphis-style dead money only when the warehouse shows a preceding unclaimed
@@ -314,14 +353,16 @@ from the two-way formation team, the row has no positive future-season salary,
 and `GUARANTEED` covers at least the full current salary. A waive known to end
 a two-way contract does not feed this standard-contract inference. The
 different-team requirement avoids treating an indistinguishable same-team
-current two-way row as its own terminated standard row; same-team cases need
-explicit contract identity and are currently unavailable. An explicit dead-money
-row for the same player and team suppresses inference regardless of whether the
-amounts agree, including a corrected zero row. A null explicit amount is carried
-as `amount_unknown` evidence rather than dropped. When both rows carry player
-IDs, identity suppression compares `PLAYER_ID`; normalized-name matching is only
-the fallback when either row lacks an ID, avoiding suffix collisions such as
-Gary Payton versus Gary Payton II.
+current two-way row as its own terminated standard row. A same-team
+waive-then-resign chain instead uses the new-contract semantics above: the
+current row remains roster payroll, and the prior obligation is disclosed as an
+unknown amount unless an explicit dead row supplies the amount. An explicit
+dead-money row for the same player and team suppresses inference regardless of
+whether the amounts agree, including a corrected zero row. A null explicit
+amount is carried as `amount_unknown` evidence rather than dropped. When both
+rows carry player IDs, identity suppression compares `PLAYER_ID`;
+normalized-name matching is only the fallback when either row lacks an ID,
+avoiding suffix collisions such as Gary Payton versus Gary Payton II.
 
 When terminated-contract evidence exists but protection is partial, missing, or
 cannot be allocated because positive future salary remains, the evaluator emits
@@ -336,6 +377,18 @@ true: the formation is older than the bounded reconstruction window,
 `silver_contracts.TWO_WAY` is false or stale, and the salary row lacks explicit
 two-way annotation. That is a warehouse coverage limitation, not a CBA
 ambiguity. The seeder-side annotation is required to close it.
+
+## Cap-sheet player inventory semantics
+
+`sheet.players` is contract inventory, not a universal per-season roster list. A
+row is included when it counts as standard payroll in at least one horizon
+season, because removing it entirely would also remove the contract schedule
+needed to understand later cap commitments. Each unrolled year carries
+`counts_as_standard`, which is the authoritative per-season roster-payroll
+inclusion marker. Per-season totals are calculated from that classification and
+can therefore exclude an active two-way season while still showing the same
+contract's later standard season. `meta.players_inventory` records this
+semantics contract and names the per-season field for consumers.
 
 ## Known boundaries not closed by this evaluator revision
 
@@ -379,7 +432,8 @@ Minimum seeder/evaluator regression cases:
 11. Waived standard contract followed by a two-way contract elsewhere: original
     team keeps dead money, new team's two-way salary is excluded.
 12. Explicit `ROW_KIND='roster'` remains roster payroll even when reconstruction
-    finds durable termination evidence for the same player.
+    finds durable termination evidence for the same player, while any resurrected
+    prior obligation remains visible as dead-money evidence.
 13. A two-way formation two or more league years before the salary season does
     not exclude a current standard row without explicit current annotation.
 14. Partial protection or positive unallocated future salary produces a null-
@@ -389,3 +443,22 @@ Minimum seeder/evaluator regression cases:
 16. A traded two-way contract follows the receiving team, a subsequent waive by
     that team ends it, and a waiver claim continues the contract with the
     claiming team rather than creating terminated-contract evidence.
+17. A same-team waive followed by a later standard signing counts the new row as
+    roster payroll and emits an honest unknown prior-obligation detail, with and
+    without an intermediate two-way stint.
+18. Explicit `ROW_KIND='roster'` plus `RESURRECTED=true` has the same roster and
+    prior-obligation treatment when transaction evidence is absent, and an
+    explicit dead row suppresses duplicate inferred unknown detail.
+19. `ROW_KIND='unknown'` does not count as roster payroll, does not fabricate a
+    dead amount, and emits null-salary `amount_unknown` evidence when
+    reconstruction is inconclusive.
+20. Salary schemas missing `ROW_KIND`, `RESURRECTED`, or transaction ordering
+    columns remain readable without raising.
+21. Tab/newline-polluted row kinds normalize identically in Python reads and SQL
+    predicates, so the row appears in exactly one payroll component.
+22. Missing or malformed transaction formation dates remain in the evidence
+    pipeline and surface the disclosed-unknown classification path end to end.
+23. Transaction-state identity prefers player IDs over suffixless normalized
+    names whenever both sides carry IDs.
+24. Cap-sheet `players` inventory exposes `years[].counts_as_standard` and the
+    `meta.players_inventory` semantics contract for per-season consumers.

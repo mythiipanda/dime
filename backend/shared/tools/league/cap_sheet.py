@@ -454,6 +454,9 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
             "cap_hold_money_unit": "usd_dollars",
             "state": state,
             "meta": {"holds_note": holds_note, "season_columns": sheet["seasons"],
+                     "players_inventory": {
+                         "semantics": "rows counting as standard in at least one horizon season",
+                         "per_season_field": "years[].counts_as_standard"},
                      "unrolling": "shared.tools.cap_sheet",
                      **warehouse_identity_meta(),
                      "source": _payroll_source(con), "salary_date": _salary_date(con),

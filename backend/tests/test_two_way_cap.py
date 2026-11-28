@@ -537,13 +537,212 @@ def test_explicit_roster_annotation_is_authoritative_after_two_way_termination()
         base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
         assert total == 15_000_000
         assert [row["player"] for row in roster] == ["Resigned Wing", "Standard Grizzly"]
-        assert dead == []
+        assert len(dead) == 1
+        assert dead[0]["player"] == "Resigned Wing"
+        assert dead[0]["salary"] is None
+        assert dead[0]["amount_unknown"] is True
         assert sheet["totals"]["2026-27"]["roster_payroll"] == 15_000_000
         assert sheet["totals"]["2026-27"]["dead_money"] == 0
+        assert sheet["totals"]["2026-27"]["dead_money_detail"] == dead
         assert base["roster_payroll"] == 15_000_000
         assert base["dead_money"] == 0
+        assert base["dead_money_detail"] == dead
     finally:
         con.close()
+
+
+@pytest.mark.parametrize("intermediate_two_way", [False, True])
+def test_same_team_waive_then_standard_resign_counts_current_row_and_discloses_prior_obligation(intermediate_two_way):
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Resigned Wing", "MEM", 910010, 5_000_000, 5_000_000,
+                 5_000_000, None, "2026-27", None),
+                ("Standard Grizzly", "MEM", 910011, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        rows = [
+            ("2026-07-01", "Signing", "resigned-wing", 910010,
+             "grizzlies", 1610612763,
+             "Memphis Grizzlies signed forward Resigned Wing.", "2026-27"),
+            ("2026-10-01", "Waive", "resigned-wing", 910010,
+             "grizzlies", 1610612763,
+             "Memphis Grizzlies waived forward Resigned Wing.", "2026-27"),
+        ]
+        if intermediate_two_way:
+            rows.append(
+                ("2026-10-05", "Signing", "resigned-wing", 910010,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies signed forward Resigned Wing to a Two-Way Contract.",
+                 "2026-27"))
+        rows.append(
+            ("2026-11-01", "Signing", "resigned-wing", 910010,
+             "grizzlies", 1610612763,
+             "Memphis Grizzlies signed forward Resigned Wing.", "2026-27"))
+        con.executemany("INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)", rows)
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    assert total == 15_000_000
+    assert {row["player"] for row in roster} == {"Resigned Wing", "Standard Grizzly"}
+    assert len(dead) == 1
+    assert dead[0]["player"] == "Resigned Wing"
+    assert dead[0]["team"] == "MEM"
+    assert dead[0]["salary"] is None
+    assert dead[0]["amount_unknown"] is True
+    assert dead[0]["basis"] == "waived_standard_contract_before_same_team_resign_protection_unknown"
+    assert sheet["totals"]["2026-27"]["roster_payroll"] == 15_000_000
+    assert sheet["totals"]["2026-27"]["dead_money"] == 0
+    assert sheet["totals"]["2026-27"]["dead_money_detail"] == dead
+    assert base["roster_payroll"] == 15_000_000
+    assert base["dead_money_detail"] == dead
+
+
+def _resurrected_salary_table(con):
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, SALARY BIGINT, "
+        "SALARY_2026_27 BIGINT, GUARANTEED BIGINT, SALARY_2027_28 BIGINT, "
+        "_season VARCHAR, ROW_KIND VARCHAR, RESURRECTED BOOLEAN)")
+
+
+def test_explicit_roster_resurrected_annotation_counts_roster_and_discloses_prior_obligation():
+    con = duckdb.connect()
+    try:
+        _resurrected_salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?,?)",
+            [
+                ("Resurrected Wing", "MEM", 910020, 5_000_000, 5_000_000,
+                 5_000_000, None, "2026-27", "roster", True),
+                ("Standard Grizzly", "MEM", 910021, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster", False),
+            ])
+        _transaction_table(con)
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    assert total == 15_000_000
+    assert {row["player"] for row in roster} == {"Resurrected Wing", "Standard Grizzly"}
+    assert len(dead) == 1
+    assert dead[0]["player"] == "Resurrected Wing"
+    assert dead[0]["salary"] is None
+    assert dead[0]["amount_unknown"] is True
+    assert sheet["totals"]["2026-27"]["dead_money_detail"] == dead
+    assert base["dead_money_detail"] == dead
+
+
+def test_explicit_dead_row_suppresses_resurrected_unknown_inference():
+    con = duckdb.connect()
+    try:
+        _resurrected_salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?,?)",
+            [
+                ("Resurrected Wing", "MEM", 910030, 3_000_000, 3_000_000,
+                 3_000_000, None, "2026-27", "dead_money", False),
+                ("Resurrected Wing", "MEM", 910030, 5_000_000, 5_000_000,
+                 5_000_000, None, "2026-27", "roster", True),
+                ("Standard Grizzly", "MEM", 910031, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster", False),
+            ])
+        _transaction_table(con)
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    expected = [{"player": "Resurrected Wing", "salary": 3_000_000, "team": "MEM"}]
+    base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    assert total == 18_000_000
+    assert {row["player"] for row in roster} == {"Resurrected Wing", "Standard Grizzly"}
+    assert dead == expected
+    assert sheet["totals"]["2026-27"]["dead_money_detail"] == expected
+    assert base["dead_money_detail"] == expected
+
+
+def test_unknown_row_kind_never_counts_roster_and_discloses_unknown_amount():
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Unknown Wing", "MEM", 910040, 5_000_000, 5_000_000,
+                 5_000_000, None, "2026-27", "unknown"),
+                ("Standard Grizzly", "MEM", 910041, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    assert total == 10_000_000
+    assert [row["player"] for row in roster] == ["Standard Grizzly"]
+    assert len(dead) == 1
+    assert dead[0]["player"] == "Unknown Wing"
+    assert dead[0]["salary"] is None
+    assert dead[0]["amount_unknown"] is True
+    assert dead[0]["basis"] == "row_kind_unknown_protection_unknown"
+    assert [row["player"] for row in sheet["players"]] == ["Standard Grizzly"]
+    assert sheet["totals"]["2026-27"]["dead_money"] == 0
+    assert sheet["totals"]["2026-27"]["dead_money_detail"] == dead
+    assert base["dead_money_detail"] == dead
+
+
+def test_unannotated_stale_salary_schema_still_reconstructs_resurrection():
+    con = duckdb.connect()
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries ("
+            "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, SALARY BIGINT, "
+            "SALARY_2026_27 BIGINT, GUARANTEED BIGINT, SALARY_2027_28 BIGINT, _season VARCHAR)")
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?)",
+            [
+                ("Resigned Wing", "MEM", 910050, 5_000_000, 5_000_000,
+                 5_000_000, None, "2026-27"),
+                ("Standard Grizzly", "MEM", 910051, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27"),
+            ])
+        _transaction_table(con)
+        con.executemany(
+            "INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)",
+            [
+                ("2026-07-01", "Signing", "resigned-wing", 910050,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies signed forward Resigned Wing.", "2026-27"),
+                ("2026-10-01", "Waive", "resigned-wing", 910050,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies waived forward Resigned Wing.", "2026-27"),
+                ("2026-11-01", "Signing", "resigned-wing", 910050,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies signed forward Resigned Wing.", "2026-27"),
+            ])
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+    finally:
+        con.close()
+    assert total == 15_000_000
+    assert {row["player"] for row in roster} == {"Resigned Wing", "Standard Grizzly"}
+    assert len(dead) == 1
+    assert dead[0]["amount_unknown"] is True
 
 
 def test_two_way_formed_two_seasons_before_target_does_not_exclude_standard_row():
@@ -792,8 +991,14 @@ def test_horizon_classification_expires_two_way_exclusion_by_salary_season():
     assert sheet["totals"]["2027-28"]["roster_payroll"] == 10_000_000
     assert sheet["totals"]["2028-29"]["roster_payroll"] == 12_000_000
     player = next(row for row in sheet["players"] if row["player"] == "Expiring Two Way")
-    year = next(row for row in player["years"] if row["season"] == "2028-29")
-    assert year["salary"] == 2_000_000
+    years = {row["season"]: row for row in player["years"]}
+    assert years["2026-27"]["counts_as_standard"] is False
+    assert years["2027-28"]["counts_as_standard"] is False
+    assert years["2028-29"]["counts_as_standard"] is True
+    assert years["2028-29"]["salary"] == 2_000_000
+    assert sheet["meta"]["players_inventory"] == {
+        "semantics": "rows counting as standard in at least one horizon season",
+        "per_season_field": "years[].counts_as_standard"}
     first = next(row for row in projection["seasons"] if row["season"] == "2026-27")
     expiry = next(row for row in projection["seasons"] if row["season"] == "2028-29")
     assert first["roster_payroll"] == 10_000_000
@@ -841,6 +1046,39 @@ def test_unknown_transaction_formation_date_counts_row_and_marks_classification_
     assert status["active_two_way"] is False
     assert status["counts_as_standard"] is True
     assert status["two_way_classification_unknown"] is True
+
+
+@pytest.mark.parametrize("bad_date", [None, "not-a-date"])
+def test_malformed_transaction_formation_date_disclosed_end_to_end(bad_date):
+    con = duckdb.connect()
+    try:
+        _single_two_way_salary(con, "Malformed Date")
+        _transaction_table(con)
+        con.execute(
+            "INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)",
+            [bad_date, "Signing", "malformed-date", 820001,
+             "mavericks", 1610612742,
+             "Dallas Mavericks signed forward Malformed Date to a Two-Way Contract.",
+             "2026-27"])
+        states = two_way_states(con, "2026-27", {"silver_transactions"})
+        state = two_way_state_for_record(states, "Malformed Date", 820001)
+        total, roster, _dead = _payroll("DAL", con, "2026-27")
+        sheet = cap_sheet_rows(con, "DAL", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "DAL", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    assert state is not None
+    assert state["active_team"] == "DAL"
+    assert total == 10_678_882
+    assert {row["player"] for row in roster} == {"Malformed Date", "Standard Mav"}
+    assert sheet["totals"]["2026-27"]["roster_payroll"] == 10_678_882
+    unknown = sheet["meta"].get("two_way_classification_unknown")
+    assert unknown == [{"player": "Malformed Date", "seasons": ["2026-27", "2027-28"]}]
+    base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    assert base["roster_payroll"] == 10_678_882
+    assert any("two-way formation date is unknown for Malformed Date" in item
+               for item in projection["disclosures"])
 
 
 def test_contracts_fallback_does_not_rewrite_existing_transaction_chronology():
@@ -945,3 +1183,67 @@ def test_dead_identity_uses_player_id_before_normalized_name_collision():
     assert [row["player"] for row in roster] == ["Standard Grizzly"]
     assert {(row["player"], row["salary"]) for row in dead} == {
         ("Gary Payton II", 1_000_000), ("Gary Payton", 4_000_000)}
+
+
+def test_transaction_state_identity_prefers_player_id_over_suffixless_name_collision():
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Gary Payton II", "MEM", 2002, 2_000_000, 2_000_000,
+                 2_000_000, None, "2026-27", None),
+                ("Standard Grizzly", "MEM", 2003, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        con.execute(
+            "INSERT INTO silver_transactions VALUES "
+            "('2026-10-01', 'Signing', 'gary-payton', 2001, "
+            "'grizzlies', 1610612763, "
+            "'Memphis Grizzlies signed guard Gary Payton to a Two-Way Contract.', "
+            "'2026-27')")
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    assert total == 12_000_000
+    assert {row["player"] for row in roster} == {"Gary Payton II", "Standard Grizzly"}
+    assert dead == []
+    assert sheet["totals"]["2026-27"]["roster_payroll"] == 12_000_000
+    assert base["roster_payroll"] == 12_000_000
+
+
+def test_whitespace_padded_dead_money_kind_is_one_dead_component_everywhere():
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Whitespace Dead", "MEM", 980001, 2_000_000, 2_000_000,
+                 2_000_000, None, "2026-27", "\tdead-money\n"),
+                ("Standard Grizzly", "MEM", 980002, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    expected = [{"player": "Whitespace Dead", "salary": 2_000_000, "team": "MEM"}]
+    base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    assert total == 12_000_000
+    assert [row["player"] for row in roster] == ["Standard Grizzly"]
+    assert dead == expected
+    assert [row["player"] for row in sheet["players"]] == ["Standard Grizzly"]
+    assert sheet["totals"]["2026-27"]["roster_payroll"] == 10_000_000
+    assert sheet["totals"]["2026-27"]["dead_money_detail"] == expected
+    assert base["roster_payroll"] == 10_000_000
+    assert base["dead_money_detail"] == expected

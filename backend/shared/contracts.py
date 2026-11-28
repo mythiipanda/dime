@@ -72,7 +72,10 @@ def _quoted_identifier(name: str) -> str:
 
 
 def dead_money_row_predicate(column: str) -> str:
-    normalized = f"LOWER(REPLACE(TRIM(COALESCE({_quoted_identifier(column)}, 'roster')), '-', '_'))"
+    ws = r"\s\p{Z}"
+    trimmed = (f"regexp_replace(COALESCE({_quoted_identifier(column)}, 'roster'), "
+               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
+    normalized = f"LOWER(REPLACE({trimmed}, '-', '_'))"
     return f"{normalized} = 'dead_money'"
 
 

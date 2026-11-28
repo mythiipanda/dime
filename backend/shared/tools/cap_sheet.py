@@ -60,6 +60,10 @@ def unroll_player_contract(row: dict, seasons: list[str],
             pool -= salary
         years.append({"season": season, "salary": salary,
                       "option": option, "guaranteed": guaranteed})
+    counts = row.get("_counts_as_standard_by_season")
+    if isinstance(counts, dict):
+        for year in years:
+            year["counts_as_standard"] = bool(counts.get(year["season"], True))
     return {
         "player": row.get("PLAYER_NAME") or row.get("player") or "",
         "player_id": row.get("PLAYER_ID") or row.get("player_id"),
