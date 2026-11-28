@@ -111,7 +111,52 @@ function seedPartner(seeded: string): string {
   return NBA_TEAM_ABBRS.find(abbr => abbr !== seeded) ?? "DAL";
 }
 
-export default function TradesView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
+type TradeSeed = import("@/lib/workbench-navigation").TradeConstructionSeed;
+
+function hydrateLegs(legs: TradeSeed["legs"]): { teams: string[]; pkgs: Package[] } {
+  const ringOrdered = legs.length > 1 && new Set(legs.map(leg => leg.from)).size === legs.length;
+  let teams: string[];
+  if (ringOrdered) {
+    teams = [legs[0].from];
+    let next = legs[0].to;
+    const byFrom = new Map(legs.map(leg => [leg.from, leg]));
+    for (let steps = 0; steps < legs.length - 1 && byFrom.has(next); steps += 1) {
+      teams.push(next);
+      next = byFrom.get(next)!.to;
+    }
+    if (teams.length !== legs.length) teams = [];
+  } else {
+    teams = [];
+  }
+  if (!teams.length) {
+    teams = [];
+    for (const leg of legs) {
+      if (!teams.includes(leg.from)) teams.push(leg.from);
+      if (!teams.includes(leg.to)) teams.push(leg.to);
+    }
+  }
+  const pkgs = teams.map(() => emptyPackage());
+  for (const leg of legs) {
+    const index = teams.indexOf(leg.from);
+    if (index < 0) continue;
+    const players = typeof leg.players === "string"
+      ? leg.players.split(",").map(name => name.trim()).filter(Boolean)
+      : Array.isArray(leg.players) ? leg.players : [];
+    for (const player of players) {
+      if (!pkgs[index].players.includes(player)) pkgs[index].players.push(player);
+    }
+    for (const pick of leg.picks ?? []) {
+      const year = typeof pick.year === "number" ? pick.year : Number(pick.year);
+      const round = typeof pick.round === "number" ? pick.round : Number(pick.round ?? 1);
+      if (!Number.isFinite(year)) continue;
+      const id = `${year}-${round}-${leg.from}`;
+      if (!pkgs[index].picks.includes(id)) pkgs[index].picks.push(id);
+    }
+  }
+  return { teams, pkgs };
+}
+
+export default function TradesView({ onAsk, seed }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void; seed?: TradeSeed | null }) {
   const [teams, setTeams] = useState<string[]>(() => {
     const seeded = initialTeamParam();
     if (!seeded) return ["DAL", "NYK"];
@@ -146,6 +191,17 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       })
       .catch(() => setAssets(previous => ({ ...previous, [abbr]: { state: "error", error: "Could not reach the backend" } })));
   }, []);
+
+  useEffect(() => {
+    if (!seed?.legs?.length) return;
+    const hydrated = hydrateLegs(seed.legs);
+    if (hydrated.teams.length < 2) return;
+    setTeams(hydrated.teams);
+    setPkgs(hydrated.pkgs);
+    setCheck({ state: "idle" });
+    setSnapshot(null);
+    setLoadNote(null);
+  }, [seed]);
 
   useEffect(() => {
     teams.forEach(loadAssets);

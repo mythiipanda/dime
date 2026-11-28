@@ -114,6 +114,34 @@ test("Trades renders the backend's readable domain error on HTTP 422", async () 
   });
 });
 
+test("Trades hydrates a seeded construction into the interactive builder and evaluates it", async () => {
+  const seed = {
+    legs: [
+      { from: "DAL", to: "MIL", players: ["Klay Thompson"], picks: [{ year: 2029, round: 1 }] },
+      { from: "MIL", to: "DAL", players: ["Kyle Kuzma"] },
+    ],
+    season: "2026-27",
+  };
+  let legsPosted: unknown = null;
+  await mount(<TradesView seed={seed} />, async input => {
+    const url = String(input);
+    if (url.includes("/trade/assets")) {
+      const abbr = new URL(url).searchParams.get("team");
+      return Response.json({ ok: true, team: abbr, season: "2026-27", players: [{ name: "Klay Thompson", salary: 16.6 }, { name: "Kyle Kuzma", salary: 15.0 }], picks: [], meta: { source: "salary_records", season: "2026-27" } });
+    }
+    if (url.includes("/trade/check")) {
+      legsPosted = true;
+      return Response.json({ ok: true, rows: { team_a: { team: "DAL", legal: true }, team_b: { team: "MIL", legal: true }, legal: true, issues: [] } });
+    }
+    return Response.json({ ok: false, error: "unexpected" }, { status: 422 });
+  }, async host => {
+    await act(async () => new Promise(resolve => setTimeout(resolve, 120)));
+    assert.match(host.textContent!, /Klay Thompson/, "seeded player appears in the builder");
+    assert.match(host.textContent!, /Kyle Kuzma/, "second-side player appears");
+    assert.ok(legsPosted, "hydration triggers legality evaluation — recompute on load");
+  });
+});
+
 test("Morning page renders blocks with provenance and degrades missing tables", async () => {
   const morning = {
     ok: true, team: "NYK", season: "2025-26",
