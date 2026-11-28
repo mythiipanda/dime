@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { QuietDetails } from "@/components/ds/QuietDetails";
 import ToolChips, { type ToolStep } from "@/components/primitives/ToolChips";
 import {
   failureCopy,
@@ -145,10 +146,7 @@ export function OmittedNote({ omitted }: { omitted: string[] }) {
 
 export function SourceRefDetails({ carry, prefix = "" }: { carry: VerificationCarry; prefix?: string }) {
   return (
-    <details className="mt-3 rounded-[10px] border border-line bg-field px-3 py-2">
-      <summary className="cursor-pointer text-[12px] font-medium text-ink-2">
-        Sources &amp; provenance
-      </summary>
+    <QuietDetails label={<>Sources &amp; provenance</>}>
       {carry.sources?.map((source) => (
         <details key={source.ref} id={`${prefix}source-${source.ref}`} className="mt-2 text-[12px]">
           <summary>{source.label}</summary>
@@ -189,7 +187,7 @@ export function SourceRefDetails({ carry, prefix = "" }: { carry: VerificationCa
           </details>
         </details>
       ))}
-    </details>
+    </QuietDetails>
   );
 }
 
@@ -211,7 +209,7 @@ export function AnswerVerification({
     return <p className="mt-3 max-w-[620px] text-[11.5px] text-ink-3">{disclosure.headline} — {disclosure.detail.replace(/^0 verified claims?\.\s*/, "")}</p>;
   }
   return (
-    <div className="mt-3 max-w-[620px] rounded-[10px] border border-line bg-field px-3 py-2.5">
+    <div className="mt-3 max-w-[620px]">
       <div className="text-[12px] font-medium text-ink">{disclosure.headline}</div>
       <p className="mt-1 text-[12px] leading-relaxed text-ink-2">{disclosure.detail}</p>
       {carry && (
@@ -220,7 +218,7 @@ export function AnswerVerification({
         </p>
       )}
       {disclosure.gaps.length > 0 && (
-        <div className="mt-2 flex gap-2 rounded-[8px] border border-line bg-orange-tint px-2.5 py-2">
+        <div className="mt-2 flex gap-2 border-t border-line pt-2">
           <span className="mt-px shrink-0 text-orange">
             <Ico
               size={13}

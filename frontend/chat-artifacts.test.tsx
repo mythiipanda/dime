@@ -313,7 +313,7 @@ test("every stream artifact offers accessible provenance inspection", () => {
   const run = runOf(answerFrames([row("A", liveProvenance())], PARTIAL_CARRY));
   for (const html of [persistedAnswer(run), liveAnswer(run)]) {
     assert.match(html, /<details/, html);
-    assert.match(html, /<summary[^>]*>[^<]*([Ss]ources|[Pp]rovenance|[Cc]itation)/, html);
+    assert.match(html, /<summary[^>]*>[\s\S]{0,600}?([Ss]ources|[Pp]rovenance|[Cc]itation)[\s\S]{0,100}?<\/summary>/, html);
   }
 });
 
@@ -464,7 +464,7 @@ test("two rows with different provenance render both seasons, dates and capabili
     ),
   );
   for (const html of [persistedAnswer(run), liveAnswer(run)]) {
-    assert.match(html, /<summary[^>]*>[^<]*([Ss]ources|[Pp]rovenance|[Cc]itation)/, html);
+    assert.match(html, /<summary[^>]*>[\s\S]{0,600}?([Ss]ources|[Pp]rovenance|[Cc]itation)[\s\S]{0,100}?<\/summary>/, html);
     assert.ok(html.includes("QA Fixture A"), html);
     assert.ok(html.includes("QA Fixture B"), html);
     assert.ok(html.includes("fixture-season"), html);
@@ -497,7 +497,7 @@ test("an unknown provenance artifact blocks a verified claim and stays inspectab
     assert.match(html, /not declared/i, html);
     assert.match(html, /partly undeclared/i, html);
     assert.ok(html.includes("QA FIXTURE unknown provenance chart"), html);
-    assert.equal((html.match(/<summary[^>]*>Sources &amp; provenance<\/summary>/g) ?? []).length, 2, html);
+    assert.equal((html.match(/<summary[^>]*>[\s\S]{0,600}?Sources &amp; provenance[\s\S]{0,100}?<\/summary>/g) ?? []).length, 2, html);
   }
 });
 
