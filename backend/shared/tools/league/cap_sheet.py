@@ -24,9 +24,16 @@ from ..signing_rules import (
     normalize_exception_state_input,
     validate_signing,
 )
-from ..cap_sheet import option_column, season_column, unroll_team_sheet
+from ..cap_sheet import horizon_seasons, option_column, season_column, unroll_team_sheet
 from .._core import warehouse_identity_meta
-from ...contracts import normalize_name
+from ...contracts import canonical_team_abbr, normalize_name
+from .cba_two_way import (
+    explicit_dead_money_record,
+    merge_dead_rows,
+    salary_row_cap_status,
+    two_way_state_for_record,
+    two_way_states,
+)
 from .cap_hold_derivation import derive_cap_holds, hold_amount
 from .cba_cap import (
     _locate_player_team,
@@ -231,6 +238,49 @@ def _roster_charge(players: int, hold_count: int, minimum: int) -> int:
     return max(0, 12 - int(players) - int(hold_count)) * int(minimum)
 
 
+def _season_salary_value(row: dict[str, Any], season: str) -> object:
+    value = row.get(season_column(season))
+    if value is None and str(row.get("_season") or "") == season:
+        value = row.get("SALARY")
+    return value
+
+
+def _classified_sheet_rows(rows: list[dict[str, Any]], con, season: str,
+                           tables: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    states = two_way_states(con, season, tables)
+    standard: list[dict[str, Any]] = []
+    inferred_dead: list[dict[str, Any]] = []
+    for row in rows:
+        if explicit_dead_money_record(row):
+            continue
+        evidence = dict(row)
+        evidence["salary"] = _season_salary_value(row, season)
+        row_team = canonical_team_abbr(row.get("TEAM"))
+        state = two_way_state_for_record(
+            states, row.get("PLAYER_NAME"), row.get("PLAYER_ID"))
+        status = salary_row_cap_status(evidence, state, row_team, season)
+        if status.get("dead_entry") is not None:
+            inferred_dead.append(status["dead_entry"])
+        if status["counts_as_standard"]:
+            standard.append(row)
+    return standard, inferred_dead
+
+
+def _sheet_dead_total(rows: list[dict[str, Any]], inferred: list[dict[str, Any]],
+                      team: str, season: str, label: str) -> int:
+    explicit = []
+    for row in rows:
+        if not explicit_dead_money_record(row):
+            continue
+        amount = _season_salary_value(row, label)
+        if amount is not None:
+            explicit.append({"player": row.get("PLAYER_NAME"), "team": row.get("TEAM"),
+                             "salary": amount})
+    candidates = inferred if label == season else []
+    dead = merge_dead_rows(explicit, candidates, canonical_team_abbr(team))
+    return sum(int(row.get("salary") or 0) for row in dead)
+
+
 def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
     tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     if "silver_salaries" not in tables:
@@ -257,13 +307,15 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                     row["contract_type"] = hit
         except Exception:
             pass
-    sheet = unroll_team_sheet(rows, season)
+    standard_rows, inferred_dead = _classified_sheet_rows(rows, con, season, tables)
+    sheet = unroll_team_sheet(standard_rows, season, seasons=horizon_seasons(rows))
     totals: dict[str, dict[str, Any]] = {}
     for label in sheet["seasons"]:
         base = sheet["totals"].get(label, {"committed": 0, "pending_option": 0})
         totals[label] = {"committed": base["committed"],
                          "pending_option": base["pending_option"],
-                         "dead_money": 0, "cap_holds": 0,
+                         "dead_money": _sheet_dead_total(rows, inferred_dead, team, season, label),
+                         "cap_holds": 0,
                          "incomplete_roster_charges": 0}
     holds_note = ("cap_holds are active expired-contract holds; option-dependent "
                   "potential holds are detailed but excluded until an explicit "

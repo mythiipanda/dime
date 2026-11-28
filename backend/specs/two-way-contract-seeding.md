@@ -27,25 +27,127 @@ subtracts the applicable minimum salary before halving the remainder, so many
 small two-way salaries produce no positive set-off amount, but that is a result
 of the calculation rather than a blanket exemption.
 
-## Warehouse evidence found on 2026-11-28
+## Implementation ownership
 
-`silver_transactions.detail` is currently the only reliable current-state
-two-way marker found. The match must use detail text, not only `txn_type`:
+Warehouse writes remain cloud-owned. This specification is the contract those
+seeders implement; evaluator code must keep working against older warehouses
+that lack the newer columns or annotations.
 
-- `Signing`: `Dallas Mavericks signed guard Walter Clayton Jr. to a Two-Way Contract.`
-- `Signing` can also use `re-signed` in the detail text.
-- `ContractConverted`: `Phoenix Suns converted the contract of forward Drew Timme to a Two-Way Contract.`
-- Conversion back to a standard contract is phrased `to an NBA Contract.`
+| Component | Owner | Responsibility |
+| --- | --- | --- |
+| `silver_transactions` | `backend/scripts/seed_transactions.py` movement-feed path | Fetch the NBA player-movement feed, preserve transaction ordering evidence, partition rows into the existing `_season` units, and dedupe exact transaction identities. |
+| `silver_salaries` | `backend/scripts/seed_salaries.py` | Own salary-row shape, contract-year columns, row identity, carry-forward rows, `ROW_KIND`, and eventually explicit `two_way`/`dead_money` annotations. |
+| `silver_contracts` | `backend/scripts/seed_recent_market.py` contract transform | Own the static contract fallback fields, including `TWO_WAY` and `TERMINATED`. These fields are evidence, not final current-state authority. |
+| Cap evaluator | `backend/shared/tools/league/cba_two_way.py` plus its callers | Compatibility reconstruction for incompletely annotated warehouses. It must not require columns that an older warehouse does not have. |
 
-The 2026-27 probe found 29 rows whose detail contained `to a Two-Way Contract.`:
-19 `Signing` rows and 10 `ContractConverted` rows.
+No existing seeder currently owns the full protected-compensation calculation.
+That input is unavailable in the warehouse; see the dead-money limits below.
+Do not pretend that adding transaction rows alone proves exact dead salary.
 
-Static contract rows are not sufficient. Clayton has two `silver_contracts`
-rows for Memphis (`TWO_WAY=False`, including the 2026-27 row at $4,190,520),
-while the current transaction evidence says Dallas signed him to a two-way
-contract. Other probes showed the same pattern in both directions: current
-two-way players can remain standard rows, and historical `TWO_WAY=True` rows do
-not necessarily describe the current contract state.
+## `silver_transactions` output contract
+
+The movement-feed seeder writes these data columns, followed by the normal
+warehouse metadata columns `_source`, `_season`, `_fetched_at`, and `_entity`:
+
+| Column | Polars type as written | Meaning |
+| --- | --- | --- |
+| `txn_date` | `String` | First ten characters (`YYYY-MM-DD`) of `TRANSACTION_DATE`. |
+| `txn_type` | `String` | Source `Transaction_Type`, such as `Signing`, `Waive`, `Trade`, `ContractConverted`, or `AwardedOnWaivers`. |
+| `player` | `String` | Source `PLAYER_SLUG`. It is a slug, not display-name text. |
+| `player_id` | `Float64` | Source `PLAYER_ID`. Values are integral in the feed but are currently stored in the feed-native floating representation for compatibility with existing warehouses. |
+| `team` | `String` | Source `TEAM_SLUG`. |
+| `team_id` | `Float64` | Source `TEAM_ID`, with the same integral-value/floating-storage caveat as `player_id`. |
+| `detail` | `String` | Full source `TRANSACTION_DESCRIPTION`. |
+| `group_sort` | `String` | Source `GroupSort`, preserved verbatim. For signing, waive, conversion, and waiver-claim rows its trailing integer is the feed's same-date ordering evidence. |
+| `additional_sort` | `Float64` | Source `Additional_Sort`, preserved verbatim. It is zero for non-trade rows in the observed feed and nonzero trade metadata for trade rows. |
+
+The seeder has no separate stable transaction ID. Row identity for dedupe is
+the tuple `(txn_date, txn_type, player, player_id, team, team_id, detail)`.
+Exact duplicates on that identity are collapsed, keeping the first feed row.
+Distinct rows sharing a date, type, player, and team are still possible when
+`detail` differs; they must not be collapsed merely because they look unusual.
+
+Replacement ownership is at the existing `(_season, _entity)` unit. That is a
+storage replacement key, not transaction identity and not the cap league-year
+mapping.
+
+## Season labels versus cap league years
+
+The movement seeder's existing `_season` partition uses the historical October
+cutover: a transaction dated in July through September of year `Y` is stored in
+the unit ending in year `Y` (for example, August 2026 is `_season='2025-26'`).
+This partition is retained for warehouse-write ownership and resume behavior.
+
+For cap reconstruction, `_season` must not be interpreted as the league year.
+The evaluator derives league year from `txn_date`: July 1 of year `Y` through
+June 30 of year `Y+1` is league year `Y-(Y+1)`. Thus July-September 2026
+belongs to 2026-27 even when the storage row says `_season='2025-26'`.
+
+The evaluator's compatibility reconstruction uses a bounded three-league-year
+window: the salary league year plus the two preceding league years. A two-way
+contract can run for one or two seasons, so the previous league year is needed
+for continuing two-way contracts. The additional preceding year captures a
+waiver immediately before an early-July formation, such as a June standard-contract
+waiver followed by a July two-way signing. Older rows are outside the
+plausibly active formation window and are not used for this reconstruction.
+The window is a compatibility bound, not a claim that old dead money expires;
+exact multi-year dead money requires explicit dead-money rows.
+
+## Same-date transaction ordering
+
+`txn_date` alone is not a total order. The real feed contains same-date
+sign/waive pairs, including Duane Washington Jr. on 2023-07-24 and Didi
+Louzada on 2022-10-17.
+
+When `group_sort` and `additional_sort` are present, reconstruction orders
+rows by:
+
+1. `txn_date`;
+2. the trailing integer in `group_sort`, ascending;
+3. `additional_sort`, ascending;
+4. deterministic text fallbacks (`txn_type`, canonical team, player, detail).
+
+Older warehouses do not have these columns. The evaluator must therefore omit
+missing keys rather than fail. With both keys absent the deterministic fallback
+is `txn_date`, case-insensitive `txn_type`, canonical team, player, then detail.
+That fallback is deterministic, not evidence of the true time of day. Ordering
+sensitive cases remain approximate until a reseeded warehouse carries
+`group_sort` and `additional_sort`.
+
+## Transaction state machine needed in the seeder and evaluator fallback
+
+Process transactions chronologically per player, carrying state across season
+boundaries until the contract state changes. Do not depend only on rows whose
+storage `_season` equals the salary season; continuing two-way contracts often
+have no new transaction row in the later season.
+
+Use case-insensitive detail parsing:
+
+- detail containing `to a two-way contract` starts or continues active two-way
+  state for the transaction team, for both `Signing` and `ContractConverted`;
+- `ContractConverted` detail containing `to an nba contract` ends active
+  two-way state and starts standard-contract treatment;
+- any later non-two-way signing ends active two-way state and starts
+  standard-contract treatment;
+- a waive of the active two-way team ends active two-way state. After that
+  waiver, and before any later standard signing or conversion, the player is on
+  no team's standard roster;
+- preserve every waive event, even when the waived contract was not itself a
+  two-way contract, because it is needed to connect later dead-money rows.
+
+Resolve transaction team slugs through the canonical team mapping, including
+nicknames such as `sixers` and `blazers`.
+
+When a two-way formation follows a waiver, record the pair as durable
+terminated-contract evidence. That evidence must survive the later end of the
+two-way contract. In particular:
+
+- if the two-way contract is subsequently waived, the player is on no standard
+  roster and the earlier terminated standard row remains dead-money evidence;
+- if the two-way contract is converted, the new standard contract governs rows
+  belonging to that contract, but the earlier terminated row must not migrate
+  onto the converting team's standard payroll merely because playing evidence
+  places the player there.
 
 ## Required annotation model
 
@@ -62,30 +164,27 @@ Keep two concepts distinct:
    terminated standard-contract dead-money row and an active two-way row at the
    same time.
 
-The evaluator should be able to rely on `ROW_KIND='two_way'` or
-`CONTRACT_TYPE='two_way'` once seeding is correct. Transaction reconstruction is
-only a compatibility fallback for incompletely annotated warehouses.
+A terminated standard row and an active two-way row coexist as separate rows
+whenever the warehouse has enough contract identity:
 
-## Transaction state machine needed in the seeder
+- the terminated row keeps the original team and contract identity, has
+  `ROW_KIND='dead_money'`, and carries protected amounts by season;
+- the active row keeps the current team and contract identity, has
+  `ROW_KIND='two_way'` and `CONTRACT_TYPE='two_way'`, and is excluded from
+  Team Salary and the standard-roster count;
+- both rows may share `PLAYER_ID` and normalized player name. Neither player
+  identity nor team alone is a contract identity.
 
-Process transactions chronologically per player, carrying state across season
-boundaries until the contract state changes. Do not depend only on rows whose
-`_season` equals the salary season; continuing two-way contracts often have no
-new transaction row in the later season.
+The preferred contract-row identity is `(PLAYER_ID, contract identity,
+team, first contract season)`. The warehouse currently does not provide a real
+source contract ID. Until one exists, seeders may use a clearly documented
+synthetic key only if it is stable across reseeds; otherwise contract identity
+is unavailable and must be disclosed rather than invented. This is why exact
+coexistence cannot be reconstructed for every legacy row.
 
-Use case-insensitive detail parsing:
-
-- detail containing `to a two-way contract` starts or continues active two-way
-  state for the transaction team, for both `Signing` and `ContractConverted`;
-- `ContractConverted` detail containing `to an nba contract` ends active
-  two-way state and starts standard-contract treatment;
-- any later non-two-way signing ends active two-way state;
-- a waive of the active two-way team ends active two-way state;
-- preserve every waive event, even when the waived contract was not itself a
-  two-way contract, because it is needed to connect later dead-money rows.
-
-Resolve transaction team slugs through the canonical team mapping, including
-nicknames such as `sixers` and `blazers`.
+The evaluator honors explicit `ROW_KIND='two_way'` and
+`CONTRACT_TYPE='two_way'` once seeding is correct. Transaction reconstruction
+is only a compatibility fallback for incompletely annotated warehouses.
 
 ## Clayton end state
 
@@ -115,13 +214,18 @@ Correct cap-ledger end state:
    probe.
 5. The Memphis dead-money row must not make Clayton a Memphis roster player.
    The Dallas two-way row must not make him a Dallas standard-roster player.
+6. If Dallas later waives the two-way contract, Clayton is on no team's standard
+   roster and the Memphis dead-money evidence still survives.
+7. If Dallas converts the two-way contract, the converted Dallas contract is a
+   standard contract, but the terminated Memphis row still must not be counted
+   as Dallas standard payroll.
 
 The later Dallas two-way signing does not erase the Memphis obligation. It only
 means the subsequent Dallas compensation is excluded while it remains two-way.
 Any set-off must be calculated from the CBA formula using actual subsequent
 compensation; do not zero the Memphis row merely because a new contract exists.
 
-## Dead-money data the seeder must preserve
+## Dead-money data the seeder must preserve when available
 
 For each terminated-contract row, preserve enough fields to evaluate dead salary
 without guessing:
@@ -138,50 +242,76 @@ without guessing:
 - subsequent compensation and computed set-off, if any;
 - source transaction rows used for the inference.
 
-If those fields are unavailable, mark the amount unknown or use a clearly named
-approximation. Do not silently treat aggregate remaining protection as exact
+The current warehouse cannot provide true source contract identity, per-season
+protection allocations, amounts earned through release, buyout amount, stretch
+elections, or subsequent-compensation set-off inputs. Those inputs are
+unavailable, not optional conveniences. Until a source supplies them, the
+seeder must write an explicit unknown/approximation status rather than a false
+exact amount. Do not silently treat aggregate remaining protection as exact
 current-season dead salary: that field can span multiple seasons and can include
 or exclude option years depending on source semantics.
 
 ## Current evaluator compatibility behavior and limits
 
-The evaluator-side fix in the accompanying change:
+The evaluator-side compatibility path:
 
 - honors explicit `ROW_KIND='two_way'` and `CONTRACT_TYPE='two_way'`;
-- reconstructs active two-way state from transaction details and the
-  `silver_contracts.TWO_WAY` fallback;
-- excludes active two-way rows from Team Salary and the roster-player list;
+- reconstructs active, ended, and converted two-way state from transaction
+  details and the `silver_contracts.TWO_WAY` fallback;
+- maps transaction dates to cap league years rather than trusting the storage
+  `_season` partition;
+- uses `group_sort`/`additional_sort` when present and a documented deterministic
+  ordering when absent;
+- excludes active two-way rows from Team Salary and the roster-player list in
+  payroll, cap-sheet, and cap-projection baselines;
 - recognizes conversion back `to an NBA Contract` as standard-contract treatment;
-- separates the Clayton pattern when a player was waived by the salary-row team
+- preserves terminated-contract evidence after a later two-way waiver or
+  conversion;
+- recognizes the Clayton pattern when a player was waived by the salary-row team
   before signing a two-way contract elsewhere.
 
 The dead-money inference is deliberately narrow. It infers the current salary as
 Memphis-style dead money only when the warehouse shows a preceding waive by that
-row team, the row has no positive future-season salary, and `GUARANTEED` covers
-at least the full current salary. It does not fabricate partial-protection,
-multi-year, buyout, stretch or set-off allocations that the warehouse cannot
-currently represent. Those cases remain undercounted until the seeder writes
-explicit dead-money rows with the fields above.
+row team, the row team differs from the two-way formation team, the row has no
+positive future-season salary, and `GUARANTEED` covers at least the full current
+salary. The different-team requirement avoids treating an indistinguishable
+same-team current two-way row as its own terminated standard row; same-team
+cases need explicit contract identity and are currently unavailable. The
+inference does not fabricate partial-protection, multi-year, buyout, stretch or
+set-off allocations that the warehouse cannot currently represent. Those cases
+remain undercounted until the seeder writes explicit dead-money rows with the
+fields above.
 
 Continuing two-way players can still be missed when all of the following are
-true: there is no current-season transaction detail, `silver_contracts.TWO_WAY`
-is false or stale, and the salary row lacks explicit two-way annotation. That is
-a warehouse coverage limitation, not a CBA ambiguity. The seeder-side annotation
-is required to close it.
+true: the formation is older than the bounded reconstruction window,
+`silver_contracts.TWO_WAY` is false or stale, and the salary row lacks explicit
+two-way annotation. That is a warehouse coverage limitation, not a CBA
+ambiguity. The seeder-side annotation is required to close it.
 
 ## Acceptance checks
 
-Minimum seeder regression cases:
+Minimum seeder/evaluator regression cases:
 
 1. Clayton: Dallas payroll excludes the two-way arrangement; Dallas standard
    roster count excludes him; Memphis roster count excludes him; Memphis dead
    money carries the protected terminated standard-contract amount.
 2. Active two-way signing: salary row is excluded from payroll and roster count.
-3. Two-way conversion `to an NBA Contract`: subsequent standard salary returns
-   to payroll and roster count.
-4. Two-way waived with partial protection: dead amount equals the calculated
-   protected/earned amount, not automatically zero or full base salary.
-5. Waived standard contract followed by a two-way contract elsewhere: original
-   team keeps dead money, new team's two-way salary is excluded.
-6. Continuing two-way contract with no same-season transaction row remains
+3. July-September signing for the upcoming league year is included in reconstruction
+   even when storage `_season` still names the preceding season.
+4. Continuing two-way contract with no same-season transaction row remains
    excluded through carried-forward or explicitly seeded annotation.
+5. Preseason conversion `to an NBA Contract` overrides a stale `TWO_WAY=True`
+   fallback and subsequent standard salary returns to payroll and roster count.
+6. Two-way then waived: the player is on no team's standard roster and durable
+   terminated-contract evidence remains on the original team.
+7. Clayton then converted: the terminated Memphis row is not Dallas standard
+   payroll and Memphis dead money survives.
+8. Same-date waive/sign ordering is deterministic without ordering columns and
+   uses `group_sort`/`additional_sort` when present.
+9. Payroll, cap-sheet, and cap-projection baselines agree on the same fixture.
+10. Two-way waived with partial protection: dead amount equals the calculated
+    protected/earned amount when the inputs exist; otherwise the amount is
+    explicitly unknown/approximate rather than automatically zero or full base
+    salary.
+11. Waived standard contract followed by a two-way contract elsewhere: original
+    team keeps dead money, new team's two-way salary is excluded.

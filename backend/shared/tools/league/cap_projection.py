@@ -7,6 +7,12 @@ from .cap_hold_derivation import derive_cap_holds, hold_amount
 from ._helpers import declare_money
 from .cap_sheet import cap_lines_for_season
 from .cba_cap import _locate_player_team, _match_trade_players
+from .cba_two_way import (
+    merge_dead_rows,
+    salary_row_cap_status,
+    two_way_state_for_record,
+    two_way_states,
+)
 from .waivers import player_contract_tail, waiver_dead_money
 
 _SEASON_RE = _re.compile(r"^(\d{4})-(\d{2})$")
@@ -50,6 +56,11 @@ def _salary_column_seasons(con) -> list[str]:
 
 def _player_schedules(con, salary_season: str) -> dict[str, dict[str, Any]]:
     schedules: dict[str, dict[str, Any]] = {}
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    except Exception:
+        tables = set()
+    states = two_way_states(con, salary_season, tables)
     for row in salary_records(con, salary_season=salary_season):
         name = str(row.get("PLAYER_NAME") or "")
         if not name:
@@ -63,12 +74,17 @@ def _player_schedules(con, salary_season: str) -> dict[str, dict[str, Any]]:
             om = _re.fullmatch(r"OPTION_(\d{4})_(\d{2})", str(col))
             if om and value:
                 options[f"{om.group(1)}-{om.group(2)}"] = str(value)
+        team = canonical_team_abbr(row.get("TEAM") or "")
+        state = two_way_state_for_record(states, name, row.get("PLAYER_ID"))
+        status = salary_row_cap_status(row, state, team, salary_season)
         schedules[name.lower()] = {
             "player": name,
-            "team": canonical_team_abbr(row.get("TEAM") or ""),
+            "team": team,
             "salary_by_season": salary_by_season,
             "option_years": options,
             "guaranteed": row.get("GUARANTEED"),
+            "cap_status": status,
+            "evidence_season": salary_season,
         }
     return schedules
 
@@ -108,13 +124,38 @@ def _dead_money_schedules(con, team: str) -> list[dict[str, Any]]:
     return schedules
 
 
+def _inferred_dead_schedules(schedules: dict[str, dict[str, Any]], team: str) -> list[dict[str, Any]]:
+    team_code = canonical_team_abbr(team)
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for entry in schedules.values():
+        dead = (entry.get("cap_status") or {}).get("dead_entry")
+        if not dead or canonical_team_abbr(dead.get("team")) != team_code:
+            continue
+        try:
+            amount = int(dead.get("salary") or 0)
+        except (TypeError, ValueError):
+            continue
+        key = (str(dead.get("player") or "").lower(), amount)
+        if amount <= 0 or key in seen:
+            continue
+        seen.add(key)
+        rows.append({"player": str(dead.get("player") or entry["player"]),
+                     "team": team_code,
+                     "salary_by_season": {str(entry.get("evidence_season")): amount},
+                     "basis": dead.get("basis"),
+                     "inferred": True})
+    return rows
+
+
 def _team_baseline(con, team: str, schedules: dict[str, dict[str, Any]], seasons: list[str]) -> dict[str, dict[str, Any]]:
     team_code = canonical_team_abbr(team)
     roster: dict[str, dict[str, Any]] = {}
     for entry in schedules.values():
-        if entry["team"] == team_code:
+        if entry["team"] == team_code and (entry.get("cap_status") or {}).get("counts_as_standard", True):
             roster[entry["player"]] = entry
-    dead_rows = _dead_money_schedules(con, team_code)
+    explicit_dead = _dead_money_schedules(con, team_code)
+    inferred_dead = _inferred_dead_schedules(schedules, team_code)
     baseline: dict[str, dict[str, Any]] = {}
     for season in seasons:
         players = []
@@ -125,15 +166,21 @@ def _team_baseline(con, team: str, schedules: dict[str, dict[str, Any]], seasons
                 roster_total += int(salary)
                 players.append({"player": entry["player"], "salary": int(salary),
                                 "option": entry["option_years"].get(season)})
-        dead_detail = []
-        dead_total = 0
-        for entry in dead_rows:
+        explicit_candidates = []
+        inferred_candidates = []
+        for entry in explicit_dead:
             salary = entry["salary_by_season"].get(season)
             if salary:
-                amount = int(salary)
-                dead_total += amount
-                dead_detail.append({"player": entry["player"], "salary": amount,
-                                    "team": entry["team"]})
+                explicit_candidates.append({"player": entry["player"], "salary": int(salary),
+                                            "team": entry["team"]})
+        for entry in inferred_dead:
+            salary = entry["salary_by_season"].get(season)
+            if salary:
+                inferred_candidates.append({"player": entry["player"], "salary": int(salary),
+                                            "team": entry["team"],
+                                            "basis": entry.get("basis")})
+        dead_detail = merge_dead_rows(explicit_candidates, inferred_candidates, team_code)
+        dead_total = sum(int(row.get("salary") or 0) for row in dead_detail)
         dead_detail.sort(key=lambda row: -int(row.get("salary") or 0))
         baseline[season] = {"payroll": roster_total + dead_total,
                             "roster_payroll": roster_total,

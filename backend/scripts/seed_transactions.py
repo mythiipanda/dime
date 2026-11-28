@@ -27,7 +27,7 @@ MOVEMENT_SOURCE = "nba_official"
 FEED_URL = "https://stats.nba.com/js/data/playermovement/NBA_Player_Movement.json"
 
 COLUMNS = ["txn_date", "txn_type", "player", "player_id",
-           "team", "team_id", "detail"]
+           "team", "team_id", "detail", "group_sort", "additional_sort"]
 
 class SeederError(RuntimeError):
     pass
@@ -147,10 +147,18 @@ def map_transactions(payload: dict) -> pl.DataFrame:
         "team": r.get("TEAM_SLUG"),
         "team_id": r.get("TEAM_ID"),
         "detail": r["TRANSACTION_DESCRIPTION"],
+        "group_sort": r.get("GroupSort"),
+        "additional_sort": r.get("Additional_Sort"),
     } for r in rows], strict=False)
     if frame.height == 0:
-        return pl.DataFrame([], schema={c: pl.String for c in COLUMNS})
-    return frame.select(COLUMNS)
+        schema = {c: pl.String for c in COLUMNS}
+        schema["player_id"] = pl.Float64
+        schema["team_id"] = pl.Float64
+        schema["additional_sort"] = pl.Float64
+        return pl.DataFrame([], schema=schema)
+    identity = ["txn_date", "txn_type", "player", "player_id",
+                "team", "team_id", "detail"]
+    return frame.unique(subset=identity, keep="first").select(COLUMNS)
 
 def partition_by_season(frame: pl.DataFrame) -> dict:
     parts: dict = {}

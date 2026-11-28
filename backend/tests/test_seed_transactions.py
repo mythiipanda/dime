@@ -40,7 +40,21 @@ def test_mapper_rows_match_source_count():
     frame = seed.map_transactions(_payload())
     assert frame.height == 4
     assert frame.columns == ["txn_date", "txn_type", "player", "player_id",
-                             "team", "team_id", "detail"]
+                             "team", "team_id", "detail", "group_sort", "additional_sort"]
+    assert frame["group_sort"].to_list() == ["A"] * 4
+    assert frame["additional_sort"].to_list() == [1.0] * 4
+
+
+def test_mapper_dedupes_exact_transaction_identity_only():
+    row = _row("2024-10-22", "Signing", "Boston Celtics signed guard Y.")
+    changed_detail = dict(
+        row, TRANSACTION_DESCRIPTION="Boston Celtics signed guard Y to a Two-Way Contract.")
+    frame = seed.map_transactions({"NBA_Player_Movement": {
+        "rows": [row, dict(row), changed_detail]}})
+    assert frame.height == 2
+    assert sorted(frame["detail"].to_list()) == [
+        "Boston Celtics signed guard Y to a Two-Way Contract.",
+        "Boston Celtics signed guard Y."]
 
 
 def test_mapper_rejects_payload_without_rows():

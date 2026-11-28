@@ -8,9 +8,9 @@ from .._core import coerce_team_id, team_error_message, warehouse_identity_meta
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
 from .cba_two_way import (
-    explicit_two_way_record,
-    inferred_dead_entry,
+    merge_dead_rows,
     payroll_evidence_season,
+    salary_row_cap_status,
     two_way_state_for_record,
     two_way_states,
 )
@@ -293,10 +293,11 @@ def _collect_salary_payroll(records: list[dict], con: object, team_code: str,
         name = str(row.get('PLAYER_NAME') or '')
         row_team = canonical_team_abbr(row.get('TEAM'))
         state = two_way_state_for_record(states_by_player, name, row.get('PLAYER_ID'))
-        if explicit_two_way_record(row) or (state and state.get("active_team")):
-            entry = inferred_dead_entry(row, state, row_team, evidence_season)
-            if entry is not None:
-                inferred_dead.append(entry)
+        status = salary_row_cap_status(row, state, row_team, evidence_season)
+        entry = status.get("dead_entry")
+        if entry is not None:
+            inferred_dead.append(entry)
+        if not status["counts_as_standard"]:
             continue
         record_team = _season_record_team(row, con, season, tables, team_cache)
         salary = row.get('salary')
@@ -315,7 +316,7 @@ def _explicit_dead_rows(con: object, scols: list[str], scol: str,
     try:
         rows = con.execute(
             "SELECT PLAYER_NAME, TEAM, " + scol + " FROM silver_salaries "
-            "WHERE ROW_KIND = 'dead_money' AND UPPER(TEAM) = UPPER(?)",
+            "WHERE LOWER(ROW_KIND) = 'dead_money' AND UPPER(TEAM) = UPPER(?)",
             [team_code]).fetchall()
     except Exception:
         return []
@@ -323,39 +324,30 @@ def _explicit_dead_rows(con: object, scols: list[str], scol: str,
             for row in rows if row[2] is not None]
 
 
-def _dead_key(row: dict) -> tuple[str, str, int]:
-    try:
-        salary = int(row.get("salary") or 0)
-    except (TypeError, ValueError):
-        salary = 0
-    return (str(row.get("player") or "").lower(),
-            canonical_team_abbr(row.get("team")), salary)
-
-
-def _merge_dead_rows(explicit: list[dict], inferred: list[dict],
-                     team_code: str) -> list[dict]:
-    dead = list(explicit)
-    seen = {_dead_key(row) for row in dead}
-    for row in inferred:
-        key = _dead_key(row)
-        if canonical_team_abbr(row.get("team")) == team_code and key not in seen:
-            dead.append(row)
-            seen.add(key)
-    return dead
-
-
 def _silver_salary_payroll(con: object, team_code: str, season: str | None,
                            tables: set[str]) -> tuple[int, list[dict], list[dict]] | None:
     scols = [r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()]
     scol = _salary_column_or_raise(scols, season)
-    records = salary_records(con, salary_season=season)
-    if not records:
+    team_row = con.execute(
+        "SELECT 1 FROM silver_salaries WHERE UPPER(TEAM) = UPPER(?) LIMIT 1",
+        [team_code]).fetchone()
+    if not team_row:
         return None
+    cur = con.execute("SELECT * FROM silver_salaries")
+    names = [d[0] for d in cur.description]
+    records = [dict(zip(names, row)) for row in cur.fetchall()]
+    if records and "_season" in names:
+        latest = max(str(row.get("_season") or "") for row in records)
+        records = [row for row in records
+                   if str(row.get("_season") or "") == latest]
+    for row in records:
+        row["TEAM"] = canonical_team_abbr(row.get("TEAM"))
+        row["salary"] = row.get(scol)
     evidence_season = payroll_evidence_season(records, scol, season)
     rows, players, inferred = _collect_salary_payroll(
         records, con, team_code, season, tables, evidence_season)
     explicit = _explicit_dead_rows(con, scols, scol, team_code)
-    dead = _merge_dead_rows(explicit, inferred, team_code)
+    dead = merge_dead_rows(explicit, inferred, team_code)
     dead_total = sum(row["salary"] or 0 for row in dead)
     return sum(row[1] or 0 for row in rows) + dead_total, players, dead
 
