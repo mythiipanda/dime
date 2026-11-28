@@ -275,7 +275,8 @@ def _season_record_team(row: dict, con: object, season: str | None,
         return str(row.get('TEAM') or '')
     key = name.lower()
     if key not in cache:
-        cache[key] = (_season_player_team(con, name, season, tables)
+        cache[key] = (_season_player_team(con, name, season, tables,
+                                          row.get('PLAYER_ID'))
                       or str(row.get('TEAM') or ''))
     return cache[key]
 
@@ -411,25 +412,36 @@ def _outgoing_needed(incoming: int, over_apron1: bool,
 
 
 def _season_player_team(con: object, name: str, season: str,
-                        tables: set[str] | None = None) -> str | None:
+                        tables: set[str] | None = None,
+                        player_id: object = None) -> str | None:
     if tables is None:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     lookups = (
-        ("silver_leaders_pts", "PLAYER", "TEAM"),
-        ("silver_player_season", "PLAYER", "TEAM"),
-        ("silver_hist_player_seasons", "player_name", "team_abbreviation"),
+        ("silver_leaders_pts", "PLAYER", "TEAM", "PLAYER_ID"),
+        ("silver_player_season", "PLAYER", "TEAM", "PLAYER_ID"),
+        ("silver_hist_player_seasons", "player_name", "team_abbreviation", "player_id"),
     )
-    for table, name_col, team_col in lookups:
+    for table, name_col, team_col, id_col in lookups:
         if table not in tables:
             continue
-        try:
-            row = con.execute(
-                f"SELECT {team_col} FROM {table} WHERE _season = ? "
-                f"AND lower({name_col}) = lower(?) "
-                f"AND upper({team_col}) <> 'TOT' LIMIT 1",
-                [season, name]).fetchone()
-        except Exception:
-            row = None
+        row = None
+        if player_id is not None:
+            try:
+                row = con.execute(
+                    f"SELECT {team_col} FROM {table} WHERE _season = ? "
+                    f"AND {id_col} = ? AND upper({team_col}) <> 'TOT' LIMIT 1",
+                    [season, player_id]).fetchone()
+            except Exception:
+                row = None
+        if row is None:
+            try:
+                row = con.execute(
+                    f"SELECT {team_col} FROM {table} WHERE _season = ? "
+                    f"AND lower({name_col}) = lower(?) "
+                    f"AND upper({team_col}) <> 'TOT' LIMIT 1",
+                    [season, name]).fetchone()
+            except Exception:
+                row = None
         if row and row[0]:
             return canonical_team_abbr(row[0])
     return None

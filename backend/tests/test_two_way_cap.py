@@ -1,6 +1,6 @@
 import duckdb
 
-from shared.tools.league.cba_cap import _payroll
+from shared.tools.league.cba_cap import _payroll, _season_player_team
 
 
 def _salary_table(con):
@@ -23,7 +23,7 @@ def _clayton_warehouse(con):
     con.executemany(
         "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
         [
-            ("Walter Clayton Jr.", "MEM", 1642383, 4_190_520, 4_190_520,
+            ("Walter Clayton", "MEM", 1642383, 4_190_520, 4_190_520,
              4_190_520, None, "2026-27", "roster"),
             ("Standard Mav", "DAL", 900001, 10_000_000, 10_000_000,
              10_000_000, None, "2026-27", "roster"),
@@ -53,6 +53,8 @@ def test_clayton_two_way_is_not_dallas_salary_and_memphis_keeps_dead_money():
     con = duckdb.connect()
     try:
         _clayton_warehouse(con)
+        assert _season_player_team(
+            con, "Walter Clayton", "2026-27", player_id=1642383) == "DAL"
         dal_total, dal_roster, dal_dead = _payroll("DAL", con, "2026-27")
         assert dal_total == 10_000_000
         assert [row["player"] for row in dal_roster] == ["Standard Mav"]
@@ -63,7 +65,7 @@ def test_clayton_two_way_is_not_dallas_salary_and_memphis_keeps_dead_money():
         assert [row["player"] for row in mem_roster] == ["Standard Grizzly"]
         assert len(mem_roster) == 1
         assert len(mem_dead) == 1
-        assert mem_dead[0]["player"] == "Walter Clayton Jr."
+        assert mem_dead[0]["player"] == "Walter Clayton"
         assert mem_dead[0]["salary"] == 4_190_520
         assert mem_dead[0]["team"] == "MEM"
     finally:
