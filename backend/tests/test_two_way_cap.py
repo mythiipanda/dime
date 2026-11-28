@@ -4,7 +4,12 @@ import pytest
 from shared.tools.league.cap_projection import project_cap_scenario
 from shared.tools.league.cap_sheet import cap_sheet_rows
 from shared.tools.league.cba_cap import _payroll, _season_player_team
-from shared.tools.league.cba_two_way import two_way_state_for_record, two_way_states
+from shared.tools.league.cba_two_way import (
+    active_two_way_for_season,
+    salary_row_cap_status,
+    two_way_state_for_record,
+    two_way_states,
+)
 
 
 def _salary_table(con):
@@ -711,3 +716,232 @@ def test_standard_waiver_claim_transfers_standard_state_and_blocks_dead_evidence
     assert state["standard_team"] == ""
     assert state["terminations"] == []
     assert state["waives"][0]["claimed"] is True
+
+
+def test_same_date_claim_pairs_with_waive_regardless_of_scan_order():
+    base_rows = [
+        ("2026-07-01", "Signing", "same-date-claim", 950004,
+         "grizzlies", 1610612763,
+         "Memphis Grizzlies signed forward Same Date Claim.", "2026-27"),
+        ("2026-10-19", "AwardOnWaivers", "same-date-claim", 950004,
+         "celtics", 1610612738,
+         "Boston Celtics claimed forward Same Date Claim off waivers.", "2026-27"),
+        ("2026-10-19", "Waive", "same-date-claim", 950004,
+         "grizzlies", 1610612763,
+         "Memphis Grizzlies waived forward Same Date Claim.", "2026-27"),
+    ]
+    outcomes = []
+    for rows in (base_rows, list(reversed(base_rows))):
+        outcomes.append(_movement_state(rows, "Same Date Claim", 950004))
+    for state in outcomes:
+        assert state["standard_team"] == "BOS"
+        assert state["waives"][0]["claimed"] is True
+        assert state["terminations"] == []
+
+
+def test_two_way_waiver_does_not_feed_standard_termination_inference():
+    state = _movement_state([
+        ("2026-10-01", "Signing", "two-way-waived", 950005,
+         "mavericks", 1610612742,
+         "Dallas Mavericks signed guard Two Way Waived to a Two-Way Contract.", "2026-27"),
+        ("2026-11-01", "Waive", "two-way-waived", 950005,
+         "mavericks", 1610612742,
+         "Dallas Mavericks waived guard Two Way Waived.", "2026-27"),
+        ("2026-11-05", "Signing", "two-way-waived", 950005,
+         "celtics", 1610612738,
+         "Boston Celtics signed guard Two Way Waived to a Two-Way Contract.", "2026-27"),
+    ], "Two Way Waived", 950005)
+    assert state["active_team"] == "BOS"
+    assert state["terminations"] == []
+
+
+def _horizon_two_way_con():
+    con = duckdb.connect()
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, SALARY BIGINT, "
+        "GUARANTEED BIGINT, SALARY_2026_27 BIGINT, SALARY_2027_28 BIGINT, "
+        "SALARY_2028_29 BIGINT, _season VARCHAR, ROW_KIND VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [
+            ("Expiring Two Way", "DAL", 960001, 2_000_000, 6_000_000,
+             2_000_000, 2_000_000, 2_000_000, "2026-27", None),
+            ("Standard Mav", "DAL", 960002, 10_000_000, 30_000_000,
+             10_000_000, 10_000_000, 10_000_000, "2026-27", "roster"),
+        ])
+    _transaction_table(con)
+    con.execute(
+        "INSERT INTO silver_transactions VALUES "
+        "('2026-10-01', 'Signing', 'expiring-two-way', 960001, "
+        "'mavericks', 1610612742, "
+        "'Dallas Mavericks signed forward Expiring Two Way to a Two-Way Contract.', "
+        "'2026-27')")
+    return con
+
+
+def test_horizon_classification_expires_two_way_exclusion_by_salary_season():
+    con = _horizon_two_way_con()
+    try:
+        sheet = cap_sheet_rows(con, "DAL", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "DAL", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    assert sheet["totals"]["2026-27"]["roster_payroll"] == 10_000_000
+    assert sheet["totals"]["2027-28"]["roster_payroll"] == 10_000_000
+    assert sheet["totals"]["2028-29"]["roster_payroll"] == 12_000_000
+    player = next(row for row in sheet["players"] if row["player"] == "Expiring Two Way")
+    year = next(row for row in player["years"] if row["season"] == "2028-29")
+    assert year["salary"] == 2_000_000
+    first = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    expiry = next(row for row in projection["seasons"] if row["season"] == "2028-29")
+    assert first["roster_payroll"] == 10_000_000
+    assert "Expiring Two Way" not in {row["player"] for row in first["players"]}
+    assert expiry["roster_payroll"] == 12_000_000
+    assert "Expiring Two Way" in {row["player"] for row in expiry["players"]}
+
+
+def test_static_two_way_fallback_is_unknown_after_its_evidence_season():
+    con = duckdb.connect()
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries ("
+            "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, SALARY BIGINT, "
+            "GUARANTEED BIGINT, SALARY_2026_27 BIGINT, SALARY_2027_28 BIGINT, "
+            "SALARY_2028_29 BIGINT, _season VARCHAR, ROW_KIND VARCHAR)")
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?,?)",
+            [
+                ("Static Two Way", "SAC", 960003, 1_000_000, 3_000_000,
+                 1_000_000, 1_000_000, 1_000_000, "2026-27", None),
+                ("Standard King", "SAC", 960004, 8_000_000, 24_000_000,
+                 8_000_000, 8_000_000, 8_000_000, "2026-27", "roster"),
+            ])
+        con.execute(
+            "CREATE TABLE silver_contracts (PLAYER_NAME VARCHAR, PLAYER_ID BIGINT, TEAM VARCHAR, "
+            "SALARY BIGINT, TWO_WAY BOOLEAN, TERMINATED BOOLEAN, _season VARCHAR)")
+        con.execute(
+            "INSERT INTO silver_contracts VALUES "
+            "('Static Two Way', 960003, 'SAC', 1000000, TRUE, FALSE, '2026-27')")
+        sheet = cap_sheet_rows(con, "SAC", "2026-27")
+    finally:
+        con.close()
+    assert sheet["totals"]["2026-27"]["roster_payroll"] == 8_000_000
+    assert sheet["totals"]["2028-29"]["roster_payroll"] == 9_000_000
+    unknown = sheet["meta"].get("two_way_classification_unknown")
+    assert unknown == [{"player": "Static Two Way", "seasons": ["2027-28", "2028-29"]}]
+
+
+def test_unknown_transaction_formation_date_counts_row_and_marks_classification_unknown():
+    state = {"active_team": "DAL", "active_date": "not-a-date"}
+    assert active_two_way_for_season(state, "2026-27") is None
+    status = salary_row_cap_status(
+        {"PLAYER_NAME": "Malformed Date", "salary": 1_000_000}, state, "DAL", "2026-27")
+    assert status["active_two_way"] is False
+    assert status["counts_as_standard"] is True
+    assert status["two_way_classification_unknown"] is True
+
+
+def test_contracts_fallback_does_not_rewrite_existing_transaction_chronology():
+    con = duckdb.connect()
+    try:
+        _transaction_table(con)
+        con.execute(
+            "INSERT INTO silver_transactions VALUES "
+            "('2026-10-19', 'Waive', 'static-rewrite', 960005, "
+            "'kings', 1610612758, 'Sacramento Kings waived guard Static Rewrite.', "
+            "'2026-27')")
+        con.execute(
+            "CREATE TABLE silver_contracts (PLAYER_NAME VARCHAR, PLAYER_ID BIGINT, TEAM VARCHAR, "
+            "SALARY BIGINT, TWO_WAY BOOLEAN, TERMINATED BOOLEAN, _season VARCHAR)")
+        con.execute(
+            "INSERT INTO silver_contracts VALUES "
+            "('Static Rewrite', 960005, 'SAC', 1000000, TRUE, FALSE, '2026-27')")
+        states = two_way_states(con, "2026-27", {"silver_transactions", "silver_contracts"})
+        state = two_way_state_for_record(states, "Static Rewrite", 960005)
+    finally:
+        con.close()
+    assert state["active_team"] == ""
+    assert state["two_way_end"] is None
+    assert state["waives"][0]["contract_kind"] == ""
+
+
+@pytest.mark.parametrize("explicit_salary", [0, None])
+def test_explicit_zero_or_null_dead_row_suppresses_inference_everywhere(explicit_salary):
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Corrected Zero", "MEM", 970001, explicit_salary, explicit_salary,
+                 explicit_salary, None, "2026-27", "dead_money"),
+                ("Corrected Zero", "MEM", 970001, 4_000_000, 4_000_000,
+                 4_000_000, None, "2026-27", None),
+                ("Standard Grizzly", "MEM", 970002, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        con.executemany(
+            "INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)",
+            [
+                ("2026-10-19", "Waive", "corrected-zero", 970001,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies waived forward Corrected Zero.", "2026-27"),
+                ("2026-10-21", "Signing", "corrected-zero", 970001,
+                 "mavericks", 1610612742,
+                 "Dallas Mavericks signed forward Corrected Zero to a Two-Way Contract.",
+                 "2026-27"),
+            ])
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+    finally:
+        con.close()
+    expected = {"player": "Corrected Zero", "salary": explicit_salary, "team": "MEM"}
+    if explicit_salary is None:
+        expected["amount_unknown"] = True
+    base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+    assert total == 10_000_000
+    assert [row["player"] for row in roster] == ["Standard Grizzly"]
+    assert dead == [expected]
+    assert sheet["totals"]["2026-27"]["dead_money_detail"] == [expected]
+    assert base["dead_money_detail"] == [expected]
+    assert base["dead_money"] == 0
+
+
+def test_dead_identity_uses_player_id_before_normalized_name_collision():
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Gary Payton II", "MEM", 970102, 1_000_000, 1_000_000,
+                 1_000_000, None, "2026-27", "dead_money"),
+                ("Gary Payton", "MEM", 970101, 4_000_000, 4_000_000,
+                 4_000_000, None, "2026-27", None),
+                ("Standard Grizzly", "MEM", 970103, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        con.executemany(
+            "INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)",
+            [
+                ("2026-10-19", "Waive", "gary-payton", 970101,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies waived guard Gary Payton.", "2026-27"),
+                ("2026-10-21", "Signing", "gary-payton", 970101,
+                 "mavericks", 1610612742,
+                 "Dallas Mavericks signed guard Gary Payton to a Two-Way Contract.",
+                 "2026-27"),
+            ])
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+    finally:
+        con.close()
+    assert total == 15_000_000
+    assert [row["player"] for row in roster] == ["Standard Grizzly"]
+    assert {(row["player"], row["salary"]) for row in dead} == {
+        ("Gary Payton II", 1_000_000), ("Gary Payton", 4_000_000)}

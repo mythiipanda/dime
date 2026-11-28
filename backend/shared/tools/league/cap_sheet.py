@@ -244,24 +244,38 @@ def _season_salary_value(row: dict[str, Any], season: str) -> object:
 
 
 def _classified_sheet_rows(rows: list[dict[str, Any]], con, season: str,
-                           tables: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+                           tables: set[str], seasons: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     states = two_way_states(con, season, tables)
     standard: list[dict[str, Any]] = []
     inferred_dead: list[dict[str, Any]] = []
+    unknown: dict[str, set[str]] = {}
     for row in rows:
         if explicit_dead_money_record(row):
             continue
-        evidence = dict(row)
-        evidence["salary"] = _season_salary_value(row, season)
         row_team = canonical_team_abbr(row.get("TEAM"))
         state = two_way_state_for_record(
             states, row.get("PLAYER_NAME"), row.get("PLAYER_ID"))
-        status = salary_row_cap_status(evidence, state, row_team, season)
-        if status.get("dead_entry") is not None:
-            inferred_dead.append(status["dead_entry"])
-        if status["counts_as_standard"]:
-            standard.append(row)
-    return standard, inferred_dead
+        base_evidence = dict(row)
+        base_evidence["salary"] = _season_salary_value(row, season)
+        base_status = salary_row_cap_status(base_evidence, state, row_team, season)
+        if base_status.get("dead_entry") is not None:
+            inferred_dead.append(base_status["dead_entry"])
+        counts_by_season: dict[str, bool] = {}
+        for label in seasons:
+            evidence = dict(row)
+            evidence["salary"] = _season_salary_value(row, label)
+            status = salary_row_cap_status(evidence, state, row_team, label)
+            counts_by_season[label] = bool(status["counts_as_standard"])
+            if status.get("two_way_classification_unknown"):
+                player = str(row.get("PLAYER_NAME") or "")
+                unknown.setdefault(player, set()).add(label)
+        if any(counts_by_season.values()):
+            annotated = dict(row)
+            annotated["_counts_as_standard_by_season"] = counts_by_season
+            standard.append(annotated)
+    unknown_rows = [{"player": player, "seasons": sorted(labels)}
+                    for player, labels in sorted(unknown.items())]
+    return standard, inferred_dead, unknown_rows
 
 
 def _row_kind_present(names: list[str]) -> bool:
@@ -308,10 +322,15 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
     if "silver_salaries" not in tables:
         return {"ok": False, "error": "silver_salaries not in warehouse"}
     try:
-        cur = con.execute(
-            "SELECT * FROM silver_salaries WHERE UPPER(TEAM) = UPPER(?)", [team])
+        cur = con.execute("SELECT * FROM silver_salaries")
         names = [d[0] for d in cur.description]
-        rows = [dict(zip(names, r)) for r in cur.fetchall()]
+        team_code = canonical_team_abbr(team)
+        rows = []
+        for values in cur.fetchall():
+            row = dict(zip(names, values))
+            row["TEAM"] = canonical_team_abbr(row.get("TEAM"))
+            if row["TEAM"] == team_code:
+                rows.append(row)
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:200]}
     if not rows:
@@ -329,11 +348,12 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                     row["contract_type"] = hit
         except Exception:
             pass
-    standard_rows, inferred_dead = _classified_sheet_rows(rows, con, season, tables)
+    seasons = horizon_seasons(rows)
+    standard_rows, inferred_dead, unknown_classifications = _classified_sheet_rows(
+        rows, con, season, tables, seasons)
     row_kinds_declared = _row_kind_present(names)
     roster_rows = [row for row in standard_rows
                    if not row_kinds_declared or not is_dead_money_row(row)]
-    seasons = horizon_seasons(rows)
     sheet = unroll_team_sheet(roster_rows, season, seasons)
     dead_details, dead_available = _dead_money_components(
         con, team, sheet["seasons"], inferred_dead, season)
@@ -438,6 +458,8 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                      **warehouse_identity_meta(),
                      "source": _payroll_source(con), "salary_date": _salary_date(con),
                      "season": season,
+                     **({"two_way_classification_unknown": unknown_classifications}
+                        if unknown_classifications else {}),
                      "cap_hold_derivation": (hold_payloads.get(season) or {}).get("meta", {}),
                      **payroll_proxy_meta()}}
 

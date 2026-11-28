@@ -111,10 +111,13 @@ rows by:
 4. deterministic text fallbacks (`txn_type`, canonical team, player, detail).
 
 Older warehouses do not have these columns. The evaluator must therefore omit
-missing keys rather than fail. With both keys absent the deterministic fallback
-is `txn_date`, case-insensitive `txn_type`, canonical team, player, then detail.
-That fallback is deterministic, not evidence of the true time of day. Ordering
-sensitive cases remain approximate until a reseeded warehouse carries
+missing keys rather than fail. With both keys absent or tied, the deterministic
+fallback orders non-claim rows by case-insensitive `txn_type` and places waiver
+claims after non-claim rows on the same date, then uses canonical team, player,
+and detail. A same-date waive can therefore be paired with its claim regardless
+of scan order, while sign/waive ordering remains deterministic. That fallback is
+not evidence of the true time of day. Ordering sensitive cases other than the
+waive/claim causal pair remain approximate until a reseeded warehouse carries
 `group_sort` and `additional_sort`.
 
 ## Transaction state machine needed in the seeder and evaluator fallback
@@ -277,8 +280,18 @@ The evaluator-side compatibility path:
   only when the row kind is absent or undeclared;
 - reconstructs active, ended, and converted two-way state from transaction
   details and the `silver_contracts.TWO_WAY` fallback;
+- uses the static `silver_contracts.TWO_WAY` fallback only when no transaction
+  evidence exists for that player, so the static current-state row cannot rewrite
+  the chronology of reconstructed transactions;
 - bounds reconstructed active two-way state to the maximum two-league-year term
-  unless explicit current annotation exists;
+  unless explicit current annotation exists, and classifies multi-season cap
+  surfaces separately for each salary season rather than carrying the base-season
+  classification forward;
+- treats a missing or malformed formation date as unknown rather than permanently
+  active: the row is not excluded on that unknown evidence, and cap surfaces
+  disclose the affected player/seasons through `two_way_classification_unknown`
+  metadata or projection disclosures. A static fallback row is positive evidence
+  only for its own `_season`; later seasons remain unknown;
 - transfers reconstructed contract state on `Trade` rows and honors
   `AwardOnWaivers` as continuation with the claiming team when the waived
   contract type is known;
@@ -296,13 +309,19 @@ The evaluator-side compatibility path:
 
 The dead-money inference is deliberately narrow. It infers the current salary as
 Memphis-style dead money only when the warehouse shows a preceding unclaimed
-waive by that row team, the row team differs from the two-way formation team,
-the row has no positive future-season salary, and `GUARANTEED` covers at least
-the full current salary. The different-team requirement avoids treating an
-indistinguishable same-team current two-way row as its own terminated standard
-row; same-team cases need explicit contract identity and are currently
-unavailable. An explicit dead-money row for the same normalized player and team
-suppresses inference regardless of whether the amounts agree.
+waive of a standard or unknown contract by that row team, the row team differs
+from the two-way formation team, the row has no positive future-season salary,
+and `GUARANTEED` covers at least the full current salary. A waive known to end
+a two-way contract does not feed this standard-contract inference. The
+different-team requirement avoids treating an indistinguishable same-team
+current two-way row as its own terminated standard row; same-team cases need
+explicit contract identity and are currently unavailable. An explicit dead-money
+row for the same player and team suppresses inference regardless of whether the
+amounts agree, including a corrected zero row. A null explicit amount is carried
+as `amount_unknown` evidence rather than dropped. When both rows carry player
+IDs, identity suppression compares `PLAYER_ID`; normalized-name matching is only
+the fallback when either row lacks an ID, avoiding suffix collisions such as
+Gary Payton versus Gary Payton II.
 
 When terminated-contract evidence exists but protection is partial, missing, or
 cannot be allocated because positive future salary remains, the evaluator emits
@@ -317,6 +336,20 @@ true: the formation is older than the bounded reconstruction window,
 `silver_contracts.TWO_WAY` is false or stale, and the salary row lacks explicit
 two-way annotation. That is a warehouse coverage limitation, not a CBA
 ambiguity. The seeder-side annotation is required to close it.
+
+## Known boundaries not closed by this evaluator revision
+
+- Sequential-stint termination generation refresh is not modeled. The evaluator
+  preserves the termination evidence it can causally link, but it does not
+  renumber or regenerate termination sequences across multiple sequential
+  standard-contract stints.
+- One-year midseason two-way term precision remains season-grained. The
+  compatibility bound uses league years and does not calculate exact day-count
+  expiry for a one-year two-way contract formed midseason.
+- The frontend TypeScript contract does not yet render the `amount_unknown`
+  dead-money marker as a first-class presentation state. Backend payloads carry
+  the honest-unknown evidence; frontend rendering alignment remains a separate
+  contract-update task.
 
 ## Acceptance checks
 

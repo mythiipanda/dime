@@ -19,9 +19,9 @@ def _identity_keys(name: object, player_id: object = None) -> list[tuple[str, ob
 
 
 def _empty_contract_state() -> dict:
-    return {"active_team": "", "active_date": "", "evidence": "",
-            "waives": [], "terminations": [], "standard_team": "",
-            "standard_date": "", "two_way_end": None}
+    return {"active_team": "", "active_date": "", "active_season": "",
+            "evidence": "", "waives": [], "terminations": [],
+            "standard_team": "", "standard_date": "", "two_way_end": None}
 
 
 def _contract_state(index: dict, name: object, player_id: object = None) -> dict:
@@ -50,7 +50,8 @@ def _transaction_team_abbr(value: object) -> str:
 
 
 def _seed_contract_two_way_states(index: dict, con: object, season: str | None,
-                                  tables: set[str]) -> None:
+                                  tables: set[str],
+                                  transaction_keys: set[tuple[str, object]] | None = None) -> None:
     if "silver_contracts" not in tables:
         return
     try:
@@ -66,9 +67,13 @@ def _seed_contract_two_way_states(index: dict, con: object, season: str | None,
     for row in rows:
         if not row.get("TWO_WAY") or row.get("TERMINATED"):
             continue
+        keys = _identity_keys(row.get("PLAYER_NAME"), row.get("PLAYER_ID"))
+        if transaction_keys and any(key in transaction_keys for key in keys):
+            continue
         state = _contract_state(index, row.get("PLAYER_NAME"), row.get("PLAYER_ID"))
         if not state["active_team"]:
             state["active_team"] = canonical_team_abbr(row.get("TEAM"))
+            state["active_season"] = str(row.get("_season") or season or "")
             state["evidence"] = "silver_contracts.TWO_WAY"
 
 
@@ -97,14 +102,16 @@ def _evidence_league_years(season: str | None) -> set[str] | None:
             for year in range(start_year - 2, start_year + 1)}
 
 
-def active_two_way_for_season(state: dict | None, season: str | None) -> bool:
+def active_two_way_for_season(state: dict | None, season: str | None) -> bool | None:
     if not state or not state.get("active_team"):
         return False
     formation_year = league_year_for_date(state.get("active_date"))
     formation_start = _season_start_year(formation_year)
     target_start = _season_start_year(season)
     if formation_start is None or target_start is None:
-        return True
+        if state.get("active_season") and str(state.get("active_season")) == str(season or ""):
+            return True
+        return None
     return 0 <= target_start - formation_start <= 1
 
 
@@ -135,27 +142,32 @@ def _numeric_order(value: object) -> tuple[int, float]:
 def _transaction_sort_key(row: dict) -> tuple:
     group = _first_present(row, "group_sort", "GroupSort")
     additional = _first_present(row, "additional_sort", "Additional_Sort")
+    txn_type = str(row.get("txn_type") or "").lower()
+    waiver_claim = txn_type in {"awardonwaivers", "awardedonwaivers"}
     return (str(row.get("txn_date") or ""),
             _group_order(group),
             _numeric_order(additional),
-            str(row.get("txn_type") or "").lower(),
+            1 if waiver_claim else 0,
+            txn_type,
             _transaction_team_abbr(row.get("team")),
             str(row.get("player") or "").lower(),
             str(row.get("detail") or "").lower())
 
 
-def _transaction_two_way_rows(con: object, season: str | None,
-                              tables: set[str]) -> list[dict]:
+def _all_transaction_rows(con: object, tables: set[str]) -> list[dict]:
     if "silver_transactions" not in tables:
         return []
     try:
         cols = [r[1] for r in con.execute("PRAGMA table_info(silver_transactions)").fetchall()]
         if not {"txn_date", "txn_type", "player", "team", "detail"} <= set(cols):
             return []
-        rows = [dict(zip(cols, values, strict=False))
+        return [dict(zip(cols, values, strict=False))
                 for values in con.execute("SELECT * FROM silver_transactions").fetchall()]
     except Exception:
         return []
+
+
+def _transaction_two_way_rows(rows: list[dict], season: str | None) -> list[dict]:
     evidence_years = _evidence_league_years(season)
     if evidence_years is not None:
         rows = [row for row in rows
@@ -166,7 +178,7 @@ def _transaction_two_way_rows(con: object, season: str | None,
 def _link_terminations(state: dict, formation_team: str, formation_date: str) -> None:
     latest: dict[str, dict] = {}
     for waive in state.get("waives") or []:
-        if waive.get("claimed"):
+        if waive.get("claimed") or waive.get("contract_kind") not in {"", "standard"}:
             continue
         waive_date = str(waive.get("date") or "")
         if formation_date and waive_date and waive_date > formation_date:
@@ -273,8 +285,11 @@ def _apply_contract_transaction(state: dict, row: dict) -> None:
 
 def two_way_states(con: object, season: str | None, tables: set[str]) -> dict:
     index: dict = {}
-    _seed_contract_two_way_states(index, con, season, tables)
-    for row in _transaction_two_way_rows(con, season, tables):
+    all_rows = _all_transaction_rows(con, tables)
+    transaction_keys = {key for row in all_rows
+                        for key in _identity_keys(row.get("player"), row.get("player_id"))}
+    _seed_contract_two_way_states(index, con, season, tables, transaction_keys)
+    for row in _transaction_two_way_rows(all_rows, season):
         state = _contract_state(index, row.get("player"), row.get("player_id"))
         _apply_contract_transaction(state, row)
     return index
@@ -390,16 +405,19 @@ def inferred_dead_entry(row: dict, state: dict | None, row_team: str,
     if _dead_fact_for_inference(state, row_team) is None:
         return None
     amount = _deterministic_dead_amount(row, season)
+    entry = None
     if amount is not None:
-        return {"player": row.get('PLAYER_NAME'), "salary": amount, "team": row_team,
-                "row_kind": "dead_money",
-                "basis": "waived_standard_contract_before_two_way"}
-    if _dead_amount_unknown(row, season):
-        return {"player": row.get('PLAYER_NAME'), "salary": None, "team": row_team,
-                "row_kind": "dead_money",
-                "basis": "waived_standard_contract_before_two_way_protection_unknown",
-                "amount_unknown": True}
-    return None
+        entry = {"player": row.get('PLAYER_NAME'), "salary": amount, "team": row_team,
+                 "row_kind": "dead_money",
+                 "basis": "waived_standard_contract_before_two_way"}
+    elif _dead_amount_unknown(row, season):
+        entry = {"player": row.get('PLAYER_NAME'), "salary": None, "team": row_team,
+                 "row_kind": "dead_money",
+                 "basis": "waived_standard_contract_before_two_way_protection_unknown",
+                 "amount_unknown": True}
+    if entry is not None and row.get("PLAYER_ID") is not None:
+        entry["_player_id"] = row.get("PLAYER_ID")
+    return entry
 
 
 def salary_row_cap_status(row: dict, state: dict | None, row_team: str,
@@ -407,7 +425,9 @@ def salary_row_cap_status(row: dict, state: dict | None, row_team: str,
     explicit = explicit_two_way_record(row)
     explicit_dead = explicit_dead_money_record(row)
     reconstruct = explicit_row_kind(row) is None and not explicit
-    active = reconstruct and active_two_way_for_season(state, season)
+    active_state = active_two_way_for_season(state, season) if reconstruct else False
+    active = active_state is True
+    unknown = reconstruct and active_state is None
     terminated = reconstruct and terminated_contract_fact(state, row_team) is not None
     no_standard = reconstruct and bool(state and state.get("two_way_end")
                                        and not state.get("standard_team"))
@@ -416,6 +436,7 @@ def salary_row_cap_status(row: dict, state: dict | None, row_team: str,
     return {"explicit_two_way": explicit,
             "explicit_dead_money": explicit_dead,
             "active_two_way": active,
+            "two_way_classification_unknown": unknown,
             "terminated_standard": terminated,
             "no_standard_roster": no_standard,
             "counts_as_standard": counts,
@@ -431,21 +452,44 @@ def dead_key(row: dict) -> tuple[str, str, int]:
             canonical_team_abbr(row.get("team")), salary)
 
 
-def dead_identity(row: dict) -> tuple[str, str]:
-    return (normalize_name(row.get("player") or ""),
-            canonical_team_abbr(row.get("team")))
+def _dead_player_id(row: dict) -> int | None:
+    value = row.get("_player_id", row.get("PLAYER_ID", row.get("player_id")))
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def dead_identity(row: dict) -> dict[str, object]:
+    return {"player_id": _dead_player_id(row),
+            "name": normalize_name(row.get("player") or ""),
+            "team": canonical_team_abbr(row.get("team"))}
+
+
+def same_dead_identity(left: dict, right: dict) -> bool:
+    a = dead_identity(left)
+    b = dead_identity(right)
+    if a["team"] != b["team"]:
+        return False
+    if a["player_id"] is not None and b["player_id"] is not None:
+        return a["player_id"] == b["player_id"]
+    return bool(a["name"] and a["name"] == b["name"])
+
+
+def _public_dead_row(row: dict) -> dict:
+    return {key: value for key, value in row.items() if not str(key).startswith("_")}
 
 
 def merge_dead_rows(explicit: list[dict], inferred: list[dict],
                     team_code: str) -> list[dict]:
-    dead = list(explicit)
-    explicit_identities = {dead_identity(row) for row in dead}
-    seen = {dead_key(row) for row in dead}
+    explicit_rows = list(explicit)
+    dead = [_public_dead_row(row) for row in explicit_rows]
+    seen = {dead_key(row) for row in explicit_rows}
     for row in inferred:
         key = dead_key(row)
-        identity = dead_identity(row)
+        suppressed = any(same_dead_identity(row, existing) for existing in explicit_rows)
         if (canonical_team_abbr(row.get("team")) == team_code
-                and identity not in explicit_identities and key not in seen):
-            dead.append(row)
+                and not suppressed and key not in seen):
+            dead.append(_public_dead_row(row))
             seen.add(key)
     return dead

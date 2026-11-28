@@ -1,4 +1,5 @@
 import difflib as _dl
+import re as _re
 from typing import Any
 
 from langchain_core.tools import tool
@@ -326,25 +327,41 @@ def _explicit_dead_rows(con: object, scols: list[str], scol: str,
     if not kind_column:
         return []
     try:
-        rows = con.execute(
-            "SELECT PLAYER_NAME, TEAM, " + scol + " FROM silver_salaries "
-            "WHERE " + dead_money_row_predicate(kind_column) + " AND UPPER(TEAM) = UPPER(?)",
-            [team_code]).fetchall()
+        cur = con.execute(
+            "SELECT * FROM silver_salaries WHERE " + dead_money_row_predicate(kind_column))
+        names = [d[0] for d in cur.description]
+        rows = [dict(zip(names, row, strict=False)) for row in cur.fetchall()]
     except Exception:
         return []
-    return [{"player": str(row[0]), "salary": row[2], "team": str(row[1])}
-            for row in rows if row[2] is not None]
+    dead = []
+    for row in rows:
+        if canonical_team_abbr(row.get("TEAM")) != team_code:
+            continue
+        value = row.get(scol)
+        amount_columns = [key for key in row
+                          if _re.fullmatch(r"SALARY_\d{4}_\d{2}", str(key))]
+        if (value is None and any(row.get(key) is not None for key in amount_columns)):
+            continue
+        if value is None and row.get("_season"):
+            match = _re.fullmatch(r"SALARY_(\d{4})_(\d{2})", str(scol))
+            row_season = f"{match.group(1)}-{match.group(2)}" if match else ""
+            if row_season != str(row.get("_season")):
+                continue
+        item = {"player": str(row.get("PLAYER_NAME") or ""),
+                "salary": value,
+                "team": canonical_team_abbr(row.get("TEAM"))}
+        if row.get("PLAYER_ID") is not None:
+            item["_player_id"] = row.get("PLAYER_ID")
+        if item["salary"] is None:
+            item["amount_unknown"] = True
+        dead.append(item)
+    return dead
 
 
 def _silver_salary_payroll(con: object, team_code: str, season: str | None,
                            tables: set[str]) -> tuple[int, list[dict], list[dict]] | None:
     scols = [r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()]
     scol = _salary_column_or_raise(scols, season)
-    team_row = con.execute(
-        "SELECT 1 FROM silver_salaries WHERE UPPER(TEAM) = UPPER(?) LIMIT 1",
-        [team_code]).fetchone()
-    if not team_row:
-        return None
     cur = con.execute("SELECT * FROM silver_salaries")
     names = [d[0] for d in cur.description]
     records = [dict(zip(names, row)) for row in cur.fetchall()]
@@ -355,6 +372,8 @@ def _silver_salary_payroll(con: object, team_code: str, season: str | None,
     for row in records:
         row["TEAM"] = canonical_team_abbr(row.get("TEAM"))
         row["salary"] = row.get(scol)
+    if not any(row["TEAM"] == team_code for row in records):
+        return None
     evidence_season = payroll_evidence_season(records, scol, season)
     rows, players, inferred = _collect_salary_payroll(
         records, con, team_code, season, tables, evidence_season)

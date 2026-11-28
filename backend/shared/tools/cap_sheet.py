@@ -84,6 +84,13 @@ def year_pending_option(year: dict) -> int:
     return 0
 
 
+def _counts_as_standard_for_season(row: dict, season: str) -> bool:
+    counts = row.get("_counts_as_standard_by_season")
+    if not isinstance(counts, dict):
+        return True
+    return bool(counts.get(season, True))
+
+
 def unroll_team_sheet(rows: list[dict], start_season: str,
                       seasons: list[str] | None = None) -> dict:
     if seasons is None:
@@ -94,10 +101,10 @@ def unroll_team_sheet(rows: list[dict], start_season: str,
     for season in seasons:
         committed = 0
         pending = 0
-        for player in players:
+        for row, player in zip(rows, players, strict=False):
             year = next((y for y in player["years"]
                          if y["season"] == season), None)
-            if year is None:
+            if year is None or not _counts_as_standard_for_season(row, season):
                 continue
             committed += year_committed(year)
             pending += year_pending_option(year)
