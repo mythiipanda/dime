@@ -12,10 +12,10 @@ import { AnswerVerification, OmittedNote, StoppedNote } from "../site/harness/An
 import { StreamArtifacts } from "../site/harness/ArtifactsView";
 import { useDimeChat } from "../site/harness/useDimeChat";
 import type { ChatMsg } from "../site/harness/types";
-import type { VerificationCarry } from "../../lib/dime-stream";
+import type { DimeArtifact, ToolState, VerificationCarry } from "../../lib/dime-stream";
 import { citationDetails } from "../../lib/citation-details";
+import { failureCopy } from "../../lib/stream/labels";
 import { clearWorkflowDraft, createWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft, workflowDraftWasSent, type WorkflowDraft } from "../../lib/workflow-drafts";
-import { normalizeFailureCopy } from "../../lib/failure-copy";
 import { splitViewContext } from "../../lib/view-context";
 
 export const suggestedPrompts = [
@@ -42,6 +42,19 @@ export function PiAnswer({ text, carry, prefix }: { text: string; carry: Verific
       return source ? <CitationChip key={anchorIndex} index={anchorIndex} claim={`${source.label} · row ${anchor.row + 1} · ${anchor.columns.join(", ")}`} detail={citationDetails(source, anchor, prefix)} /> : <span key={anchorIndex} className="text-[11px] text-orange">Source {anchor.ref} unavailable</span>;
     })}
   </div>)}</>;
+}
+
+export function FailureNotice({ failure, onRetry }: { failure: { kind: string; message: string }; onRetry?: () => void }) {
+  const copy = failureCopy(failure.kind);
+  return (
+    <div role="alert" className="my-4 flex items-center gap-3 rounded-lg border border-red/25 bg-red-tint px-4 py-3 text-[12px]">
+      <div className="flex-1">
+        <div className="font-medium text-ink">{copy.title}</div>
+        <p className="mt-0.5 leading-relaxed text-ink-2">{copy.body}</p>
+      </div>
+      {onRetry && <button className="failure-retry" onClick={onRetry}>Try again</button>}
+    </div>
+  );
 }
 
 export function CopyAnswerButton({ text }: { text: string }) {
@@ -74,10 +87,20 @@ export function AssistantTurn({ message, prefix, thread, onFollowUp, onRetry }: 
     {message.stopped ? <StoppedNote /> : null}
     <StreamArtifacts artifacts={message.artifacts} shareContext={message.carry?.runId && thread ? { run_id: message.carry.runId, thread } : undefined} />
     <AnswerVerification carry={message.carry} artifacts={message.artifacts} prefix={prefix} />
-    {message.failure && <div role="alert" className="my-4 flex items-center gap-3 rounded-lg border border-red/25 bg-red-tint px-4 py-3 text-[12px] text-red"><span className="flex-1">{normalizeFailureCopy(message.failure.message)}</span>{onRetry && <button className="failure-retry" onClick={onRetry}>Try again</button>}</div>}
+    {message.failure && <FailureNotice failure={message.failure} onRetry={onRetry} />}
     {message.text && <CopyAnswerButton text={message.text} />}
     {message.suggestions.map(suggestion => <button key={suggestion} className="suggestion-row text-[12px]" onClick={() => onFollowUp(suggestion)}>{suggestion}</button>)}
   </article>;
+}
+
+export function LiveTurn({ live, thread }: { live: { thinking: { label: string }[]; tools: ToolState[]; text: string; carry: VerificationCarry | null; artifacts: DimeArtifact[] }; thread: string }) {
+  return (
+    <article className="assistant-turn" aria-label="Dime response">
+      <EvidenceTrace busy thinking={live.thinking} tools={live.tools} />
+      <StreamingText streaming><PiAnswer text={live.text} carry={live.carry} prefix={`${thread}-live-`} /></StreamingText>
+      <StreamArtifacts artifacts={live.artifacts} shareContext={live.carry?.runId ? { run_id: live.carry.runId, thread } : undefined} />
+    </article>
+  );
 }
 
 export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflowConsumed }: { thread: string; replay: string | null; onRunDone: (question: string) => void; workflowRequest?: { thread: string; text: string } | null; onWorkflowConsumed?: () => void }) {
@@ -139,11 +162,7 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
     </section> : <>
       <div className="conversation" ref={chat.scrollRef} aria-label="Conversation">
         {chat.messages.map((message, index) => message.role === "user" ? <UserTurn key={index} text={message.text} /> : <AssistantTurn key={index} message={message} prefix={`${thread}-${index}-`} thread={thread} onFollowUp={chat.submit} onRetry={() => chat.retry(index)} />)}
-        {chat.live && <article className="assistant-turn" aria-label="Dime response">
-          <EvidenceTrace busy thinking={chat.live.thinking} tools={chat.live.tools} />
-          <StreamingText streaming><PiAnswer text={chat.live.text} carry={chat.live.carry} prefix={`${thread}-live-`} /></StreamingText>
-          <StreamArtifacts artifacts={chat.live.artifacts} shareContext={chat.live.carry?.runId ? { run_id: chat.live.carry.runId, thread } : undefined} />
-        </article>}
+        {chat.live && <LiveTurn live={chat.live} thread={thread} />}
       </div>
       <div className="composer-dock">{composer}<p className="mt-2 text-center text-[10px] text-ink-3">Dime can make mistakes. Check the evidence before making a decision.</p></div>
     </>}

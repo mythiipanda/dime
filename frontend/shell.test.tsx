@@ -114,7 +114,7 @@ test("Pi citations retain exact rows, columns, units and prefixed expandable sou
   const missing = renderToStaticMarkup(<PiAnswer text="Fallback" carry={{ ...carry, sources: [] }} prefix="" />);
   assert.match(missing, /Source replay-player unavailable/);
   const failure = renderToStaticMarkup(<AssistantTurn message={{ role: "assistant", text: "", artifacts: [], carry: null, failure: { kind: "connection", message: "Connection interrupted" }, suggestions: [] }} prefix="" onFollowUp={() => {}} />);
-  assert.match(failure, /role="alert"/); assert.match(failure, /Connection interrupted/);
+  assert.match(failure, /role="alert"/); assert.match(failure, /Couldn&#x27;t reach Dime/);
 });
 
 test("shell reads URL/history, real threads, library, theme and sends the selected thread to dev's SSE transport", async () => {
