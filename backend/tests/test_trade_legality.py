@@ -473,6 +473,125 @@ def test_stepien_firsts_trade_fails_for_previolating_team(monkeypatch, tmp_path)
     assert any("Stepien" in i for i in out["issues"])
 
 
+def test_stepien_same_year_exchange_legal_in_both_leg_orderings(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    bos_inventory = [(y, 1, "BOS", "own", "BOS")
+                     for y in range(2027, 2034) if y != 2029]
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=bos_inventory + _all_firsts("MIA"))
+    bos_first = ('[{"from":"BOS","to":"MIA","players":"Alpha One",'
+                 '"picks":[{"year":2028,"round":1}]},'
+                 '{"from":"MIA","to":"BOS","players":"Beta Two",'
+                 '"picks":[{"year":2028,"round":1}]}]')
+    mia_first = ('[{"from":"MIA","to":"BOS","players":"Beta Two",'
+                 '"picks":[{"year":2028,"round":1}]},'
+                 '{"from":"BOS","to":"MIA","players":"Alpha One",'
+                 '"picks":[{"year":2028,"round":1}]}]')
+    for legs in (bos_first, mia_first):
+        out = get_trade_legality.invoke({
+            "legs": legs,
+            "season": "2026-27",
+        })
+        assert out["ok"] is True
+        assert out["legal"] is True, out["issues"]
+
+
+def _cycle_legs(order):
+    legs = {
+        "bos": ('{"from":"BOS","to":"MIA","players":"Alpha One",'
+                '"picks":[{"year":2028,"round":1}]}'),
+        "mia": '{"from":"MIA","to":"DEN","players":"Beta Two"}',
+        "den": ('{"from":"DEN","to":"BOS","players":"Gamma Three",'
+                '"picks":[{"year":2028,"round":1}]}'),
+    }
+    return "[" + ",".join(legs[key] for key in order) + "]"
+
+
+def test_stepien_multi_team_verdict_is_order_independent(monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    bos_inventory = [(y, 1, "BOS", "own", "BOS")
+                     for y in range(2027, 2034) if y != 2029]
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)])
+          + _roster("DEN", 150_000_000, [("Gamma Three", 30_000_000)]),
+          picks=(bos_inventory + _all_firsts("MIA")
+                 + _all_firsts("DEN")))
+    outputs = []
+    for order in (("bos", "mia", "den"), ("den", "bos", "mia")):
+        outputs.append(get_trade_legality.invoke({
+            "legs": _cycle_legs(order),
+            "season": "2026-27",
+        }))
+    assert all(out["ok"] is True for out in outputs)
+    assert outputs[0]["legal"] == outputs[1]["legal"]
+    assert all(out["legal"] is True for out in outputs), outputs
+
+
+def test_stepien_trade_created_violation_fails_in_both_leg_orderings(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=_all_firsts("BOS") + _all_firsts("MIA"))
+    bos_first = ('[{"from":"BOS","to":"MIA","players":"Alpha One",'
+                 '"picks":[{"year":2028,"round":1},{"year":2029,"round":1}]},'
+                 '{"from":"MIA","to":"BOS","players":"Beta Two"}]')
+    mia_first = ('[{"from":"MIA","to":"BOS","players":"Beta Two"},'
+                 '{"from":"BOS","to":"MIA","players":"Alpha One",'
+                 '"picks":[{"year":2028,"round":1},{"year":2029,"round":1}]}]')
+    for legs in (bos_first, mia_first):
+        out = get_trade_legality.invoke({
+            "legs": legs,
+            "season": "2026-27",
+        })
+        assert out["ok"] is True
+        assert out["legal"] is False
+        assert any("Stepien" in issue for issue in out["issues"])
+
+
+def test_stepien_out_of_window_incoming_first_does_not_trigger_previolation(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    bos_inventory = [(y, 1, "BOS", "own", "BOS") for y in range(2030, 2034)]
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=bos_inventory + _all_firsts("MIA"))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"MIA","to":"BOS","players":"Beta Two",'
+                '"picks":[{"year":2034,"round":1}]},'
+                '{"from":"BOS","to":"MIA","players":"Alpha One"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert any("7 drafts out" in issue for issue in out["issues"])
+    assert not any("Stepien" in issue for issue in out["issues"])
+
+
+def test_stepien_elapsed_incoming_first_does_not_trigger_previolation(
+        monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    bos_inventory = [(y, 1, "BOS", "own", "BOS") for y in range(2030, 2034)]
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=bos_inventory + _all_firsts("MIA"))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"MIA","to":"BOS","players":"Beta Two",'
+                '"picks":[{"year":2026,"round":1}]},'
+                '{"from":"BOS","to":"MIA","players":"Alpha One"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    assert not any("Stepien" in issue for issue in out["issues"])
+
+
 def test_stepien_issue_windows():
     from shared.tools.league.trade_legality import _stepien_issues
     assert _stepien_issues("BOS", set(range(2027, 2034)), 2026) == []

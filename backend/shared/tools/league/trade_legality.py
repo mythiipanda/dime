@@ -459,6 +459,10 @@ def _picks_vintage(con) -> tuple[str, str]:
     return _picks_season(con, cols), "warehouse_vintage"
 
 
+def _in_stepien_window(year: int, season_start: int) -> bool:
+    return season_start < year <= season_start + _STEPIEN_WINDOW
+
+
 def _pick_inventory(con, season_start: int
                     ) -> tuple[dict[str, set[int]] | None,
                                dict[str, str] | None]:
@@ -476,7 +480,7 @@ def _pick_inventory(con, season_start: int
     rows = con.execute(sql, params).fetchall()
     for year, _rnd, orig, status, held_by in rows:
         y = int(year)
-        if not (season_start < y <= season_start + _STEPIEN_WINDOW):
+        if not _in_stepien_window(y, season_start):
             continue
         owners: set[str] = set()
         status = str(status or "")
@@ -518,7 +522,7 @@ def _pick_ownership_error(moves: list[dict[str, Any]],
         return None
     for team, pick in _outgoing_firsts(moves):
         year = pick["year"]
-        if not (season_start < year <= season_start + _STEPIEN_WINDOW):
+        if not _in_stepien_window(year, season_start):
             continue
         if year not in pick_held.get(team, set()):
             return (f"{team} cannot declare a {year} first-round pick "
@@ -980,23 +984,27 @@ def _snt_result(snt: dict[str, Any] | None,
 
 
 def _owned_after_trade(team: str, moves: list[dict[str, Any]],
-                       pick_held: dict[str, set[int]]) -> set[int]:
+                       pick_held: dict[str, set[int]],
+                       season_start: int) -> set[int]:
     team_code = canonical_team_abbr(team)
     owned: set[int] = set()
     for held_team, years in pick_held.items():
         if canonical_team_abbr(held_team) == team_code:
             owned.update(years)
+    outgoing: set[int] = set()
+    incoming: set[int] = set()
     for move in moves:
         move_from = canonical_team_abbr(move["from"])
         move_to = canonical_team_abbr(move["to"])
         for pick in move["picks"]:
-            if pick["round"] != 1:
+            if (pick["round"] != 1 or pick["swap"]
+                    or not _in_stepien_window(pick["year"], season_start)):
                 continue
-            if move_from == team_code and not pick["swap"]:
-                owned.discard(pick["year"])
-            if move_to == team_code and not pick["swap"]:
-                owned.add(pick["year"])
-    return owned
+            if move_from == team_code:
+                outgoing.add(pick["year"])
+            if move_to == team_code:
+                incoming.add(pick["year"])
+    return (owned - outgoing) | incoming
 
 
 def _pick_inventory_check(pick_held: dict[str, set[int]] | None
@@ -1024,7 +1032,8 @@ def _stepien_result(teams: list[str], moves: list[dict[str, Any]],
     issues: list[str] = []
     for team in teams:
         team_code = canonical_team_abbr(team)
-        owned_after = _owned_after_trade(team_code, moves, pick_held)
+        owned_after = _owned_after_trade(
+            team_code, moves, pick_held, season_start)
         owned_before = set(pick_held.get(team_code, set()))
         if owned_after == owned_before:
             continue
