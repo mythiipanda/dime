@@ -433,6 +433,39 @@ def test_trade_legality_bad_legs_json():
     assert "JSON" in out["error"]
 
 
+def test_stepien_zero_pick_trade_passes_for_previolating_team(monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    bos_inventory = [(y, 1, "BOS", "own", "BOS") for y in range(2030, 2034)]
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=bos_inventory + _all_firsts("MIA"))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert not any("Stepien" in i for i in out["issues"]), out["issues"]
+
+
+def test_stepien_firsts_trade_fails_for_previolating_team(monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    bos_inventory = [(y, 1, "BOS", "own", "BOS") for y in range(2030, 2034)]
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=bos_inventory + _all_firsts("MIA"))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One",'
+                '"picks":[{"year":2030,"round":1}]},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert any("Stepien" in i for i in out["issues"])
+
+
 def test_stepien_issue_windows():
     from shared.tools.league.trade_legality import _stepien_issues
     assert _stepien_issues("BOS", set(range(2027, 2034)), 2026) == []
