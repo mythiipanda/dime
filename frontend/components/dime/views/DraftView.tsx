@@ -169,7 +169,7 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
         lines: [...lines, `Source: ${fit.provenance?.table ?? "unknown"}${fit.provenance?.as_of ? ` · as of ${String(fit.provenance.as_of).slice(0, 10)}` : ""}`],
       });
     }
-    return { title: `Draft & free agency — ${teamName}`, subtitle: "Dime draft workspace", generated: new Date().toISOString(), blocks: report };
+    return { title: `Draft & free agency · ${teamName}`, subtitle: "Dime draft workspace", generated: new Date().toISOString(), blocks: report };
   };
 
   const exportReport = (pdf: boolean) => {

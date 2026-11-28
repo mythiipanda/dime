@@ -496,7 +496,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
               {(() => {
                 const lastCovered = [...arc].reverse().find((row) => row.raptor != null);
                 const hasGap = lastCovered && arc.some((row) => row.season > lastCovered.season);
-                return hasGap ? ` · raptor coverage ends ${lastCovered.season} — later seasons show –` : "";
+                return hasGap ? ` · raptor coverage ends ${lastCovered.season}; later seasons show –` : "";
               })()}
             </p>
           </div>
@@ -507,7 +507,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
         <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[13px] font-semibold text-ink">
-              Era-relative neighbors — {player} {selectedSeason}
+              Era-relative neighbors · {player} {selectedSeason}
             </h3>
             {pin == null ? (
               <button
@@ -566,7 +566,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           {!compsLoading && !compsError && comps?.qualified === false && comps.qualification && (
             <div className="mt-2 rounded-[8px] bg-field p-3 text-[12.5px] text-ink-2">
               <p>
-                {`${player}'s ${selectedSeason} does not meet the era comps qualification minimum (${comps.qualification.rule} — this season: ${comps.qualification.gp} gp, ${comps.qualification.total_min != null ? `${Math.round(comps.qualification.total_min)} total minutes` : "minutes unavailable"}).`}
+                {`${player}'s ${selectedSeason} does not meet the era comps qualification minimum (${comps.qualification.rule}; this season: ${comps.qualification.gp} gp, ${comps.qualification.total_min != null ? `${Math.round(comps.qualification.total_min)} total minutes` : "minutes unavailable"}).`}
               </p>
               {comps.qualifying_seasons && comps.qualifying_seasons.length > 0 && (
                 <p className="mt-1.5">
@@ -615,7 +615,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                         ? { comp: `${pin.player} ${pin.season}`, compPlayer: pin.player, compSeason: pin.season }
                         : { comp: `${active.PLAYER} ${active.season}`, compPlayer: active.PLAYER, compSeason: active.season };
                       onAsk(
-                        `Why do ${player} ${selectedSeason} and ${pair.comp} match statistically — break down the shared shape, which features drive the similarity, and where they diverge.`,
+                        `Why do ${player} ${selectedSeason} and ${pair.comp} match statistically: break down the shared shape, which features drive the similarity, and where they diverge.`,
                         {
                           kind: "era_comps",
                           summary: `era match: ${player} ${selectedSeason} vs ${pair.comp}`,
@@ -637,7 +637,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                 </div>
               )}
               {comps.rows.length === 0 && (
-                <p className="mt-1.5 text-[12.5px] text-ink-2">no era neighbors found within the pool window — widen the window or pick another season.</p>
+                <p className="mt-1.5 text-[12.5px] text-ink-2">no era neighbors found within the pool window. Widen the window or pick another season.</p>
               )}
               <div className="mt-1.5 divide-y divide-line">
                 {comps.rows.map((comp, i) => (
@@ -725,7 +725,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
             )}
           </div>
           <p className="mt-2 font-mono text-[10px] leading-[1.6] text-ink-3">
-            similarity = 100/(1+d/20) over within-season z-scores — each feature standardized inside its own season's qualified pool, so the match is era-relative shape, not raw level
+            similarity = 100/(1+d/20) over within-season z-scores; each feature standardized inside its own season's qualified pool, so the match is era-relative shape, not raw level
           </p>
         </section>
       )}
