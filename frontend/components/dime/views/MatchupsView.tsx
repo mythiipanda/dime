@@ -96,13 +96,13 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
               <div className="mt-1.5 grid grid-cols-2 gap-1.5" aria-hidden>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line"}`}
+                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-ink-3"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.away) / max) * 100)}%` }}
                   />
                 </div>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line"}`}
+                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-ink-3"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.home) / max) * 100)}%` }}
                   />
                 </div>
