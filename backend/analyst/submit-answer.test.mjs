@@ -2469,13 +2469,27 @@ test("validateAnswerSubmission keeps legitimate prose mentioning tools intact", 
 });
 
 function tradeCheckSource(overrides = {}) {
+  const legal = overrides.legal ?? true;
+  const issues = overrides.issues ?? [];
+  const checks = overrides.checks ?? [{ rule: "salary matching", note: "both sides within band" }];
+  const rows = [
+    { side: "team_a", team: "DAL", outgoing: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_incoming: 28909044, match_rule: "standard TPE matching: 100% of outgoing salary plus applicable cushion", hard_cap: "", over_apron1: false, over_apron2: false, tpe_creation: { amount: 313044, condition: "would generate only if this construction is executed as a non-simultaneous trade" }, legal, issues },
+    { side: "team_b", team: "TOR", outgoing: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_incoming: 28596000, match_rule: "outgoing salary plus $9.096M (below the first apron)", hard_cap: "first apron", over_apron1: false, over_apron2: false, legal, issues }
+  ];
+  const source = makeSourceRecord("trade-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
+  source.response.structuredContent.legal = legal;
+  source.response.structuredContent.issues = issues;
+  source.response.structuredContent.checks = checks;
+  return source;
+}
+
+function tradeCheckDictSource() {
   const rows = {
-    team_a: { team: "DAL", out: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_in: 28909044, match_rule: "standard TPE matching: 100% of outgoing salary plus applicable cushion", hard_cap: "", over_apron1: false, over_apron2: false, tpe_creation: { amount: 313044, condition: "would generate only if this construction is executed as a non-simultaneous trade" } },
-    team_b: { team: "TOR", out: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_in: 28596000, match_rule: "outgoing salary plus $9.096M (below the first apron)", hard_cap: "first apron", over_apron1: false, over_apron2: false },
-    legal: true, issues: [], checks: [{ rule: "salary matching", note: "both sides within band" }],
-    ...overrides.rows
+    team_a: { team: "DAL", out: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_in: 28909044, match_rule: "standard TPE matching", hard_cap: "", tpe_creation: { amount: 313044, condition: "non-simultaneous" } },
+    team_b: { team: "TOR", out: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_in: 28596000, match_rule: "outgoing plus $9.096M", hard_cap: "first apron" },
+    legal: true, issues: [], checks: [{ rule: "salary matching", note: "fits" }]
   };
-  return makeSourceRecord("trade-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
+  return makeSourceRecord("trade-dict-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
 }
 
 function tradeLegalitySource() {
@@ -2515,6 +2529,18 @@ test("trade_verdict resolves the evaluator verdict, never model-written outcomes
   assert.deepEqual(input, original);
 });
 
+test("trade_verdict still resolves the legacy dict-shaped rows", () => {
+  const source = tradeCheckDictSource();
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "Legacy", ref: "trade-dict-src" }] }, () => source);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.teams.length, 2);
+  assert.equal(verdict.teams[0].team, "DAL");
+  assert.deepEqual(verdict.teams[0].playersOut, ["P.J. Washington"]);
+  assert.equal(verdict.teams[0].outgoing, 19813044);
+  assert.equal(verdict.teams[0].tpeCreation.amount, 313044);
+});
+
 test("trade_verdict resolves the multi-team get_trade_legality shape", () => {
   const source = tradeLegalitySource();
   const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "Aggregation works", ref: "legality-src" }] }, () => source);
@@ -2530,7 +2556,7 @@ test("trade_verdict resolves the multi-team get_trade_legality shape", () => {
 });
 
 test("trade_verdict rejects illegal verdicts structure intact, not silently legal", () => {
-  const source = tradeCheckSource({ rows: { legal: false, issues: ["CHA takes back too much"] } });
+  const source = tradeCheckSource({ legal: false, issues: ["CHA takes back too much"] });
   const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: " Booker-for-Allen fails ", ref: "trade-src" }] }, () => source);
   const verdict = result.artifacts[0];
   assert.equal(verdict.legal, false);

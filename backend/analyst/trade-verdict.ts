@@ -62,20 +62,27 @@ function teamFromTradeCheck(side: Record<string, unknown>, other: Record<string,
         playersOut: stringList(side.players),
         playersIn: stringList(other.players)
     };
-    const outgoing = numOrNull(side.out);
-    const incoming = numOrNull(other.out);
+    const outgoing = numOrNull(side.outgoing) ?? numOrNull(side.out);
+    const incoming = numOrNull(other.outgoing) ?? numOrNull(other.out);
     if (outgoing !== null) team.outgoing = outgoing;
     if (incoming !== null) team.incoming = incoming;
     const payroll = numOrNull(side.payroll);
-    if (payroll !== null) team.payrollBefore = payroll;
-    const allowedIn = numOrNull(side.allowed_in);
-    if (allowedIn !== null) team.allowedIncoming = allowedIn;
+    if (payroll !== null) {
+        team.payrollBefore = payroll;
+        if (outgoing !== null && incoming !== null) team.payrollAfter = payroll - outgoing + incoming;
+    }
+    const allowedIn = numOrNull(side.allowed_incoming) ?? numOrNull(side.allowed_in);
+    if (allowedIn !== null) {
+        team.allowedIncoming = allowedIn;
+        if (incoming !== null && incoming > allowedIn) team.matchingFailed = true;
+    }
     const matchRule = textOrNull(side.match_rule);
     if (matchRule) team.matchRule = matchRule;
     const hardCap = textOrNull(side.hard_cap);
     if (hardCap) team.hardCap = hardCap;
     if (side.over_apron1 === true) team.overApron1 = true;
     if (side.over_apron2 === true) team.overApron2 = true;
+    if ((team.playersOut as string[]).length > 1) team.aggregates = true;
     const tpe = resolveTpeCreation(side.tpe_creation);
     if (tpe) team.tpeCreation = tpe;
     return team;
@@ -148,15 +155,33 @@ export function resolveTradeVerdict(artifact: Record<string, unknown>, getSource
     let checksRaw: unknown;
 
     if (record.tool === "get_trade_check") {
-        const rows = objectValue(data.rows);
-        const sideA = objectValue(rows?.team_a);
-        const sideB = objectValue(rows?.team_b);
-        legal = rows?.legal === true ? true : rows?.legal === false ? false : undefined;
+        const rowsDict = objectValue(data.rows);
+        let sideA: Record<string, unknown> | null = null;
+        let sideB: Record<string, unknown> | null = null;
+        if (rowsDict) {
+            sideA = objectValue(rowsDict.team_a) ?? null;
+            sideB = objectValue(rowsDict.team_b) ?? null;
+            legal = rowsDict.legal === true ? true : rowsDict.legal === false ? false : undefined;
+            issues = stringList(rowsDict.issues);
+            checksRaw = rowsDict.checks;
+        } else if (Array.isArray(data.rows)) {
+            const entries = data.rows.map(row => objectValue(row)).filter((entry): entry is Record<string, unknown> => entry !== null);
+            sideA = entries.find(entry => entry.side === "team_a") ?? null;
+            sideB = entries.find(entry => entry.side === "team_b") ?? null;
+            if (!sideA && !sideB && entries.length >= 2) {
+                sideA = entries[0];
+                sideB = entries[1];
+            }
+            legal = data.legal === true ? true : data.legal === false ? false : undefined;
+            if (legal === undefined && sideA)
+                legal = sideA.legal === true ? true : sideA.legal === false ? false : undefined;
+            issues = stringList(data.issues);
+            if (!issues.length && sideA) issues = stringList(sideA.issues);
+            checksRaw = data.checks;
+        }
         if (!sideA || !sideB || legal === undefined)
             throw new Error("trade_verdict source is missing the verdict structure — rerun the evaluation instead of substituting.");
-        issues = stringList(rows?.issues);
         teams = [teamFromTradeCheck(sideA, sideB), teamFromTradeCheck(sideB, sideA)];
-        checksRaw = rows?.checks;
     } else {
         legal = data.legal === true ? true : data.legal === false ? false : undefined;
         const rowsList = Array.isArray(data.rows) ? data.rows : [];
