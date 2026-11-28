@@ -146,7 +146,15 @@ official future numbers. `backend/scripts/seed_free_agents.py` uses the
 official 2026-27 cap and exception amounts as its base and projects the
 2027-28 cap season by multiplying each amount by a fixed 1.10 (10%)
 growth assumption, then truncating to whole dollars. Those rows carry
-`ESTIMATED` and name the target `CAP_SEASON`.
+`ESTIMATED` and name the target `CAP_SEASON`. Signing validation treats
+2026-27 published exception amounts as the fixed values for that season.
+For a projected season it prefers the matching warehouse exception
+estimates exactly; when they are unavailable it derives an exact rational
+cap-growth estimate without nearest-thousand rounding and labels the
+result as a non-official projection. Future minimum-salary projections use
+exact rational arithmetic rounded half-up to whole dollars as a disclosed
+projection convention because the CBA text does not specify half-dollar
+tie rounding and intermediate projected-year tables are unavailable.
 
 ## Evals and tests
 
