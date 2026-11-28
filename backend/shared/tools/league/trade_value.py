@@ -109,8 +109,16 @@ def _trade_guard_team_error(con, team: str, players: str,
     for player in [x.strip() for x in str(players).split(",") if x.strip()]:
         actual = _season_player_team(con, player, season) if season else None
         if not actual:
+            kind_filter = ""
+            try:
+                scols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+                if "ROW_KIND" in scols:
+                    kind_filter = "AND ROW_KIND = 'roster'"
+            except Exception:
+                pass
             row = con.execute(
-                "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
+                "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) "
+                + kind_filter + " ORDER BY TEAM LIMIT 1",
                 [player]).fetchone()
             actual = canonical_team_abbr(row[0]) if row and row[0] else ""
         if actual and actual != team_code:

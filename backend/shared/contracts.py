@@ -100,6 +100,8 @@ def salary_records(con, season: str | None = None, salary_season: str | None = N
             where = ' WHERE _season = ?'
             params = [season_filter]
         rows = [dict(zip(columns, values)) for values in con.execute(f'SELECT * FROM {table}{where}', params).fetchall()]
+        if table == 'silver_salaries' and 'ROW_KIND' in columns:
+            rows = [r for r in rows if r.get('ROW_KIND') != 'dead_money']
         if rows and not season and '_season' in columns:
             latest = max(str(r.get('_season') or '') for r in rows)
             rows = [r for r in rows if str(r.get('_season') or '') == latest]
