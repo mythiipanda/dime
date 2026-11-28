@@ -43,7 +43,7 @@ export function OmittedNote({ omitted }: { omitted: string[] }) {
 
 export function SourceRefDetails({ carry, prefix = "" }: { carry: VerificationCarry; prefix?: string }) {
   return (
-    <QuietDetails label={<>Sources &amp; provenance</>}>
+    <QuietDetails label={<>Sources</>}>
       {carry.sources?.map((source) => (
         <details key={source.ref} id={`${prefix}source-${source.ref}`} className="mt-2 text-[12px]">
           <summary>{source.label}</summary>

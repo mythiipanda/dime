@@ -502,7 +502,7 @@ test("an unknown provenance artifact blocks a verified claim and stays inspectab
     assert.match(html, /not declared/i, html);
     assert.match(html, /partly undeclared/i, html);
     assert.ok(html.includes("QA FIXTURE unknown provenance chart"), html);
-    assert.equal((html.match(/<summary[^>]*>[\s\S]{0,600}?Sources &amp; provenance[\s\S]{0,100}?<\/summary>/g) ?? []).length, 2, html);
+    assert.equal((html.match(/<summary[^>]*>[\s\S]{0,600}?Provenance[\s\S]{0,100}?<\/summary>/g) ?? []).length, 2, html);
   }
 });
 
