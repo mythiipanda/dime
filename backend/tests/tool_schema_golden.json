@@ -5500,9 +5500,9 @@
     },
     "product_cap_sheet": {
       "name": "product_cap_sheet",
-      "description": "Read one team multi-year cap sheet: per-player contract matrix, per-season totals, apron state.",
+      "description": "Read one team multi-year cap sheet: players is roster-only; dead money lives in labeled dead_money/dead_money_detail components, with per-season totals and apron state.",
       "args_schema": {
-        "description": "Read one team multi-year cap sheet: per-player contract matrix, per-season totals, apron state.",
+        "description": "Read one team multi-year cap sheet: players is roster-only; dead money lives in labeled dead_money/dead_money_detail components, with per-season totals and apron state.",
         "properties": {
           "team": {
             "description": "Team as 3-letter abbreviation or full name, e.g. 'BOS' or 'Boston Celtics'.",
