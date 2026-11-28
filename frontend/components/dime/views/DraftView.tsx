@@ -200,7 +200,6 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-[17px] font-medium">Draft & free agency</h1>
-          <p className="mt-1 text-[12px] text-ink-3">Prospect board, the 2027 free agent class with cap room, and fit targets for one team's roster gaps.</p>
         </div>
         {data && (
           <div className="flex flex-wrap items-center gap-2">
