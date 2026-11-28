@@ -184,8 +184,13 @@ def contract_state(events: list[tuple[str, str, str, str]]) -> dict:
         team for team, waive_date in two_way_waived_by.items()
         if team not in dead_teams and standard_by_team.get(team, "") < waive_date
     }
+    resurrected_teams = {
+        team for team, waive_date in waived_by.items()
+        if standard_by_team.get(team, "") > waive_date
+    }
     return {"two_way_team": two_way_team, "standard_by_team": standard_by_team,
             "dead_teams": dead_teams, "two_way_only_waived": two_way_only_waived,
+            "resurrected_teams": resurrected_teams,
             "latest_standard_team": max(
                 standard_by_team, key=lambda t: standard_by_team[t]) if standard_by_team else None}
 
@@ -201,13 +206,20 @@ def annotate_row_kinds(frame: pl.DataFrame, con) -> pl.DataFrame:
     two_way = 0
     unresolved = 0
     unknown = 0
+    resurrected = 0
+    resurrected_flags = [False] * len(rows)
     for name, idxs in by_player.items():
         teams = {rows[i].get("TEAM") for i in idxs}
         state = contract_state(_slug_lookup(evidence, name))
         two_way_team = state["two_way_team"]
         dead_teams = state["dead_teams"]
         two_way_only_waived = state["two_way_only_waived"]
+        resurrected_teams = state["resurrected_teams"]
         roster_abbr = state["latest_standard_team"]
+        for i in idxs:
+            if rows[i].get("TEAM") in resurrected_teams:
+                resurrected_flags[i] = True
+                resurrected += 1
         for i in idxs:
             team = rows[i].get("TEAM")
             if team in dead_teams:
@@ -226,9 +238,10 @@ def annotate_row_kinds(frame: pl.DataFrame, con) -> pl.DataFrame:
         if len(teams) > 1 and not roster_abbr:
             unresolved += 1
     print(f"row kinds: {dead} dead_money, {two_way} two_way rows annotated, "
-          f"{unknown} unknown (waived two-way), "
+          f"{unknown} unknown (waived two-way), {resurrected} resurrected rows, "
           f"{unresolved} unresolved multi-team players left roster")
-    return frame.with_columns(pl.Series("ROW_KIND", kinds))
+    return frame.with_columns(pl.Series("ROW_KIND", kinds),
+                              pl.Series("RESURRECTED", resurrected_flags))
 
 
 def main() -> None:
