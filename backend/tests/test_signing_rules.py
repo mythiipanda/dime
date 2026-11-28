@@ -388,12 +388,16 @@ def test_future_season_exceptions_scale_from_season_cap_line_or_require_lines():
     assert "season-specific cap lines are required" in missing_lines["input_errors"][0]
 
 
-def test_future_season_minimum_uses_scaled_boundary_exactly():
+@pytest.mark.parametrize(("yos", "scaled"), [
+    (0, 1_452_806),
+    (2, 2_620_880),
+])
+def test_future_season_minimum_uses_scaled_boundary_exactly(yos, scaled):
     ratio_lines = {key: int(round(value * 1.07)) for key, value in CAP.items()}
-    scaled = minimum_salary(0, "2027-28", ratio_lines)
-    assert scaled != minimum_salary(0)
+    assert minimum_salary(yos, "2027-28", ratio_lines) == scaled
+    assert scaled != minimum_salary(yos)
     move = {"player": "Future Minimum", "amount": scaled, "years": 1,
-            "mechanism": "minimum", "years_of_service": 0}
+            "mechanism": "minimum", "years_of_service": yos}
     exact = validate_signing(
         move, team="TST", payroll_before=225_000_000,
         lines=ratio_lines, season="2027-28")
