@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ArtifactBody, artifactToCopyText } from "./components/site/harness/ArtifactsView";
-import { AssistantTurn, LiveAssistant } from "./components/site/harness/AnswerView";
+import { AssistantTurn, LiveTurn } from "./components/shell/ChatView";
 import { DimeStream, type DimeArtifact, type StreamSnapshot } from "./lib/dime-stream";
 import { assistantMessageFromSnapshot } from "./components/site/harness/types";
 
@@ -60,18 +60,16 @@ function runOf(frames: [string, unknown][]): LiveRun {
 function persistedAnswer(run: LiveRun): string {
   return renderToStaticMarkup(
     <AssistantTurn
-      text={run.text}
-      artifacts={run.artifacts}
-      suggestions={[]}
-      failure={run.failed}
-      carry={run.carry}
+      message={assistantMessageFromSnapshot(run, "")}
+      prefix="turn-test-"
+      thread="t"
       onFollowUp={() => {}}
     />,
   );
 }
 
 function liveAnswer(run: LiveRun): string {
-  return renderToStaticMarkup(<LiveAssistant live={run} />);
+  return renderToStaticMarkup(<LiveTurn live={run} thread="t" />);
 }
 
 const CHECKMARK_PATH = "M20 6L9 17l-5-5";
@@ -102,16 +100,23 @@ test("a running live stream shows one plain-language phase line and no checkmark
   assert.ok(html.includes(ANSWER_TEXT), html);
 });
 
-test("a finished live stream collapses to one settled line and leaks no demo chrome", () => {
+test("a finished stream settles without shimmer or live-only chrome", () => {
   const run = statusRun(true);
-  const html = liveAnswer(run);
+  const html = persistedAnswer(run);
   for (const row of STATIC_DEMO_ROWS) {
     assert.ok(!html.includes(row), html);
   }
-  assert.ok(!html.includes(CHECKMARK_PATH), html);
   assert.ok(!html.includes("shimmer-text"), html);
-  assert.ok(!html.includes("Thought for 4 seconds"), html);
-  assert.match(html, /Thought for \d+ seconds/, html);
+  assert.ok(!html.includes("Thought for"), html);
+  assert.ok(html.includes(ANSWER_TEXT), html);
+});
+
+test("the live stream view renders the streaming anatomy while busy", () => {
+  const run = statusRun(false);
+  const html = liveAnswer(run);
+  assert.ok(html.includes("shimmer-text"), html);
+  assert.ok(html.includes("Checking the numbers"), html);
+  assert.ok(html.includes("stream-caret"), html);
   assert.ok(html.includes(ANSWER_TEXT), html);
 });
 
@@ -295,7 +300,7 @@ function answerFrames(tables: unknown[], carry: unknown, artifacts: unknown[] = 
 
 test("live evidence is disclosed with its sources, season and as-of date", () => {
   const run = runOf(answerFrames([row("A", liveProvenance())], PARTIAL_CARRY));
-  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+  for (const html of [persistedAnswer(run)]) {
     assert.ok(html.includes(ANSWER_TEXT), html);
     assert.ok(!/Verified numbers/i.test(html), html);
     assert.ok(!/dime warehouse/i.test(html), html);
@@ -319,7 +324,7 @@ test("every stream artifact offers accessible provenance inspection", () => {
 
 test("declared warehouse evidence with a passing carry is disclosed as verified", () => {
   const run = runOf(answerFrames([row("A", warehouseProvenance())], PASS_CARRY));
-  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+  for (const html of [persistedAnswer(run)]) {
     assert.ok(!/Verified numbers/i.test(html), html);
     assert.match(html, /Verified/, html);
     assert.match(html, /warehouse/, html);
@@ -329,7 +334,7 @@ test("declared warehouse evidence with a passing carry is disclosed as verified"
 
 test("warehouse evidence with a partial carry is never disclosed as verified", () => {
   const run = runOf(answerFrames([row("A", warehouseProvenance())], PARTIAL_CARRY));
-  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+  for (const html of [persistedAnswer(run)]) {
     assert.ok(!/Verified numbers/i.test(html), html);
     assert.match(html, /partial/i);
     assert.match(html, /0 verified claims/);
@@ -395,7 +400,7 @@ test("a resolved artifact keeps its provenance through the answer", () => {
       },
     ]),
   );
-  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+  for (const html of [persistedAnswer(run)]) {
     assert.ok(!/Verified numbers/i.test(html), html);
     assert.ok(!/dime warehouse/i.test(html), html);
     assert.match(html, /live/i);
@@ -492,7 +497,7 @@ test("an unknown provenance artifact blocks a verified claim and stays inspectab
       ],
     ),
   );
-  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+  for (const html of [persistedAnswer(run)]) {
     assert.ok(!/>Verified</.test(html), html);
     assert.match(html, /not declared/i, html);
     assert.match(html, /partly undeclared/i, html);
@@ -568,7 +573,7 @@ test("a gap ledger renders as human-wording disclosure, not as enum kinds", () =
       ],
     }),
   );
-  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+  for (const html of [persistedAnswer(run)]) {
     assert.match(html, /What this answer could not confirm/, html);
     assert.ok(
       html.includes("Some of what you asked for isn&#x27;t backed by data."),
@@ -604,7 +609,7 @@ test("backend gap block ids never reach the visible answer text", () => {
       ],
     }),
   );
-  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+  for (const html of [persistedAnswer(run)]) {
     assert.match(html, /What this answer could not confirm/, html);
     assert.ok(
       html.includes("Some of what you asked for isn&#x27;t backed by data."),
@@ -630,7 +635,7 @@ test("an unreadable gap report is never shown as gap wording", () => {
       gaps: "invalid",
     }),
   );
-  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+  for (const html of [persistedAnswer(run)]) {
     assert.match(html, /gap report could not be read/i, html);
     assert.ok(!/What this answer could not confirm/.test(html), html);
   }

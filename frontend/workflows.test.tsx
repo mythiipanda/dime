@@ -260,7 +260,7 @@ for (const mode of ["available", "empty", "error", "retry", "leave-return"]) it(
       assert.equal(requests[0].q, expected);
       assert.equal(requests[0].thread, url.searchParams.get("thread"));
       assert.equal(requests[0].model, "gemini:flash");
-      assert.match(host.textContent!, /503/);
+      assert.match(host.textContent!, /went wrong|reach Dime|out of quota|took too long|Try again/);
       assert.equal(loadWorkflowDraft(url.searchParams.get("thread")!), null);
     } else {
       assert.equal(requests.length, 0);
