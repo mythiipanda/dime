@@ -59,7 +59,7 @@ def test_cap_table_mode_lists_every_season():
     assert r["ok"] is True
     assert len(r["rows"]) >= 42
     last = r["rows"][-1]
-    assert last["season"] == "2025-26"
+    assert last["season"] == "2026-27"
     assert last["apron_1"] > 0
 
 
