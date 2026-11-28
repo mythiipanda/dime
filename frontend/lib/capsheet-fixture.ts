@@ -3,6 +3,7 @@ export type CapYear = {
   salary: number | null;
   option: "player" | "team" | null;
   guaranteed: boolean | null;
+  counts_as_standard?: boolean;
 };
 
 export type CapPlayer = {
@@ -210,6 +211,18 @@ export const capSheetFixture: CapSheetResponse = {
     player("Camp Signing One", null, "Exhibit 10", 1275000, [null, null, null, null, null, null]),
     player("Camp Signing Two", null, "Exhibit 10", 1275000, [null, null, null, null, null, null]),
     player("Neemias Queta", 1629674, "Minimum", 2524525, [null, "team", null, null, null, null]),
+    {
+      player: "Two-way Example",
+      player_id: null,
+      contract_type: "Two-way",
+      years: SEASONS.map((season, i) => ({
+        season,
+        salary: i < 2 ? 578577 : null,
+        option: null,
+        guaranteed: i < 2,
+        counts_as_standard: i !== 0,
+      })),
+    },
   ],
   totals: Object.fromEntries(
     SEASONS.map((season, i) => {
