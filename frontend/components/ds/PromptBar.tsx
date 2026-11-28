@@ -85,6 +85,7 @@ export function PromptBar({ value, onChange, onSend, onStop, busy, models, model
             type="button"
             role="option"
             aria-selected={item.id === model}
+            aria-disabled={unavailable || undefined}
             ref={(el) => { rowRefs.current[i] = el; }}
             onMouseDown={(event) => event.preventDefault()}
             onMouseEnter={() => setHovered(i)}
