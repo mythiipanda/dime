@@ -677,7 +677,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
           <button
             className="w-full text-left font-mono text-[10px] text-ink-3 underline underline-offset-2 hover:text-accent px-1"
             onClick={() => setManualEntry({ side, amount: "" })}
-            title="Exceptions come from your own prior constructions or manual entry — real-world inventory is not derivable from the warehouse"
+            title="Exceptions come from your own prior constructions or manual entry; real-world inventory is not derivable from the warehouse"
           >
             no exceptions on file — add manually
           </button>

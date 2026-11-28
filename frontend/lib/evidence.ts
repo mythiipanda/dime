@@ -61,7 +61,7 @@ export function evidenceNote(meta: unknown): string | null {
       : raw.length <= 4
         ? raw.toUpperCase()
         : raw.charAt(0).toUpperCase() + raw.slice(1);
-    return `${name} live data — couldn't be traced to source data.`;
+    return `${name} live data; couldn't be traced to source data.`;
   }
   return "Couldn't be traced to source data.";
 }
@@ -577,7 +577,7 @@ export function unverifiedSummary(ai: AiMessage): string | null {
   if (!signal) return null;
   if (labels.length === 0) {
     if (gaps.length === 0) return null;
-    return "Dime couldn't check this answer — " + reasonText(ai);
+    return "Dime couldn't check this answer; " + reasonText(ai);
   }
   const n = labels.length;
   return n === 1

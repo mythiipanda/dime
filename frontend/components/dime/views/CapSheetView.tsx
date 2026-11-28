@@ -306,7 +306,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     const boards = listBoards();
     const board = boards[0];
     if (!board) {
-      setSaveState("no board exists yet — create one in Boards first");
+      setSaveState("no board exists yet; create one in Boards first");
       return;
     }
     const artifact = {
@@ -585,7 +585,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                         <>
                           Snapshot link minted — recipients see those moves evaluated live.
                           {JSON.stringify(moves) !== JSON.stringify(share.moves)
-                            ? " The scenario has changed since this link was minted — the link still holds the earlier moves; use Share updated for a new link."
+                            ? " The scenario has changed since this link was minted; the link still holds the earlier moves; use Share updated for a new link."
                             : " Editing the scenario here won't change it; share again for a new link."}
                         </>
                       }
