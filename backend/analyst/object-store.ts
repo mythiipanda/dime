@@ -1,4 +1,6 @@
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { openProductDatabase } from "./product-store.js";
@@ -222,6 +224,34 @@ export class ObjectStore {
         }
         finally {
             db.close();
+        }
+    }
+    private snapshotDir() {
+        return join(dirname(this.path), "artifact-snapshots");
+    }
+    writeArtifactSnapshot(objectId: string, snapshot: unknown) {
+        if (!/^obj-[a-f0-9]{32}$/.test(objectId))
+            throw new Error("invalid object id for artifact snapshot");
+        const serialized = JSON.stringify(snapshot);
+        if (serialized.length > 4 * 1024 * 1024)
+            throw new Error("artifact snapshot too large");
+        mkdirSync(this.snapshotDir(), { recursive: true });
+        writeFileSync(join(this.snapshotDir(), objectId + ".json"), serialized, { flag: "wx" });
+    }
+    readArtifactSnapshot(objectId: string): { artifact: unknown; evidence: unknown[]; captured_at: string } | undefined {
+        if (!/^obj-[a-f0-9]{32}$/.test(objectId))
+            return undefined;
+        const file = join(this.snapshotDir(), objectId + ".json");
+        if (!existsSync(file))
+            return undefined;
+        try {
+            const data = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+            if (!data || typeof data !== "object" || !Array.isArray(data.evidence))
+                return undefined;
+            return { artifact: data.artifact ?? null, evidence: data.evidence, captured_at: typeof data.captured_at === "string" ? data.captured_at : "" };
+        }
+        catch {
+            return undefined;
         }
     }
 }

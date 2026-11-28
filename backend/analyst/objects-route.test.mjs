@@ -427,3 +427,68 @@ test("objects route contract: archived pin targets resolve honestly in the share
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("artifact_ref mint captures a snapshot that survives run-store loss", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dime-objects-"));
+  const env = {
+    ...process.env,
+    DIME_CONVERSATION_STORE: join(root, "chat.sqlite"),
+    DIME_PROJECT_STORE: join(root, "projects.sqlite"),
+    DIME_WORKSPACE_STORE: join(root, "workspaces.sqlite"),
+    DIME_OBJECT_STORE: join(root, "objects.sqlite"),
+    DIME_PI_SOURCES_DIR: join(root, "pi-sources"),
+  };
+  const runId = "run-" + "d".repeat(32);
+  const owner = "client-snap-owner";
+  const thread = "thread-snap";
+  const { ProductStore } = await import("./dist/product-store.js");
+  const store = new ProductStore(env.DIME_CONVERSATION_STORE, env.DIME_PI_SOURCES_DIR);
+  store.append({ owner, thread }, "q", "a", runId);
+  store.saveSources(runId, [{
+    ref: "ref-1",
+    callId: "call-1",
+    tool: "sql_exec",
+    response: {
+      content: [],
+      structuredContent: { rows: [{ player: "Snap Player", pts: 31 }], meta: { season: "2025-26" } },
+    },
+  }], [{
+    ref: "ref-1",
+    callId: "call-1",
+    tool: "sql_exec",
+    response: {
+      content: [],
+      structuredContent: { rows: [{ player: "Snap Player", pts: 31 }], meta: { season: "2025-26" } },
+    },
+  }], {
+    blocks: [{ text: "answer" }],
+    artifacts: [{ kind: "player_card", title: "Snap Player card", sources: [{ ref: "ref-1", rows: [0] }] }],
+  });
+  const data = { close: async () => {}, call: async () => ({ ok: true, runs: [] }) };
+  const analyst = createAnalyst({ env, resolveModel: () => { throw new Error("No provider required"); }, saveChat: async () => {}, saveRun: async () => {} });
+  const server = createProductServer({ env, data, analyst, manifest: {} });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const { rmSync: rm, unlinkSync } = await import("node:fs");
+  try {
+    const created = await fetch(`${url}/api/objects`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-dime-owner": owner },
+      body: JSON.stringify({ kind: "artifact_ref", title: "snap card", payload: { run_id: runId, thread, artifact_index: 0 } }),
+    });
+    assert.equal(created.status, 201, await created.clone().text());
+    const object = await created.json();
+    const first = await (await fetch(`${url}/s/${object.read_token}`)).json();
+    assert.equal(first.artifact.title, "Snap Player card");
+    assert.equal(first.evidence.length, 1);
+    assert.equal(first.evidence[0].rows[0].player, "Snap Player");
+    unlinkSync(join(env.DIME_PI_SOURCES_DIR, runId + ".json"));
+    const second = await (await fetch(`${url}/s/${object.read_token}`)).json();
+    assert.equal(second.unavailable, undefined);
+    assert.equal(second.artifact.title, "Snap Player card");
+    assert.equal(second.evidence[0].rows[0].player, "Snap Player");
+  } finally {
+    server.close();
+    rm(root, { recursive: true, force: true });
+  }
+});
