@@ -380,3 +380,38 @@ def test_same_scenario_sign_then_trade_out_is_explicitly_rejected():
     assert out["includes_illegal_moves"] is False
     assert out["illegal_move_indices"] == []
     assert "explicitly rejected" in out["meta"]["sign_and_trade_scope"]
+
+
+def legacy_cap_scenario(con, payload, monkeypatch):
+    monkeypatch.setattr("shared.tools.league.store.connect",
+                        lambda read_only=True: con.cursor())
+    from shared.tools import get_cap_scenario
+    return get_cap_scenario.invoke(payload)
+
+
+def test_legacy_get_cap_scenario_rejects_pending_option_player_signing(monkeypatch):
+    con = wiring_con()
+    try:
+        out = legacy_cap_scenario(con, {
+            "team": "BOS", "season": "2027-28",
+            "signings": "Option Rookie=12000000"}, monkeypatch)
+    finally:
+        con.close()
+    assert out["ok"] is False
+    assert "signing Option Rookie requires a prior option decision decline" in out["error"]
+    assert "option salary is still committed" in out["error"]
+
+
+def test_legacy_get_cap_scenario_preserves_active_hold_resigning(monkeypatch):
+    con = wiring_con()
+    try:
+        out = legacy_cap_scenario(con, {
+            "team": "BOS", "season": "2027-28",
+            "signings": "Veteran FA=12000000"}, monkeypatch)
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert out["signing_validations"][0]["legal"] is True
+    assert out["summary"]["cap_holds_before"] == 60_000_000
+    assert out["summary"]["cap_holds_after"] == 30_000_000
+    assert out["summary"]["team_salary_after"] - out["summary"]["team_salary_before"] == -18_000_000

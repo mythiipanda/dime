@@ -1,7 +1,7 @@
 import re as _re
 from typing import Any
 
-from ...contracts import canonical_team_abbr, dead_money_row_predicate, row_kind_column, salary_records
+from ...contracts import canonical_team_abbr, dead_money_row_predicate, normalize_name, row_kind_column, salary_records
 from ..cap_rules import apron_state, payroll_proxy_meta, roster_issues
 from ..cap_sheet import season_column
 from .cap_hold_derivation import derive_cap_holds, hold_amount
@@ -246,9 +246,11 @@ def _signing_effect(raw: dict[str, Any], index: int, target: str) -> tuple[dict[
     amount = raw.get("amount")
     if not isinstance(amount, (int, float)) or amount <= 0:
         return None, "signing needs a positive amount"
-    label = str(raw.get("label") or f"${amount / 1_000_000:g}M signing")
+    fallback = f"${amount / 1_000_000:g}M signing"
+    label = str(raw.get("label") or raw.get("player") or fallback)
+    player = str(raw.get("player") or label)
     return {"move": index, "kind": "signing", "detail": f"sign {label}",
-            "player": label,
+            "player": player,
             "delta": int(amount), "roster_delta": 1, "exactness": "exact",
             "term": "one_year_disclosed", "season": target}, None
 
@@ -367,6 +369,44 @@ def _season_start_year(season: str) -> int | None:
         return None
 
 
+def _hold_key(row: dict[str, Any]) -> str:
+    return normalize_name(row.get("player") or row.get("PLAYER_NAME"))
+
+
+def _hold_active_in_baseline(row: dict[str, Any]) -> bool:
+    dependency = str(row.get("scenario_dependency") or "")
+    if dependency == "option_decision_required":
+        return False
+    if "active_in_baseline" in row:
+        return bool(row.get("active_in_baseline"))
+    return dependency in ("active_expired_contract", "active_type_unknown")
+
+
+def _option_dependent_hold(row: dict[str, Any]) -> bool:
+    return str(row.get("scenario_dependency") or "") == "option_decision_required"
+
+
+def _match_hold(rows: list[dict[str, Any]], player: object) -> dict[str, Any] | None:
+    wanted = normalize_name(player)
+    if not wanted:
+        return None
+    for row in rows:
+        if _hold_key(row) == wanted:
+            return row
+    for row in rows:
+        key = _hold_key(row)
+        if key and (wanted in key or key in wanted):
+            return row
+    return None
+
+
+def _option_dependency_error(hold: dict[str, Any], declined: set[str], action: str) -> str | None:
+    if _option_dependent_hold(hold) and _hold_key(hold) not in declined:
+        return (f"{action} {hold.get('player') or hold.get('PLAYER_NAME')} requires a prior option decision decline; "
+                "the option salary is still committed")
+    return None
+
+
 def _season_holds(con, team: str, season: str) -> dict[str, Any]:
     year = _season_start_year(season)
     if year is None:
@@ -374,32 +414,35 @@ def _season_holds(con, team: str, season: str) -> dict[str, Any]:
     payload = derive_cap_holds(con, year, team)
     meta = payload.get("meta") or {}
     rows = payload.get("rows") or []
-    active = [row for row in rows
-              if str(row.get("dependency") or "") == "active_expired_contract"
-              or str(row.get("dependency") or "") == "active_type_unknown"]
-    if not active:
-        active = rows
+    active = [row for row in rows if _hold_active_in_baseline(row)]
+    inactive = [row for row in rows if not _hold_active_in_baseline(row)]
     total = int(payload.get("active_total") or 0)
     status = str(meta.get("derivation_status") or "unavailable")
     exactness = "estimated" if status == "calculator_derived" else "unvalidated"
     if int(payload.get("unknown_count") or 0) > 0:
         exactness = "partially_unknown"
-    return {"rows": active, "total": total, "exactness": exactness,
+    return {"rows": active, "inactive_rows": inactive, "all_rows": list(rows),
+            "total": total, "exactness": exactness,
             "source": status,
             "unknown_count": int(payload.get("unknown_count") or 0)}
 
 
-def _renounce_effect(holds: dict[str, Any], raw: dict[str, Any], index: int) -> tuple[dict[str, Any] | None, str | None]:
-    player = str(raw.get("player") or "").strip().lower()
+def _renounce_effect(holds: dict[str, Any], raw: dict[str, Any], index: int,
+                     state: dict[str, set[str]]) -> tuple[dict[str, Any] | None, str | None]:
+    player = str(raw.get("player") or "").strip()
     if not player:
         return None, "renounce needs a player"
-    match = None
-    for row in holds["rows"]:
-        name = str(row.get("PLAYER_NAME") or row.get("player") or "").lower()
-        if player in name or name in player:
-            match = row
-            break
+    match = _match_hold(list(holds.get("all_rows") or holds["rows"]), player)
     if match is None:
+        return None, f"{raw.get('player')} has no active cap hold to renounce. Renounce applies to expired contracts with retained rights"
+    option_error = _option_dependency_error(match, state["declined"], "renouncing")
+    if option_error is not None:
+        return None, option_error
+    key = _hold_key(match)
+    active = _hold_active_in_baseline(match) or key in state["declined"]
+    if key in state["renounced"]:
+        return None, f"{raw.get('player')} is already renounced in this scenario"
+    if not active or key in state["extinguished"]:
         return None, f"{raw.get('player')} has no active cap hold to renounce. Renounce applies to expired contracts with retained rights"
     amount = hold_amount(match)
     if not amount:
@@ -409,7 +452,53 @@ def _renounce_effect(holds: dict[str, Any], raw: dict[str, Any], index: int) -> 
             "detail": f"renounce {name}: cap hold released",
             "delta": -amount, "roster_delta": 0,
             "exactness": holds["exactness"] if holds["exactness"] in ("estimated", "partially_unknown") else "unvalidated",
-            "player_key": name.lower()}, None
+            "player_key": key}, None
+
+
+def _signing_hold_effect(holds: dict[str, Any], raw: dict[str, Any], index: int,
+                         state: dict[str, set[str]]) -> tuple[dict[str, Any] | None, str | None]:
+    player = raw.get("player") or raw.get("label")
+    if not player:
+        return None, None
+    match = _match_hold(list(holds.get("all_rows") or holds["rows"]), player)
+    if match is None:
+        return None, None
+    option_error = _option_dependency_error(match, state["declined"], "signing")
+    if option_error is not None:
+        return None, option_error
+    key = _hold_key(match)
+    active = _hold_active_in_baseline(match) or key in state["declined"]
+    if not active or key in state["extinguished"]:
+        return None, None
+    amount = hold_amount(match)
+    if not amount:
+        return None, None
+    name = str(match.get("PLAYER_NAME") or match.get("player"))
+    return {"move": index, "kind": "cap_hold_extinguished",
+            "detail": f"signing {name}: cap hold extinguished",
+            "delta": -amount, "roster_delta": 0,
+            "exactness": holds["exactness"] if holds["exactness"] in ("estimated", "partially_unknown") else "unvalidated",
+            "player_key": key}, None
+
+
+def _option_hold_effect(holds: dict[str, Any], player: str, index: int,
+                        state: dict[str, set[str]]) -> dict[str, Any] | None:
+    match = _match_hold(list(holds.get("all_rows") or holds["rows"]), player)
+    if match is None or not _option_dependent_hold(match):
+        return None
+    key = _hold_key(match)
+    if key in state["declined"] or key in state["extinguished"]:
+        return None
+    amount = hold_amount(match)
+    state["declined"].add(key)
+    if not amount:
+        return None
+    name = str(match.get("PLAYER_NAME") or match.get("player"))
+    return {"move": index, "kind": "option_cap_hold",
+            "detail": f"{name} declined-option cap hold activated",
+            "delta": amount, "roster_delta": 0,
+            "exactness": holds["exactness"] if holds["exactness"] in ("estimated", "partially_unknown") else "unvalidated",
+            "player_key": key}
 
 
 _EXCEPTION_AMOUNTS_2026_27 = {"mle": 15_044_000, "bae": 5_477_000, "room": 9_366_000}
@@ -520,6 +609,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     removals: list[tuple[str, str]] = []
     row_additions: dict[str, list[dict[str, Any]]] = {s: [] for s in seasons}
     salary_overrides: dict[tuple[str, str], int] = {}
+    hold_states = {season: {"declined": set(), "extinguished": set(), "renounced": set()} for season in seasons}
 
     def add_effect(season: str, effect: dict[str, Any]) -> None:
         if season in carried:
@@ -554,8 +644,14 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             continue
         if kind == "signing":
             effect, error = _signing_effect(raw, i, target)
-            if error:
-                errors.append({"move": str(i), "error": error})
+            hold_effect = None
+            hold_error = None
+            if effect:
+                hold_effect, hold_error = _signing_hold_effect(
+                    holds_by_season.get(target) or {"rows": [], "exactness": "unknown"},
+                    raw, i, hold_states[target])
+            if error or hold_error:
+                errors.append({"move": str(i), "error": error or hold_error})
             elif effect:
                 exception = str(raw.get("exception") or "cap_room").strip().lower() or "cap_room"
                 if exception not in ("cap_room", "mle", "bae", "minimum", "bird"):
@@ -566,6 +662,9 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(term_years, int) and term_years > 1:
                     effect["term"] = f"{term_years}_year_flat_disclosed"
                 add_effect(target, {k: v for k, v in effect.items() if k != "season"})
+                if hold_effect is not None:
+                    add_effect(target, hold_effect)
+                    hold_states[target]["extinguished"].add(hold_effect["player_key"])
                 term_len = term_years if isinstance(term_years, int) and term_years > 1 else 1
                 for season in [target] + [s for s in seasons if s > target][:term_len - 1]:
                     add_roster_row(season, {"player": str(effect.get("player") or effect["detail"]),
@@ -636,8 +735,15 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                                     "detail": f"{schedule['player']} option declined",
                                     "delta": -salary_x, "roster_delta": -1,
                                     "exactness": "exact"})
+            hold_effect = _option_hold_effect(
+                holds_by_season.get(target) or {"rows": [], "exactness": "unknown"},
+                schedule["player"], i, hold_states[target])
+            if hold_effect is not None:
+                add_effect(target, hold_effect)
         elif kind == "renounce":
-            effect, error = _renounce_effect(holds_by_season.get(target) or {"rows": [], "exactness": "unknown"}, raw, i)
+            effect, error = _renounce_effect(
+                holds_by_season.get(target) or {"rows": [], "exactness": "unknown"},
+                raw, i, hold_states[target])
             if error:
                 errors.append({"move": str(i), "error": error})
                 continue
@@ -647,6 +753,8 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                 errors.append({"move": str(i), "error": f"{raw.get('player')} is already renounced in this scenario"})
                 continue
             add_effect(target, effect)
+            hold_states[target]["extinguished"].add(effect["player_key"])
+            hold_states[target]["renounced"].add(effect["player_key"])
         else:
             errors.append({"move": str(i), "error": f"unknown move kind '{kind}'"})
 
@@ -700,7 +808,10 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
                     and e.get("exception", "cap_room") == "cap_room"]
         for effect in signings:
             prior_deltas = sum(int(e["delta"]) for e in effects if e["move"] < effect["move"])
-            running_pay = int(base["payroll"]) + prior_deltas
+            simultaneous_hold_delta = sum(int(e["delta"]) for e in effects
+                                          if e["move"] == effect["move"]
+                                          and e["kind"] == "cap_hold_extinguished")
+            running_pay = int(base["payroll"]) + prior_deltas + simultaneous_hold_delta
             room_at_signing = lines["cap"] - running_pay
             if effect["delta"] > room_at_signing:
                 ordering_notes.append(
@@ -785,8 +896,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         "exception usage reflects scenario moves only. League-wide exception consumption "
         "is not derivable from seeded transaction data; the room exception's cap-room-first "
         "ordering and the bae consecutive-year rule are disclosed, not enforced")
-    if len(seasons) > 1:
-        disclosures.append("incomplete-roster minimum charges are not yet projected; the cap sheet includes them for the current season")
+    disclosures.append("incomplete-roster minimum charges are not yet projected; the cap sheet includes them for the current season")
     if truncated:
         disclosures.append(f"seasons beyond warehouse salary coverage are excluded: {', '.join(truncated)}")
     return declare_money({

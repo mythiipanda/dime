@@ -753,3 +753,143 @@ def test_trade_exceptions_disclosed_per_season_with_no_payroll_effect():
         assert later_amounts == sorted(row["amount"] for row in disclosed)
     finally:
         con.close()
+
+
+def memory_probe_hold_con(team="TST"):
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, BREF_SLUG VARCHAR, "
+        "GUARANTEED BIGINT, SALARY_2027_28 BIGINT, OPTION_2027_28 VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?)",
+        [("Contracted Player", team, 1, "contr01", 40_000_000, 40_000_000, None),
+         ("Veteran FA", team, 2, "vetfa01", 20_000_000, None, None),
+         ("Max FA", team, 3, "maxfa01", 59_033_114, None, None),
+         ("Option Player", team, 4, "optpl01", 42_000_000, 22_000_000, "player")])
+    con.execute(
+        "CREATE TABLE silver_free_agents ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, BREF_SLUG VARCHAR, FA_YEAR BIGINT, "
+        "FA_TYPE VARCHAR, PRIOR_SALARY BIGINT, CAP_HOLD_EST BIGINT)")
+    con.executemany(
+        "INSERT INTO silver_free_agents VALUES (?,?,?,?,?,?,?)",
+        [("Veteran FA", team, "vetfa01", 2027, "ufa", 20_000_000, 30_000_000),
+         ("Max FA", team, "maxfa01", 2027, "ufa", 59_033_114, 63_509_985),
+         ("Option Player", team, "optpl01", 2027, "player_option", 20_000_000, 30_000_000)])
+    con.execute(
+        "CREATE TABLE silver_cap_room ("
+        "TEAM VARCHAR, CAP_SEASON VARCHAR, PROJECTED_CAP BIGINT, PROJECTED_TAX BIGINT, "
+        "PROJECTED_APRON1 BIGINT, PROJECTED_APRON2 BIGINT, PLAYERS_UNDER_CONTRACT BIGINT, "
+        "ROSTER_CHARGE_MINIMUM BIGINT)")
+    con.execute(
+        "INSERT INTO silver_cap_room VALUES (?,?,?,?,?,?,?,?)",
+        [team, "2027-28", 181_457_100, 220_470_800, 229_916_500, 243_854_600, 8, 1_493_539])
+    con.execute(
+        "CREATE TABLE silver_hist_player_seasons ("
+        "player_id BIGINT, player_name VARCHAR, team_abbreviation VARCHAR, season INTEGER)")
+    service_rows = []
+    for year in range(2023, 2028):
+        service_rows.append((2, "Veteran FA", team, year))
+        service_rows.append((4, "Option Player", team, year))
+    for year in range(2018, 2028):
+        service_rows.append((3, "Max FA", team, year))
+    con.executemany("INSERT INTO silver_hist_player_seasons VALUES (?,?,?,?)", service_rows)
+    return con
+
+
+def test_probe_baseline_uses_exact_active_hold_total_without_roster_charges():
+    con = memory_probe_hold_con()
+    try:
+        out = project(con, [], season="2027-28")
+    finally:
+        con.close()
+    base = block(out, "2027-28")
+    assert len(out["seasons"]) == 1
+    assert base["roster_payroll"] == 62_000_000
+    assert base["cap_holds"] == 93_509_985
+    assert base["pay_before"] == 155_509_985
+    assert base["pay_after"] == 155_509_985
+
+
+def test_probe_resigning_active_free_agent_extinguishes_matching_hold():
+    con = memory_probe_hold_con()
+    try:
+        out = project(con, [{"kind": "signing", "player": "Veteran FA",
+                             "label": "Veteran FA", "amount": 12_000_000}],
+                      season="2027-28")
+    finally:
+        con.close()
+    base = block(out, "2027-28")
+    assert out["errors"] == []
+    assert base["pay_before"] == 155_509_985
+    assert base["pay_after"] == 137_509_985
+
+
+def test_probe_resigning_cap_room_accounts_for_simultaneous_hold_extinction():
+    con = memory_probe_hold_con()
+    try:
+        out = project(con, [{"kind": "signing", "player": "Veteran FA",
+                             "label": "Veteran FA", "amount": 40_000_000}],
+                      season="2027-28")
+    finally:
+        con.close()
+    base = block(out, "2027-28")
+    assert out["errors"] == []
+    assert base["pay_after"] == 165_509_985
+    assert base["ordering_notes"] == []
+
+
+def test_probe_option_decline_activates_option_dependent_hold():
+    con = memory_probe_hold_con()
+    try:
+        out = project(con, [{"kind": "option_decision", "player": "Option Player",
+                             "exercise": False}], season="2027-28")
+    finally:
+        con.close()
+    base = block(out, "2027-28")
+    assert out["errors"] == []
+    assert base["pay_before"] == 155_509_985
+    assert base["pay_after"] == 163_509_985
+
+
+def test_probe_option_player_renounce_is_rejected_before_decline():
+    con = memory_probe_hold_con()
+    try:
+        out = project(con, [{"kind": "renounce", "player": "Option Player"}],
+                      season="2027-28")
+    finally:
+        con.close()
+    base = block(out, "2027-28")
+    assert base["pay_before"] == 155_509_985
+    assert base["pay_after"] == 155_509_985
+    assert any("prior option decision decline" in e["error"] for e in out["errors"])
+    assert not any(e["kind"] == "renounce" for e in base["effects"])
+
+
+def test_season_holds_use_scenario_dependency_key_contract():
+    from shared.tools.league.cap_hold_derivation import derive_cap_holds, hold_amount
+    from shared.tools.league.cap_projection import _season_holds
+    con = memory_probe_hold_con()
+    try:
+        payload = derive_cap_holds(con, 2027, "TST")
+        holds = _season_holds(con, "TST", "2027-28")
+    finally:
+        con.close()
+    assert payload["rows"]
+    assert all("scenario_dependency" in row for row in payload["rows"])
+    assert not any("dependency" in row for row in payload["rows"])
+    assert {row["player"] for row in holds["rows"]} == {"Veteran FA", "Max FA"}
+    assert sum(hold_amount(row) for row in holds["rows"]) == 93_509_985
+    assert holds["total"] == 93_509_985
+
+
+def test_single_season_projection_discloses_missing_incomplete_roster_charges():
+    con = memory_probe_hold_con()
+    try:
+        out = project(con, [], season="2027-28")
+    finally:
+        con.close()
+    assert len(out["seasons"]) == 1
+    assert any("incomplete-roster minimum charges are not yet projected" in d
+               for d in out["disclosures"])

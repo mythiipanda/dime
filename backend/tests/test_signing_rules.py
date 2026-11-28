@@ -235,6 +235,27 @@ def test_legacy_string_signings_use_auto_one_year_compatibility_shim():
     assert moves[0]["validation"] is validation
 
 
+def test_legacy_signing_subtracts_only_active_baseline_holds():
+    from shared.tools.league.cap_scenario import _validate_legacy_signings
+    from shared.tools.cap_rules import CAP
+    lines = {**CAP, "cap": 100_000_000}
+
+    def validation_for(hold):
+        moves = [{"kind": "signing", "amount": 20_000_000, "player": "Held Player"}]
+        out = _validate_legacy_signings(
+            "TST", moves, 90_000_000, lines=lines, season="2027-28",
+            team_salary_before=90_000_000, hold_rows=[hold])
+        return out["validations"][0]
+
+    inactive = {"player": "Held Player", "cap_hold": 30_000_000,
+                "scenario_dependency": "active_type_unknown",
+                "active_in_baseline": False}
+    active = {**inactive, "scenario_dependency": "active_expired_contract",
+              "active_in_baseline": True}
+    assert validation_for(inactive)["outcome"] == "illegal"
+    assert validation_for(active)["outcome"] == "legal_approximation"
+
+
 def test_typed_scenario_tracks_signing_validation_and_exception_consumption():
     import duckdb
     from shared.tools.league.cap_sheet import evaluate_cap_scenario
