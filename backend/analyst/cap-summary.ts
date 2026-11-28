@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { objectValue, sourceResult, type SourceRecord } from "./python-tools.js";
 import { field, resolveProvenance } from "./player-card.js";
+import { capConstructionFromArgs, constructionSeasonEcho } from "./construction.js";
 
 export const capSummarySchema = Type.Object({
     kind: Type.Literal("cap_summary"),
@@ -126,5 +127,7 @@ export function resolveCapSummary(artifact: Record<string, unknown>, getSource: 
     if (steps.length) out.steps = steps;
     const restrictions = resolveRestrictions(data.restrictions);
     if (restrictions.length) out.restrictions = restrictions;
+    const construction = capConstructionFromArgs(record.args, constructionSeasonEcho(data) ?? season ?? undefined);
+    if (construction) out.construction = construction;
     return out;
 }
