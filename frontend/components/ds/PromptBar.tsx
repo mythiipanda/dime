@@ -58,6 +58,32 @@ export function PromptBar({ value, onChange, onSend, onStop, busy, models, model
     input.current?.focus();
   };
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Enter") return;
+      if (!models.length) return;
+      event.preventDefault();
+      const base = hovered ?? (selectedIndex >= 0 ? selectedIndex : -1);
+      if (event.key === "Enter") {
+        const item = models[base >= 0 ? base : 0];
+        if (item) pick(item);
+        return;
+      }
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      const next = ((base < 0 ? (delta === 1 ? -1 : 0) : base) + delta + models.length) % models.length;
+      setHovered(next);
+      rowRefs.current[next]?.scrollIntoView({ block: "nearest" });
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, hovered, selectedIndex, models]);
+
   return <form className="composer relative" ref={anchorRef as never} onSubmit={(e) => { e.preventDefault(); if (!busy && selected) onSend(value); }}>
     {open && !modelError && models.length > 0 && (
       <div
