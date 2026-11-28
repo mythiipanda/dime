@@ -351,6 +351,17 @@ export function createProductServer(options: {
         const value = objects.get(created.object_id);
         if (!value)
             throw new Error("object create lost");
+        if (value.kind === "artifact_ref") {
+            const resolvedRef = resolveArtifactRef(value.payload);
+            if (!resolvedRef.unavailable && resolvedRef.artifact) {
+                try {
+                    objects.writeArtifactSnapshot(value.object_id, { artifact: resolvedRef.artifact, evidence: resolvedRef.evidence, captured_at: value.created_at });
+                }
+                catch (error) {
+                    console.warn("artifact snapshot write failed; link falls back to live resolution", error);
+                }
+            }
+        }
         json(res, { ...ownedObject(value), owner_token: created.owner_token }, 201);
     });
     route("GET", /^\/api\/objects$/, async ({ req, res, url }) => {
@@ -466,6 +477,9 @@ export function createProductServer(options: {
                     return { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "archived" };
                 const base = { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "ok", title: target.title, payload: target.payload };
                 if (pin.kind === "artifact_ref") {
+                    const snapshot = objects.readArtifactSnapshot(target.object_id);
+                    if (snapshot)
+                        return { ...base, artifact: snapshot.artifact, artifact_unavailable: false };
                     const resolvedRef = resolveArtifactRef(target.payload);
                     return { ...base, artifact: resolvedRef.artifact, artifact_unavailable: resolvedRef.unavailable };
                 }
@@ -482,6 +496,17 @@ export function createProductServer(options: {
         if (value.kind === "artifact_ref" && !value.archived) {
             const shape = value.payload && typeof value.payload === "object" ? value.payload as Record<string, unknown> : {};
             const index = typeof shape.artifact_index === "number" ? shape.artifact_index : -1;
+            const snapshot = objects.readArtifactSnapshot(value.object_id);
+            if (snapshot) {
+                json(res, {
+                    ...shared,
+                    payload: { artifact_index: index },
+                    artifact: snapshot.artifact,
+                    evidence: snapshot.evidence,
+                    captured_at: snapshot.captured_at || value.created_at
+                });
+                return;
+            }
             const resolvedRef = resolveArtifactRef(value.payload);
             if (resolvedRef.unavailable) {
                 json(res, { ...shared, payload: { artifact_index: index }, artifact: null, evidence: [], unavailable: true });
