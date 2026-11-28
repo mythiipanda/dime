@@ -56,3 +56,24 @@ test("replay rejects production and invalid names and honors cancellation", asyn
     assert.equal(events, 0); assert.equal(done, 0);
   } finally { Object.assign(process.env, { NODE_ENV: previous }); }
 });
+
+test("generative replay sequences turn-aware fixture compositions", async () => {
+  const previous = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: "development" });
+  try {
+    const seen: string[] = [];
+    for (const turn of [0, 1, 2, 3, 4]) {
+      let text = "";
+      await replayStream("generative", {
+        onEvent: (type, data) => { if (type === "final_answer") text = (data as { text: string }).text; },
+        onDone: () => {}, onError: message => assert.fail(message),
+      }, undefined, turn);
+      seen.push(text);
+    }
+    assert.match(seen[0], /Generative answer fixture/);
+    assert.match(seen[1], /Recovery fixture/);
+    assert.match(seen[2], /Comparison fixture/);
+    assert.match(seen[3], /Same-kind stacking fixture/);
+    assert.equal(seen[4], seen[0]);
+  } finally { Object.assign(process.env, { NODE_ENV: previous }); }
+});

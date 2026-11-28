@@ -254,7 +254,7 @@ export class DimeStream {
 export function streamDimeChat(
   q: string,
   callbacks: DimeStreamCallbacks,
-  opts?: { signal?: AbortSignal; model?: string | null; thread?: string; replay?: string | null; context?: unknown },
+  opts?: { signal?: AbortSignal; model?: string | null; thread?: string; replay?: string | null; context?: unknown; turn?: number },
 ): void {
   const stream = new DimeStream();
   let settled = false;
@@ -281,7 +281,7 @@ export function streamDimeChat(
       },
     };
   if (process.env.NODE_ENV === "development" && opts?.replay) {
-    void import("../replay").then(({ replayStream }) => replayStream(opts.replay!, handlers, opts.signal));
+    void import("../replay").then(({ replayStream }) => replayStream(opts.replay!, handlers, opts.signal, opts.turn ?? 0));
     return;
   }
   void postChatStream(
