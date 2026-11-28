@@ -6,8 +6,7 @@ import remarkGfm from "remark-gfm";
 import { ArrowRight, Basketball, Copy, Database, User } from "iconoir-react";
 import { PromptBar } from "../ds/PromptBar";
 import { CitationChip } from "../ds/CitationChip";
-import { ThinkingState } from "../ds/ThinkingState";
-import { ToolChips } from "../ds/ToolChips";
+import { EvidenceTrace } from "../ds/EvidenceTrace";
 import { StreamingText } from "../ds/StreamingText";
 import { AnswerVerification, OmittedNote, StoppedNote } from "../site/harness/AnswerView";
 import { StreamArtifacts } from "../site/harness/ArtifactsView";
@@ -119,8 +118,7 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
       <div className="conversation" ref={chat.scrollRef} aria-label="Conversation">
         {chat.messages.map((message, index) => message.role === "user" ? <UserTurn key={index} text={message.text} /> : <AssistantTurn key={index} message={message} prefix={`${thread}-${index}-`} thread={thread} onFollowUp={chat.submit} onRetry={() => chat.retry(index)} />)}
         {chat.live && <article className="assistant-turn" aria-label="Dime response">
-          <ThinkingState busy steps={chat.live.thinking.map((step, index, steps) => ({ label: step.label, state: index === steps.length - 1 ? "running" : "done" }))} />
-          <ToolChips tools={chat.live.tools.map(tool => ({ id: tool.key, label: tool.label, status: tool.status === "fail" ? "error" : tool.status === "running" ? "running" : "done", detail: tool.error ?? tool.name }))} />
+          <EvidenceTrace busy thinking={chat.live.thinking} tools={chat.live.tools} />
           <StreamingText streaming><PiAnswer text={chat.live.text} carry={chat.live.carry} prefix={`${thread}-live-`} /></StreamingText>
           <StreamArtifacts artifacts={chat.live.artifacts} shareContext={chat.live.carry?.runId ? { run_id: chat.live.carry.runId, thread } : undefined} />
         </article>}
