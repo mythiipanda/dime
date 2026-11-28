@@ -218,17 +218,19 @@ Recognized explicit `ROW_KIND` is authoritative for the row's cap-ledger role:
 `roster` counts as roster payroll, `two_way` is excluded as two-way
 compensation, and `dead_money` counts as dead salary. Values are read
 case-insensitively after trimming the full Python whitespace class and
-normalizing hyphens to underscores, so a tab/newline-polluted kind cannot fall
-between the Python and SQL predicates. `ROW_KIND='unknown'` is an explicit lack
-of declaration rather than a recognized role: it falls through to transaction
-reconstruction, never counts as roster payroll merely because a salary row is
-present, and produces an honest `amount_unknown` dead-money detail when
-reconstruction cannot resolve the obligation. `CONTRACT_TYPE='two_way'` is
-exclusion evidence only when `ROW_KIND` is absent or undeclared. Transaction
-reconstruction is only a compatibility fallback for those incompletely
-annotated rows; it must not override a recognized explicit row kind. Detection
-of both `ROW_KIND` and `RESURRECTED` is column-optional because older
-warehouses may lack one or both columns.
+normalizing hyphens to underscores, so whitespace pollution cannot fall
+between the Python and SQL predicates. That class includes the control
+characters VT (U+000B), NEL (U+0085), and FS/GS/RS/US (U+001C-U+001F) in
+addition to ordinary and Unicode separators. `ROW_KIND='unknown'` is an
+explicit lack of declaration rather than a recognized role: it falls through
+to transaction reconstruction, never counts as roster payroll merely because a
+salary row is present, and produces an honest `amount_unknown` dead-money
+detail when reconstruction cannot resolve the obligation.
+`CONTRACT_TYPE='two_way'` is exclusion evidence only when `ROW_KIND` is absent
+or undeclared. Transaction reconstruction is only a compatibility fallback for
+those incompletely annotated rows; it must not override a recognized explicit
+row kind. Detection of both `ROW_KIND` and `RESURRECTED` is column-optional
+because older warehouses may lack one or both columns.
 
 ## Clayton end state
 
@@ -454,8 +456,10 @@ Minimum seeder/evaluator regression cases:
     reconstruction is inconclusive.
 20. Salary schemas missing `ROW_KIND`, `RESURRECTED`, or transaction ordering
     columns remain readable without raising.
-21. Tab/newline-polluted row kinds normalize identically in Python reads and SQL
-    predicates, so the row appears in exactly one payroll component.
+21. Row kinds padded on both ends by each control whitespace character in the
+    full Python whitespace class (VT, NEL, FS, GS, RS, and US) normalize
+    identically in Python reads and SQL predicates, so the row has one
+    consistent cap classification across payroll, cap sheet, and projection.
 22. Missing or malformed transaction formation dates remain in the evidence
     pipeline and surface the disclosed-unknown classification path end to end.
 23. Transaction-state identity prefers player IDs over suffixless normalized
