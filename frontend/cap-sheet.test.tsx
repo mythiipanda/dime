@@ -340,3 +340,20 @@ test("draft sync failure surfaces a sonner toast instead of dying silently", asy
     await mounted.cleanup();
   }
 });
+
+test("per-season non-standard cells are quieted and disclose their exclusion", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    const rows = [...mounted.host.querySelectorAll("tbody tr")];
+    const row = rows.find((tr) => (tr.textContent ?? "").includes("Two-way Example"));
+    assert.ok(row, "two-way fixture row renders");
+    const cells = [...row.querySelectorAll("td")].slice(1);
+    const quieted = cells.filter((cell) => (cell.getAttribute("title") ?? "").includes("does not count as a standard roster contract"));
+    assert.ok(quieted.length >= 1, "at least one non-standard season cell carries the disclosure title");
+    assert.ok(quieted.every((cell) => cell.className.includes("opacity-60")), "non-standard cells render quieted");
+    const counting = cells.filter((cell) => !(cell.getAttribute("title") ?? "").includes("does not count"));
+    assert.ok(counting.length >= 1, "counting seasons render without the disclosure");
+  } finally {
+    await mounted.cleanup();
+  }
+});

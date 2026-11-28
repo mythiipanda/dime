@@ -395,6 +395,7 @@ export default function CapSheetView({ onAsk, seed }: { onAsk?: (text: string, c
       if (move.kind === "option_decision" && move.season === season && move.exercise === false) {
         const player = sheet.players.find((p) => p.player === move.player);
         const year = player?.years.find((y) => y.season === season);
+        if (year?.counts_as_standard === false) continue;
         if (year?.salary && year.option === "player") rosterPayroll -= year.salary;
         if (year?.salary && year.option === "team") pending -= year.salary;
       }
@@ -577,14 +578,21 @@ export default function CapSheetView({ onAsk, seed }: { onAsk?: (text: string, c
                         const declined = toggledOption(player, year.season);
                         const removal = removedFromSeason(player);
                         const removed = removal != null && year.season >= removal;
-                        const clickable = !!year.option && year.salary != null && !removed;
+                        const nonStandard = year.counts_as_standard === false;
+                        const clickable = !!year.option && year.salary != null && !removed && !nonStandard;
                         return (
                           <td
                             key={season}
                             className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${
-                              !year.guaranteed ? "text-ink-3" : "text-ink-2"
+                              nonStandard ? "text-ink-3 opacity-60" : !year.guaranteed ? "text-ink-3" : "text-ink-2"
                             } ${declined || removed ? "line-through opacity-40" : ""} ${clickable ? "p-0" : ""}`}
-                            title={removed ? `${player.player} is removed by a scenario move in ${removal}; this season and forward are struck` : undefined}
+                            title={
+                              removed
+                                ? `${player.player} is removed by a scenario move in ${removal}; this season and forward are struck`
+                                : nonStandard
+                                  ? `${player.player} does not count as a standard roster contract in ${year.season}; this amount is excluded from roster payroll`
+                                  : undefined
+                            }
                           >
                             {clickable ? (
                               <button
