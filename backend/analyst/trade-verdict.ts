@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { objectValue, sourceResult, type SourceRecord } from "./python-tools.js";
 import { field, resolveProvenance } from "./player-card.js";
+import { constructionSeasonEcho, tradeConstructionFromArgs } from "./construction.js";
 
 export const tradeVerdictSchema = Type.Object({
     kind: Type.Literal("trade_verdict"),
@@ -199,6 +200,8 @@ export function resolveTradeVerdict(artifact: Record<string, unknown>, getSource
     if (teams.some(team => !team.team))
         throw new Error("trade_verdict source has a team row without a team abbreviation.");
 
+    const construction = tradeConstructionFromArgs(record.args, constructionSeasonEcho(data));
+
     return {
         kind: "trade_verdict",
         title: artifact.title,
@@ -208,6 +211,7 @@ export function resolveTradeVerdict(artifact: Record<string, unknown>, getSource
         checks: resolveChecks(checksRaw),
         evaluationTool: record.tool,
         sourceRef: artifact.ref,
-        provenance: resolveProvenance(record, data)
+        provenance: resolveProvenance(record, data),
+        ...(construction ? { construction } : {})
     };
 }

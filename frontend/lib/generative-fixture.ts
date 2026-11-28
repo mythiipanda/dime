@@ -128,4 +128,27 @@ const generativeTurn3Events: [string, unknown][] = [
   ["graph_end", {}],
 ];
 
-export const generativeTurns: [string, unknown][][] = [generativeEvents, generativeTurn1Events, generativeTurn2Events, generativeTurn3Events];
+
+const generativeTurn4Events: [string, unknown][] = [
+  ["status", { text: "Reading illustrative source rows" }],
+  ["tool_call", { event_id: "fx-t1", name: "get_trade_check", data: { teams: "Fixture A, Fixture B" } }],
+  ["tool_result", { event_id: "fx-t1", name: "get_trade_check", status: "ok", rows: 4, ms: 240 }],
+  ["token", { ms: 90, text: "## Workbench handoff fixture\n\n" }],
+  ["token", { ms: 90, text: "Fictional trade evaluation with an embedded construction. No provider or warehouse call was made.\n" }],
+  ["custom_data", { artifacts: [
+    { kind: "trade_verdict", title: "Illustrative trade verdict", legal: false, sourceRef: "design-verdict-fixture",
+      issues: ["NYK receives $24.1M more than allowed in this fictional construction"],
+      teams: [
+        { team: "DAL", playersOut: ["Alex Example"], playersIn: [], outgoing: 24.6, incoming: 0, payrollAfter: 168.2 },
+        { team: "NYK", playersOut: [], playersIn: ["Alex Example"], outgoing: 0, incoming: 24.6, payrollAfter: 181.4, matchingFailed: true },
+      ],
+      construction: { season: "2026-27", legs: [{ from: "DAL", to: "NYK", players: ["Alex Example"] }] } },
+    { kind: "cap_summary", title: "Illustrative cap scenario", team: "BOS", season: "2026-27", sourceRef: "design-capscenario-fixture",
+      payrollBefore: 168.2, payrollAfter: 174.9, delta: 6.7, capRoom: -12.1, roomApron1: 6.4,
+      construction: { team: "BOS", season: "2026-27", moves: [{ kind: "signing", label: "Fixture signing", amount: 6.7 }] } },
+  ] }],
+  ["final_answer", { text: "## Workbench handoff fixture\n\nFictional trade evaluation with an embedded construction. No provider or warehouse call was made.", carry: { verification: "unknown", verified_claims: 0, gaps: [] } }],
+  ["graph_end", {}],
+];
+
+export const generativeTurns: [string, unknown][][] = [generativeEvents, generativeTurn1Events, generativeTurn2Events, generativeTurn3Events, generativeTurn4Events];

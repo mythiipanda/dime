@@ -20,6 +20,7 @@ import WorkflowsPanel from "../WorkflowsPanel";
 import { BoardsPanel } from "../BoardsPanel";
 import { NotebooksPanel } from "../NotebooksPanel";
 import { parseShellTab, shellNavigation, shellUrl, validThread, type ShellTab } from "../../lib/shell-navigation";
+import { WORKBENCH_EVENT, type CapScenarioSeed, type TradeConstructionSeed, type WorkbenchSeed } from "../../lib/workbench-navigation";
 import { replayName } from "../../lib/replay";
 import { createWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
@@ -38,6 +39,8 @@ export function DimeShell() {
   const navigateRef = useRef<(nextTab: ShellTab) => void>(() => {});
   const [dark, setDark] = useState(true);
   const [workflowRequest, setWorkflowRequest] = useState<{ thread: string; text: string } | null>(null);
+  const [tradeSeed, setTradeSeed] = useState<TradeConstructionSeed | null>(null);
+  const [capSeed, setCapSeed] = useState<CapScenarioSeed | null>(null);
   const workflowStarting = useRef(false);
   useEffect(() => {
     const read = () => {
@@ -59,8 +62,20 @@ export function DimeShell() {
       const detail = (event as CustomEvent<{ tab?: string }>).detail;
       if (detail?.tab) navigateRef.current(parseShellTab(detail.tab));
     };
+    const workbench = (event: Event) => {
+      const detail = (event as CustomEvent<WorkbenchSeed>).detail;
+      if (detail?.kind === "trade" && detail.construction?.legs?.length) {
+        setTradeSeed(detail.construction);
+        navigateRef.current("trades");
+      }
+      if (detail?.kind === "cap_scenario" && detail.construction?.team) {
+        setCapSeed(detail.construction);
+        navigateRef.current("cap");
+      }
+    };
     window.addEventListener("dime:navigate", external);
-    return () => { window.removeEventListener("popstate", read); window.removeEventListener("keydown", key); window.removeEventListener("dime:navigate", external); };
+    window.addEventListener(WORKBENCH_EVENT, workbench);
+    return () => { window.removeEventListener("popstate", read); window.removeEventListener("keydown", key); window.removeEventListener("dime:navigate", external); window.removeEventListener(WORKBENCH_EVENT, workbench); };
   }, []);
   const reload = useCallback(() => { void getThreads().then(items => setThreads(items.sort((a, b) => b.updated.localeCompare(a.updated)))); }, []);
   useEffect(() => { reload(); }, [reload]);
@@ -128,12 +143,12 @@ export function DimeShell() {
         {tab === "today" && <HomeView onAsk={() => navigate("workflows")} onMorningAsk={askBoard} />}
         {tab === "briefs" && <LibraryView onThread={pick} onBoard={openBoard} />}
         {tab === "data" && <DataView />}
-        {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} /></div>}
+        {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} seed={tradeSeed} /></div>}
         {tab === "compare" && <div className="tools-view"><CompareView onAsk={askBoard} /></div>}
         {tab === "draft" && <div className="tools-view"><DraftView onAsk={askBoard} /></div>}
         {tab === "matchups" && <div className="tools-view"><MatchupsView onAsk={askBoard} /></div>}
         {tab === "scout" && <div className="tools-view"><ScoutView onAsk={askBoard} /></div>}
-        {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard} /></div>}
+        {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard}  seed={capSeed} /></div>}
         {tab === "planner" && <div className="tools-view"><PlannerView /></div>}
         {tab === "history" && <div className="tools-view"><HistoryView onAsk={askBoard} /></div>}
         {tab === "awards" && <div className="tools-view"><AwardsView onAsk={askBoard} /></div>}

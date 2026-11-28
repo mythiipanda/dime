@@ -1518,7 +1518,39 @@
                     "ok": { "type": "boolean" },
                     "seasons": {
                       "type": "array",
-                      "items": { "type": "object", "additionalProperties": true }
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "pay_before": { "type": "integer" },
+                          "pay_after": { "type": "integer" },
+                          "roster_payroll": { "type": "integer" },
+                          "dead_money": { "type": "integer" },
+                          "dead_money_detail": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "player": { "type": "string" },
+                                "salary": { "type": "integer" },
+                                "team": { "type": "string" }
+                              },
+                              "additionalProperties": true
+                            }
+                          },
+                          "dead_money_players": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "player": { "type": "string" },
+                                "salary": { "type": "integer" }
+                              },
+                              "additionalProperties": true
+                            }
+                          }
+                        },
+                        "additionalProperties": true
+                      }
                     },
                     "errors": {
                       "type": "array",

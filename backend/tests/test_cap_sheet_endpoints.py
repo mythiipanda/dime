@@ -317,3 +317,16 @@ def test_endpoint_wrappers():
     assert bad["ok"] is False
     bad2 = product_cap_scenario_eval.invoke({"payload": {"team": "", "moves": []}})
     assert bad2["ok"] is False
+
+
+def test_projection_openapi_documents_dead_money_decomposition():
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "analyst" / "http-assets" / "openapi.json"
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    item = spec["paths"]["/api/cap/projection"]["post"]["responses"]["200"]["content"]["application/json"]["schema"]["properties"]["seasons"]["items"]
+    properties = item["properties"]
+    for key in ("pay_before", "pay_after", "roster_payroll", "dead_money",
+                "dead_money_detail", "dead_money_players"):
+        assert key in properties
+    assert item["additionalProperties"] is True

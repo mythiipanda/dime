@@ -73,63 +73,75 @@ def _player_schedules(con, salary_season: str) -> dict[str, dict[str, Any]]:
     return schedules
 
 
+def _dead_money_schedules(con, team: str) -> list[dict[str, Any]]:
+    team_code = canonical_team_abbr(team)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_salaries" not in tables:
+            return []
+        cols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+        if "ROW_KIND" not in cols:
+            return []
+        cur = con.execute(
+            "SELECT * FROM silver_salaries WHERE LOWER(ROW_KIND) = 'dead_money'")
+        names = [d[0] for d in cur.description]
+        rows = [dict(zip(names, row)) for row in cur.fetchall()]
+        if "_season" in cols:
+            latest = con.execute("SELECT MAX(_season) FROM silver_salaries").fetchone()
+            if latest and latest[0]:
+                rows = [row for row in rows
+                        if str(row.get("_season") or "") == str(latest[0])]
+    except Exception:
+        return []
+    schedules = []
+    for row in rows:
+        if canonical_team_abbr(row.get("TEAM") or "") != team_code:
+            continue
+        salary_by_season: dict[str, int] = {}
+        for col, value in row.items():
+            match = _re.fullmatch(r"SALARY_(\d{4})_(\d{2})", str(col))
+            if match and value:
+                salary_by_season[f"{match.group(1)}-{match.group(2)}"] = int(value)
+        schedules.append({"player": str(row.get("PLAYER_NAME") or ""),
+                          "team": team_code,
+                          "salary_by_season": salary_by_season})
+    return schedules
+
+
 def _team_baseline(con, team: str, schedules: dict[str, dict[str, Any]], seasons: list[str]) -> dict[str, dict[str, Any]]:
     team_code = canonical_team_abbr(team)
     roster: dict[str, dict[str, Any]] = {}
     for entry in schedules.values():
         if entry["team"] == team_code:
             roster[entry["player"]] = entry
+    dead_rows = _dead_money_schedules(con, team_code)
     baseline: dict[str, dict[str, Any]] = {}
     for season in seasons:
         players = []
-        total = 0
+        roster_total = 0
         for entry in roster.values():
             salary = entry["salary_by_season"].get(season)
             if salary:
-                total += int(salary)
+                roster_total += int(salary)
                 players.append({"player": entry["player"], "salary": int(salary),
                                 "option": entry["option_years"].get(season)})
-        baseline[season] = {"payroll": total, "players": players,
+        dead_detail = []
+        dead_total = 0
+        for entry in dead_rows:
+            salary = entry["salary_by_season"].get(season)
+            if salary:
+                amount = int(salary)
+                dead_total += amount
+                dead_detail.append({"player": entry["player"], "salary": amount,
+                                    "team": entry["team"]})
+        dead_detail.sort(key=lambda row: -int(row.get("salary") or 0))
+        baseline[season] = {"payroll": roster_total + dead_total,
+                            "roster_payroll": roster_total,
+                            "dead_money": dead_total,
+                            "dead_money_detail": dead_detail,
+                            "players": players,
                             "roster_count": len(players)}
     return baseline
-
-
-def _dead_money_by_season(con, team: str, seasons: list[str]) -> dict[str, dict[str, Any]]:
-    empty = {season: {"total": 0, "players": []} for season in seasons}
-    team_code = canonical_team_abbr(team)
-    try:
-        cols = [r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()]
-    except Exception:
-        return empty
-    if "ROW_KIND" not in cols:
-        return empty
-    salary_col_by_season = {}
-    for col in cols:
-        m = _re.fullmatch(r"SALARY_(\d{4})_(\d{2})", str(col))
-        if m:
-            salary_col_by_season[f"{m.group(1)}-{m.group(2)}"] = col
-    try:
-        cursor = con.execute(
-            "SELECT * FROM silver_salaries WHERE ROW_KIND = 'dead_money'")
-        names = [d[0] for d in cursor.description]
-        records = [dict(zip(names, row)) for row in cursor.fetchall()]
-    except Exception:
-        return empty
-    out = {season: {"total": 0, "players": []} for season in seasons}
-    for row in records:
-        if canonical_team_abbr(str(row.get("TEAM") or "")) != team_code:
-            continue
-        player = str(row.get("PLAYER_NAME") or "")
-        for season in seasons:
-            col = salary_col_by_season.get(season)
-            if not col:
-                continue
-            amount = row.get(col)
-            if not amount:
-                continue
-            out[season]["total"] += int(amount)
-            out[season]["players"].append({"player": player, "salary": int(amount)})
-    return out
 
 
 def _signing_effect(raw: dict[str, Any], index: int, target: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -384,13 +396,6 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
 
     schedules = _player_schedules(con, base_season)
     baseline = _team_baseline(con, team, schedules, seasons)
-    dead_by_season = _dead_money_by_season(con, team, seasons)
-    for season, dead in dead_by_season.items():
-        entry = baseline.get(season)
-        if entry is not None and dead["total"]:
-            entry["payroll"] = int(entry["payroll"]) + dead["total"]
-            entry["dead_money"] = dead["total"]
-            entry["dead_players"] = dead["players"]
     holds_by_season = {season: _season_holds(con, team, season) for season in seasons}
     for season, holds in holds_by_season.items():
         if holds["total"]:
@@ -604,9 +609,11 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "season": season,
             "pay_before": int(base["payroll"]),
             "pay_after": pay_after,
-            **({"dead_money": int(base["dead_money"]),
-                "dead_money_players": [{"player": p["player"], "salary": p["salary"]}
-                                       for p in base.get("dead_players", [])]}
+            "roster_payroll": int(base.get("roster_payroll") or 0),
+            "dead_money": int(base.get("dead_money") or 0),
+            "dead_money_detail": list(base.get("dead_money_detail") or []),
+            **({"dead_money_players": [{"player": p["player"], "salary": p["salary"]}
+                                       for p in base.get("dead_money_detail", [])]}
                if base.get("dead_money") else {}),
             "cap_room": lines["cap"] - pay_after,
             "state": state,
@@ -646,9 +653,10 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     dead_seasons = [s for s in seasons if baseline.get(s, {}).get("dead_money")]
     if dead_seasons:
         disclosures.insert(0,
-            "payroll is committed payroll including dead-money obligations — waived players' "
+            "payroll is committed payroll including pre-existing dead-money obligations — waived players' "
             "guaranteed money counts against team salary per CBA rules. Each season row carries "
-            "the dead-money component separately as dead_money with per-player detail in dead_money_players")
+            "the dead-money component separately as dead_money with per-player detail in dead_money_detail; "
+            "dead money is not a roster player and does not affect roster count")
     hold_seasons = [s for s in seasons if holds_by_season[s]["rows"]]
     if hold_seasons:
         unknown_total = sum(holds_by_season[s]["unknown_count"] for s in hold_seasons)
@@ -670,6 +678,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         "errors": errors, "warnings": warnings,
         "disclosures": [d for d in disclosures if d],
         "meta": {"horizon_seasons": seasons, "coverage": coverage,
-                 "projection_basis": "silver_salaries contract schedules plus silver_cap_room lines",
+                 "projection_basis": "silver_salaries roster and dead-money contract schedules plus silver_cap_room lines",
                  **payroll_proxy_meta()},
-    }, ["pay_before", "pay_after", "cap_room", "salary", "delta", "cap_holds", "amount"])
+    }, ["pay_before", "pay_after", "roster_payroll", "dead_money", "cap_room",
+        "salary", "delta", "cap_holds", "amount"])
