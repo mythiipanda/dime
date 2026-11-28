@@ -576,7 +576,12 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
 
     season_blocks: list[dict[str, Any]] = []
     for season in seasons:
-        lines, lines_projected = cap_lines_for_season(con, season)
+        lines_res = cap_lines_for_season(con, season)
+        if not lines_res["ok"]:
+            return {"ok": False, "error": lines_res["error"],
+                    "reason": "cap_lines_unavailable"}
+        lines = lines_res["lines"]
+        lines_projected = bool(lines_res["projected"])
         base = baseline.get(season, {"payroll": 0, "players": [], "roster_count": 0})
         effects = carried.get(season, [])
         pay_after = int(base["payroll"]) + sum(int(e["delta"]) for e in effects)

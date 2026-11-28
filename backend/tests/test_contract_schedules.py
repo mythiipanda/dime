@@ -120,18 +120,24 @@ def warehouse(tmp_path, monkeypatch):
 
 
 def _new_warehouse(path):
+    from cap_line_fixtures import seed_cap_history
+
     con = duckdb.connect(str(path))
     con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, SALARY BIGINT, BREF_SLUG VARCHAR, GUARANTEED BIGINT, SALARY_2026_27 BIGINT, SALARY_2027_28 BIGINT, OPTION_2026_27 VARCHAR, OPTION_2027_28 VARCHAR, _season VARCHAR)')
     con.execute("INSERT INTO silver_salaries VALUES ('Different Salary Name', 'BOS', 1, 100, 'example01', 90, 100, 110, NULL, 'player', '2026-27'), ('Fallback Example Jr.', 'NYK', NULL, 200, 'fallback01', 200, 200, NULL, NULL, NULL, '2026-27')")
     con.execute('CREATE TABLE silver_leaders_pts (PLAYER VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GP INTEGER, PTS INTEGER, REB INTEGER, AST INTEGER, STL INTEGER, BLK INTEGER, TOV INTEGER, FG3M INTEGER, FG3_PCT DOUBLE, _season VARCHAR)')
     con.execute("INSERT INTO silver_leaders_pts VALUES ('Different Stats Name', 'BOS', 1, 40, 800, 100, 100, 20, 10, 20, 10, .4, '2025-26'), ('Fallback Example', 'NYK', 2, 40, 1200, 100, 100, 20, 10, 20, 10, .4, '2025-26')")
+    seed_cap_history(con)
     con.close()
 
 
 def test_cap_legacy_snapshot_compat_and_explicitly_unavailable(warehouse):
+    from cap_line_fixtures import seed_cap_history
+
     con = duckdb.connect(str(warehouse))
     con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2025_26 BIGINT, _season VARCHAR)')
     con.execute("INSERT INTO silver_salaries VALUES ('Legacy Example', 'BOS', 100, '2026-27')")
+    seed_cap_history(con)
     con.close()
     result = league.get_cap_ledger.invoke({'team': 'BOS'})
     assert result['ok']

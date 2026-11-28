@@ -214,7 +214,8 @@ def test_unknown_mechanism_is_an_input_error():
 def test_legacy_string_signings_use_auto_one_year_compatibility_shim():
     from shared.tools.league.cap_scenario import _validate_legacy_signings
     moves = [{"kind": "signing", "amount": 8_000_000, "player": "Legacy Player"}]
-    out = _validate_legacy_signings("TST", moves, 190_000_000)
+    from shared.tools.cap_rules import CAP
+    out = _validate_legacy_signings("TST", moves, 190_000_000, lines=dict(CAP))
     validation = out["validations"][0]
     assert validation["mechanism_input"] == "auto"
     assert validation["years"] == 1

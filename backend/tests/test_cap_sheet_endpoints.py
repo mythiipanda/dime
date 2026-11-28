@@ -104,12 +104,15 @@ def test_projected_cap_room_rows_disclose_projected_lines():
         con.execute(
             "INSERT INTO silver_cap_room VALUES "
             "('2027-28', 176000000, 214000000, 224000000, 237000000)")
-        lines, projected = cap_lines_for_season(con, "2027-28")
+        resolved = cap_lines_for_season(con, "2027-28")
     finally:
         con.close()
-    assert lines == {"cap": 176_000_000, "tax": 214_000_000,
-                     "apron1": 224_000_000, "apron2": 237_000_000}
-    assert projected is True
+    assert resolved["ok"] is True
+    assert resolved["lines"] == {"cap": 176_000_000, "tax": 214_000_000,
+                                 "apron1": 224_000_000, "apron2": 237_000_000}
+    assert resolved["projected"] is True
+    assert resolved["source"] == "silver_cap_room"
+    assert resolved["exact"] is True
 
 
 def test_sheet_shape_boston(con):
@@ -148,15 +151,24 @@ def test_sheet_multi_year_matrix(con):
 
 def test_cap_lines_projection_behavior(con):
     from shared.tools.league.cap_sheet import cap_lines_for_season
-    lines, projected = cap_lines_for_season(con, "2026-27")
-    assert projected is False
-    assert lines["cap"] == 164_961_000
-    lines27, projected27 = cap_lines_for_season(con, "2027-28")
-    assert lines27["cap"] > 0
-    lines31, projected31 = cap_lines_for_season(con, "2031-32")
-    assert projected31 is True
-    assert lines31["cap"] > lines27["cap"]
-    assert lines31["apron2"] > lines31["apron1"] > lines31["tax"] > lines31["cap"]
+    current = cap_lines_for_season(con, "2026-27")
+    assert current["ok"] is True
+    assert current["projected"] is False
+    assert current["exact"] is True
+    assert current["lines"]["cap"] == 164_961_000
+    res27 = cap_lines_for_season(con, "2027-28")
+    assert res27["ok"] is True
+    assert res27["lines"]["cap"] > 0
+    res31 = cap_lines_for_season(con, "2031-32")
+    assert res31["ok"] is True
+    assert res31["projected"] is True
+    assert res31["exact"] is False
+    assert res31["source"] == "growth_extrapolation"
+    assert res31["approximation_basis"]
+    assert "not an official league figure" in res31["approximation_basis"]
+    assert res31["lines"]["cap"] > res27["lines"]["cap"]
+    assert (res31["lines"]["apron2"] > res31["lines"]["apron1"]
+            > res31["lines"]["tax"] > res31["lines"]["cap"])
 
 
 def test_scenario_signing_matches_tool_arithmetic(con):

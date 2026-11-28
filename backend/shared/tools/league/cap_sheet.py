@@ -138,7 +138,7 @@ def _option_decline_move(con, team: str, season: str, player: str) -> tuple[dict
 
 
 
-def cap_lines_for_season(con, season: str) -> tuple[dict[str, Any], bool]:
+def cap_lines_for_season(con, season: str) -> dict[str, Any]:
     return projection_cap_lines(con, season)
 
 
@@ -269,12 +269,27 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                             + entry["cap_holds"] + entry["incomplete_roster_charges"])
     lines_by_season: dict[str, Any] = {}
     for label in totals:
-        llines, lproj = cap_lines_for_season(con, label)
-        lines_by_season[label] = {**llines, "projected": lproj}
-    lines, projected = cap_lines_for_season(con, season)
+        lres = cap_lines_for_season(con, label)
+        if lres["ok"]:
+            lines_by_season[label] = {
+                **lres["lines"], "projected": lres["projected"],
+                "source": lres["source"], "exact": lres["exact"],
+                "approximation_basis": lres["approximation_basis"]}
+        else:
+            lines_by_season[label] = {"unavailable": True, "error": lres["error"]}
+    current = cap_lines_for_season(con, season)
     committed_now = totals.get(season, {}).get("payroll", 0)
-    state = apron_state(int(committed_now), lines)
-    state["room_under_apron2"] = state["room_apron2"]
+    projected = False
+    if current["ok"]:
+        projected = bool(current["projected"])
+        state = apron_state(int(committed_now), current["lines"])
+        state["room_under_apron2"] = state["room_apron2"]
+        state["cap_lines_source"] = current["source"]
+        state["cap_lines_exact"] = current["exact"]
+        if current["approximation_basis"]:
+            state["approximation_basis"] = current["approximation_basis"]
+    else:
+        state = {"unavailable": True, "error": current["error"]}
     return {"ok": True, "team": str(team).upper(), "season": season,
             "lines": lines_by_season, "lines_projected": projected,
             "players": sheet["players"], "totals": totals,
@@ -858,7 +873,8 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
                      pay_before: int, roster: list[dict[str, Any]],
                      lines: dict[str, Any], lines_projected: bool,
                      waiver_timing: dict[str, Any],
-                     sequence: dict[str, Any]) -> dict[str, Any]:
+                     sequence: dict[str, Any],
+                     lines_provenance: dict[str, Any] | None = None) -> dict[str, Any]:
     trace = scenario_trace(pay_before, sequence["moves"], f"{team} committed payroll")
     pay_after = int(trace["pay_after"])
     money_before = _baseline_money_state(sequence, pay_before)
@@ -918,6 +934,7 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
             "cap_hold_events": [dict(event) for event in sequence["cap_hold_events"]],
             "state": state,
             "lines": lines, "lines_projected": lines_projected,
+            "lines_provenance": lines_provenance or {},
             "restrictions": restrictions,
             "roster_before": len(roster), "roster_after": roster_after,
             "roster_issues": roster_issue_list,
@@ -966,7 +983,12 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         payload.get("waiver_date"), season)
     if waiver_timing_error:
         return {"ok": False, "error": waiver_timing_error}
-    lines, lines_projected = cap_lines_for_season(con, season)
+    lines_res = cap_lines_for_season(con, season)
+    if not lines_res["ok"]:
+        return {"ok": False, "error": lines_res["error"],
+                "reason": "cap_lines_unavailable"}
+    lines = lines_res["lines"]
+    lines_projected = bool(lines_res["projected"])
     try:
         pay_before, roster, _dead = _payroll(team, con, season)
     except Exception as exc:
@@ -987,4 +1009,7 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     _close_trade_group(sequence, team, lines)
     return _scenario_result(
         con, team, season, requested_season, pay_before, roster,
-        lines, lines_projected, waiver_timing, sequence)
+        lines, lines_projected, waiver_timing, sequence,
+        lines_provenance={"source": lines_res["source"],
+                          "exact": lines_res["exact"],
+                          "approximation_basis": lines_res["approximation_basis"]})

@@ -460,7 +460,8 @@ def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
     for _ in range(CASES):
         side, salaries, team_tpes, cash_moves, cash_out = _integration_input(rng)
         row, issues = _evaluate_team(
-            "BOS", side, [], cash_moves, team_tpes, None, None, 0, 2026)
+            "BOS", side, [], cash_moves, team_tpes, None, None, 0, 2026,
+            dict(CAP))
         expected_pay_after = (side["pay_before"] - side["out_total"]
                               + side["in_total"])
         expected_over_apron1 = expected_pay_after > CAP["apron1"]
@@ -570,7 +571,8 @@ def _evaluate_vector(pay_before, outgoing, incoming_salaries, outgoing_count=1,
     side = _vector_side(pay_before, outgoing, incoming_salaries,
                         outgoing_count)
     return _evaluate_team(
-        "BOS", side, [], [], team_tpes or [], None, None, 0, 2026)
+        "BOS", side, [], [], team_tpes or [], None, None, 0, 2026,
+        dict(CAP))
 
 
 def _active_tpe_vector(amount, status="current_year"):

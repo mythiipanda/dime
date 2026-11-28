@@ -16,7 +16,6 @@ from ..cap_rules import (
 from ._helpers import _owned_connection, _pkg, declare_money
 from .cap_lines import resolve_cap_lines
 from .cba_cap import (
-    CAP,
     SalaryColumnError,
     _allowed_incoming,
     _apron_state,
@@ -725,8 +724,7 @@ def _load_trade_state(con: Any, moves: list[dict[str, Any]], season: str | None,
 
 def _byc_adjustment(side: dict[str, Any], snt: dict[str, Any] | None,
                     snt_salary_prior: int,
-                    lines: dict[str, Any] | None = None) -> tuple[int, str | None]:
-    lines = lines or CAP
+                    lines: dict[str, Any]) -> tuple[int, str | None]:
     out_total = side["out_total"]
     if not snt or not snt["new_salary"]:
         return out_total, None
@@ -850,9 +848,8 @@ def _evaluate_team(team: str, side: dict[str, Any],
                    snt: dict[str, Any] | None,
                    snt_salary_prior: int,
                    season_start: int | None,
-                   lines: dict[str, Any] | None = None
+                   lines: dict[str, Any]
                    ) -> tuple[dict[str, Any], list[str]]:
-    lines = lines or CAP
     team = canonical_team_abbr(team)
     out_eff, byc_note = _byc_adjustment(side, snt, snt_salary_prior, lines)
     pay_after = side["pay_before"] - side["out_total"] + side["in_total"]
