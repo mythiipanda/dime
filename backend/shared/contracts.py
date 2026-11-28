@@ -56,10 +56,14 @@ def row_kind_declared(columns) -> bool:
     return row_kind_column(columns) is not None
 
 
+def normalized_row_kind(value: object) -> str:
+    return str(value or 'roster').strip().lower().replace('-', '_')
+
+
 def is_dead_money_row(row: dict) -> bool:
     for key, value in row.items():
         if str(key).lower() == 'row_kind':
-            return str(value or 'roster').lower() == 'dead_money'
+            return normalized_row_kind(value) == 'dead_money'
     return False
 
 
@@ -68,7 +72,11 @@ def _quoted_identifier(name: str) -> str:
 
 
 def dead_money_row_predicate(column: str) -> str:
-    return f"LOWER(COALESCE({_quoted_identifier(column)}, 'roster')) = 'dead_money'"
+    ws = r"\s\p{Z}"
+    trimmed = (f"regexp_replace(COALESCE({_quoted_identifier(column)}, 'roster'), "
+               f"'^[{ws}]+|[{ws}]+$', '', 'g')")
+    normalized = f"LOWER(REPLACE({trimmed}, '-', '_'))"
+    return f"{normalized} = 'dead_money'"
 
 
 def roster_row_predicate(column: str) -> str:

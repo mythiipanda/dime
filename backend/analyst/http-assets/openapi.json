@@ -1218,7 +1218,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Cap sheet rows. Dead-money rows are labeled payroll components rather than roster players. Committed salary is roster payroll plus dead money; payroll adds cap holds and incomplete-roster charges. component_availability distinguishes an unavailable component from a true zero.",
+            "description": "Cap sheet rows. players is contract inventory for rows counting as standard in at least one horizon season, with years[].counts_as_standard marking per-season inclusion. Dead-money rows are labeled payroll components rather than roster players. Committed salary is roster payroll plus dead money; payroll adds cap holds and incomplete-roster charges. component_availability distinguishes an unavailable component from a true zero.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1322,7 +1322,16 @@
                                   "type": "string"
                                 },
                                 "salary": {
-                                  "type": "number"
+                                  "type": ["number", "null"]
+                                },
+                                "row_kind": {
+                                  "type": "string"
+                                },
+                                "basis": {
+                                  "type": "string"
+                                },
+                                "amount_unknown": {
+                                  "type": "boolean"
                                 }
                               },
                               "additionalProperties": false
@@ -1378,7 +1387,16 @@
                             "type": "string"
                           },
                           "salary": {
-                            "type": "number"
+                            "type": ["number", "null"]
+                          },
+                          "row_kind": {
+                            "type": "string"
+                          },
+                          "basis": {
+                            "type": "string"
+                          },
+                          "amount_unknown": {
+                            "type": "boolean"
                           }
                         },
                         "additionalProperties": false
@@ -1531,7 +1549,7 @@
                               "type": "object",
                               "properties": {
                                 "player": { "type": "string" },
-                                "salary": { "type": "integer" },
+                                "salary": { "type": ["integer", "null"] },
                                 "team": { "type": "string" }
                               },
                               "additionalProperties": true
@@ -1543,7 +1561,7 @@
                               "type": "object",
                               "properties": {
                                 "player": { "type": "string" },
-                                "salary": { "type": "integer" }
+                                "salary": { "type": ["integer", "null"] }
                               },
                               "additionalProperties": true
                             }

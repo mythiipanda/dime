@@ -1,4 +1,5 @@
 import difflib as _dl
+import re as _re
 from typing import Any
 
 from langchain_core.tools import tool
@@ -15,6 +16,13 @@ from .._core import coerce_team_id, team_error_message, warehouse_identity_meta
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
 from .cap_lines import resolve_cap_lines
+from .cba_two_way import (
+    merge_dead_rows,
+    payroll_evidence_season,
+    salary_row_cap_status,
+    two_way_state_for_record,
+    two_way_states,
+)
 
 from ..cap_rules import (
     CAP,
@@ -263,6 +271,118 @@ def _resolve_salary_column(scols: set[str], season: str | None) -> str:
     return resolve_salary_column(scols, season)
 
 
+def _salary_column_or_raise(scols: list[str], season: str | None) -> str:
+    scol = _resolve_salary_column(set(scols), season)
+    if scol:
+        return scol
+    raise SalaryColumnError(
+        "salary_column_unmatched",
+        f"silver_salaries has no salary column for season {season or 'unknown'}")
+
+
+def _season_record_team(row: dict, con: object, season: str | None,
+                        tables: set[str], cache: dict[str, str]) -> str:
+    name = str(row.get('PLAYER_NAME') or '')
+    if not season:
+        return str(row.get('TEAM') or '')
+    key = name.lower()
+    if key not in cache:
+        cache[key] = (_season_player_team(con, name, season, tables,
+                                          row.get('PLAYER_ID'))
+                      or str(row.get('TEAM') or ''))
+    return cache[key]
+
+
+def _collect_salary_payroll(records: list[dict], con: object, team_code: str,
+                            season: str | None, tables: set[str],
+                            evidence_season: str | None) -> tuple[list, list[dict], list[dict]]:
+    states_by_player = two_way_states(con, evidence_season, tables)
+    team_cache: dict[str, str] = {}
+    rows = []
+    players = []
+    inferred_dead = []
+    for row in records:
+        name = str(row.get('PLAYER_NAME') or '')
+        row_team = canonical_team_abbr(row.get('TEAM'))
+        state = two_way_state_for_record(states_by_player, name, row.get('PLAYER_ID'))
+        status = salary_row_cap_status(row, state, row_team, evidence_season)
+        entry = status.get("dead_entry")
+        if entry is not None:
+            inferred_dead.append(entry)
+        if not status["counts_as_standard"]:
+            continue
+        record_team = _season_record_team(row, con, season, tables, team_cache)
+        salary = row.get('salary')
+        if canonical_team_abbr(record_team) != team_code or salary is None:
+            continue
+        rows.append((row['PLAYER_NAME'], salary))
+        players.append({"player": row['PLAYER_NAME'], "salary": salary,
+                        "team": record_team, **contract_details(row)})
+    return rows, players, inferred_dead
+
+
+def _explicit_dead_rows(con: object, scols: list[str], scol: str,
+                        team_code: str) -> list[dict]:
+    kind_column = row_kind_column(scols)
+    if not kind_column:
+        return []
+    try:
+        cur = con.execute(
+            "SELECT * FROM silver_salaries WHERE " + dead_money_row_predicate(kind_column))
+        names = [d[0] for d in cur.description]
+        rows = [dict(zip(names, row, strict=False)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    dead = []
+    for row in rows:
+        if canonical_team_abbr(row.get("TEAM")) != team_code:
+            continue
+        value = row.get(scol)
+        amount_columns = [key for key in row
+                          if _re.fullmatch(r"SALARY_\d{4}_\d{2}", str(key))]
+        if (value is None and any(row.get(key) is not None for key in amount_columns)):
+            continue
+        if value is None and row.get("_season"):
+            match = _re.fullmatch(r"SALARY_(\d{4})_(\d{2})", str(scol))
+            row_season = f"{match.group(1)}-{match.group(2)}" if match else ""
+            if row_season != str(row.get("_season")):
+                continue
+        item = {"player": str(row.get("PLAYER_NAME") or ""),
+                "salary": value,
+                "team": canonical_team_abbr(row.get("TEAM"))}
+        if row.get("PLAYER_ID") is not None:
+            item["_player_id"] = row.get("PLAYER_ID")
+        if item["salary"] is None:
+            item["amount_unknown"] = True
+        dead.append(item)
+    return dead
+
+
+def _silver_salary_payroll(con: object, team_code: str, season: str | None,
+                           tables: set[str]) -> tuple[int, list[dict], list[dict]] | None:
+    scols = [r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()]
+    scol = _salary_column_or_raise(scols, season)
+    cur = con.execute("SELECT * FROM silver_salaries")
+    names = [d[0] for d in cur.description]
+    records = [dict(zip(names, row)) for row in cur.fetchall()]
+    if records and "_season" in names:
+        latest = max(str(row.get("_season") or "") for row in records)
+        records = [row for row in records
+                   if str(row.get("_season") or "") == latest]
+    for row in records:
+        row["TEAM"] = canonical_team_abbr(row.get("TEAM"))
+        row["salary"] = row.get(scol)
+    if not any(row["TEAM"] == team_code for row in records):
+        return None
+    evidence_season = payroll_evidence_season(records, scol, season)
+    rows, players, inferred = _collect_salary_payroll(
+        records, con, team_code, season, tables, evidence_season)
+    explicit = _explicit_dead_rows(con, scols, scol, team_code)
+    dead = merge_dead_rows(explicit, inferred, team_code)
+    dead_total = sum(row["salary"] or 0 for row in dead)
+    return sum(row[1] or 0 for row in rows) + dead_total, players, dead
+
+
 def _payroll(team: str, con: object = None,
              season: str | None = None) -> tuple[int, list[dict], list[dict]]:
     own = con is None
@@ -272,48 +392,9 @@ def _payroll(team: str, con: object = None,
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         team_code = canonical_team_abbr(team)
         if "silver_salaries" in tables:
-            scols = [r[1] for r in con.execute(
-                "PRAGMA table_info(silver_salaries)").fetchall()]
-            scol = _resolve_salary_column(set(scols), season)
-            if not scol:
-                raise SalaryColumnError(
-                    "salary_column_unmatched",
-                    f"silver_salaries has no salary column for season "
-                    f"{season or 'unknown'}")
-            records = salary_records(con, salary_season=season)
-            team_cache: dict[str, str] = {}
-            rows = []
-            players = []
-            for r in records:
-                name = str(r.get('PLAYER_NAME') or '')
-                key = name.lower()
-                if season:
-                    if key not in team_cache:
-                        team_cache[key] = (_season_player_team(con, name, season, tables)
-                                           or str(r.get('TEAM') or ''))
-                    record_team = team_cache[key]
-                else:
-                    record_team = str(r.get('TEAM') or '')
-                if canonical_team_abbr(record_team) != team_code:
-                    continue
-                salary = r.get('salary')
-                if salary is None:
-                    continue
-                rows.append((r['PLAYER_NAME'], salary))
-                players.append({"player": r['PLAYER_NAME'], "salary": salary,
-                                "team": record_team, **contract_details(r)})
-            dead = []
-            kind_column = row_kind_column(scols)
-            if kind_column:
-                dcur = con.execute(
-                    "SELECT PLAYER_NAME, TEAM, " + scol + " FROM silver_salaries "
-                    "WHERE " + dead_money_row_predicate(kind_column) + " AND UPPER(TEAM) = UPPER(?)",
-                    [team_code]).fetchall()
-                dead = [{"player": str(d[0]), "salary": d[2], "team": str(d[1])}
-                        for d in dcur if d[2] is not None]
-            if rows or dead:
-                dead_total = sum(d["salary"] or 0 for d in dead)
-                return sum(r[1] or 0 for r in rows) + dead_total, players, dead
+            result = _silver_salary_payroll(con, team_code, season, tables)
+            if result is not None:
+                return result
         if "silver_cap_players" in tables:
             cap_rows = con.execute(
                 "SELECT player, salary, team FROM silver_cap_players").fetchall()
@@ -354,25 +435,36 @@ def _outgoing_needed(incoming: int, over_apron1: bool,
 
 
 def _season_player_team(con: object, name: str, season: str,
-                        tables: set[str] | None = None) -> str | None:
+                        tables: set[str] | None = None,
+                        player_id: object = None) -> str | None:
     if tables is None:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     lookups = (
-        ("silver_leaders_pts", "PLAYER", "TEAM"),
-        ("silver_player_season", "PLAYER", "TEAM"),
-        ("silver_hist_player_seasons", "player_name", "team_abbreviation"),
+        ("silver_leaders_pts", "PLAYER", "TEAM", "PLAYER_ID"),
+        ("silver_player_season", "PLAYER", "TEAM", "PLAYER_ID"),
+        ("silver_hist_player_seasons", "player_name", "team_abbreviation", "player_id"),
     )
-    for table, name_col, team_col in lookups:
+    for table, name_col, team_col, id_col in lookups:
         if table not in tables:
             continue
-        try:
-            row = con.execute(
-                f"SELECT {team_col} FROM {table} WHERE _season = ? "
-                f"AND lower({name_col}) = lower(?) "
-                f"AND upper({team_col}) <> 'TOT' LIMIT 1",
-                [season, name]).fetchone()
-        except Exception:
-            row = None
+        row = None
+        if player_id is not None:
+            try:
+                row = con.execute(
+                    f"SELECT {team_col} FROM {table} WHERE _season = ? "
+                    f"AND {id_col} = ? AND upper({team_col}) <> 'TOT' LIMIT 1",
+                    [season, player_id]).fetchone()
+            except Exception:
+                row = None
+        if row is None:
+            try:
+                row = con.execute(
+                    f"SELECT {team_col} FROM {table} WHERE _season = ? "
+                    f"AND lower({name_col}) = lower(?) "
+                    f"AND upper({team_col}) <> 'TOT' LIMIT 1",
+                    [season, name]).fetchone()
+            except Exception:
+                row = None
         if row and row[0]:
             return canonical_team_abbr(row[0])
     return None

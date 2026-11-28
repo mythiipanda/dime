@@ -254,7 +254,8 @@ def test_sheet_shape_boston(con):
     assert first["player"]
     assert first["years"]
     year = first["years"][0]
-    assert set(year) == {"season", "salary", "option", "guaranteed"}
+    assert {"season", "salary", "option", "guaranteed"} <= set(year)
+    assert "counts_as_standard" in year
     totals = out["totals"]
     assert "2026-27" in totals
     entry = totals["2026-27"]
@@ -377,7 +378,7 @@ def test_endpoint_wrappers():
     bad2 = product_cap_scenario_eval.invoke({"payload": {"team": "", "moves": []}})
     assert bad2["ok"] is False
     exposed = internal_catalogue()["product_cap_sheet"].description
-    assert "players is roster-only" in exposed
+    assert "years[].counts_as_standard" in exposed
     assert "dead_money/dead_money_detail" in exposed
 
 
@@ -391,4 +392,11 @@ def test_projection_openapi_documents_dead_money_decomposition():
     for key in ("pay_before", "pay_after", "roster_payroll", "dead_money",
                 "dead_money_detail", "dead_money_players"):
         assert key in properties
+    detail_item = properties["dead_money_detail"]["items"]
+    assert detail_item["properties"]["salary"]["type"] == ["integer", "null"]
     assert item["additionalProperties"] is True
+
+    sheet_item = spec["paths"]["/api/cap/sheet"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["properties"]["totals"]["additionalProperties"]["properties"]["dead_money_detail"]["items"]
+    assert sheet_item["properties"]["salary"]["type"] == ["number", "null"]
+    assert sheet_item["properties"]["amount_unknown"]["type"] == "boolean"
+    assert sheet_item["additionalProperties"] is False

@@ -82,3 +82,17 @@ def test_payroll_counts_dead_money_without_roster_rows():
     assert total == 2000000
     assert players == []
     assert dead == [{'player': 'Dead Player', 'salary': 2000000, 'team': 'TST'}]
+
+
+def test_row_kind_predicates_trim_and_normalize_hyphens_like_python():
+    for row_value in (' dead-money ', 'DEAD-MONEY'):
+        con = _degraded_con('ROW_KIND', row_value)
+        try:
+            rows = salary_records(con, salary_season='2026-27')
+            total, players, dead = _payroll('TST', con)
+        finally:
+            con.close()
+        assert [r['PLAYER_NAME'] for r in rows] == ['Roster Player']
+        assert total == 12000000
+        assert [r['player'] for r in players] == ['Roster Player']
+        assert dead == [{'player': 'Dead Player', 'salary': 2000000, 'team': 'TST'}]
