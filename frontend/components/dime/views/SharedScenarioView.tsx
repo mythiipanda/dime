@@ -6,6 +6,7 @@ import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, Shared
 import { ArtifactBody, ProvenancePanel } from "@/components/site/harness/ArtifactsView";
 import { undeclaredProvenance } from "@/lib/stream/provenance";
 import { RecordsTable } from "@/components/ds/RecordsTable";
+import { Button } from "@/components/ds/Button";
 import { asResolvedArtifacts } from "@/lib/stream/artifacts";
 import type { ProjectionResponse } from "@/lib/planner";
 
@@ -32,13 +33,16 @@ export function SharedFrame({ children, label }: { children: ReactNode; label?: 
         </span>
       </header>
       <div className="flex-1">{children}</div>
-      <footer className="mt-10 border-t border-line pt-4 text-[12px] leading-[1.6] text-ink-3">
-        <p>
-          dime is an AI analyst workbench for NBA data.{" "}
-          <a href="/" className="text-ink-2 underline underline-offset-2 hover:text-ink">
-            Open the workbench
-          </a>
+      <section className="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-[10px] bg-surface px-5 py-4 shadow-hairline">
+        <p className="max-w-[420px] text-[12.5px] leading-[1.55] text-ink-2">
+          Explore the full analysis in the workbench. Ask follow-up questions, adjust the moves, run the scenarios yourself.
         </p>
+        <Button asChild variant="accent" size="sm">
+          <a href="/">Open in Dime</a>
+        </Button>
+      </section>
+      <footer className="mt-6 border-t border-line pt-4 text-[12px] leading-[1.6] text-ink-3">
+        <p>dime is an AI analyst workbench for NBA data.</p>
       </footer>
     </main>
   );
@@ -55,7 +59,7 @@ export function SharedScenarioNotice({ tone, kind }: { tone: "archived" | "not_f
     },
     not_found: {
       title: `This shared ${noun} no longer exists`,
-      body: `The link may have been rotated by its owner — rotating a share link retires the old one — or the ${noun} was never shared at this address.`,
+      body: `The link may have been rotated by its owner (rotating a share link retires the old one), or the ${noun} was never shared at this address.`,
     },
     invalid: {
       title: "This link is invalid",
@@ -113,7 +117,7 @@ export function SharedScenarioView({
             </div>
             {evaluation === null && (
               <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.55] text-ink-3">
-                This scenario could not be evaluated live — the stored moves are shown as shared, without computed cap impact.
+                This scenario could not be evaluated live. The stored moves are shown as shared, without computed cap impact.
               </p>
             )}
             {evaluationFailed && (
@@ -246,7 +250,7 @@ export function SharedScenarioView({
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">About this link</h2>
             <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
-              Evaluated live against the current warehouse snapshot when you opened it — numbers recompute at open time and can move as the data moves. This is a read-only view; the scenario can't be edited here.
+              Evaluated live against the current warehouse snapshot when you opened it. Numbers recompute at open time and can move as the data moves. This is a read-only view; the scenario can't be edited here.
             </p>
           </section>
         </aside>
@@ -314,7 +318,7 @@ export function SharedTradeView({
             </ol>
             {evaluation === null && (
               <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.55] text-ink-3">
-                This construction could not be evaluated live — the stored legs are shown as shared, without a legality verdict.
+                This construction could not be evaluated live. The stored legs are shown as shared, without a legality verdict.
               </p>
             )}
             {evaluation !== null && !evaluationFailed && rows.length > 0 && (
@@ -410,7 +414,7 @@ export function SharedTradeView({
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">About this link</h2>
             <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
-              Evaluated live against the current warehouse snapshot when you opened it — the verdict recomputes at open time and can move as rosters move. This is a read-only view; the construction can't be edited here.
+              Evaluated live against the current warehouse snapshot when you opened it. The verdict recomputes at open time and can move as rosters move. This is a read-only view; the construction can't be edited here.
             </p>
           </section>
         </aside>
@@ -471,7 +475,7 @@ export function SharedThreadView({
         <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
           <h2 className="text-[13px] font-semibold text-ink">About this link</h2>
           <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
-            This is a snapshot of the thread as it existed when the owner shared it — anything added to the conversation afterwards is not visible here. This is a read-only view; the thread can't be continued or edited here.
+            This is a snapshot of the thread as it existed when the owner shared it; anything added to the conversation afterwards is not visible here. This is a read-only view; the thread can't be continued or edited here.
           </p>
         </section>
       </div>
@@ -518,7 +522,7 @@ export function SharedArtifactView({
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">This artifact can&apos;t be resolved</h2>
             <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
-              The analysis run this artifact points into is no longer available on the server. The link itself is valid — the underlying data is gone.
+              The analysis run this artifact points into is no longer available on the server. The link itself is valid; the underlying data is gone.
             </p>
           </section>
         ) : (
@@ -564,7 +568,7 @@ export function SharedArtifactView({
         <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
           <h2 className="text-[13px] font-semibold text-ink">About this link</h2>
           <p className="mt-2 text-[12px] leading-[1.6] text-ink-3">
-            This artifact is pinned to the exact evidence rows it was built from, captured when the analysis ran. Where the warehouse has been refreshed since, the numbers reflect the capture-time snapshot — the pinned evidence above shows what the figures rest on. This is a read-only view.
+            This artifact is pinned to the exact evidence rows it was built from, captured when the analysis ran. Where the warehouse has been refreshed since, the numbers reflect the capture-time snapshot; the pinned evidence above shows what the figures rest on. This is a read-only view.
           </p>
         </section>
       </div>
