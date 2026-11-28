@@ -9,6 +9,7 @@ import { modelDisplayName } from "@/lib/modelNames";
 import { streamDimeChat } from "@/lib/dime-stream";
 import { serializeViewContext, splitViewContext } from "@/lib/view-context";
 import { clearChatDraft, loadChatDraft, saveChatDraft } from "@/lib/chat-drafts";
+import { isAtBottom, scrolledUp } from "@/lib/scroll";
 import {
   assistantMessageFromSnapshot,
   REFERENCE_TAB,
@@ -153,6 +154,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     options?.onSubmit?.();
     const tabId = thread ?? activeTab;
     const turnText = context ? serializeViewContext(context, q) : q;
+    followingRef.current = true;
     appendMessage(tabId, { role: "user", text: turnText });
     setDraftState("");
     clearChatDraft(options?.thread ?? "");
@@ -246,11 +248,22 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileNavOpen]);
 
-  useEffect(() => {
+  const followingRef = useRef(true);
+  const lastScrollTop = useRef(0);
+
+  const onConversationScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
+    if (scrolledUp(lastScrollTop.current, el.scrollTop)) followingRef.current = false;
+    if (isAtBottom(el)) followingRef.current = true;
+    lastScrollTop.current = el.scrollTop;
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !followingRef.current) return;
+    const running = live != null && !live.done;
+    el.scrollTo({ top: el.scrollHeight, behavior: running ? "auto" : (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth") });
   }, [messages, live]);
 
   const paletteEntries: PaletteEntry[] = useMemo(
@@ -332,6 +345,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     closeMobileNav,
     inputRef,
     scrollRef,
+    onConversationScroll,
     menuBtnRef,
     sheetRef,
     addTab,

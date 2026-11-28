@@ -160,7 +160,7 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
       {chat.historyLoading && <p role="status" className="mt-4 text-[12px] text-ink-3">Loading conversation…</p>}
       {chat.historyError && <p role="alert" className="mt-4 text-[12px] text-red">{chat.historyError}</p>}
     </section> : <>
-      <div className="conversation" ref={chat.scrollRef} aria-label="Conversation">
+      <div className="conversation" ref={chat.scrollRef} aria-label="Conversation" onScroll={chat.onConversationScroll}>
         {chat.messages.map((message, index) => message.role === "user" ? <UserTurn key={index} text={message.text} /> : <AssistantTurn key={index} message={message} prefix={`${thread}-${index}-`} thread={thread} onFollowUp={chat.submit} onRetry={() => chat.retry(index)} />)}
         {chat.live && <LiveTurn live={chat.live} thread={thread} />}
       </div>
