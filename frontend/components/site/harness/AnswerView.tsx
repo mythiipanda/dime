@@ -36,7 +36,7 @@ export function Ico({ d, size = 15 }: { d: ReactNode; size?: number }) {
 export function OmittedNote({ omitted }: { omitted: string[] }) {
   return (
     <p className="mt-2 max-w-[620px] text-[12px] text-orange">
-      Partial answer — not covered: {omitted.join("; ")}
+      Partial answer. Not covered: {omitted.join("; ")}
     </p>
   );
 }
@@ -177,7 +177,7 @@ function FollowUpPills({
 export function StoppedNote() {
   return (
     <p className="mt-2 max-w-[620px] text-[12px] text-ink-3">
-      Stopped — partial answer shown.
+      Stopped. Partial answer shown.
     </p>
   );
 }

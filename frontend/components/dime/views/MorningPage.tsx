@@ -65,7 +65,7 @@ function staleness(dateText: string | undefined): string | null {
   if (Number.isNaN(when)) return null;
   const days = Math.floor((Date.now() - when) / 86400000);
   if (days <= 5) return null;
-  return `warehouse snapshot — the latest result in the data is ${days} days behind today; this is a historical read, not this morning's`;
+  return `warehouse snapshot; the latest result in the data is ${days} days behind today; this is a historical read, not this morning's`;
 }
 
 export default function MorningPage({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
@@ -173,7 +173,7 @@ export default function MorningPage({ onAsk }: { onAsk?: (text: string, context?
             size="sm"
             variant="secondary"
             onClick={() => onAsk(
-              `Walk me through ${team}'s morning read — what matters most from the last result, the next opponent, the health picture, and where the team stands?`,
+              `Walk me through ${team}'s morning read: what matters most from the last result, the next opponent, the health picture, and where the team stands?`,
               {
                 kind: "morning_briefing",
                 summary: `${team} morning page${data.season ? ` · ${data.season}` : ""}`,
@@ -224,7 +224,7 @@ export default function MorningPage({ onAsk }: { onAsk?: (text: string, context?
               ? <BlockError block={blocks.injuries} empty="" />
               : blocks.injuries.rows.length
                 ? <ul className="space-y-1.5">{blocks.injuries.rows.slice(0, 6).map((row, index) => <li key={index} className="text-[12px]"><span className="text-ink">{String(row.player ?? row.PLAYER ?? row.name ?? "player")}</span><span className="ml-2 text-ink-3">{String(row.status ?? row.STATUS ?? row.injury ?? row.detail ?? "listed")}</span></li>)}</ul>
-                : <p className="py-2 text-[12px] text-ink-3">No listed injury rows at source vintage — availability unknown.</p>}
+                : <p className="py-2 text-[12px] text-ink-3">No listed injury rows at source vintage; availability unknown.</p>}
           </Card>
           <Card title="News" cite={blocks.news.provenance} artifact={table(`${team} news`, newsRows(), blocks.news.provenance)}>
             {blocks.news.error

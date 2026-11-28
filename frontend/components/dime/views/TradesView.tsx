@@ -679,7 +679,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             onClick={() => setManualEntry({ side, amount: "" })}
             title="Exceptions come from your own prior constructions or manual entry; real-world inventory is not derivable from the warehouse"
           >
-            no exceptions on file — add manually
+            no exceptions on file · add manually
           </button>
         )}
         {(leg || check.state === "ok") && (

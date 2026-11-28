@@ -32,7 +32,7 @@ export function SidebarNav({ workspace, items, activeNav, recents, activeThread,
         {recents.filter((r) => r.label.toLowerCase().includes(search.toLowerCase())).map((r) => <button key={r.id} className="sidebar-row" aria-current={activeThread === r.id && activeNav === "chat" ? "page" : undefined} onClick={() => onPick(r.id)}><span className="truncate text-[12px]">{r.label}</span></button>)}
         {!recents.length && (
           <div className="px-2 py-2">
-            <p className="text-[11.5px] leading-relaxed text-ink-2">Ask about a team, a player, or a trade — every answer cites its source.</p>
+            <p className="text-[11.5px] leading-relaxed text-ink-2">Ask about a team, a player, or a trade. Every answer cites its source.</p>
             <p className="mt-1 text-[11px] leading-relaxed text-ink-3">Your conversations will live here.</p>
           </div>
         )}

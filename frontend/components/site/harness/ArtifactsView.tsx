@@ -335,7 +335,7 @@ function ShareableArtifact({ artifact, shareContext }: { artifact: DimeArtifact;
         />
       )}
       {share.phase === "error" && (
-        <p role="status" className="text-[11.5px] text-red">Could not create the share link — try again.</p>
+        <p role="status" className="text-[11.5px] text-red">Could not create the share link. Try again.</p>
       )}
     </div>
   );

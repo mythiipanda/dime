@@ -146,7 +146,7 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{boardTemplates.map(template => <Panel key={template.id} title={template.title} description={template.summary}><p className="mb-5 text-xs text-ink-3">{template.seed ? `${template.seed.n} players · ${template.columns.length} metrics` : "An open canvas"}</p><Button size="sm" onClick={() => create(template)}>Use {template.title}<ArrowUpRight size={13} /></Button></Panel>)}</div>
     <SavedBoards onOpen={onOpen} />
     {notice && <p role="alert" className="mt-5 text-sm text-red">{notice}<Button size="sm" className="ml-3" onClick={() => setCatalogAttempt(value => value + 1)}>Retry</Button></p>}
-    <p className="mt-6 text-xs leading-relaxed text-ink-3">Backed up server-side as you edit — edit access lives in this browser. Missing data stays visible. CSV exports keep the source citations.</p>
+    <p className="mt-6 text-xs leading-relaxed text-ink-3">Backed up server-side as you edit. Edit access lives in this browser. Missing data stays visible. CSV exports keep the source citations.</p>
   </div>;
   if (!board) return <div className="workspace-page"><PageHeader eyebrow="Local research" title="Board not found" description="This board may have been deleted, or saved in another browser." actions={<Button onClick={() => onOpen(null)}>All boards</Button>} /></div>;
   return <div className="workspace-page">
@@ -166,7 +166,7 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
         />
       </div>
     )}
-    {share.phase === "error" && <p role="alert" className="mb-5 text-sm text-red">The share link could not be created. The board itself is unchanged — try again.</p>}
+    {share.phase === "error" && <p role="alert" className="mb-5 text-sm text-red">The share link could not be created. The board itself is unchanged. Try again.</p>}
     {notice && <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-red">{notice}{board.rows.length > 0 && " Cached values have not been refreshed."}</p><Button size="sm" onClick={() => catalogError ? setCatalogAttempt(value => value + 1) : refresh()}>Retry</Button></div>}
     {(busy || seeding) && <p role="status" className="mb-4 text-xs text-ink-3">{seeding ? "Finding the starting player pool…" : "Filling from the warehouse…"}</p>}
     {board.rows.length && board.columns.length ? <BoardsTable board={board} metrics={metrics} loading={busy} sort={sort} onSort={metric => { const best = sort?.id === metric.id ? !sort.best : true; setSort({ id: metric.id, best }); commit(sortByColumn(board, metric, best)); }} onRemoveRow={id => commit(removeRow(board, id))} onRemoveColumn={id => commit(removeColumn(board, id))} onMoveRow={(from, to) => { setSort(null); commit(reorderRows(board, from, to)); }} onMoveColumn={(from, to) => commit(reorderColumns(board, from, to))} /> : <Panel title={seeding ? "Building your starting pool" : !board.rows.length ? "Make room for a better decision." : "Choose what to compare."} description={!board.rows.length ? "Add a player, then choose your metrics. Dime fills the grid from the warehouse." : "Add a metric to see warehouse-backed values."}>{!seeding && !board.rows.length && template?.seed && <Button onClick={() => void populate(board, template)}>Populate template</Button>}</Panel>}
