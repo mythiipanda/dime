@@ -265,7 +265,7 @@ export function createAnalyst(options: AnalystOptions) {
         async *stream(input: unknown, signal?: AbortSignal, run = newRunId(), streamOptions: { runTimeoutMs?: number } = {}): AsyncGenerator<ProductEvent> {
             if (!Value.Check(analystRequestSchema, input) || (input.thread && !input.client))
                 throw new Error("Invalid analyst request");
-            if (input.context && JSON.stringify(input.context.entities).length > 4000)
+            if (input.context && JSON.stringify(input.context.entities).length > 8192)
                 throw new Error("Invalid analyst request");
             const turnText = withViewContext(input as { q: string; context?: ViewContext | null });
             const model = resolveAnalystModel(options.resolveModel ?? policy.resolve, input.model ?? undefined);

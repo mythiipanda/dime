@@ -23,6 +23,32 @@ export function serializeViewContext(context: ViewContext, question: string): st
 export function withViewContext(input: { q: string; context?: ViewContext | null }): string {
     if (!input.context)
         return input.q;
-    const serialized = serializeViewContext(input.context, input.q);
-    return serialized.length <= 8000 ? serialized : input.q;
+    if (serializeViewContext(input.context, "").length <= CONTEXT_ENVELOPE_MAX_CHARS)
+        return serializeViewContext(input.context, input.q);
+    let entities = input.context.entities;
+    for (const key of CONTEXT_REDUCTION_KEYS) {
+        entities = stripKeyDeep(entities, key) as Record<string, unknown>;
+        const reduced: ViewContext = { ...input.context, entities };
+        if (serializeViewContext(reduced, "").length <= CONTEXT_ENVELOPE_MAX_CHARS)
+            return serializeViewContext(reduced, input.q);
+    }
+    return `${input.q}\n\n(the workbench context was too large to attach to this question)`;
+}
+
+export const CONTEXT_ENVELOPE_MAX_CHARS = 8192;
+const CONTEXT_REDUCTION_KEYS = ["picks", "issues", "cap_hold_details", "payroll_after"];
+
+function stripKeyDeep(value: unknown, key: string): unknown {
+    if (Array.isArray(value))
+        return value.map((item) => stripKeyDeep(item, key));
+    if (value && typeof value === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            if (k === key)
+                continue;
+            out[k] = stripKeyDeep(v, key);
+        }
+        return out;
+    }
+    return value;
 }

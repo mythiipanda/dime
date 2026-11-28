@@ -158,7 +158,9 @@ test("view context serializes into the model-visible turn and the persisted huma
     const bare=[];
     await drainEvents(analyst.stream({q:"plain question",thread:"t-ctx",client:"owner-a",context:null}));
     assert.equal(seenQ.at(-1),"plain question");
-    await drainEvents(analyst.stream({q:"oversized",thread:"t-ctx",client:"owner-a",context:{kind:"matchup",summary:"s",entities:{pad:"x".repeat(5000)}}})).then(()=>assert.fail("oversized context must reject")).catch(err=>assert.equal(err.message,"Invalid analyst request"));
+    await drainEvents(analyst.stream({q:"large but realistic",thread:"t-ctx",client:"owner-a",context:{kind:"matchup",summary:"s",entities:{pad:"x".repeat(5000)}}}));
+    assert(seenQ.at(-1).includes("<dime-context"),"large construction within budget degrades gracefully, never rejects");
+    await drainEvents(analyst.stream({q:"beyond budget",thread:"t-ctx",client:"owner-a",context:{kind:"matchup",summary:"s",entities:{pad:"x".repeat(9000)}}})).then(()=>assert.fail("beyond-budget context must reject")).catch(err=>assert.equal(err.message,"Invalid analyst request"));
   } finally {await rm(dir,{recursive:true,force:true});}
 });
 
