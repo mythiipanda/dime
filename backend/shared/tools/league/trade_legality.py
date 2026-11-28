@@ -1015,11 +1015,16 @@ def _stepien_result(teams: list[str], moves: list[dict[str, Any]],
     issues: list[str] = []
     for team in teams:
         team_code = canonical_team_abbr(team)
-        owned = _owned_after_trade(team_code, moves, pick_held)
-        issues.extend(_stepien_issues(team_code, owned, season_start))
+        owned_after = _owned_after_trade(team_code, moves, pick_held)
+        owned_before = set(pick_held.get(team_code, set()))
+        if owned_after == owned_before:
+            continue
+        issues.extend(_stepien_issues(team_code, owned_after, season_start))
     return issues, {"rule": "Stepien consecutive firsts + 7-year limit",
                     "checked": True,
-                    "note": "verified against silver_future_picks"}
+                    "note": "verified against silver_future_picks; "
+                            "evaluated only for teams whose first-round "
+                            "inventory the trade changes"}
 
 
 def _build_checks(team_rows: dict[str, Any],
