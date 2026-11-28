@@ -183,6 +183,13 @@ test("empty evidence tables retain their title and recovery", () => {
   dom.window.close();
 });
 
+test("table cells wrap at word boundaries rather than breaking names mid-word", () => {
+  const dom = new JSDOM(renderToStaticMarkup(<ArtifactTable title="Wrap fixture" columns={[{ key: "player", label: "Player" }]} rows={[["Jonas Valančiūnas"]]} />));
+  const cell = dom.window.document.querySelector("tbody td")! as HTMLElement;
+  assert.equal(cell.style.overflowWrap, "break-word");
+  dom.window.close();
+});
+
 test("visually hidden artifact announcements stay anchored to their local surface", () => {
   const dom = new JSDOM(renderToStaticMarkup(<ArtifactShell title="Fixture"><ArtifactTable title="Fixture records" columns={[{ key: "player", label: "Player" }]} rows={[["Player"]]} /></ArtifactShell>));
   const status = dom.window.document.querySelector('[role="status"]')!;

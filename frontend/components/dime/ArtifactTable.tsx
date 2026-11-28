@@ -109,7 +109,7 @@ export default function ArtifactTable<T extends (string | number | null)[]>({
                 className={`${i === 0 ? "pl-4" : "pl-3"} ${i === columns.length - 1 ? "pr-4" : "pr-3"} ${
                   c.numeric ? "text-right tabular-nums" : ""
                 }`}
-                style={{ overflowWrap: "anywhere", minWidth: 64 }}
+                style={{ overflowWrap: "break-word", minWidth: 64 }}
               >
                 {cell(row, i)}
               </td>
