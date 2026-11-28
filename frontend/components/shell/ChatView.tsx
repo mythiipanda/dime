@@ -6,8 +6,7 @@ import remarkGfm from "remark-gfm";
 import { ArrowRight, Basketball, Copy, Database, User } from "iconoir-react";
 import { PromptBar } from "../ds/PromptBar";
 import { CitationChip } from "../ds/CitationChip";
-import { ThinkingState } from "../ds/ThinkingState";
-import { ToolChips } from "../ds/ToolChips";
+import { EvidenceTrace } from "../ds/EvidenceTrace";
 import { StreamingText } from "../ds/StreamingText";
 import { AnswerVerification, OmittedNote, StoppedNote } from "../site/harness/AnswerView";
 import { StreamArtifacts } from "../site/harness/ArtifactsView";
@@ -48,6 +47,7 @@ export function PiAnswer({ text, carry, prefix }: { text: string; carry: Verific
 export function AssistantTurn({ message, prefix, thread, onFollowUp, onRetry }: { message: Extract<ChatMsg, { role: "assistant" }>; prefix: string; thread?: string; onFollowUp: (text: string) => void; onRetry?: () => void }) {
   return <article className="assistant-turn">
     <div className="mb-3 flex items-center gap-2 text-[11px] text-ink-3"><Basketball width={14} height={14} /><span>Dime</span></div>
+    <EvidenceTrace busy={false} thinking={message.thinking ?? []} tools={message.tools ?? []} />
     <PiAnswer text={message.text} carry={message.carry} prefix={prefix} />
     {message.carry?.submission?.omitted?.length ? <OmittedNote omitted={message.carry.submission.omitted} /> : null}
     {message.stopped ? <StoppedNote /> : null}
@@ -119,8 +119,7 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
       <div className="conversation" ref={chat.scrollRef} aria-label="Conversation">
         {chat.messages.map((message, index) => message.role === "user" ? <UserTurn key={index} text={message.text} /> : <AssistantTurn key={index} message={message} prefix={`${thread}-${index}-`} thread={thread} onFollowUp={chat.submit} onRetry={() => chat.retry(index)} />)}
         {chat.live && <article className="assistant-turn" aria-label="Dime response">
-          <ThinkingState busy steps={chat.live.thinking.map((step, index, steps) => ({ label: step.label, state: index === steps.length - 1 ? "running" : "done" }))} />
-          <ToolChips tools={chat.live.tools.map(tool => ({ id: tool.key, label: tool.label, status: tool.status === "fail" ? "error" : tool.status === "running" ? "running" : "done", detail: tool.error ?? tool.name }))} />
+          <EvidenceTrace busy thinking={chat.live.thinking} tools={chat.live.tools} />
           <StreamingText streaming><PiAnswer text={chat.live.text} carry={chat.live.carry} prefix={`${thread}-live-`} /></StreamingText>
           <StreamArtifacts artifacts={chat.live.artifacts} shareContext={chat.live.carry?.runId ? { run_id: chat.live.carry.runId, thread } : undefined} />
         </article>}
