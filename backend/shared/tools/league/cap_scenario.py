@@ -17,6 +17,7 @@ from .cba_cap import (
     CAP,
     SalaryColumnError,
     _allowed_incoming,
+    _apron_state,
     _hard_cap_consequences,
     _locate_player_team,
     _match_trade_players,
@@ -33,6 +34,13 @@ from ..cap_rules import (
     cba_restrictions as _scenario_restrictions,
     roster_issues as _roster_issues,
     scenario_trace,
+)
+from ..signing_rules import (
+    SIGNING_PROXY_DISCLOSURE,
+    SIGNING_VALIDATION_VERSION,
+    consume_signing_exception,
+    initial_exception_state,
+    validate_signing,
 )
 from .._core import coerce_team_id, team_error_message
 from .trade_value import _trade_guard_vintage_error, _trade_unknown_message
@@ -69,8 +77,87 @@ def _parse_signings(text: str) -> tuple[list[tuple[str, int]], list[str]]:
     return signings, bad
 
 
+def _legacy_move_delta(move: dict[str, Any]) -> int:
+    amount = int(move.get("amount") or 0)
+    return -amount if move.get("kind") in ("trade_out", "waive") else amount
+
+
+def _merge_cap_labels(*values: str) -> str:
+    merged: list[str] = []
+    for value in values:
+        for part in str(value or "").split("+"):
+            if part and part not in merged:
+                merged.append(part)
+    return "+".join(merged)
+
+
+def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
+                              pay_before: int,
+                              lines: dict[str, Any] | None = None,
+                              team_salary_before: int | None = None,
+                              hold_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    state = initial_exception_state(None)
+    active_hard_caps: list[str] = []
+    validations: list[dict[str, Any]] = []
+    blocking: list[str] = []
+    advisory: list[str] = []
+    triggers: list[str] = []
+    running = int(pay_before)
+    running_team_salary = int(pay_before if team_salary_before is None else team_salary_before)
+    lines = dict(lines or CAP)
+    hold_index = {normalize_name(row.get("player") or row.get("PLAYER_NAME")): row
+                  for row in list(hold_rows or [])
+                  if row.get("player") or row.get("PLAYER_NAME")}
+    extinguished_holds: set[str] = set()
+    for move_index, move in enumerate(moves):
+        if move.get("kind") != "signing":
+            delta = _legacy_move_delta(move)
+            running += delta
+            running_team_salary += delta
+            continue
+        hold = hold_index.get(normalize_name(move.get("player")))
+        validation_team_salary = running_team_salary
+        if hold is not None and normalize_name(hold.get("player")) not in extinguished_holds:
+            validation_team_salary -= int(hold.get("cap_hold") or 0)
+        validation = validate_signing(
+            {"kind": "signing", "player": move.get("player"),
+             "amount": move.get("amount"), "mechanism": "auto"},
+            team=team, payroll_before=running, lines=lines,
+            exception_state=state, active_hard_caps=active_hard_caps,
+            team_salary_before=validation_team_salary)
+        validation["move_index"] = move_index
+        move["validation"] = validation
+        validations.append(validation)
+        player = str(validation.get("player") or "signing")
+        blocking.extend(f"{player}: {issue}" for issue in validation["blocking_issues"])
+        advisory.extend(f"{player}: {issue}" for issue in validation["advisory_issues"])
+        if validation["hard_cap_trigger"]:
+            triggers.append(validation["hard_cap_trigger"])
+        if validation["legal"]:
+            state = consume_signing_exception(state, validation)
+            if (validation["hard_cap_trigger"]
+                    and validation["hard_cap_trigger"] not in active_hard_caps):
+                active_hard_caps.append(validation["hard_cap_trigger"])
+        amount = int(move.get("amount") or 0)
+        running += amount
+        running_team_salary += amount
+        hold = hold_index.get(normalize_name(move.get("player")))
+        if hold is not None:
+            key = normalize_name(hold.get("player"))
+            if key not in extinguished_holds:
+                extinguished_holds.add(key)
+                running_team_salary -= int(hold.get("cap_hold") or 0)
+    if validations:
+        advisory.append(
+            "legacy comma-string signings are grouped compatibility inputs with mechanism auto and one-year terms; caller chronological ordering cannot be represented")
+    return {"validations": validations, "state": state, "blocking": blocking,
+            "advisory": advisory, "hard_cap": _merge_cap_labels(*triggers)}
+
+
 @tool(description='Cap-scenario arithmetic for one team. "signings" takes '
-    'comma-separated amounts or name=amount pairs like "Player=12M, 3000000". '
+    'comma-separated amounts or name=amount pairs like "Player=12M, 3000000"; '
+    'this compatibility grammar is validated as mechanism auto with a one-year '
+    'term and cannot represent chronological ordering or declared exception state. '
     '"in_players" adds real contracts by name (league-wide lookup). '
     '"trade_out_players" removes roster salary only when those players are '
     'actually traded away. "waive_players" waives roster players; guaranteed '
@@ -204,7 +291,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
                                      waiver_tails.get(name), waiver_timing))
         for name, amount in sign_rows:
             moves.append({"kind": "signing", "detail": f"sign {name}",
-                          "amount": amount})
+                          "amount": amount, "player": name})
         for side in in_sides:
             moves.append({"kind": "trade_in",
                           "detail": f"in {side['player']} (from {side['from']})",
@@ -228,6 +315,9 @@ def get_cap_scenario(team: str = "", signings: str = "",
         roster_charges_before = 0
     team_salary_before = int(pay_before) + cap_holds_before + roster_charges_before
     cap_room_before = lines["cap"] - team_salary_before
+    signing_validation = _validate_legacy_signings(
+        team.upper(), moves, pay_before, lines=lines,
+        team_salary_before=team_salary_before, hold_rows=hold_rows)
     room_before = max(0, cap_room_before)
     trace = scenario_trace(pay_before, moves,
                            f"{team.upper()} committed payroll")
@@ -277,9 +367,10 @@ def get_cap_scenario(team: str = "", signings: str = "",
                 issues.append(
                     f"{team.upper()} takes back too much "
                     f"(${in_total:,} vs {allow:,} allowed under {rule})")
+    hard_cap = _merge_cap_labels(hard_cap, signing_validation["hard_cap"])
+    issues.extend(signing_validation["blocking"])
     roster_before = len(roster)
-    roster_after = (roster_before - len(trade_names) - len(waive_names)
-                    + len(in_names) + len(sign_rows))
+    roster_after = roster_before + roster_delta
     issues.extend(_roster_issues(roster_after))
     rows.append({"step": step, "kind": "post_move",
                  "detail": "post-move payroll", "delta": 0,
@@ -297,6 +388,8 @@ def get_cap_scenario(team: str = "", signings: str = "",
             "included_amount_after": row.get("included_amount", 0)})
     res = {
         "tool": "get_cap_scenario", "ok": True,
+        "salary_basis": _payroll_proxy_meta()["salary_basis"],
+        "ats_exact": False,
         "rows": rows,
         "summary": {
             "team": team.upper(), "season": season,
@@ -326,8 +419,14 @@ def get_cap_scenario(team: str = "", signings: str = "",
         "restrictions": _scenario_restrictions({**state_after, "cap_room": cap_room_after}, season),
         "cap_hold_details": cap_hold_details,
         "issues": issues,
+        "signing_validations": signing_validation["validations"],
+        "signing_exception_state": signing_validation["state"],
+        "blocking_issues": signing_validation["blocking"],
+        "advisory_issues": signing_validation["advisory"],
         "meta": {"source": source, "rules": "v2-2023cba",
                  "salary_date": salary_date, "season": season,
+                 "signing_validation_version": SIGNING_VALIDATION_VERSION,
+                 "signing_proxy_disclosure": SIGNING_PROXY_DISCLOSURE,
                  "cap_lines": lines,
                  "cap_lines_projected": lines_projected,
                  "cap_hold_derivation": hold_payload.get("meta") or {},

@@ -93,6 +93,25 @@ def test_option_decision_rejects_missing_per_year_option_data():
                for e in out["errors"])
 
 
+def test_projected_cap_room_rows_disclose_projected_lines():
+    import duckdb
+    from shared.tools.league.cap_sheet import cap_lines_for_season
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "CREATE TABLE silver_cap_room (CAP_SEASON VARCHAR, PROJECTED_CAP BIGINT, "
+            "PROJECTED_TAX BIGINT, PROJECTED_APRON1 BIGINT, PROJECTED_APRON2 BIGINT)")
+        con.execute(
+            "INSERT INTO silver_cap_room VALUES "
+            "('2027-28', 176000000, 214000000, 224000000, 237000000)")
+        lines, projected = cap_lines_for_season(con, "2027-28")
+    finally:
+        con.close()
+    assert lines == {"cap": 176_000_000, "tax": 214_000_000,
+                     "apron1": 224_000_000, "apron2": 237_000_000}
+    assert projected is True
+
+
 def test_sheet_shape_boston(con):
     from shared.tools.league.cap_sheet import cap_sheet_rows
     out = cap_sheet_rows(con, "BOS", "2026-27")

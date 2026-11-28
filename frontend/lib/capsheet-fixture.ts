@@ -44,6 +44,15 @@ export type CapSheetResponse = {
   error?: string;
 };
 
+export type SigningExceptionState = {
+  ntmle_used?: number;
+  tmle_used?: number;
+  bae_used?: number;
+  room_used?: number;
+  bae_used_prior_cap_year?: boolean;
+  operating_mode?: string;
+};
+
 export type ScenarioMove = {
   kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision" | "extend" | "renounce";
   label?: string;
@@ -52,9 +61,19 @@ export type ScenarioMove = {
   season?: string;
   exercise?: boolean;
   stretch?: boolean;
+  years?: number;
+  mechanism?: string;
+  unlikely_bonus?: number;
+  years_of_service?: number;
+  prior_salary?: number;
+  signing_date?: string;
+  prior_team?: string;
+  free_agent_status?: string;
+  replaces_cap_hold?: boolean;
+  salary_schedule?: number[];
+  exception_state?: SigningExceptionState;
   from?: string;
   exception?: "cap_room" | "mle" | "bae" | "minimum" | "bird";
-  years?: number;
   first_year_amount?: number;
   group?: string;
 };
@@ -83,10 +102,22 @@ export type ScenarioResponse = {
   state: { over_tax: boolean; over_apron1: boolean; over_apron2: boolean; room_under_apron2?: number };
   restrictions: { threshold: string; status: string; rule: string }[];
   roster_issues: string[];
+  lines_projected?: boolean;
+  hard_cap?: string;
+  active_hard_caps?: string[];
+  hard_cap_triggers?: { transaction: string; move_index: number; apron: string; status: "active" | "prohibited" }[];
+  would_be_hard_cap_triggers?: { transaction: string; move_index: number; apron: string; status: "active" | "prohibited" }[];
+  signing_exception_state?: SigningExceptionState;
+  includes_illegal_moves?: boolean;
+  illegal_move_indices?: number[];
+  includes_unvalidated_moves?: boolean;
+  unvalidated_move_indices?: number[];
   errors: (string | { move: string; error: string })[];
   meta?: {
     waiver_basis?: string;
     waiver_timing?: { window: "pre_sep1" | "post_sep1"; date: string | null; defaulted: boolean };
+    illegal_move_state_disclosure?: string;
+    sign_and_trade_scope?: string;
   };
 };
 

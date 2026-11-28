@@ -36,6 +36,10 @@ _TRIGGER_LABELS = {
     "the sign-and-trade": "a sign-and-trade acquisition",
     "the prior-year traded player exception": "the prior-year traded player exception",
     "expanded salary matching": "the Expanded Traded Player Exception",
+    "the non-taxpayer mid-level exception": "the non-taxpayer mid-level exception",
+    "the bi-annual exception": "the bi-annual exception",
+    "the taxpayer mid-level exception": "the taxpayer mid-level exception",
+    "the high-salary waived-player signing": "the high-salary waived-player signing",
 }
 _NO_AVAILABLE_MATCH_RULE = ("no available salary-matching structure "
                             "(no outgoing player salary)")
@@ -184,6 +188,10 @@ def hard_cap_consequences(team: str, payroll_after: int, *,
                           prior_tpe: bool = False, snt_tpe: bool = False,
                           is_snt_receiver: bool = False,
                           expanded_matching: bool = False,
+                          used_ntmle: bool = False,
+                          used_bae: bool = False,
+                          used_tmle: bool = False,
+                          signed_high_salary_waived_player: bool = False,
                           lines: dict | None = None) -> dict[str, Any]:
     lines = lines or CAP
     triggers: list[tuple[str, str]] = []
@@ -199,6 +207,14 @@ def hard_cap_consequences(team: str, payroll_after: int, *,
         triggers.append(("first apron", "the sign-and-trade"))
     if expanded_matching:
         triggers.append(("first apron", "expanded salary matching"))
+    if used_ntmle:
+        triggers.append(("first apron", "the non-taxpayer mid-level exception"))
+    if used_bae:
+        triggers.append(("first apron", "the bi-annual exception"))
+    if used_tmle:
+        triggers.append(("second apron", "the taxpayer mid-level exception"))
+    if signed_high_salary_waived_player:
+        triggers.append(("first apron", "the high-salary waived-player signing"))
     aprons: list[str] = []
     causes: dict[str, list[str]] = {}
     for apron, cause in triggers:
@@ -211,7 +227,8 @@ def hard_cap_consequences(team: str, payroll_after: int, *,
     issues: list[str] = []
     if "second apron" in violations:
         second_order = ("aggregation", "sending cash",
-                        "a sign-and-trade generated exception")
+                        "a sign-and-trade generated exception",
+                        "the taxpayer mid-level exception")
         second_causes = causes.get("second apron", [])
         second_cause = next((cause for cause in second_order
                              if cause in second_causes), "this deal")
@@ -223,7 +240,10 @@ def hard_cap_consequences(team: str, payroll_after: int, *,
     if "first apron" in violations:
         first_order = ("the sign-and-trade",
                        "the prior-year traded player exception",
-                       "expanded salary matching")
+                       "expanded salary matching",
+                       "the non-taxpayer mid-level exception",
+                       "the bi-annual exception",
+                       "the high-salary waived-player signing")
         first_causes = causes.get("first apron", [])
         first_cause = next((cause for cause in first_order
                             if cause in first_causes), "this deal")
@@ -234,6 +254,20 @@ def hard_cap_consequences(team: str, payroll_after: int, *,
             f"(${lines['apron1']:,}); the transaction is prohibited")
     return {"hard_cap": "+".join(aprons), "aprons": aprons,
             "causes": causes, "violations": violations, "issues": issues}
+
+
+def active_hard_cap_failure(payroll_after: int, active_hard_caps: list[str],
+                            lines: dict | None = None,
+                            transaction: str = "move") -> str:
+    lines = lines or CAP
+    active = set(active_hard_caps or [])
+    if "first apron" in active and payroll_after > lines["apron1"]:
+        return (f"post-{transaction} payroll proxy (${payroll_after:,}) exceeds "
+                f"the active first apron hard cap (${lines['apron1']:,})")
+    if "second apron" in active and payroll_after > lines["apron2"]:
+        return (f"post-{transaction} payroll proxy (${payroll_after:,}) exceeds "
+                f"the active second apron hard cap (${lines['apron2']:,})")
+    return ""
 
 
 def matching_band(outgoing: int, over_apron1: bool,
@@ -319,7 +353,8 @@ def scenario_trace(pay_before: int, moves: list[dict[str, Any]],
                "delta": delta, "payroll": pay}
         for key in ("player", "dead_cap", "guaranteed", "stretch_years",
                     "stretched_amount", "stretched_dead_cap", "waiver_window",
-                    "waiver_date", "waiver_date_defaulted", "estimate_basis"):
+                    "waiver_date", "waiver_date_defaulted", "estimate_basis",
+                    "validation"):
             if key in move:
                 row[key] = move[key]
         rows.append(row)

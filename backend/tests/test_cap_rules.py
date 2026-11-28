@@ -158,6 +158,30 @@ def test_hard_cap_consequences_cover_both_triggers_post_trade():
     assert "second apron" in over_second["issues"][0]
 
 
+def test_hard_cap_consequences_cover_signing_triggers():
+    ntmle = hard_cap_consequences(
+        "BOS", CAP["apron1"], used_ntmle=True)
+    assert ntmle["hard_cap"] == "first apron"
+    assert ntmle["causes"]["first apron"] == ["the non-taxpayer mid-level exception"]
+    assert ntmle["violations"] == []
+
+    bae = hard_cap_consequences(
+        "BOS", CAP["apron1"] + 1, used_bae=True)
+    assert bae["violations"] == ["first apron"]
+    assert "bi-annual exception" in bae["issues"][0]
+
+    tmle = hard_cap_consequences(
+        "BOS", CAP["apron2"], used_tmle=True)
+    assert tmle["hard_cap"] == "second apron"
+    assert tmle["causes"]["second apron"] == ["the taxpayer mid-level exception"]
+    assert tmle["violations"] == []
+
+    waived = hard_cap_consequences(
+        "BOS", CAP["apron1"], signed_high_salary_waived_player=True)
+    assert waived["hard_cap"] == "first apron"
+    assert waived["causes"]["first apron"] == ["the high-salary waived-player signing"]
+
+
 def test_matching_band_shape():
     band = matching_band(20_000_000, False)
     assert band["allowed_incoming"] == 20_000_000 + 9_096_000

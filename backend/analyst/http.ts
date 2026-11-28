@@ -7,7 +7,7 @@ import { Value } from "typebox/value";
 import { validationDetails, validationDetail } from "./http-validation.js";
 import { createAnalyst, analystRequestSchema, backendRoot, newRunId, encodeEvent, runTimeoutMs } from "./analyst.js";
 import { ProjectStore, WorkspaceStore } from "./catalog-stores.js";
-import { ObjectStore, validateObjectPayload, type ObjectKind } from "./object-store.js";
+import { ObjectStore, validateObjectPayload, capScenarioMoveSchema, signingExceptionStateSchema, type ObjectKind } from "./object-store.js";
 import { providerPolicy } from "./providers.js";
 import { objectValue, sourceResult } from "./python-tools.js";
 import type { DirectData } from "./direct-data.js";
@@ -21,7 +21,9 @@ const workspaceUpdate = Type.Object({ name: Type.Optional(Type.Union([Type.Strin
 const branchCreate = Type.Object({ thread: text(80), client: text(80), parent_sequence: Type.Integer({ minimum: 1 }), branch_id: Type.Optional(Type.Union([text(64), Type.Null()])) }, { additionalProperties: false });
 const tradeLegsSchema = Type.Object({ legs: Type.Array(Type.Object({ from: Type.String({ minLength: 2, maxLength: 4 }), to: Type.String({ minLength: 2, maxLength: 4 }), players: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 })) }, { additionalProperties: true }), { minItems: 1, maxItems: 8 }), season: Type.Optional(Type.String()), tpes: Type.Optional(Type.Array(Type.Object({ team: Type.String({ minLength: 2, maxLength: 4 }), amount: Type.Integer({ minimum: 1 }), kind: Type.Optional(Type.String({ maxLength: 24 })), origin_year: Type.Optional(Type.Integer()), exactness: Type.Optional(Type.String({ maxLength: 32 })) }, { additionalProperties: false }), { maxItems: 30 })) }, { additionalProperties: false });
 const tradeSchema = Type.Object({ team_a: Type.Optional(Type.String()), team_b: Type.Optional(Type.String()), players_a: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), players_b: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), season: Type.Optional(Type.String()) }, { additionalProperties: false });
-const capScenarioSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), horizon: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })), moves: Type.Array(Type.Object({ kind: Type.String(), label: Type.Optional(Type.String()), amount: Type.Optional(Type.Number()), player: Type.Optional(Type.String()), exercise: Type.Optional(Type.Boolean()), stretch: Type.Optional(Type.Boolean()), season: Type.Optional(Type.String()), exception: Type.Optional(Type.String()), years: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })), first_year_amount: Type.Optional(Type.Number()), group: Type.Optional(Type.String({ maxLength: 48 })) }, { additionalProperties: false }), { minItems: 0, maxItems: 40 }), tpes: Type.Optional(Type.Array(Type.Object({ team: Type.String({ minLength: 2, maxLength: 4 }), amount: Type.Integer({ minimum: 1 }), kind: Type.Optional(Type.String({ maxLength: 24 })), origin_year: Type.Optional(Type.Integer()), exactness: Type.Optional(Type.String({ maxLength: 32 })) }, { additionalProperties: false }), { maxItems: 30 })) }, { additionalProperties: false });
+const capScenarioSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), exception_state: Type.Optional(signingExceptionStateSchema), moves: Type.Array(capScenarioMoveSchema, { minItems: 1, maxItems: 40 }) }, { additionalProperties: false });
+const capProjectionMoveSchema = Type.Object({ kind: Type.String(), label: Type.Optional(Type.String()), amount: Type.Optional(Type.Number()), player: Type.Optional(Type.String()), exercise: Type.Optional(Type.Boolean()), stretch: Type.Optional(Type.Boolean()), season: Type.Optional(Type.String()), exception: Type.Optional(Type.String()), years: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })), first_year_amount: Type.Optional(Type.Number()), group: Type.Optional(Type.String({ maxLength: 48 })) }, { additionalProperties: false });
+const capProjectionSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), horizon: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })), moves: Type.Array(capProjectionMoveSchema, { minItems: 0, maxItems: 40 }), tpes: Type.Optional(Type.Array(Type.Object({ team: Type.String({ minLength: 2, maxLength: 4 }), amount: Type.Integer({ minimum: 1 }), kind: Type.Optional(Type.String({ maxLength: 24 })), origin_year: Type.Optional(Type.Integer()), exactness: Type.Optional(Type.String({ maxLength: 32 })) }, { additionalProperties: false }), { maxItems: 30 })) }, { additionalProperties: false });
 const partnersSchema = Type.Object({ player: Type.Optional(Type.String()), season: Type.Optional(Type.String()), teams: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), max_packages: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }, { additionalProperties: false });
 const watchSchema = Type.Object({ entity_type: Type.String(), entity_id: Type.String(), season: Type.Optional(Type.String()) });
 const boardSeason = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}$" }));
@@ -543,13 +545,13 @@ export function createProductServer(options: {
         json(res, result, result.ok === false ? 422 : 200);
     });
     route("POST", /^\/api\/cap\/projection$/, async ({ req, res }) => {
-        const input = parseBody(capScenarioSchema, await body(req));
+        const input = parseBody(capProjectionSchema, await body(req));
         const result = await data.call("product_cap_projection", { payload: { team: input.team ?? "", season: input.season ?? "2026-27", moves: input.moves ?? [], horizon: input.horizon, tpes: input.tpes } });
         json(res, result, result.ok === false ? 422 : 200);
     });
     route("POST", /^\/api\/cap\/scenario$/, async ({ req, res }) => {
         const input = parseBody(capScenarioSchema, await body(req));
-        const result = await data.call("product_cap_scenario_eval", { payload: { team: input.team ?? "", season: input.season ?? "2026-27", waiver_date: input.waiver_date ?? "", moves: input.moves } });
+        const result = await data.call("product_cap_scenario_eval", { payload: { team: input.team ?? "", season: input.season ?? "2026-27", waiver_date: input.waiver_date ?? "", exception_state: input.exception_state, moves: input.moves } });
         json(res, result, result.ok === false ? 422 : 200);
     });
     route("GET", /^\/api\/trade\/assets$/, async ({ res, url }) => {

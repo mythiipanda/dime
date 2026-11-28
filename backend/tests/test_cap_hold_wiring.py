@@ -242,3 +242,141 @@ def test_option_player_sign_or_renounce_requires_prior_decline():
     assert sequence["pay_after"] == 52_000_000
     assert [event["kind"] for event in sequence["cap_hold_events"]][:2] \
         == ["option_declined", "signed"]
+
+
+def test_signing_own_free_agent_replaces_hold_in_validation_room():
+    con = wiring_con()
+    try:
+        out = evaluate_cap_scenario(con, {
+            "team": "BOS", "season": "2027-28",
+            "moves": [{"kind": "signing", "player": "Veteran FA",
+                       "label": "Veteran FA", "amount": 80_000_000,
+                       "years": 1, "mechanism": "cap_room"}]})
+    finally:
+        con.close()
+    validation = out["signing_validations"][0]
+    assert validation["outcome"] == "legal_approximation"
+    assert validation["mechanism_selected"] == "cap_room"
+    assert validation["blocking_issues"] == []
+    assert out["team_salary_before"] == 108_987_078
+    assert out["team_salary_after"] == 158_987_078
+    assert out["cap_holds_after"] == 30_000_000
+
+
+def wiring_scenario(moves, mutate=None):
+    con = wiring_con()
+    try:
+        if mutate is not None:
+            mutate(con)
+        return evaluate_cap_scenario(con, {
+            "team": "BOS", "season": "2027-28", "moves": moves})
+    finally:
+        con.close()
+
+
+def signing_move(player, amount):
+    return {"kind": "signing", "player": player, "label": player,
+            "amount": amount, "years": 1, "mechanism": "cap_room"}
+
+
+def assert_boundary(out, amount, legal, cap_room_after, illegal_indices):
+    validation = out["signing_validations"][-1]
+    assert validation["amount"] == amount
+    assert validation["legal"] is legal
+    assert validation["outcome"] == ("legal_approximation" if legal else "illegal")
+    assert out["cap_room_after"] == cap_room_after
+    assert out["includes_illegal_moves"] is bool(illegal_indices)
+    assert out["illegal_move_indices"] == illegal_indices
+    assert "chronologically applies" in out["meta"]["illegal_move_state_disclosure"]
+
+
+def test_external_signing_displaces_one_roster_charge_at_exact_boundary():
+    for amount, legal, room, indices in [
+            (73_963_561, True, 0, []),
+            (73_963_562, False, -1, [0])]:
+        out = wiring_scenario([signing_move("External Wing", amount)])
+        assert out["errors"] == []
+        assert out["cap_room_before"] == 72_470_022
+        assert out["roster_charges_before"] == 2_987_078
+        assert out["roster_charges_after"] == 1_493_539
+        assert_boundary(out, amount, legal, room, indices)
+
+
+def test_renounce_then_resign_does_not_subtract_extinguished_hold_twice():
+    for amount, legal, room, indices in [
+            (102_470_022, True, 0, []),
+            (102_470_023, False, -1, [1])]:
+        out = wiring_scenario([
+            {"kind": "renounce", "player": "Veteran FA"},
+            signing_move("Veteran FA", amount)])
+        assert out["errors"] == []
+        assert [event["kind"] for event in out["cap_hold_events"]] \
+            == ["renounced", "signed"]
+        assert out["roster_charges_after"] == 2_987_078
+        assert_boundary(out, amount, legal, room, indices)
+
+
+def test_double_signing_does_not_subtract_extinguished_hold_twice():
+    for amount, legal, room, indices in [
+            (91_963_561, True, 0, []),
+            (91_963_562, False, -1, [1])]:
+        out = wiring_scenario([
+            signing_move("Veteran FA", 12_000_000),
+            signing_move("Veteran FA", amount)])
+        assert out["errors"] == []
+        assert out["signing_validations"][0]["legal"] is True
+        assert out["cap_holds_after"] == 30_000_000
+        assert out["roster_charges_after"] == 1_493_539
+        assert_boundary(out, amount, legal, room, indices)
+
+
+def test_active_own_free_agent_resign_does_not_displace_a_roster_charge():
+    for amount, legal, room, indices in [
+            (102_470_022, True, 0, []),
+            (102_470_023, False, -1, [0])]:
+        out = wiring_scenario([signing_move("Veteran FA", amount)])
+        assert out["errors"] == []
+        assert out["roster_charges_before"] == 2_987_078
+        assert out["roster_charges_after"] == 2_987_078
+        assert_boundary(out, amount, legal, room, indices)
+
+
+def test_no_roster_charge_means_no_signing_displacement():
+    def ten_players(con):
+        con.execute("UPDATE silver_cap_room SET PLAYERS_UNDER_CONTRACT = 10")
+    for amount, legal, room, indices in [
+            (75_457_100, True, 0, []),
+            (75_457_101, False, -1, [0])]:
+        out = wiring_scenario(
+            [signing_move("External Wing", amount)], mutate=ten_players)
+        assert out["errors"] == []
+        assert out["roster_charges_before"] == 0
+        assert out["roster_charges_after"] == 0
+        assert_boundary(out, amount, legal, room, indices)
+
+
+def test_unvalidated_signing_state_is_disclosed_separately():
+    move = signing_move("Bird Case", 10_000_000)
+    move["mechanism"] = "bird"
+    out = wiring_scenario([move])
+    assert out["signing_validations"][0]["outcome"] == "unknown"
+    assert out["includes_illegal_moves"] is False
+    assert out["illegal_move_indices"] == []
+    assert out["includes_unvalidated_moves"] is True
+    assert out["unvalidated_move_indices"] == [0]
+
+
+def test_same_scenario_sign_then_trade_out_is_explicitly_rejected():
+    out = wiring_scenario([
+        signing_move("External Wing", 10_000_000),
+        {"kind": "trade_out", "player": "External Wing"}])
+    assert out["errors"] == [{
+        "move": "1",
+        "error": "trade_out of External Wing after a same-scenario signing is "
+                 "unsupported sign-and-trade sequencing; atomic sign-and-trade, "
+                 "BYC, and coupled hard-cap treatment are outside cap scenario "
+                 "validation v1"}]
+    assert out["pay_after"] == out["pay_before"] + 10_000_000
+    assert out["includes_illegal_moves"] is False
+    assert out["illegal_move_indices"] == []
+    assert "explicitly rejected" in out["meta"]["sign_and_trade_scope"]

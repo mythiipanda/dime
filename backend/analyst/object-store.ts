@@ -8,23 +8,45 @@ import { openProductDatabase } from "./product-store.js";
 export const OBJECT_KINDS = ["cap_scenario", "trade_scenario", "thread_grant", "board", "artifact_ref"] as const;
 export type ObjectKind = (typeof OBJECT_KINDS)[number];
 
+export const signingExceptionStateSchema = Type.Object({
+    ntmle_used: Type.Optional(Type.Number()),
+    tmle_used: Type.Optional(Type.Number()),
+    bae_used: Type.Optional(Type.Number()),
+    room_used: Type.Optional(Type.Number()),
+    bae_used_prior_cap_year: Type.Optional(Type.Boolean()),
+    operating_mode: Type.Optional(Type.String())
+}, { additionalProperties: false });
+
+export const capScenarioMoveSchema = Type.Object({
+    kind: Type.String(),
+    label: Type.Optional(Type.String()),
+    amount: Type.Optional(Type.Number()),
+    player: Type.Optional(Type.String()),
+    exercise: Type.Optional(Type.Boolean()),
+    stretch: Type.Optional(Type.Boolean()),
+    season: Type.Optional(Type.String()),
+    exception: Type.Optional(Type.String({ maxLength: 24 })),
+    years: Type.Optional(Type.Number()),
+    first_year_amount: Type.Optional(Type.Number()),
+    mechanism: Type.Optional(Type.String()),
+    unlikely_bonus: Type.Optional(Type.Number()),
+    years_of_service: Type.Optional(Type.Number()),
+    prior_salary: Type.Optional(Type.Number()),
+    signing_date: Type.Optional(Type.String()),
+    prior_team: Type.Optional(Type.String()),
+    free_agent_status: Type.Optional(Type.String()),
+    replaces_cap_hold: Type.Optional(Type.Boolean()),
+    salary_schedule: Type.Optional(Type.Array(Type.Number(), { maxItems: 8 })),
+    exception_state: Type.Optional(signingExceptionStateSchema),
+    group: Type.Optional(Type.String({ maxLength: 48 }))
+}, { additionalProperties: false });
+
 export const capScenarioPayloadSchema = Type.Object({
     team: Type.String({ minLength: 1, maxLength: 12 }),
     season: Type.String({ minLength: 1, maxLength: 12 }),
     waiver_date: Type.Optional(Type.String({ maxLength: 16 })),
-    moves: Type.Array(Type.Object({
-        kind: Type.String({ minLength: 1, maxLength: 32 }),
-        label: Type.Optional(Type.String({ maxLength: 120 })),
-        amount: Type.Optional(Type.Number()),
-        player: Type.Optional(Type.String({ maxLength: 120 })),
-        exercise: Type.Optional(Type.Boolean()),
-        stretch: Type.Optional(Type.Boolean()),
-        season: Type.Optional(Type.String({ maxLength: 12 })),
-        exception: Type.Optional(Type.String({ maxLength: 24 })),
-        years: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })),
-        first_year_amount: Type.Optional(Type.Number()),
-        group: Type.Optional(Type.String({ maxLength: 48 }))
-    }, { additionalProperties: false }), { minItems: 1, maxItems: 40 }),
+    exception_state: Type.Optional(signingExceptionStateSchema),
+    moves: Type.Array(capScenarioMoveSchema, { minItems: 1, maxItems: 40 }),
     groups: Type.Optional(Type.Record(Type.String(), Type.Object({
         partner: Type.Optional(Type.String({ maxLength: 120 })),
         verdict: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),

@@ -242,7 +242,7 @@ def product_cap_projection(payload: dict) -> dict:
     finally:
         con.close()
 
-@tool(description='Evaluate a typed cap scenario (signings, trades, waives, option decisions) for one team and season.')
+@tool(description='Evaluate a typed cap scenario (mechanism-aware signings, trades, waives, option decisions) for one team and season; signing validation is a salary-ledger approximation, not exact CBA legality. Output discloses when final payroll/roster/cap-room state includes moves not validated as legal; trade_out of a player signed earlier in the same scenario is rejected because atomic sign-and-trade/BYC treatment is outside validation v1.')
 def product_cap_scenario_eval(payload: dict) -> dict:
     from shared import store
     from shared.contracts import canonical_team_abbr

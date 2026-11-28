@@ -284,6 +284,60 @@ test("objects route contract: thread_grant stamping, ownership, immutability, tr
   }
 });
 
+test("objects route contract: cap_scenario persists typed mechanism signing inputs", async () => {
+  const { server, root } = fixture();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const owner = "client-typed-cap-owner";
+  const typed = {
+    team: "BOS",
+    season: "2026-27",
+    exception_state: { ntmle_used: 10000000, operating_mode: "over_cap" },
+    moves: [
+      {
+        kind: "signing",
+        player: "Minimum Example",
+        amount: 1357763,
+        years: 2,
+        mechanism: "minimum",
+        years_of_service: 0,
+        salary_schedule: [1357763, 2294370],
+      },
+      {
+        kind: "signing",
+        player: "Exception Example",
+        amount: 4000000,
+        years: 1,
+        mechanism: "ntmle",
+        unlikely_bonus: 0,
+        prior_salary: 2500000,
+        signing_date: "2026-07-06",
+        exception_state: { ntmle_used: 10000000 },
+      },
+    ],
+  };
+  try {
+    const created = await fetch(url + "/api/objects", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-dime-owner": owner },
+      body: JSON.stringify({ kind: "cap_scenario", title: "Mechanism plan", payload: typed }),
+    });
+    assert.equal(created.status, 201);
+    const object = await created.json();
+    assert.deepEqual(object.payload, typed);
+    const patched = await fetch(url + "/api/objects/" + object.object_id, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-owner-token": object.owner_token },
+      body: JSON.stringify({ payload: { ...typed, title: "drift" } }),
+    });
+    assert.equal(patched.status, 422);
+  }
+  finally {
+    server.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("objects route contract: board kind validates intent payload", async () => {
   const { server, root } = fixture();
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
