@@ -151,10 +151,12 @@ growth assumption, then truncating to whole dollars. Those rows carry
 For a projected season it prefers the matching warehouse exception
 estimates exactly; when they are unavailable it derives an exact rational
 cap-growth estimate without nearest-thousand rounding and labels the
-result as a non-official projection. Future minimum-salary projections use
-exact rational arithmetic rounded half-up to whole dollars as a disclosed
-projection convention because the CBA text does not specify half-dollar
-tie rounding and intermediate projected-year tables are unavailable.
+result as a non-official projection. Future minimum-salary projections chain
+year over year from the published 2023-24 scale through actual caps where
+known; intermediate projected caps use the seeded 2027-28 cap and 7% annual
+growth thereafter. Each scale entry is rounded half-up to whole dollars before
+the next season's adjustment. Half-up rounding is a disclosed projection
+convention because the CBA text does not specify half-dollar tie rounding.
 
 ## Evals and tests
 

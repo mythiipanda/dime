@@ -2,7 +2,12 @@ from datetime import date as _date
 from fractions import Fraction
 from typing import Any
 
-from .cap_rules import CAP, active_hard_cap_failure, hard_cap_consequences
+from .cap_rules import (
+    CAP,
+    CAP_GROWTH_ASSUMPTION,
+    active_hard_cap_failure,
+    hard_cap_consequences,
+)
 
 SIGNING_VALIDATION_VERSION = "v1"
 SIGNING_MECHANISMS = (
@@ -47,16 +52,24 @@ MECHANISM_REFS = {
     "cap_room": ["Art. VII §2(b)(2)", "Art. IX §1"],
     "minimum": ["Art. II §6(a)", "Art. VII §6(i)"],
 }
-MINIMUM_SALARY_SCALE_2026_27 = {
-    0: 1_357_763, 1: 2_185_116, 2: 2_449_421, 3: 2_537_526,
-    4: 2_625_627, 5: 2_845_883, 6: 3_066_143, 7: 3_286_399,
-    8: 3_506_659, 9: 3_524_115, 10: 3_876_529,
+MINIMUM_SALARY_SCALE_2023_24 = {
+    0: 1_119_563, 1: 1_801_769, 2: 2_019_706, 3: 2_092_354,
+    4: 2_165_000, 5: 2_346_614, 6: 2_528_233, 7: 2_709_849,
+    8: 2_891_467, 9: 2_905_861, 10: 3_196_448,
 }
-MINIMUM_SECOND_YEAR_SCALE_2026_27 = {
-    1: 2_294_370, 2: 2_571_895, 3: 2_664_401, 4: 2_756_912,
-    5: 2_988_178, 6: 3_219_451, 7: 3_450_720, 8: 3_681_991,
-    9: 3_700_320, 10: 4_070_355,
+MINIMUM_SECOND_YEAR_SCALE_2023_24 = {
+    1: 1_891_857, 2: 2_120_693, 3: 2_196_970, 4: 2_273_252,
+    5: 2_463_946, 6: 2_654_644, 7: 2_845_342, 8: 3_036_040,
+    9: 3_051_153, 10: 3_356_271,
 }
+MINIMUM_CAP_BY_START_YEAR = {
+    2023: 136_021_000, 2024: 140_588_000,
+    2025: 154_647_000, 2026: int(CAP["cap"]),
+}
+MINIMUM_PROJECTED_CAP_2027 = 181_457_100
+MINIMUM_PROJECTED_CAP_GROWTH = 1 + Fraction(str(CAP_GROWTH_ASSUMPTION))
+INPUT_ERROR_EXCEPTION_AMOUNT_BASIS = (
+    "unknown; input validation failed before exception amount resolution")
 SIGNING_PROXY_DISCLOSURE = (
     "Approximation, not exact CBA signing legality: this result uses the "
     "warehouse salary ledger of listed player salaries only. It validates "
@@ -110,7 +123,7 @@ def _positive_fraction(value: Any) -> Fraction | None:
 
 
 def _scaled_whole_dollars(base_amount: int, cap_amount: Any,
-                          base_cap: int, rounding: str) -> int | None:
+                          base_cap: Any, rounding: str) -> int | None:
     base = _positive_fraction(base_amount)
     cap = _positive_fraction(cap_amount)
     anchor = _positive_fraction(base_cap)
@@ -309,25 +322,82 @@ def normalize_signing_input(raw: Any) -> tuple[dict[str, Any] | None, list[str]]
     return move, errors
 
 
-def _scaled_minimum(base: int, season: str,
-                    lines: dict[str, Any] | None) -> int | None:
-    if season == "2026-27" or not lines:
-        return base
-    return _scaled_whole_dollars(
-        base, lines.get("cap"), int(CAP["cap"]), "nearest_half_up")
+def _season_start_year(season: str) -> int | None:
+    try:
+        return int(str(season)[:4])
+    except ValueError:
+        return None
+
+
+def _projected_minimum_cap(start_year: int) -> int:
+    cap = MINIMUM_PROJECTED_CAP_2027
+    for _ in range(2028, start_year + 1):
+        cap = int(Fraction(cap) * MINIMUM_PROJECTED_CAP_GROWTH + Fraction(1, 2))
+    return cap
+
+
+def _minimum_cap_path(season: str, lines: dict[str, Any] | None
+                      ) -> list[Fraction] | None:
+    target_year = _season_start_year(season)
+    if target_year is None or target_year < 2023:
+        return None
+    target_cap = _positive_fraction((lines or {}).get("cap"))
+    path: list[Fraction] = []
+    for year in range(2023, target_year + 1):
+        actual = MINIMUM_CAP_BY_START_YEAR.get(year)
+        if actual is not None:
+            cap = Fraction(actual, 1)
+        elif year == target_year:
+            if target_cap is None:
+                return None
+            cap = target_cap
+        elif year >= 2027:
+            cap = Fraction(_projected_minimum_cap(year), 1)
+        else:
+            return None
+        path.append(cap)
+    return path
+
+
+def _chained_minimum_scale(base_scale: dict[int, int],
+                           cap_path: list[Fraction]) -> dict[int, int] | None:
+    scale = dict(base_scale)
+    for previous_cap, cap in zip(cap_path, cap_path[1:]):
+        chained: dict[int, int] = {}
+        for yos, amount in scale.items():
+            scaled = _scaled_whole_dollars(
+                amount, cap, previous_cap, "nearest_half_up")
+            if scaled is None:
+                return None
+            chained[yos] = scaled
+        scale = chained
+    return scale
+
+
+def _minimum_scale_for_season(base_scale: dict[int, int], season: str,
+                              lines: dict[str, Any] | None) -> dict[int, int] | None:
+    cap_path = _minimum_cap_path(season, lines)
+    if cap_path is None:
+        return None
+    return _chained_minimum_scale(base_scale, cap_path)
 
 
 def minimum_salary(years_of_service: int, season: str = "2026-27",
                    lines: dict[str, Any] | None = None) -> int | None:
-    base = MINIMUM_SALARY_SCALE_2026_27[min(10, max(0, years_of_service))]
-    return _scaled_minimum(base, season, lines)
+    scale = _minimum_scale_for_season(
+        MINIMUM_SALARY_SCALE_2023_24, season, lines)
+    if scale is None:
+        return None
+    return scale[min(10, max(0, years_of_service))]
 
 
 def second_year_minimum_salary(years_of_service: int, season: str,
                                lines: dict[str, Any]) -> int | None:
-    base = MINIMUM_SECOND_YEAR_SCALE_2026_27[
-        min(10, max(1, years_of_service + 1))]
-    return _scaled_minimum(base, season, lines)
+    scale = _minimum_scale_for_season(
+        MINIMUM_SECOND_YEAR_SCALE_2023_24, season, lines)
+    if scale is None:
+        return None
+    return scale[min(10, max(1, years_of_service + 1))]
 
 
 def _maximum_salary(move: dict[str, Any], lines: dict[str, Any]) -> int | None:
@@ -663,7 +733,7 @@ def _result(move: dict[str, Any], *, outcome: str, selected: str | None,
         advisory.append("later-year exact minimum salary amounts are not represented in signing validation v1")
         missing_inputs.append("later_year_minimum_salary_schedule")
     if season != "2026-27" and move.get("years_of_service") is not None:
-        advisory.append("future minimum salaries use exact rational cap-ratio scaling rounded half-up to whole dollars; the CBA does not specify half-dollar tie rounding and intermediate projected-year tables are unavailable")
+        advisory.append("future minimum salaries use chained year-over-year cap-ratio scaling rounded half-up to whole dollars; intermediate future caps use Dime's disclosed projection path, not league-official values")
     use_amount = move["amount"] + move["unlikely_bonus"]
     exception_use = None
     if legal and selected in EXCEPTION_RULES:
@@ -708,10 +778,12 @@ def _input_error_result(raw: Any, errors: list[str]) -> dict[str, Any]:
             "amount": 0, "years": 0, "mechanism": "unknown",
             "years_defaulted": False, "unlikely_bonus": 0,
             "unlikely_bonus_declared": False}
-    return _result(
+    result = _result(
         move, outcome="unknown", selected=None, inference="input_error",
         candidates={}, evaluation=None, blocking=errors, checks={},
         missing=[], payroll_before=0, lines=dict(CAP), input_errors=errors)
+    result["exception_amount_basis"] = INPUT_ERROR_EXCEPTION_AMOUNT_BASIS
+    return result
 
 
 def _auto_choice(candidates: dict[str, dict[str, Any]], payroll_before: int,

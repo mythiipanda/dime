@@ -29,6 +29,11 @@ def projected_2027_lines():
             "apron1": 229_916_500, "apron2": 243_854_600}
 
 
+def projected_2028_lines():
+    return {"cap": 194_159_097, "tax": 235_903_756,
+            "apron1": 246_010_655, "apron2": 260_924_422}
+
+
 def test_vector_1_max_salary_external_signing_has_no_valid_mechanism():
     out = validate(195_000_000, 41_240_250, 4, yos=0)
     assert out["outcome"] == "illegal"
@@ -501,8 +506,54 @@ def test_future_minimum_scaling_uses_exact_rational_half_up_dollars():
         move, team="TST", payroll_before=150_000_000, lines=lines,
         season="2027-28")
     assert out["validation_checks"]["minimum_salary"] == "passed"
-    assert any("half-dollar tie rounding" in issue
+    assert any("chained year-over-year" in issue
                for issue in out["advisory_issues"])
+
+
+def test_chained_2028_yos2_minimum_boundary_is_exact_to_the_dollar():
+    lines = projected_2028_lines()
+    assert minimum_salary(2, "2028-29", lines) == 2_882_968
+    move = {"player": "Chained Boundary", "amount": 2_882_968,
+            "years": 1, "mechanism": "minimum", "years_of_service": 2}
+    good = validate_signing(
+        move, team="TST", payroll_before=150_000_000, lines=lines,
+        season="2028-29")
+    assert good["outcome"] == "legal_approximation"
+    direct_scaled = validate_signing(
+        dict(move, amount=2_882_969), team="TST", payroll_before=150_000_000,
+        lines=lines, season="2028-29")
+    assert direct_scaled["outcome"] == "illegal"
+    assert "$2,882,968" in direct_scaled["blocking_issues"][0]
+
+
+@pytest.mark.parametrize(("yos", "chained", "direct_scaled"), [
+    (3, 2_986_669, 2_986_668),
+    (9, 4_147_884, 4_147_883),
+])
+def test_chained_multi_step_minimum_pins_reject_direct_scaled_dollars(
+        yos, chained, direct_scaled):
+    lines = projected_2028_lines()
+    assert minimum_salary(yos, "2028-29", lines) == chained
+    move = {"player": "Chained Multi Step", "amount": chained,
+            "years": 1, "mechanism": "minimum", "years_of_service": yos}
+    good = validate_signing(
+        move, team="TST", payroll_before=150_000_000, lines=lines,
+        season="2028-29")
+    assert good["outcome"] == "legal_approximation"
+    direct = validate_signing(
+        dict(move, amount=direct_scaled), team="TST", payroll_before=150_000_000,
+        lines=lines, season="2028-29")
+    assert direct["outcome"] == "illegal"
+
+
+def test_future_input_error_does_not_claim_current_official_amount_basis():
+    out = validate_signing(
+        {"player": "Future MLE", "amount": 16_000_000, "years": 1,
+         "mechanism": "ntmle"},
+        team="TST", payroll_before=190_000_000, season="2027-28")
+    assert "season-specific cap lines are required" in out["input_errors"][0]
+    assert out["exception_amount_basis"] == (
+        "unknown; input validation failed before exception amount resolution")
 
 
 def test_roster_failure_is_reported_before_apron_failure():
@@ -527,7 +578,7 @@ def test_roster_failure_is_reported_before_apron_failure():
     assert "first apron" in out["issues"][1]
 
 
-def test_minimum_salary_scales_match_published_2026_27_multiyear_table():
+def test_chained_minimum_salary_scales_match_published_2026_27_multiyear_table():
     first_year = {
         0: 1_357_763, 1: 2_185_116, 2: 2_449_421, 3: 2_537_526,
         4: 2_625_627, 5: 2_845_883, 6: 3_066_143, 7: 3_286_399,
