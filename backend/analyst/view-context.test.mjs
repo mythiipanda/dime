@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { serializeViewContext, withViewContext } from "../dist/view-context.js";
+import { serializeViewContext, withViewContext } from "./dist/view-context.js";
 
 function megaTrade(pickCount = 40) {
   const picks = [];
