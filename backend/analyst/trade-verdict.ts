@@ -34,6 +34,26 @@ function resolveTpeCreation(value: unknown) {
     };
 }
 
+
+function resolvePicks(value: unknown): { year: number; round: number; swap?: boolean; protection?: string }[] {
+    if (!Array.isArray(value)) return [];
+    const picks: { year: number; round: number; swap?: boolean; protection?: string }[] = [];
+    for (const entry of value) {
+        const pick = objectValue(entry);
+        const year = numOrNull(pick?.year);
+        if (!pick || year === null) continue;
+        const round = numOrNull(pick.round) ?? 1;
+        const protection = textOrNull(pick.protection);
+        picks.push({
+            year, round,
+            ...(pick.swap === true ? { swap: true } : {}),
+            ...(protection ? { protection } : {})
+        });
+        if (picks.length >= 8) break;
+    }
+    return picks;
+}
+
 type VerdictTeam = Record<string, unknown> & { team: string };
 
 function teamFromTradeCheck(side: Record<string, unknown>, other: Record<string, unknown>): VerdictTeam {
@@ -85,6 +105,10 @@ function teamFromTradeLegality(row: Record<string, unknown>): VerdictTeam {
     if (row.aggregates === true) team.aggregates = true;
     const tpe = resolveTpeCreation(row.tpe_creation);
     if (tpe) team.tpeCreation = tpe;
+    const picksOut = resolvePicks(row.picks_out);
+    if (picksOut.length) team.picksOut = picksOut;
+    const picksIn = resolvePicks(row.picks_in);
+    if (picksIn.length) team.picksIn = picksIn;
     return team;
 }
 

@@ -269,3 +269,27 @@ test("worst-case trade verdict survives the replay stream reducer", async () => 
     assert.equal(verdict.teams.length, 2);
   } finally { Object.assign(process.env, { NODE_ENV: previous }); }
 });
+
+test("trade_verdict picks parse, render and copy", async () => {
+  const { default: ArtifactTradeVerdict } = await import("./components/dime/ArtifactTradeVerdict");
+  const artifact = {
+    kind: "trade_verdict" as const, title: "t", legal: true, sourceRef: "s",
+    teams: [
+      { team: "DAL", playersOut: ["Daniel Gafford"], playersIn: ["Jalen Johnson"], picksOut: [{ year: 2028, round: 1, protection: "top-3" }, { year: 2029, round: 2, swap: true }], outgoing: 17263584, incoming: 30000000 },
+      { team: "ATL", playersOut: ["Jalen Johnson"], playersIn: ["Daniel Gafford"], picksIn: [{ year: 2028, round: 1, protection: "top-3" }], outgoing: 30000000, incoming: 17263584 },
+    ],
+  };
+  const [resolved] = asResolvedArtifacts([artifact]);
+  assert.equal(resolved.kind, "trade_verdict");
+  if (resolved.kind !== "trade_verdict") return;
+  assert.equal(resolved.teams[0].picksOut?.length, 2);
+  const html = renderToStaticMarkup(<ArtifactTradeVerdict artifact={resolved} />);
+  assert.match(html, /2028 1st \(top-3\)/);
+  assert.match(html, /2029 2nd swap/);
+  const csv = artifactToCopyText(resolved);
+  assert.match(csv, /2028 1st \(top-3\)/);
+  for (const malformed of [
+    { ...artifact, teams: [{ ...artifact.teams[0], picksOut: [{ year: "2028" }] }, artifact.teams[1]] },
+    { ...artifact, teams: [{ ...artifact.teams[0], picksOut: "none" }, artifact.teams[1]] },
+  ]) assert.deepEqual(asResolvedArtifacts([malformed]), []);
+});

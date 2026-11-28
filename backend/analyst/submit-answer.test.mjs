@@ -2480,7 +2480,7 @@ function tradeCheckSource(overrides = {}) {
 
 function tradeLegalitySource() {
   const rows = [
-    { team: "DAL", payroll_before: 183593937, payroll_after: 179322417, outgoing: 34270627, incoming: 30000000, players_out: ["Daniel Gafford", "Santi Aldama"], players_in: ["Jalen Johnson"], allowed_incoming: 43522627, match_rule: "outgoing plus $9.096M", matching_ok: true, aggregates: true, hard_cap: "second apron", tpe_creation: { amount: 4270627, condition: "non-simultaneous only" } },
+    { team: "DAL", payroll_before: 183593937, payroll_after: 179322417, outgoing: 34270627, incoming: 30000000, players_out: ["Daniel Gafford", "Santi Aldama"], players_in: ["Jalen Johnson"], picks_out: [{ year: 2028, round: 1, protection: "top-3" }, { year: 2029, round: 2, swap: true }], allowed_incoming: 43522627, match_rule: "outgoing plus $9.096M", matching_ok: true, aggregates: true, hard_cap: "second apron", tpe_creation: { amount: 4270627, condition: "non-simultaneous only" } },
     { team: "ATL", payroll_before: 150000000, payroll_after: 154270627, outgoing: 30000000, incoming: 34270627, players_out: ["Jalen Johnson"], players_in: ["Daniel Gafford", "Santi Aldama"], allowed_incoming: 40000000, match_rule: "cap room", matching_ok: true, hard_cap: "first apron" }
   ];
   const source = makeSourceRecord("legality-src", { rows, tool: "get_trade_legality", meta: { season: "2026-27" } });
@@ -2524,6 +2524,8 @@ test("trade_verdict resolves the multi-team get_trade_legality shape", () => {
   assert.equal(verdict.teams[0].payrollAfter, 179322417);
   assert.equal(verdict.teams[0].aggregates, true);
   assert.equal(verdict.teams[0].tpeCreation.amount, 4270627);
+  assert.deepEqual(verdict.teams[0].picksOut, [{ year: 2028, round: 1, protection: "top-3" }, { year: 2029, round: 2, swap: true }]);
+  assert.equal(verdict.teams[1].picksOut, undefined);
   assert.equal(verdict.teams[1].hardCap, "first apron");
 });
 
