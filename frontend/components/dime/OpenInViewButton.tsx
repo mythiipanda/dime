@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink } from "lucide-react";
+import { OpenNewWindow } from "iconoir-react";
 import { Button } from "@/components/ds/Button";
 import type { DimeArtifact } from "@/lib/dime-stream";
 import { navigateToView, viewTargetForArtifact } from "@/lib/open-in-view";
@@ -19,7 +19,7 @@ export default function OpenInViewButton({ artifact }: { artifact: DimeArtifact 
       title={label}
       onClick={() => navigateToView(target)}
     >
-      <ExternalLink size={14} aria-hidden="true" />
+      <OpenNewWindow width={14} height={14} aria-hidden="true" />
     </Button>
   );
 }

@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { QuietDetails } from "@/components/ds/QuietDetails";
 import { useState } from "react";
-import { Share2 } from "lucide-react";
+import { ShareAndroid } from "iconoir-react";
 import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import ArtifactChart, { type ChartSeries } from "@/components/dime/ArtifactChart";
@@ -318,7 +318,7 @@ function ShareableArtifact({ artifact, shareContext }: { artifact: DimeArtifact;
               disabled={share.phase === "minting"}
               onClick={mint}
             >
-              <Share2 width={13} height={13} aria-hidden="true" />
+              <ShareAndroid width={13} height={13} aria-hidden="true" />
             </button>
           )}
         </>}

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Scale } from "lucide-react";
+import { ArrowRight, WarningTriangle } from "iconoir-react";
 import { StatusPill } from "@/components/ds/StatusPill";
 import { formatHeadlineMetric } from "@/lib/metric-format";
 import type { CapSummaryArtifactPayload } from "@/lib/dime-stream";
@@ -23,7 +23,7 @@ function RoomRow({ label, before, after }: { label: string; before?: number; aft
         {before !== undefined && before !== after ? (
           <>
             <span className="text-ink-3">{money(before)}</span>
-            <ArrowRight size={12} aria-hidden="true" className="text-ink-3" />
+            <ArrowRight width={12} height={12} aria-hidden="true" className="text-ink-3" />
           </>
         ) : null}
         {money(after)}
@@ -59,7 +59,7 @@ export default function ArtifactCapSummary({ artifact }: { artifact: CapSummaryA
           <span className="text-lg font-medium text-ink">{money(artifact.payrollBefore)}</span>
           {artifact.payrollAfter !== artifact.payrollBefore && (
             <>
-              <ArrowRight size={13} aria-hidden="true" className="self-center text-ink-3" />
+              <ArrowRight width={13} height={13} aria-hidden="true" className="self-center text-ink-3" />
               <span className="text-lg font-medium text-ink">{money(artifact.payrollAfter)}</span>
               <span className={`text-[13px] ${delta > 0 ? "text-red" : delta < 0 ? "text-green" : "text-ink-3"}`}>{signedMoney(delta)}</span>
             </>
@@ -76,7 +76,7 @@ export default function ArtifactCapSummary({ artifact }: { artifact: CapSummaryA
         <ul className="mt-4 space-y-1.5 border-t border-line pt-3">
           {artifact.issues.map((issue, index) => (
             <li key={index} className="flex items-start gap-2 text-[13px] leading-relaxed text-ink">
-              <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-red" />
+              <WarningTriangle width={14} height={14} aria-hidden="true" className="mt-0.5 shrink-0 text-red" />
               <span className="min-w-0 break-words">{issue}</span>
             </li>
           ))}
@@ -108,9 +108,7 @@ export default function ArtifactCapSummary({ artifact }: { artifact: CapSummaryA
         </dl>
       )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-        <p className="flex items-center gap-1.5 text-xs text-ink-3">
-          <Scale size={12} aria-hidden="true" />
-          {artifact.evaluationTool ? `Resolved server-side from ${artifact.evaluationTool}.` : "Resolved server-side."} Estimate only; confirm with a cap specialist.
+        <p className="flex items-center gap-1.5 text-xs text-ink-3">          {artifact.evaluationTool ? `Resolved server-side from ${artifact.evaluationTool}.` : "Resolved server-side."} Estimate only; confirm with a cap specialist.
         </p>
       </div>
     </div>

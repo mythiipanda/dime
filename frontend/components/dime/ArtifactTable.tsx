@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "iconoir-react";
 import { Button } from "@/components/ds/Button";
 
 export type ArtifactColumn = { key: string; label: string; numeric?: boolean };
@@ -75,8 +75,8 @@ export default function ArtifactTable<T extends (string | number | null)[]>({
     {(scroll.left || scroll.right) && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
       <p id={hintId} className="text-xs text-ink-2">Scroll for all columns</p>
       <div className="flex gap-1">
-        <Button size="icon" variant="quiet" aria-label="Scroll table left" disabled={!scroll.left} onClick={() => scrollColumns(-1)}><ArrowLeft size={14} aria-hidden="true" /></Button>
-        <Button size="icon" variant="quiet" aria-label="Scroll table right" disabled={!scroll.right} onClick={() => scrollColumns(1)}><ArrowRight size={14} aria-hidden="true" /></Button>
+        <Button size="icon" variant="quiet" aria-label="Scroll table left" disabled={!scroll.left} onClick={() => scrollColumns(-1)}><ArrowLeft width={14} height={14} aria-hidden="true" /></Button>
+        <Button size="icon" variant="quiet" aria-label="Scroll table right" disabled={!scroll.right} onClick={() => scrollColumns(1)}><ArrowRight width={14} height={14} aria-hidden="true" /></Button>
       </div>
     </div>}
     <div ref={regionRef} onScroll={measureScroll} role="region" aria-label={`${title} records`} aria-describedby={scroll.left || scroll.right ? hintId : undefined} tabIndex={0} className="max-h-[420px] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-ink">
@@ -94,7 +94,7 @@ export default function ArtifactTable<T extends (string | number | null)[]>({
                 } ${sort?.col === i ? "text-ink" : "text-ink-2"}`}
               >
                 <span className="min-w-0 break-words">{c.label}</span>
-                {sort?.col === i && (sort.dir === 1 ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />)}
+                {sort?.col === i && (sort.dir === 1 ? <ArrowUp width={12} height={12} aria-hidden="true" /> : <ArrowDown width={12} height={12} aria-hidden="true" />)}
               </Button>
             </th>
           ))}

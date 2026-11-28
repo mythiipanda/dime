@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Scale } from "lucide-react";
+import { ArrowRight, WarningTriangle } from "iconoir-react";
 import { StatusPill } from "@/components/ds/StatusPill";
 import { formatHeadlineMetric } from "@/lib/metric-format";
 import type { TradeVerdictArtifactPayload, TradeVerdictTeamPayload } from "@/lib/dime-stream";
@@ -53,7 +53,7 @@ function TeamPanel({ team }: { team: TradeVerdictTeamPayload }) {
               {money(team.payrollBefore)}
               {team.payrollAfter !== undefined && team.payrollAfter !== team.payrollBefore && (
                 <>
-                  <ArrowRight size={12} aria-hidden="true" className="text-ink-3" />
+                  <ArrowRight width={12} height={12} aria-hidden="true" className="text-ink-3" />
                   {money(team.payrollAfter)}
                 </>
               )}
@@ -93,7 +93,7 @@ export default function ArtifactTradeVerdict({ artifact }: { artifact: TradeVerd
         <ul className="mb-4 space-y-1.5 border-t border-line pt-3">
           {artifact.issues.map((issue, index) => (
             <li key={index} className="flex items-start gap-2 text-[13px] leading-relaxed text-ink">
-              <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-red" />
+              <WarningTriangle width={14} height={14} aria-hidden="true" className="mt-0.5 shrink-0 text-red" />
               <span className="min-w-0 break-words">{issue}</span>
             </li>
           ))}
@@ -115,9 +115,7 @@ export default function ArtifactTradeVerdict({ artifact }: { artifact: TradeVerd
         </dl>
       )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-        <p className="flex items-center gap-1.5 text-xs text-ink-3">
-          <Scale size={12} aria-hidden="true" />
-          The verdict is the evaluator&apos;s, resolved server-side. Estimate only; confirm with a cap specialist.
+        <p className="flex items-center gap-1.5 text-xs text-ink-3">          The verdict is the evaluator&apos;s, resolved server-side. Estimate only; confirm with a cap specialist.
         </p>
       </div>
     </div>
