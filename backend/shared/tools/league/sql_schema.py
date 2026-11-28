@@ -61,7 +61,7 @@ def _describe_warehouse_schema(cols: dict[str, dict]) -> str:
         if table == 'silver_hist_draft':
             line += (". Raw draft rows only: value-curve, median-career-WAR-by-slot,"
                      " and pick-value-index asks belong to silver_draft_value_curve"
-                     " (SLOT, MEDIAN_CAREER_WAR, VALUE_INDEX — one row per slot 1-60)"
+                     " (SLOT, MEDIAN_CAREER_WAR, VALUE_INDEX; one row per slot 1-60)"
                      " via sql_exec, not to aggregating this table.")
         if table == 'silver_hist_lineups':
             line += (". Variant rows: MUST filter season_type ('regular-season', 'playoffs'),"

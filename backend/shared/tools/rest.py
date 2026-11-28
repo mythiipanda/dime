@@ -349,12 +349,12 @@ def _preview_result(games, by_team, abbr, opp_abbr, day,
     if not own_prior:
         return {"tool": "get_rest_advantage", "ok": False,
                 "error": f"no completed games for {abbr} before "
-                         f"{date_str} — cannot establish a rest "
+                         f"{date_str}; cannot establish a rest "
                          "baseline"}
     if not opp_prior:
         return {"tool": "get_rest_advantage", "ok": False,
                 "error": f"no completed games for {opp_abbr} before "
-                         f"{date_str} — cannot establish a rest "
+                         f"{date_str}; cannot establish a rest "
                          "baseline"}
     last_own = own_prior[-1]
     last_opp = opp_prior[-1]

@@ -123,7 +123,7 @@ def get_combine(season: str = "2025") -> dict[str, Any]:
                 "error": meta.get("error") or "empty upstream response"}
     if len(rows) > 25:
         meta = dict(meta)
-        meta["truncation"] = (f"showing 25 of {len(rows)} rows — for "
+        meta["truncation"] = (f"showing 25 of {len(rows)} rows; for "
                               "cohort-wide rankings, counts or means query "
                               "silver_combine via sql_exec; the full class "
                               "is there")
