@@ -3,7 +3,8 @@ import { describeScenarioMove } from "@/lib/capsheet-fixture";
 import type { MoveGroupsMap } from "@/lib/move-groups";
 import { ReadOnlyMoveList } from "@/components/dime/ScenarioMoveList";
 import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
-import { ArtifactBody } from "@/components/site/harness/ArtifactsView";
+import { ArtifactBody, ProvenancePanel } from "@/components/site/harness/ArtifactsView";
+import { undeclaredProvenance } from "@/lib/stream/provenance";
 import { RecordsTable } from "@/components/ds/RecordsTable";
 import { asResolvedArtifacts } from "@/lib/stream/artifacts";
 import type { ProjectionResponse } from "@/lib/planner";
@@ -501,7 +502,6 @@ export function SharedArtifactView({
   capturedAt: string | null;
   unavailable: boolean;
 }) {
-  const provenance = artifact && typeof artifact.provenance === "object" && artifact.provenance !== null ? artifact.provenance as Record<string, unknown> : null;
   const resolved = artifact ? asResolvedArtifacts([artifact]) : [];
   const resolvedArtifact = resolved.length > 0 ? resolved[0] : null;
   return (
@@ -527,17 +527,10 @@ export function SharedArtifactView({
               <ArtifactBody artifact={resolvedArtifact} />
             </section>
 
-            {provenance && (
-              <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-                <h2 className="text-[13px] font-semibold text-ink">Provenance</h2>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-ink-2">
-                  {typeof provenance.capability === "string" && <span>{provenance.capability}</span>}
-                  {typeof provenance.dataset === "string" && <span>{provenance.dataset}</span>}
-                  {typeof provenance.season === "string" && <span>{provenance.season}</span>}
-                  {typeof provenance.as_of === "string" && <span>as of {provenance.as_of.slice(0, 10)}</span>}
-                </div>
-              </section>
-            )}
+            <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+              <h2 className="text-[13px] font-semibold text-ink">Provenance</h2>
+              <ProvenancePanel provenance={resolvedArtifact.provenance ?? undeclaredProvenance()} />
+            </section>
 
             {evidence.length > 0 && (
               <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
