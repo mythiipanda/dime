@@ -8,6 +8,7 @@ import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import ArtifactChart, { type ChartSeries } from "@/components/dime/ArtifactChart";
 import ArtifactCompare from "@/components/dime/ArtifactCompare";
 import ArtifactTradeVerdict from "@/components/dime/ArtifactTradeVerdict";
+import ArtifactCapSummary from "@/components/dime/ArtifactCapSummary";
 import ArtifactScatter from "@/components/dime/ArtifactScatter";
 import ArtifactShell from "@/components/dime/ArtifactShell";
 import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
@@ -42,6 +43,7 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
   if (artifact.kind === "player_card") return <ArtifactPlayerCard artifact={artifact} />;
   if (artifact.kind === "team_card") return <ArtifactTeamCard artifact={artifact} />;
   if (artifact.kind === "trade_verdict") return <ArtifactTradeVerdict artifact={artifact} />;
+  if (artifact.kind === "cap_summary") return <ArtifactCapSummary artifact={artifact} />;
   if (artifact.kind === "table") {
     return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} footnote={artifact.footnote} />;
   }
@@ -208,6 +210,21 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
     }
     for (const issue of artifact.issues ?? []) lines.push(["Issue", issue].map(escapeCsvCell).join(","));
     for (const check of artifact.checks ?? []) lines.push(["Check", check.rule, check.note ?? ""].map(escapeCsvCell).join(","));
+    return lines.join("\n");
+  }
+  if (artifact.kind === "cap_summary") {
+    const lines: string[] = [`Team,${artifact.team}${artifact.season ? ` (${artifact.season})` : ""}`];
+    lines.push(["Payroll Before", artifact.payrollBefore, "Payroll After", artifact.payrollAfter, "Delta", artifact.delta ?? artifact.payrollAfter - artifact.payrollBefore].map(escapeCsvCell).join(","));
+    const rooms: (string | number)[] = [];
+    for (const [label, value] of [["Cap Room", artifact.capRoom], ["Cap Room Before", artifact.capRoomBefore], ["Tax Room", artifact.taxRoom], ["Room Under Apron 1", artifact.roomApron1], ["Room Under Apron 2", artifact.roomApron2]] as const) {
+      if (value !== undefined) rooms.push(label, value);
+    }
+    if (rooms.length) lines.push(rooms.map(escapeCsvCell).join(","));
+    const flags = [artifact.overTax ? "over tax" : "", artifact.overApron1 ? "over first apron" : "", artifact.overApron2 ? "over second apron" : "", artifact.hardCap ? `hard-cap: ${artifact.hardCap}` : ""].filter(Boolean);
+    if (flags.length) lines.push(["Flags", flags.join("; ")].map(escapeCsvCell).join(","));
+    for (const step of artifact.steps ?? []) lines.push(["Step", step.detail, step.delta ?? "", step.payroll ?? ""].map(escapeCsvCell).join(","));
+    for (const issue of artifact.issues ?? []) lines.push(["Issue", issue].map(escapeCsvCell).join(","));
+    for (const restriction of artifact.restrictions ?? []) lines.push(["Restriction", restriction.threshold, restriction.rule].map(escapeCsvCell).join(","));
     return lines.join("\n");
   }
   if (artifact.kind === "memo") return memoToMarkdown(artifact);

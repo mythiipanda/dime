@@ -9,6 +9,7 @@ import type {
   MemoAnchor,
   MemoArtifactPayload,
   TradeVerdictArtifactPayload,
+  CapSummaryArtifactPayload,
   TradeVerdictTeamPayload,
   MemoSectionPayload,
   PlayerCardArtifactPayload,
@@ -505,6 +506,65 @@ function resolveTradeVerdict(entry: Record<string, unknown>, title: string, prov
   };
 }
 
+function resolveCapSummary(entry: Record<string, unknown>, title: string, provenance: DimeProvenance | undefined): CapSummaryArtifactPayload | null {
+  if (typeof entry.team !== "string" || !entry.team) return null;
+  if (typeof entry.sourceRef !== "string" || !entry.sourceRef) return null;
+  const payrollBefore = finiteNumber(entry.payrollBefore);
+  const payrollAfter = finiteNumber(entry.payrollAfter);
+  if (payrollBefore === undefined || payrollAfter === undefined) return null;
+  const out: CapSummaryArtifactPayload = {
+    kind: "cap_summary", title, team: entry.team, payrollBefore, payrollAfter,
+    sourceRef: entry.sourceRef,
+    source: provenanceSource(provenance), provenance,
+  };
+  for (const key of ["delta", "capRoom", "capRoomBefore", "taxRoom", "roomApron1", "roomApron2", "teamSalaryBefore", "teamSalaryAfter", "capHoldsAfter", "rosterChargesAfter", "rosterBefore", "rosterAfter"] as const) {
+    if (entry[key] === undefined) continue;
+    const value = finiteNumber(entry[key]);
+    if (value === undefined) return null;
+    out[key] = value;
+  }
+  if (typeof entry.season === "string" && entry.season) out.season = entry.season;
+  if (typeof entry.hardCap === "string" && entry.hardCap) out.hardCap = entry.hardCap;
+  if (typeof entry.evaluationTool === "string" && entry.evaluationTool) out.evaluationTool = entry.evaluationTool;
+  for (const flag of ["overTax", "overApron1", "overApron2"] as const) {
+    if (entry[flag] === true) out[flag] = true;
+  }
+  if (Array.isArray(entry.issues)) {
+    const issues = entry.issues.filter((issue): issue is string => typeof issue === "string" && issue !== "");
+    if (issues.length) out.issues = issues;
+  }
+  if (Array.isArray(entry.steps)) {
+    const steps: { kind: string; detail: string; delta?: number; payroll?: number }[] = [];
+    for (const rawStep of entry.steps) {
+      if (!rawStep || typeof rawStep !== "object") return null;
+      const step = rawStep as Record<string, unknown>;
+      if (typeof step.detail !== "string" || !step.detail) return null;
+      const kind = typeof step.kind === "string" && step.kind ? step.kind : "step";
+      const parsed: { kind: string; detail: string; delta?: number; payroll?: number } = { kind, detail: step.detail };
+      for (const key of ["delta", "payroll"] as const) {
+        if (step[key] === undefined) continue;
+        const value = finiteNumber(step[key]);
+        if (value === undefined) return null;
+        parsed[key] = value;
+      }
+      steps.push(parsed);
+    }
+    if (steps.length) out.steps = steps;
+  }
+  if (Array.isArray(entry.restrictions)) {
+    const restrictions: { threshold: string; rule: string }[] = [];
+    for (const rawRestriction of entry.restrictions) {
+      if (!rawRestriction || typeof rawRestriction !== "object") return null;
+      const restriction = rawRestriction as Record<string, unknown>;
+      if (typeof restriction.threshold !== "string" || !restriction.threshold) return null;
+      if (typeof restriction.rule !== "string" || !restriction.rule) return null;
+      restrictions.push({ threshold: restriction.threshold, rule: restriction.rule });
+    }
+    if (restrictions.length) out.restrictions = restrictions;
+  }
+  return out;
+}
+
 const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   chart: resolveChart,
   shot_chart: resolveShotChart,
@@ -514,7 +574,8 @@ const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   player_card: resolvePlayerCard,
   team_card: resolveTeamCard,
   memo: resolveMemo,
-  trade_verdict: resolveTradeVerdict,};
+  trade_verdict: resolveTradeVerdict,
+  cap_summary: resolveCapSummary,};
 
 export function memoToMarkdown(artifact: MemoArtifactPayload): string {
   const lines: string[] = [`# ${artifact.title}`];
