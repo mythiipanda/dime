@@ -64,9 +64,9 @@ function SeasonSummary({ block }: { block: ProjectionSeason }) {
 function moveLabel(move: ScenarioMove): string {
   if (move.label) return move.label;
   if (move.kind === "waive") return `Waive ${move.player ?? ""}${move.stretch ? " (stretch)" : ""}`.trim();
-  if (move.kind === "option_decision") return `${move.exercise ? "Exercise" : "Decline"} option — ${move.player ?? ""}`;
-  if (move.kind === "extend") return `Extend ${move.player ?? ""} — ${move.years ?? 1}yr`;
-  if (move.kind === "renounce") return `Renounce ${move.player ?? ""} — cap hold released`;
+  if (move.kind === "option_decision") return `${move.exercise ? "Exercise" : "Decline"} option · ${move.player ?? ""}`;
+  if (move.kind === "extend") return `Extend ${move.player ?? ""} · ${move.years ?? 1}yr`;
+  if (move.kind === "renounce") return `Renounce ${move.player ?? ""} · cap hold released`;
   if (move.kind === "signing") return `Sign ${move.player ?? move.label ?? "free agent"}`;
   if (move.kind === "trade_out") return `Trade out ${move.player ?? ""}`;
   if (move.kind === "trade_in") return `Trade in ${move.player ?? ""}`;

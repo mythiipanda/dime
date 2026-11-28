@@ -311,7 +311,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     }
     const artifact = {
       kind: "cap_scenario",
-      title: `${sheet?.team ?? team} cap scenario — ${moves.length} move${moves.length === 1 ? "" : "s"}`,
+      title: `${sheet?.team ?? team} cap scenario · ${moves.length} move${moves.length === 1 ? "" : "s"}`,
       team: sheet?.team ?? team,
       season: scenario?.season ?? scenarioSeason ?? sheet?.season ?? DEFAULT_SCENARIO_SEASON,
       moves,

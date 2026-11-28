@@ -159,7 +159,7 @@ function slateStaleness(dateIso: string): string | null {
   if (Number.isNaN(slate)) return null;
   const days = Math.floor((Date.now() - slate) / 86400000);
   if (days <= 2) return null;
-  return `warehouse snapshot ${days} days behind today — a historical slate, not tonight's games`;
+  return `warehouse snapshot ${days} days behind today; a historical slate, not tonight's games`;
 }
 
 function slateState(m: MatchupGame): "live" | "final" | "upcoming" {
@@ -220,7 +220,7 @@ function MatchupDetail({ game, onAsk }: { game: MatchupGame; onAsk?: (text: stri
             size="sm"
             variant="secondary"
             onClick={() => onAsk(
-              `Who has the edge in ${game.away.abbr} @ ${game.home.abbr}? Break down the matchup — ratings, form, pace and the injury picture.`,
+              `Who has the edge in ${game.away.abbr} @ ${game.home.abbr}? Break down the matchup: ratings, form, pace and the injury picture.`,
               {
                 kind: "matchup",
                 summary: `${game.away.abbr} @ ${game.home.abbr} · ${game.date}`,
