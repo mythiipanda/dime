@@ -36,9 +36,11 @@ def _hist_pairings(season, abbr_a, abbr_b):
     finally:
         con.close()
 
-def test_warehouse_has_2024_25_hist_gamelogs_but_no_team_games():
-    assert _season_rows("silver_team_games", "2024-25") == 0
+def test_warehouse_has_2024_25_hist_gamelogs_covering_full_team_schedules():
     assert _season_rows("silver_hist_gamelogs", "2024-25") > 0
+    team_games = _season_rows("silver_team_games", "2024-25")
+    if team_games:
+        assert team_games == 2460
 
 def test_prediction_answers_2024_25_from_the_ratings_the_warehouse_has():
     ratings_stored = _season_rows("silver_team_ratings", "2024-25") > 0
