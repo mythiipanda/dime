@@ -5,6 +5,7 @@ import { objectValue, sourceResult, sourceRecordSchema, type SourceRecord } from
 import { resolvePlayerCard, resolveProvenance } from "./player-card.js";
 import { artifactSourceSelectorSchema, validateAnswerArtifact } from "./artifact-schemas.js";
 import { resolveTeamCard } from "./team-card.js";
+import { resolveTradeVerdict } from "./trade-verdict.js";
 
 export { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 
@@ -146,7 +147,7 @@ function attachArtifactProvenance(
     return { ...artifact, provenance: mergeSourcesProvenance(entries) };
 }
 
-const KNOWN_ARTIFACT_KINDS: readonly string[] = ["table", "compare", "chart", "shot_chart", "scatter", "player_card", "team_card", "memo"];
+const KNOWN_ARTIFACT_KINDS: readonly string[] = ["table", "compare", "chart", "shot_chart", "scatter", "player_card", "team_card", "memo", "trade_verdict"];
 
 const MARKDOWN_TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
 const MARKDOWN_TABLE_NULL_CELLS = new Set(["", "-", "—", "–", "n/a", "null"]);
@@ -311,6 +312,7 @@ export function validateAnswerSubmission(
         const kind = artifact.kind as string;
         if (kind === "player_card") return [resolvePlayerCard(artifact, getSource)];
         if (kind === "team_card") return [resolveTeamCard(artifact, getSource)];
+        if (kind === "trade_verdict") return [resolveTradeVerdict(artifact, getSource)];
         if (kind === "memo") {
             for (const section of artifact.sections as unknown[]) {
                 const anchors = objectValue(section)?.anchors;

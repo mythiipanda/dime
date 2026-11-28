@@ -2467,3 +2467,91 @@ test("validateAnswerSubmission keeps legitimate prose mentioning tools intact", 
   const validated = validateAnswerSubmission(submission, () => undefined);
   assert.equal(validated.blocks[0].text, submission.blocks[0].text, "ordinary prose is never touched");
 });
+
+function tradeCheckSource(overrides = {}) {
+  const rows = {
+    team_a: { team: "DAL", out: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_in: 28909044, match_rule: "standard TPE matching: 100% of outgoing salary plus applicable cushion", hard_cap: "", over_apron1: false, over_apron2: false, tpe_creation: { amount: 313044, condition: "would generate only if this construction is executed as a non-simultaneous trade" } },
+    team_b: { team: "TOR", out: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_in: 28596000, match_rule: "outgoing salary plus $9.096M (below the first apron)", hard_cap: "first apron", over_apron1: false, over_apron2: false },
+    legal: true, issues: [], checks: [{ rule: "salary matching", note: "both sides within band" }],
+    ...overrides.rows
+  };
+  return makeSourceRecord("trade-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
+}
+
+function tradeLegalitySource() {
+  const rows = [
+    { team: "DAL", payroll_before: 183593937, payroll_after: 179322417, outgoing: 34270627, incoming: 30000000, players_out: ["Daniel Gafford", "Santi Aldama"], players_in: ["Jalen Johnson"], allowed_incoming: 43522627, match_rule: "outgoing plus $9.096M", matching_ok: true, aggregates: true, hard_cap: "second apron", tpe_creation: { amount: 4270627, condition: "non-simultaneous only" } },
+    { team: "ATL", payroll_before: 150000000, payroll_after: 154270627, outgoing: 30000000, incoming: 34270627, players_out: ["Jalen Johnson"], players_in: ["Daniel Gafford", "Santi Aldama"], allowed_incoming: 40000000, match_rule: "cap room", matching_ok: true, hard_cap: "first apron" }
+  ];
+  const source = makeSourceRecord("legality-src", { rows, tool: "get_trade_legality", meta: { season: "2026-27" } });
+  source.response.structuredContent.legal = true;
+  source.response.structuredContent.issues = [];
+  source.response.structuredContent.checks = [{ rule: "salary matching", note: "fits" }];
+  return source;
+}
+
+test("trade_verdict resolves the evaluator verdict, never model-written outcomes", () => {
+  const source = tradeCheckSource();
+  const input = { kind: "trade_verdict", title: "Washington-for-Poeltl works", ref: "trade-src" };
+  const original = structuredClone(input);
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => ref === source.ref ? source : undefined);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.kind, "trade_verdict");
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.evaluationTool, "get_trade_check");
+  assert.equal(verdict.teams.length, 2);
+  const [dal, tor] = verdict.teams;
+  assert.equal(dal.team, "DAL");
+  assert.deepEqual(dal.playersOut, ["P.J. Washington"]);
+  assert.deepEqual(dal.playersIn, ["Jakob Poeltl"]);
+  assert.equal(dal.outgoing, 19813044);
+  assert.equal(dal.incoming, 19500000);
+  assert.equal(dal.tpeCreation.amount, 313044);
+  assert.equal(tor.team, "TOR");
+  assert.equal(tor.hardCap, "first apron");
+  assert.equal(verdict.checks[0].rule, "salary matching");
+  assert.equal(verdict.provenance.season, "2026-27");
+  assert.equal(verdict.sourceRef, "trade-src");
+  assert.deepEqual(input, original);
+});
+
+test("trade_verdict resolves the multi-team get_trade_legality shape", () => {
+  const source = tradeLegalitySource();
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "Aggregation works", ref: "legality-src" }] }, () => source);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.teams.length, 2);
+  assert.equal(verdict.teams[0].payrollAfter, 179322417);
+  assert.equal(verdict.teams[0].aggregates, true);
+  assert.equal(verdict.teams[0].tpeCreation.amount, 4270627);
+  assert.equal(verdict.teams[1].hardCap, "first apron");
+});
+
+test("trade_verdict rejects illegal verdicts structure intact, not silently legal", () => {
+  const source = tradeCheckSource({ rows: { legal: false, issues: ["CHA takes back too much"] } });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: " Booker-for-Allen fails ", ref: "trade-src" }] }, () => source);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.legal, false);
+  assert.deepEqual(verdict.issues, ["CHA takes back too much"]);
+});
+
+test("trade_verdict gate: rejects unknown refs, non-evaluation tools, forged outcomes and malformed sources", () => {
+  const source = tradeCheckSource();
+  const input = { kind: "trade_verdict", title: "x", ref: "trade-src" };
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => undefined), /not part of this run/);
+  const wrongTool = makeSourceRecord("sql-src", { rows: [{ legal: true }], tool: "sql_exec" });
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "x", ref: "sql-src" }] }, () => wrongTool), /not a trade evaluation/);
+  for (const forged of [
+    { ...input, legal: true },
+    { ...input, teams: [] },
+    { ...input, issues: ["invented"] },
+    { ...input, outcome: "legal" },
+    { kind: "trade_verdict", ref: "trade-src" },
+    { kind: "trade_verdict", title: "x" },
+  ]) assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [forged] }, () => source));
+  const missingStructure = makeSourceRecord("bare-src", { rows: [{ a: 1 }], tool: "get_trade_check" });
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "x", ref: "bare-src" }] }, () => missingStructure), /verdict structure/);
+  const errored = tradeCheckSource();
+  errored.response.isError = true;
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => errored), /errored/);
+});
