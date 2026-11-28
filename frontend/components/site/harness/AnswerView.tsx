@@ -206,7 +206,7 @@ export function AnswerVerification({
   const disclosure = verificationDisclosure(carry, provenance);
   const emptyCase = disclosure.headline === "No verified claims" && disclosure.gaps.length === 0 && (!carry || carry.verification === "unknown");
   if (emptyCase) {
-    return <p className="mt-3 max-w-[620px] text-[11.5px] text-ink-3">{disclosure.headline} — {disclosure.detail.replace(/^0 verified claims?\.\s*/, "")}</p>;
+    return <p className="mt-3 max-w-[620px] text-[11.5px] text-ink-3">{disclosure.headline} · {disclosure.detail.replace(/^0 verified claims?\.\s*/, "")}</p>;
   }
   return (
     <div className="mt-3 max-w-[620px]">
