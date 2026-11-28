@@ -6,7 +6,7 @@ import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
-import { artifactRejectionReason, createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission, stripToolCallMarkup } from "./submit-tool.js";
+import { artifactRejectionReason, createSubmitAnswerTool, resolveSalvagedArtifacts, submitAnswerSchema, type AnswerSubmission, stripToolCallMarkup } from "./submit-tool.js";
 import { auditAnswerNumbers, auditLimitationClaims, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, limitationChallengeAdvisory, loadWarehouseInventory, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
@@ -1496,9 +1496,20 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             if (!session.messages.some(message => message.role === "toolResult"))
                                 return;
                             const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd));
-                            const salvaged = drafted ?? salvageNarrationSubmission(session.messages);
+                            let salvaged = drafted ?? salvageNarrationSubmission(session.messages);
                             if (!salvaged)
                                 return;
+                            if (salvaged.artifacts?.length) {
+                                const salvageSources = [...(start.sources ?? []), ...connected.results.values()];
+                                const salvageSourceMap = new Map(salvageSources.map(source => [source.ref, source]));
+                                const resolved = resolveSalvagedArtifacts(salvaged.artifacts, ref => salvageSourceMap.get(ref), [...salvageSourceMap.keys()]);
+                                const { artifacts: _rawSalvagedArtifacts, ...salvagedRest } = salvaged;
+                                salvaged = {
+                                    ...salvagedRest,
+                                    ...(resolved.artifacts.length ? { artifacts: resolved.artifacts } : {}),
+                                    ...(resolved.dropped ? { omitted: [...(salvaged.omitted ?? []), `${resolved.dropped} draft artifact(s) could not be resolved against this run's sources and were dropped`] } : {})
+                                };
+                            }
                             acceptedSubmission = salvaged;
                             if (!drafted) {
                                 emittedFromNarration = true;

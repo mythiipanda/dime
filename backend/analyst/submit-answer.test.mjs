@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   validateAnswerSubmission,
   createSubmitAnswerTool,
+  resolveSalvagedArtifacts,
 } from "./dist/submit-tool.js";
 import { ProductStore } from "./dist/product-store.js";
 import { Type } from "typebox";
@@ -2582,4 +2583,37 @@ test("trade_verdict gate: rejects unknown refs, non-evaluation tools, forged out
   const errored = tradeCheckSource();
   errored.response.isError = true;
   assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => errored), /errored/);
+});
+
+test("resolveSalvagedArtifacts resolves ref-only verdicts against run sources", () => {
+  const source = tradeCheckSource();
+  const sourceMap = new Map([[source.ref, source]]);
+  const raw = [
+    { kind: "trade_verdict", title: "Washington-for-Poeltl works", ref: "trade-src" },
+    { kind: "table", title: "Numbers", columns: [{ key: "a", label: "A" }], rows: [["x"]] }
+  ];
+  const { artifacts, dropped } = resolveSalvagedArtifacts(raw, ref => sourceMap.get(ref), [...sourceMap.keys()]);
+  assert.equal(dropped, 0);
+  assert.equal(artifacts.length, 2);
+  const verdict = artifacts[0];
+  assert.equal(verdict.kind, "trade_verdict");
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.teams.length, 2);
+  assert.equal(verdict.teams[0].team, "DAL");
+  assert.deepEqual(verdict.teams[0].playersOut, ["P.J. Washington"]);
+  assert.equal(artifacts[1].kind, "table", "self-contained artifacts survive untouched");
+});
+
+test("resolveSalvagedArtifacts drops unresolvable ref artifacts instead of emitting raw refs", () => {
+  const sourceMap = new Map();
+  const raw = [
+    { kind: "trade_verdict", title: "x", ref: "missing-src" },
+    { kind: "player_card", title: "y", ref: "missing-src", row: 0, nameColumn: "player", metrics: [{ column: "pts", label: "PTS" }] },
+    { kind: "table", title: "Numbers", columns: [{ key: "a", label: "A" }], rows: [["x"]] }
+  ];
+  const { artifacts, dropped } = resolveSalvagedArtifacts(raw, ref => sourceMap.get(ref), []);
+  assert.equal(dropped, 2);
+  assert.equal(artifacts.length, 1);
+  assert.equal(artifacts[0].kind, "table");
+  assert.ok(!artifacts.some(a => a.kind === "trade_verdict"), "no raw ref-only verdict survives salvage");
 });

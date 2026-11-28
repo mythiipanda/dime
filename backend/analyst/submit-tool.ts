@@ -336,6 +336,27 @@ export function validateAnswerSubmission(
     };
 }
 
+export function resolveSalvagedArtifacts(
+    artifacts: Record<string, unknown>[],
+    getSource: (ref: string) => SourceRecord | undefined,
+    availableRefs?: readonly string[]
+): { artifacts: Record<string, unknown>[]; dropped: number } {
+    const out: Record<string, unknown>[] = [];
+    let dropped = 0;
+    for (const artifact of artifacts) {
+        try {
+            const kind = artifact.kind as string;
+            if (kind === "player_card") out.push(resolvePlayerCard(artifact, getSource));
+            else if (kind === "team_card") out.push(resolveTeamCard(artifact, getSource));
+            else if (kind === "trade_verdict") out.push(resolveTradeVerdict(artifact, getSource));
+            else out.push(attachArtifactProvenance(validateAnswerArtifact(artifact, out.length), getSource, availableRefs));
+        } catch {
+            dropped++;
+        }
+    }
+    return { artifacts: out, dropped };
+}
+
 export function createSubmitAnswerTool(
     getContextSources: () => SourceRecord[],
     onAccept: (submission: AnswerSubmission) => void,
