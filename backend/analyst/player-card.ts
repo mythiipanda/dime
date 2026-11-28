@@ -103,6 +103,16 @@ function contractLiveSources(meta: Record<string, unknown> | undefined, producer
     return sources;
 }
 
+function compositeProducer(value: string | undefined) {
+    const normalized = value?.trim().toLowerCase().replace(/-/g, "_");
+    if (!normalized)
+        return false;
+    if (normalized.includes("+") || normalized.includes("mixed") || normalized.includes("composite"))
+        return true;
+    const producerCount = liveProducerIds(normalized).length;
+    return producerCount > 1 || (producerCount > 0 && normalized.includes("warehouse"));
+}
+
 export function resolveProvenance(record: SourceRecord, data: Record<string, unknown>) {
     const meta = objectValue(data?.meta);
     const source = provenanceText(meta?.source);
@@ -114,9 +124,10 @@ export function resolveProvenance(record: SourceRecord, data: Record<string, unk
     const live = lineage === "live" || fallbackOutcome === "served" ||
         (meta?.cached === false && fetchedAt !== undefined && warehouseId === undefined);
     const declaresWarehouse = meta?.dataset === "warehouse" || source === "warehouse" || source?.startsWith("warehouse:") === true;
+    const infersWarehouseIdentity = lineage === undefined && fallbackOutcome === undefined &&
+        meta?.cached !== false && !compositeProducer(source);
     const warehouse = !live && warehouseId !== undefined &&
-        (declaresWarehouse || meta?.cached === true || fallbackOutcome === "stale" ||
-         (lineage === undefined && fallbackOutcome === undefined && meta?.cached !== false));
+        (declaresWarehouse || meta?.cached === true || fallbackOutcome === "stale" || infersWarehouseIdentity);
     const origin = live ? "live" : warehouse ? "warehouse" : "undeclared";
     const producer = firstProvenanceText(fallback?.live_source, source);
     const asOf = firstProvenanceText(meta?.as_of, meta?.data_through, meta?.salary_date, meta?.fetched_at, meta?.last_fetch);

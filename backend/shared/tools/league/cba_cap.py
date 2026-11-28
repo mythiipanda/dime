@@ -20,6 +20,13 @@ from ..cap_rules import (
 )
 
 
+_CAP_ROW_UNITS = {
+    "payroll": "usd_dollars",
+    "cap_room": "usd_dollars",
+    "room_under_apron2": "usd_dollars",
+}
+
+
 def _team_salary_lookup(con, name: str) -> str | None:
     pkg = _pkg()
     if not (pkg.season_static(pkg.last_completed_season())
@@ -436,6 +443,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                                        reverse=True),
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
+            "units": _CAP_ROW_UNITS,
             "meta": {"source": source, "season": season or "2026-27",
                      **warehouse_identity_meta(),
                      "salary_date": salary_date,
@@ -473,6 +481,7 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
     rows.sort(key=lambda r: r["payroll"], reverse=True)
     res = {"tool": "get_cap_table", "ok": True,
            "rows": rows,
+           "units": _CAP_ROW_UNITS,
            "meta": {"source": source, "season": season or season_used or "2026-27",
                     **warehouse_identity_meta(),
                     "salary_date": salary_date,

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { JSDOM } from "jsdom";
 import ArtifactPlayerCard from "./components/dime/ArtifactPlayerCard";
+import ArtifactTeamCard from "./components/dime/ArtifactTeamCard";
 import ArtifactTable from "./components/dime/ArtifactTable";
 import ArtifactShell from "./components/dime/ArtifactShell";
 import { artifactToCopyText } from "./components/site/harness/ArtifactsView";
@@ -37,6 +38,32 @@ test("player-card markup and CSV keep exact ratios, missing values, zero and sou
   assert.match(csv, /True shooting,0\.612,ratio,design-player-fixture,0,ts/);
   assert.match(csv, /Impact,,,design-player-fixture,0,impact/);
   assert.match(artifactToCopyText({ ...playerCardFixture, playerName: 'Alex, "Example"' }), /"Alex, ""Example"""/);
+});
+
+test("team-card section money is compact in the card and exact in source inspection", async () => {
+  const host = document.createElement("div"); document.body.append(host);
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ArtifactTeamCard artifact={{
+      kind: "team_card", title: "LAL snapshot", teamName: "Los Angeles Lakers",
+      sourceRef: "cap-src", sourceRow: 0, nameColumn: "team",
+      metrics: [{ column: "payroll", label: "Payroll", value: 201332759, unit: "usd_dollars" }],
+      sections: [{ label: "Apron position", sourceRef: "cap-src", sourceRow: 0,
+        metrics: [{ column: "room_under_apron2", label: "Room under apron 2", value: 20353241, unit: "usd_dollars" }] }],
+    }} />));
+    assert.match(host.textContent!, /\$201\.3M/);
+    assert.match(host.textContent!, /\$20\.4M/);
+    assert.doesNotMatch(host.textContent!, /201332759/);
+    assert.doesNotMatch(host.textContent!, /20353241/);
+    const trigger = host.querySelector("button")!;
+    await act(async () => trigger.click());
+    const popover = document.querySelector('[role="dialog"]')!;
+    assert.ok(popover);
+    assert.match(popover.textContent!, /201332759 · usd_dollars/);
+    assert.match(popover.textContent!, /20353241 · usd_dollars/);
+    await act(async () => popover.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  } finally { await act(async () => root.unmount()); host.remove(); }
 });
 
 test("charts preserve observation positions when values or labels are missing", () => {

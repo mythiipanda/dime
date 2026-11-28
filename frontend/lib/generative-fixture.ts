@@ -55,8 +55,8 @@ export const generativeFixtures: DimeArtifact[] = [
     ],
     sections: [
       { label: "Payroll", sourceRef: "design-cap-fixture", sourceRow: 0, metrics: [
-        { column: "payroll", label: "Payroll", value: 172, unit: "$M" },
-        { column: "apron_room", label: "Room below 1st apron", value: 6, unit: "$M" },
+        { column: "payroll", label: "Payroll", value: 172000000, unit: "usd_dollars" },
+        { column: "apron_room", label: "Room below 1st apron", value: 6000000, unit: "usd_dollars" },
       ], fields: [{ column: "apron", label: "Apron status", value: "below first apron" }],
       provenance: { origin: "undeclared", capability: "Design fixture · no live query", season: "Illustrative season", liveSources: [] } },
       { label: "Four factors", sourceRef: "design-4f-fixture", sourceRow: 0, metrics: [
