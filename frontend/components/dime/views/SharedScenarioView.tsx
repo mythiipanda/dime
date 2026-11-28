@@ -229,7 +229,7 @@ export function SharedScenarioView({
                 ] as const).map(([label, over]) => (
                   <div key={label} className="flex items-baseline justify-between">
                     <span className="text-ink-2">{label}</span>
-                    <span className={`font-mono text-[10.5px] uppercase tracking-wide ${over ? "text-red" : "text-ink-3"}`}>
+                    <span className={`font-mono text-[10.5px] lowercase ${over ? "text-red" : "text-ink-3"}`}>
                       {over ? "over" : "under"}
                     </span>
                   </div>
@@ -240,11 +240,14 @@ export function SharedScenarioView({
           {(evaluation?.disclosures?.length ?? 0) > 0 && (
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
               <h2 className="text-[13px] font-semibold text-ink">Method disclosures</h2>
-              <div className="mt-2 space-y-1.5">
+              <ul className="mt-2 space-y-2.5">
                 {(evaluation?.disclosures ?? []).map((disclosure, i) => (
-                  <p key={i} className="text-[11.5px] leading-[1.55] text-ink-3">{disclosure}</p>
+                  <li key={i} className="relative pl-3.5 text-[11.5px] leading-[1.6] text-ink-3">
+                    <span aria-hidden="true" className="absolute left-0 top-[7px] h-px w-2 bg-line-strong" />
+                    {disclosure}
+                  </li>
                 ))}
-              </div>
+              </ul>
             </section>
           )}
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
@@ -389,7 +392,7 @@ export function SharedTradeView({
                       ] as const).map(([label, over]) => (
                         <div key={label} className="flex items-baseline justify-between">
                           <span className="text-ink-3">{label}</span>
-                          <span className={`font-mono text-[10px] uppercase tracking-wide ${over ? "text-red" : "text-ink-3"}`}>
+                          <span className={`font-mono text-[10px] lowercase ${over ? "text-red" : "text-ink-3"}`}>
                             {over ? "over" : "under"}
                           </span>
                         </div>
@@ -397,7 +400,7 @@ export function SharedTradeView({
                       {row.hard_cap && (
                         <div className="flex items-baseline justify-between">
                           <span className="text-ink-3">hard cap</span>
-                          <span className="font-mono text-[10px] uppercase tracking-wide text-red">{row.hard_cap}</span>
+                          <span className="font-mono text-[10px] lowercase text-red">{row.hard_cap}</span>
                         </div>
                       )}
                     </div>
