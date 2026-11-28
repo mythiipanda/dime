@@ -29,9 +29,11 @@ def _team_salary_lookup(con, name: str) -> str | None:
             and "silver_salaries" in _warehouse_tables(con)):
         return None
     try:
+        scols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+        order = " ORDER BY CASE WHEN ROW_KIND = 'roster' THEN 0 ELSE 1 END" if "ROW_KIND" in scols else ""
         row = con.execute(
             "SELECT TEAM FROM silver_salaries "
-            "WHERE LOWER(PLAYER_NAME) = LOWER(?) LIMIT 1", [name]).fetchone()
+            "WHERE LOWER(PLAYER_NAME) = LOWER(?)" + order + " LIMIT 1", [name]).fetchone()
     except Exception:
         return None
     return str(row[0]) if row and row[0] else None
@@ -558,9 +560,14 @@ def _unknown_player_hints(unknown: list[str], con: object = None) -> list[str]:
                 base = u.split(" (suggestions")[0].strip()
                 bits = [b for b in base.split() if len(b) > 1]
                 like = "%" + "%".join(bits[:2]) + "%" if bits else base
+                try:
+                    scols2 = {r[1] for r in con2.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+                except Exception:
+                    scols2 = set()
+                order2 = " ORDER BY CASE WHEN ROW_KIND = 'roster' THEN 0 ELSE 1 END" if "ROW_KIND" in scols2 else ""
                 hit = con2.execute(
                     """SELECT TEAM, PLAYER_NAME FROM silver_salaries
-                    WHERE PLAYER_NAME LIKE ? LIMIT 1""",
+                    WHERE PLAYER_NAME LIKE ?""" + order2 + " LIMIT 1",
                     [like],
                 ).fetchone()
                 if hit:
