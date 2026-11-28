@@ -114,6 +114,16 @@ test("evidence tables distinguish zero from missing values and keep numeric alig
   assert.doesNotMatch(empty, /<table/);
 });
 
+test("evidence tables render long floats at four significant digits without touching integers", () => {
+  const dom = new JSDOM(renderToStaticMarkup(<RecordsTable title="Float evidence" rows={[{ player: "Guard A", pts: 32.68421052631579, rate: 0.0045671, games: 82 }]} />));
+  const text = dom.window.document.body.textContent!;
+  assert.match(text, /32\.68/);
+  assert.doesNotMatch(text, /32\.684210526/);
+  assert.match(text, /0\.004567/);
+  assert.match(text, /82/);
+  dom.window.close();
+});
+
 test("native field validation supplies associated feedback without an explicit error", async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost", pretendToBeVisual: true });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Element: dom.window.Element, Node: dom.window.Node, Event: dom.window.Event, FormData: dom.window.FormData, IS_REACT_ACT_ENVIRONMENT: true });
