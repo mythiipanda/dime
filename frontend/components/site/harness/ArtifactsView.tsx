@@ -18,6 +18,7 @@ import ArtifactMemo from "@/components/dime/ArtifactMemo";
 import ArtifactPlayerCard from "@/components/dime/ArtifactPlayerCard";
 import ArtifactTeamCard from "@/components/dime/ArtifactTeamCard";
 import OpenInViewButton from "@/components/dime/OpenInViewButton";
+import { WorkbenchOpenButton } from "@/components/dime/WorkbenchOpenButton";
 import PinButton from "@/components/dime/PinButton";
 import {
   memoToMarkdown,
@@ -285,6 +286,12 @@ type SharePhase =
   | { phase: "minted"; link: string; copied: boolean }
   | { phase: "error" };
 
+function workbenchTargetFor(artifact: DimeArtifact): "trade" | "cap_scenario" | null {
+  if (artifact.kind === "trade_verdict" && artifact.construction) return "trade";
+  if (artifact.kind === "cap_summary" && artifact.construction) return "cap_scenario";
+  return null;
+}
+
 function ShareableArtifact({ artifact, shareContext }: { artifact: DimeArtifact; shareContext?: { run_id: string; thread: string; index: number } }) {
   const [share, setShare] = useState<SharePhase>({ phase: "idle" });
   const mint = () => {
@@ -307,8 +314,9 @@ function ShareableArtifact({ artifact, shareContext }: { artifact: DimeArtifact;
         title={artifact.title}
         source={artifact.source}
         copyText={artifactToCopyText(artifact)}
+        footer={<WorkbenchOpenButton artifact={artifact} />}
         actions={<>
-          <OpenInViewButton artifact={artifact} />
+          {workbenchTargetFor(artifact) ? null : <OpenInViewButton artifact={artifact} />}
           <PinButton artifact={artifact} />
           {shareContext && (
             <button

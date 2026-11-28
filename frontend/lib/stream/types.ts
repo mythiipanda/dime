@@ -239,6 +239,7 @@ export interface TradeVerdictTeamPayload {
 
 export interface TradeVerdictArtifactPayload {
   kind: "trade_verdict";
+  construction?: import("@/lib/workbench-navigation").TradeConstructionSeed;
   title: string;
   source?: string;
   provenance?: DimeProvenance;
@@ -252,6 +253,7 @@ export interface TradeVerdictArtifactPayload {
 
 export interface CapSummaryArtifactPayload {
   kind: "cap_summary";
+  construction?: import("@/lib/workbench-navigation").CapScenarioSeed;
   title: string;
   source?: string;
   provenance?: DimeProvenance;

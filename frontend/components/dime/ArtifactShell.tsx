@@ -126,12 +126,14 @@ export default function ArtifactShell({
   source,
   copyText,
   actions,
+  footer,
   children,
 }: {
   title: string;
   source?: string;
   copyText?: string;
   actions?: React.ReactNode;
+  footer?: React.ReactNode;
   delay?: number;
   children: React.ReactNode;
 }) {
@@ -162,6 +164,7 @@ export default function ArtifactShell({
         <div className="flex items-center gap-1">{actions}<Button size="icon" variant="quiet" aria-label={copied ? "Copied" : copyText ? "Copy data" : "Copy"} title={copied ? "Copied" : copyText ? "Copy data" : "Copy"} onClick={copy}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</Button></div>
       </header>
       <div className="min-w-0">{children}</div>
+      {footer ? <div className="flex justify-end px-4 pb-3">{footer}</div> : null}
       <p role="status" className={error ? "px-4 pb-3 text-xs text-red" : "sr-only"}>{error ? "Could not copy. Select the visible data and copy it manually." : copied ? "Data copied." : ""}</p>
     </Surface>
   );
