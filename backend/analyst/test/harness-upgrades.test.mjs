@@ -1715,10 +1715,10 @@ test("history replays stored reasoning for thinking-as-text models", async () =>
   assert.equal(thinking.thinking, "Checked league scoring leaders.");
 });
 
-test("cerebras kimi resolves with thinking-as-text compat, not reasoning_content replay", async () => {
+test("cerebras thinking-as-text models resolve with compat, not reasoning_content replay", async () => {
   const { providerPolicy } = await import("../dist/providers.js");
   const policy = providerPolicy({ CEREBRAS_API_KEY: "test-key" });
-  const resolved = policy.resolve("cerebras:moonshotai-kimi-k3.1-pro-trial");
+  const resolved = policy.resolve("cerebras:gpt-oss-120b");
   assert.equal(resolved.compat.requiresThinkingAsText, true);
   assert.equal(resolved.compat.requiresReasoningContentOnAssistantMessages, undefined);
 });
