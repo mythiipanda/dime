@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowRight, Basketball, Check, Copy, Database, User } from "iconoir-react";
+import { Basketball, Check, Copy } from "iconoir-react";
 import { PromptBar } from "../ds/PromptBar";
 import { CitationChip } from "../ds/CitationChip";
 import { EvidenceTrace } from "../ds/EvidenceTrace";
@@ -77,7 +77,7 @@ export function AssistantTurn({ message, prefix, thread, onFollowUp, onRetry }: 
     <AnswerVerification carry={message.carry} artifacts={message.artifacts} prefix={prefix} />
     {message.failure && <div role="alert" className="my-4 flex items-center gap-3 rounded-lg border border-red/25 bg-red-tint px-4 py-3 text-[12px] text-red"><span className="flex-1">{normalizeFailureCopy(message.failure.message)}</span>{onRetry && <button className="failure-retry" onClick={onRetry}>Try again</button>}</div>}
     {message.text && <CopyAnswerButton text={message.text} />}
-    {message.suggestions.map(suggestion => <button key={suggestion} className="suggestion-row text-[12px]" onClick={() => onFollowUp(suggestion)}><ArrowRight width={13} height={13} />{suggestion}</button>)}
+    {message.suggestions.map(suggestion => <button key={suggestion} className="suggestion-row text-[12px]" onClick={() => onFollowUp(suggestion)}>{suggestion}</button>)}
   </article>;
 }
 
@@ -134,7 +134,7 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
     {empty ? <section className="chat-empty">
       <h1><span>Your front office, on demand.</span>What are we looking into?</h1>
       {composer}
-      <div className="mt-6 space-y-0.5">{suggestedPrompts.map((prompt, index) => <button key={prompt} className="suggestion-row" disabled={chat.historyLoading} onClick={() => changeDraft(prompt)}>{index === 0 ? <User width={16} height={16} /> : index === 1 ? <Basketball width={16} height={16} /> : <Database width={16} height={16} />}<span>{prompt}</span><ArrowRight width={14} height={14} className="ml-auto" /></button>)}</div>
+      <div className="mt-6 space-y-0.5">{suggestedPrompts.map((prompt, index) => <button key={prompt} className="suggestion-row" disabled={chat.historyLoading} onClick={() => changeDraft(prompt)}><span>{prompt}</span></button>)}</div>
       {chat.historyLoading && <p role="status" className="mt-4 text-[12px] text-ink-3">Loading conversation…</p>}
       {chat.historyError && <p role="alert" className="mt-4 text-[12px] text-red">{chat.historyError}</p>}
     </section> : <>
