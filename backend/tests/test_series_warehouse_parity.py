@@ -96,13 +96,24 @@ def _opponent(team, matchup):
             return token
     return ""
 
+def _season_complete(season: str) -> bool:
+    start = coverage.parse_season_start(season)
+    if start is None:
+        return False
+    end_year = start + 1
+    import datetime as _dt
+    today = _dt.date.today()
+    return (end_year, 7, 1) < (today.year, today.month, today.day)
+
+
 def _supported_questions(path):
     questions = []
     with _read_only_file(path) as con:
         seasons = [row[0] for row in con.execute(
             "SELECT DISTINCT _season FROM silver_hist_gamelogs"
             " WHERE _season IS NOT NULL ORDER BY _season DESC LIMIT ?",
-            [SEASONS_SAMPLED]).fetchall()]
+            [SEASONS_SAMPLED * 2]).fetchall()]
+        seasons = [season for season in seasons if _season_complete(season)][:SEASONS_SAMPLED]
         for season in seasons:
             counts: dict[tuple[str, str], int] = {}
             for team, matchup in con.execute(
