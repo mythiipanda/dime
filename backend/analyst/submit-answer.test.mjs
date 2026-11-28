@@ -2604,6 +2604,96 @@ test("resolveSalvagedArtifacts resolves ref-only verdicts against run sources", 
   assert.equal(artifacts[1].kind, "table", "self-contained artifacts survive untouched");
 });
 
+function capScenarioSource(overrides = {}) {
+  const summary = {
+    team: "MEM", season: "2031-32",
+    payroll_before: 140089456, payroll_after: 152089456, delta: 12000000,
+    team_salary_before: 140089456, team_salary_after: 152089456, team_salary_unit: "usd_dollars",
+    cap_holds_before: 0, cap_holds_after: 0, roster_charges_before: 0, roster_charges_after: 0,
+    cap_room: 85763787, cap_room_before: 97763787, committed_payroll_cap_room: 85763787,
+    tax_room: 136902789, room_apron1: 149284175, room_apron2: 167554181,
+    over_tax: false, over_apron1: false, over_apron2: false, hard_cap: "",
+    roster_before: 16, roster_after: 17,
+    ...(overrides.summary ?? {})
+  };
+  const rows = [
+    { step: 0, kind: "payroll", detail: "MEM committed payroll", delta: 0, payroll: 140089456 },
+    { step: 1, kind: "signing", detail: "sign Nikola Vucevic", delta: 12000000, payroll: 152089456 },
+    { step: 2, kind: "post_move", detail: "post-move payroll", delta: 0, payroll: 152089456 }
+  ];
+  const source = makeSourceRecord("cap-src", { rows, tool: "get_cap_scenario", meta: { season: "2031-32", source: "fixture-cap" } });
+  source.response.structuredContent.summary = summary;
+  source.response.structuredContent.issues = overrides.issues ?? ["roster would be 17 players - must trim to 15"];
+  source.response.structuredContent.restrictions = [
+    { threshold: "second apron", status: "trigger", rule: "aggregating salaries, sending cash, or using a sign-and-trade generated exception in a deal hard-caps the team at the second apron" },
+    { threshold: "first apron", status: "trigger", rule: "acquiring a sign-and-traded player hard-caps the team at the first apron" }
+  ];
+  return source;
+}
+
+test("cap_summary resolves the evaluator cap position, never model-written numbers", () => {
+  const source = capScenarioSource();
+  const input = { kind: "cap_summary", title: "Vucevic signing fits with room to spare", ref: "cap-src" };
+  const original = structuredClone(input);
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => ref === source.ref ? source : undefined);
+  const card = result.artifacts[0];
+  assert.equal(card.kind, "cap_summary");
+  assert.equal(card.team, "MEM");
+  assert.equal(card.season, "2031-32");
+  assert.equal(card.payrollBefore, 140089456);
+  assert.equal(card.payrollAfter, 152089456);
+  assert.equal(card.delta, 12000000);
+  assert.equal(card.capRoom, 85763787);
+  assert.equal(card.capRoomBefore, 97763787);
+  assert.equal(card.roomApron1, 149284175);
+  assert.equal(card.roomApron2, 167554181);
+  assert.equal(card.taxRoom, 136902789);
+  assert.equal(card.rosterBefore, 16);
+  assert.equal(card.rosterAfter, 17);
+  assert.equal(card.overTax, undefined);
+  assert.equal(card.hardCap, undefined);
+  assert.deepEqual(card.issues, ["roster would be 17 players - must trim to 15"]);
+  assert.equal(card.steps.length, 3);
+  assert.equal(card.steps[1].detail, "sign Nikola Vucevic");
+  assert.equal(card.steps[1].delta, 12000000);
+  assert.equal(card.restrictions.length, 2);
+  assert.equal(card.evaluationTool, "get_cap_scenario");
+  assert.equal(card.sourceRef, "cap-src");
+  assert.equal(card.provenance.season, "2031-32");
+  assert.deepEqual(input, original);
+});
+
+test("cap_summary surfaces apron flags and hard-cap when the evaluator sets them", () => {
+  const source = capScenarioSource({ summary: { over_apron1: true, over_tax: true, hard_cap: "first apron" } });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "cap_summary", title: "Tight", ref: "cap-src" }] }, () => source);
+  const card = result.artifacts[0];
+  assert.equal(card.overApron1, true);
+  assert.equal(card.overTax, true);
+  assert.equal(card.hardCap, "first apron");
+  assert.equal(card.overApron2, undefined);
+});
+
+test("cap_summary gate: rejects unknown refs, non-evaluation tools, forged numbers and malformed sources", () => {
+  const source = capScenarioSource();
+  const input = { kind: "cap_summary", title: "x", ref: "cap-src" };
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => undefined), /not part of this run/);
+  const wrongTool = makeSourceRecord("sql-src", { rows: [{ payroll: 1 }], tool: "sql_exec" });
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "cap_summary", title: "x", ref: "sql-src" }] }, () => wrongTool), /not a cap scenario evaluation/);
+  for (const forged of [
+    { ...input, payrollAfter: 1 },
+    { ...input, capRoom: 2 },
+    { ...input, overApron1: true },
+    { ...input, issues: ["invented"] },
+    { kind: "cap_summary", ref: "cap-src" },
+    { kind: "cap_summary", title: "x" },
+  ]) assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [forged] }, () => source));
+  const bare = makeSourceRecord("bare-cap-src", { rows: [{ a: 1 }], tool: "get_cap_scenario" });
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "cap_summary", title: "x", ref: "bare-cap-src" }] }, () => bare), /summary structure/);
+  const errored = capScenarioSource();
+  errored.response.isError = true;
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => errored), /errored/);
+});
+
 test("resolveSalvagedArtifacts drops unresolvable ref artifacts instead of emitting raw refs", () => {
   const sourceMap = new Map();
   const raw = [
