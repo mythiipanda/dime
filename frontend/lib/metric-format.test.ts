@@ -11,3 +11,14 @@ test("undeclared numeric headline metrics do not acquire a dollar sign", () => {
   assert.equal(rendered, "201.3M");
   assert.equal(rendered.includes("$"), false);
 });
+
+test("usd_millions headline metrics render as money at the millions scale without re-scaling", () => {
+  assert.equal(formatHeadlineMetric(45.3, "usd_millions"), "$45.3M");
+  assert.equal(formatHeadlineMetric(0.5, "usd_millions"), "$500K");
+  assert.equal(formatHeadlineMetric(-12.1, "usd_millions"), "-$12.1M");
+});
+
+test("usd_millions counts as an inline-embedded unit", async () => {
+  const { unitEmbeddedInline } = await import("./metric-format");
+  assert.equal(unitEmbeddedInline("usd_millions"), true);
+});
