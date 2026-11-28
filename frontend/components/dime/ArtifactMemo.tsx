@@ -1,6 +1,5 @@
 "use client";
 
-import { Download } from "lucide-react";
 import { Button } from "@/components/ds/Button";
 import { memoToMarkdown, type MemoArtifactPayload } from "@/lib/dime-stream";
 
@@ -39,12 +38,8 @@ export default function ArtifactMemo({ artifact }: { artifact: MemoArtifactPaylo
     <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
       <p className="break-words text-xs text-ink-3">{artifact.footnote || "Section citations reference queried source rows."}</p>
       <div className="flex gap-2">
-        <Button size="sm" variant="quiet" aria-label={`Download ${artifact.title} as markdown`} onClick={downloadMd}>
-          <Download size={14} aria-hidden="true" />Markdown
-        </Button>
-        <Button size="sm" variant="quiet" aria-label={`Download ${artifact.title} as PDF`} onClick={downloadPdf}>
-          <Download size={14} aria-hidden="true" />PDF
-        </Button>
+        <Button size="sm" variant="quiet" aria-label={`Download ${artifact.title} as markdown`} onClick={downloadMd}>Markdown</Button>
+        <Button size="sm" variant="quiet" aria-label={`Download ${artifact.title} as PDF`} onClick={downloadPdf}>PDF</Button>
       </div>
     </div>
   </div>;
