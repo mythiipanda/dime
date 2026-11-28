@@ -4,6 +4,7 @@ import type { MoveGroupsMap } from "@/lib/move-groups";
 import { ReadOnlyMoveList } from "@/components/dime/ScenarioMoveList";
 import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
 import { ArtifactBody } from "@/components/site/harness/ArtifactsView";
+import { RecordsTable } from "@/components/ds/RecordsTable";
 import { asResolvedArtifacts } from "@/lib/stream/artifacts";
 import type { ProjectionResponse } from "@/lib/planner";
 
@@ -541,12 +542,26 @@ export function SharedArtifactView({
             {evidence.length > 0 && (
               <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
                 <h2 className="text-[13px] font-semibold text-ink">Pinned evidence</h2>
-                <div className="mt-2 space-y-1">
-                  {evidence.map((ev, i) => (
-                    <p key={i} className="font-mono text-[10.5px] leading-[1.6] text-ink-3">
-                      {ev.missing ? `${ev.ref} — source record no longer resolvable` : evidenceMetaLine(ev)}
-                    </p>
-                  ))}
+                <div className="mt-2 space-y-2">
+                  {evidence.map((ev, i) => {
+                    const rows = Array.isArray(ev.rows) ? ev.rows : [];
+                    const line = ev.missing ? `${ev.ref} — source record no longer resolvable` : evidenceMetaLine(ev);
+                    if (ev.missing || rows.length === 0) {
+                      return (
+                        <p key={i} className="font-mono text-[10.5px] leading-[1.6] text-ink-3">{line}</p>
+                      );
+                    }
+                    return (
+                      <details key={i} className="group">
+                        <summary className="cursor-pointer font-mono text-[10.5px] leading-[1.6] text-ink-3 underline decoration-line underline-offset-2 hover:text-ink-2">
+                          {line} · {rows.length} {rows.length === 1 ? "row" : "rows"}
+                        </summary>
+                        <div className="mt-2">
+                          <RecordsTable rows={rows} title={ev.tool ?? ev.ref ?? "evidence"} />
+                        </div>
+                      </details>
+                    );
+                  })}
                 </div>
               </section>
             )}
