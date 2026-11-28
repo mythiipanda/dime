@@ -75,9 +75,9 @@ export const generativeFixtures: DimeArtifact[] = [
 
 export const generativeEvents: [string, unknown][] = [
   ["status", { text: "Reading illustrative source rows" }],
-  ["tool_call", { event_id: "fx-t1", name: "get_player_career", data: { player: "Alex Example" } }],
+  ["tool_call", { event_id: "fx-t1", name: "get_leaders", data: { stat: "pts" } }],
   ["tool_call", { event_id: "fx-t2", name: "sql_exec", data: { sql: "select …" } }],
-  ["tool_result", { event_id: "fx-t1", name: "get_player_career", status: "ok", rows: 48, ms: 210 }],
+  ["tool_result", { event_id: "fx-t1", name: "get_leaders", status: "ok", rows: 48, ms: 210 }],
   ["tool_call", { event_id: "fx-t3", name: "get_shot_zones", data: { player: "Alex Example" } }],
   ["tool_result", { event_id: "fx-t2", name: "sql_exec", status: "ok", rows: 12, ms: 88 }],
   ["tool_result", { event_id: "fx-t3", name: "get_shot_zones", status: "ok", rows: 14, ms: 164 }],
