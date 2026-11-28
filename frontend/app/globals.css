@@ -189,6 +189,10 @@ body {
   color: var(--ink);
 }
 
+body:has(.share-frame) {
+  background-image: none;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;

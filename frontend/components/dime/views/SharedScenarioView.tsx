@@ -23,7 +23,7 @@ function sharedDate(iso: string): string {
 
 export function SharedFrame({ children, label }: { children: ReactNode; label?: string }) {
   return (
-    <main className="mx-auto min-h-screen w-full max-w-[860px] px-5 py-10 sm:px-8">
+    <main className="share-frame mx-auto min-h-screen w-full max-w-[860px] px-5 py-10 sm:px-8">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <a href="/" className="text-[15px] font-semibold tracking-tight text-ink">dime</a>
         <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{label ?? "shared cap scenario"}</span>
