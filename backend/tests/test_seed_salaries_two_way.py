@@ -149,3 +149,26 @@ def test_same_day_events_order_by_group_sort_trailing_integer():
     ]
     rows = kinds([{"PLAYER_NAME": "Order Player", "TEAM": "SAC"}], txns)
     assert rows["Order Player|SAC"] == "dead_money"
+
+
+def test_same_team_resurrection_flags_resurrected_companion():
+    txns = [
+        ("flag-player", "Signing", "kings", "2026-07-01",
+         "Sacramento Kings signed Flag Player."),
+        ("flag-player", "Waive", "kings", "2026-10-01", "Sacramento Kings waived Flag Player."),
+        ("flag-player", "Signing", "kings", "2026-11-01",
+         "Sacramento Kings signed Flag Player."),
+    ]
+    frame = pl.DataFrame([{"PLAYER_NAME": "Flag Player", "TEAM": "SAC"}])
+    out = annotate_row_kinds(frame, FakeCon(txns))
+    row = out.to_dicts()[0]
+    assert row["ROW_KIND"] == "roster"
+    assert row["RESURRECTED"] is True
+
+
+def test_rows_without_resurrection_history_flag_false():
+    rows_frame = pl.DataFrame([{"PLAYER_NAME": "Walter Clayton", "TEAM": "MEM"}])
+    out = annotate_row_kinds(rows_frame, FakeCon(CLAYTON_TXNS))
+    row = out.to_dicts()[0]
+    assert row["ROW_KIND"] == "dead_money"
+    assert row["RESURRECTED"] is False
