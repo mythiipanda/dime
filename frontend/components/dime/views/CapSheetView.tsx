@@ -81,7 +81,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     setTeam(handoff.team);
     setMoves(handoff.moves);
     if (handoff.groups) setGroups(handoff.groups);
-    setHandoffNote(handoff.source ? `Imported from the trade machine — ${handoff.source}. The trade is a one-way copy: edits here don't affect it.` : null);
+    setHandoffNote(handoff.source ? `Imported from the trade machine (${handoff.source}). The trade is a one-way copy: edits here don't affect it.` : null);
   }, []);
 
   const draftKey = `${team}:${scenarioSeason ?? DEFAULT_SCENARIO_SEASON}`;
@@ -437,13 +437,13 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                             className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${
                               !year.guaranteed ? "text-ink-3" : "text-ink-2"
                             } ${declined || removed ? "line-through opacity-40" : ""} ${clickable ? "p-0" : ""}`}
-                            title={removed ? `${player.player} is removed by a scenario move in ${removal} — this season and forward are struck` : undefined}
+                            title={removed ? `${player.player} is removed by a scenario move in ${removal}; this season and forward are struck` : undefined}
                           >
                             {clickable ? (
                               <button
                                 type="button"
                                 className="block w-full cursor-pointer px-2 py-1.5 text-right font-mono tabular-nums transition-colors hover:bg-field"
-                                title={`${year.option} option — activate to mark ${declined ? "exercised" : "declined"} in the scenario`}
+                                title={`${year.option} option: activate to mark ${declined ? "exercised" : "declined"} in the scenario`}
                                 aria-pressed={declined}
                                 onClick={() => optionToggled(player, year.season)}
                               >
@@ -519,7 +519,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
               )}
               {moves.length === 0 ? (
                 <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-3">
-                  No moves yet. Toggle an option cell or add a signing below — the grid re-prices instantly.
+                  No moves yet. Toggle an option cell or add a signing below. The grid re-prices instantly.
                 </p>
               ) : (
                 <div className="mt-2 space-y-1.5">
@@ -583,7 +583,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                       onCopy={copyShareLink}
                       note={
                         <>
-                          Snapshot link minted — recipients see those moves evaluated live.
+                          Snapshot link minted. Recipients see those moves evaluated live.
                           {JSON.stringify(moves) !== JSON.stringify(share.moves)
                             ? " The scenario has changed since this link was minted; the link still holds the earlier moves; use Share updated for a new link."
                             : " Editing the scenario here won't change it; share again for a new link."}
@@ -593,7 +593,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                   )}
                   {share.phase === "error" && (
                     <p className="w-full text-[11px] leading-[1.45] text-red">
-                      The scenario couldn't be shared — the backend didn't accept the mint. Your moves are untouched; try again.
+                      The scenario couldn't be shared. The backend didn't accept the mint. Your moves are untouched; try again.
                     </p>
                   )}
                 </div>
@@ -670,7 +670,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                 </div>
               ) : (
                 <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-3">
-                  CBA restriction triggers appear here once a scenario is evaluated — hard caps, frozen picks, matching limits.
+                  CBA restriction triggers appear here once a scenario is evaluated: hard caps, frozen picks, matching limits.
                 </p>
               )}
               {scenario?.errors?.length ? (
