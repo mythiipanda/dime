@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { QuietDetails } from "@/components/ds/QuietDetails";
 import { useState } from "react";
 import { Share2 } from "lucide-react";
 import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
@@ -161,10 +162,7 @@ export function ProvenancePanel({ provenance }: { provenance: DimeProvenance }) 
     ? provenance.evidence
     : [{ label: "", provenance }];
   return (
-    <details className="mt-3 rounded-[10px] border border-line bg-field px-3 py-2">
-      <summary className="cursor-pointer text-[12px] font-medium text-ink-2">
-        Sources &amp; provenance
-      </summary>
+    <QuietDetails label={<>Sources &amp; provenance</>}>
       <dl className="mt-2 flex flex-col gap-2.5 text-[12px] leading-relaxed">
         {evidence.map((entry, i) => (
           <div key={i} className="flex flex-col gap-1">
@@ -173,7 +171,7 @@ export function ProvenancePanel({ provenance }: { provenance: DimeProvenance }) 
           </div>
         ))}
       </dl>
-    </details>
+    </QuietDetails>
   );
 }
 
