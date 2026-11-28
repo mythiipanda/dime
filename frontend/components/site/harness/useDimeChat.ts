@@ -142,7 +142,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
           if (thread && !options?.replay) { cacheChatRun(thread, turnText, snap); options?.onRunDone?.(q); }
         },
       },
-      { signal: ctrl.signal, model, thread, replay: options?.replay, ...(context ? { context } : {}) },
+      { signal: ctrl.signal, model, thread, replay: options?.replay, turn: messages.filter(m => m.role === "assistant").length, ...(context ? { context } : {}) },
     );
   };
 

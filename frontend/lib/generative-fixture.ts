@@ -92,3 +92,40 @@ export const generativeEvents: [string, unknown][] = [
   ["final_answer", { text: "## Generative answer fixture\n\nFictional players and values. No provider or warehouse call was made.\n\nAlex Example has 24.6 points per game in this sample. Source values are not a verification.", carry: { verification: "unknown", verified_claims: 0, gaps: [] } }],
   ["graph_end", {}],
 ];
+
+const generativeTurn1Events: [string, unknown][] = [
+  ["status", { text: "Reading illustrative source rows" }],
+  ["tool_call", { event_id: "fx-t1", name: "get_leaders", data: { stat: "pts" } }],
+  ["tool_result", { event_id: "fx-t1", name: "get_leaders", status: "fail", error: "Fixture timeout · retrying" }],
+  ["tool_call", { event_id: "fx-t2", name: "get_leaders", data: { stat: "pts" } }],
+  ["tool_result", { event_id: "fx-t2", name: "get_leaders", status: "ok", rows: 48, ms: 620 }],
+  ["token", { ms: 90, text: "## Recovery fixture\n\n" }],
+  ["token", { ms: 90, text: "One fixture source failed and was retried. Fictional players and values.\n" }],
+  ["custom_data", { artifacts: [generativeFixtures[0], generativeFixtures[3]] }],
+  ["final_answer", { text: "## Recovery fixture\n\nOne fixture source failed and was retried. Fictional players and values.", carry: { verification: "unknown", verified_claims: 0, gaps: [] } }],
+  ["graph_end", {}],
+];
+
+const generativeTurn2Events: [string, unknown][] = [
+  ["status", { text: "Reading illustrative source rows" }],
+  ["tool_call", { event_id: "fx-t1", name: "sql_exec", data: { sql: "select …" } }],
+  ["tool_result", { event_id: "fx-t1", name: "sql_exec", status: "ok", rows: 12, ms: 88 }],
+  ["token", { ms: 90, text: "## Comparison fixture\n\n" }],
+  ["token", { ms: 90, text: "Fictional head-to-head values. No provider or warehouse call was made.\n" }],
+  ["custom_data", { artifacts: [generativeFixtures[4], generativeFixtures[3]] }],
+  ["final_answer", { text: "## Comparison fixture\n\nFictional head-to-head values. No provider or warehouse call was made.", carry: { verification: "unknown", verified_claims: 0, gaps: [] } }],
+  ["graph_end", {}],
+];
+
+const generativeTurn3Events: [string, unknown][] = [
+  ["status", { text: "Reading illustrative source rows" }],
+  ["tool_call", { event_id: "fx-t1", name: "sql_exec", data: { sql: "select …" } }],
+  ["tool_result", { event_id: "fx-t1", name: "sql_exec", status: "ok", rows: 30, ms: 140 }],
+  ["token", { ms: 90, text: "## Same-kind stacking fixture\n\n" }],
+  ["token", { ms: 90, text: "Two chart artifacts in one turn. Fictional values.\n" }],
+  ["custom_data", { artifacts: [generativeFixtures[1], generativeFixtures[2]] }],
+  ["final_answer", { text: "## Same-kind stacking fixture\n\nTwo chart artifacts in one turn. Fictional values.", carry: { verification: "unknown", verified_claims: 0, gaps: [] } }],
+  ["graph_end", {}],
+];
+
+export const generativeTurns: [string, unknown][][] = [generativeEvents, generativeTurn1Events, generativeTurn2Events, generativeTurn3Events];
