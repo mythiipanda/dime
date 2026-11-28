@@ -92,6 +92,28 @@ def _merge_cap_labels(*values: str) -> str:
     return "+".join(merged)
 
 
+def _legacy_hold_active_in_baseline(row: dict[str, Any]) -> bool:
+    if "active_in_baseline" in row:
+        return bool(row.get("active_in_baseline"))
+    return str(row.get("scenario_dependency") or "active_expired_contract") != "option_decision_required"
+
+
+def _pending_option_signing_error(hold_rows: list[dict[str, Any]],
+                                  sign_rows: list[tuple[str, int]]) -> str | None:
+    hold_index = {normalize_name(row.get("player") or row.get("PLAYER_NAME")): row
+                  for row in hold_rows if row.get("player") or row.get("PLAYER_NAME")}
+    for name, _amount in sign_rows:
+        row = hold_index.get(normalize_name(name))
+        if row is None:
+            continue
+        if (str(row.get("scenario_dependency") or "") == "option_decision_required"
+                and not _legacy_hold_active_in_baseline(row)):
+            player = str(row.get("player") or row.get("PLAYER_NAME") or name)
+            return (f"signing {player} requires a prior option decision decline; "
+                    "the option salary is still committed")
+    return None
+
+
 def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
                               pay_before: int,
                               lines: dict[str, Any],
@@ -110,7 +132,8 @@ def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
     lines = dict(lines)
     hold_index = {normalize_name(row.get("player") or row.get("PLAYER_NAME")): row
                   for row in list(hold_rows or [])
-                  if row.get("player") or row.get("PLAYER_NAME")}
+                  if (row.get("player") or row.get("PLAYER_NAME"))
+                  and _legacy_hold_active_in_baseline(row)}
     extinguished_holds: set[str] = set()
     for move_index, move in enumerate(moves):
         if move.get("kind") != "signing":
@@ -250,6 +273,10 @@ def get_cap_scenario(team: str = "", signings: str = "",
                     "reason": exc.reason, "error": str(exc)}
         hold_payload = _cap_hold_payload(con, team, season)
         hold_rows = list(hold_payload.get("rows") or [])
+        option_signing_error = _pending_option_signing_error(hold_rows, sign_rows)
+        if option_signing_error:
+            return {"tool": "get_cap_scenario", "ok": False,
+                    "error": option_signing_error}
         lines_res = cap_lines_for_season(con, season)
         if not lines_res["ok"]:
             return {"tool": "get_cap_scenario", "ok": False,
