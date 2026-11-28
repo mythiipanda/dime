@@ -75,3 +75,31 @@ def test_projection_source_declares_money_vocabulary():
     src = (Path(__file__).resolve().parents[2] / "backend/shared/tools/league/cap_projection.py").read_text()
     for field in ('"pay_before"', '"pay_after"', '"cap_room"', '"salary"', '"delta"', '"cap_holds"', '"amount"'):
         assert field in src
+
+
+def test_money_sweep_modules_declare_units():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2] / "backend/shared/tools/league"
+    expectations = {
+        "free_agents.py": ['"cap_room"', '"salary"', '"amount"'],
+        "salary_history.py": ['"salary"', '"salary_cap"', '"luxury_tax"'],
+        "trade_value.py": ['"salary"', '"incoming"', '"outgoing"'],
+        "trade_targets.py": ['"salary"'],
+        "value_contracts.py": ['"salary"'],
+        "draft_contracts.py": ['"SALARY"'],
+        "fa_plan.py": ['"amount"', '"committed_salary"', '"max_room"'],
+        "trade_legality.py": ['"amount"', '"salary"', '"allowed_incoming"'],
+    }
+    for name, fields in expectations.items():
+        src = (root / name).read_text()
+        assert "declare_money" in src or "declare_units" in src, f"{name} not wired"
+        for field in fields:
+            assert field in src, f"{name} missing {field}"
+
+
+def test_trade_value_millions_fields_use_the_millions_token_not_raw_dollars():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "backend/shared/tools/league/trade_value.py").read_text()
+    assert '"side_total_m": "usd_millions"' in src
+    assert '"delta_m": "usd_millions"' in src
+    assert '"side_total_m": "usd_dollars"' not in src

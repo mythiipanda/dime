@@ -13,7 +13,7 @@ from ..cap_rules import (
     matching_election as _matching_election,
     payroll_proxy_meta as _payroll_proxy_meta,
 )
-from ._helpers import _owned_connection, _pkg
+from ._helpers import _owned_connection, _pkg, declare_money
 from .cba_cap import (
     CAP,
     SalaryColumnError,
@@ -1191,10 +1191,11 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
         meta["pick_vintage_basis"] = state["pick_vintage"]["basis"]
         if state["pick_vintage"]["season"]:
             meta["pick_vintage_season"] = state["pick_vintage"]["season"]
-    return {"tool": "get_trade_legality", "ok": True,
+    out = {"tool": "get_trade_legality", "ok": True,
             "rows": [team_rows[team] for team in sorted(team_rows)],
             "legal": not issues,
             "issues": issues,
             "checks": checks,
             "salary_date": state["salary_date"],
             "meta": meta}
+    return declare_money(out, ["amount", "salary", "incoming", "outgoing", "allowed_incoming", "capacity", "payroll", "cap_room", "room_apron2"])

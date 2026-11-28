@@ -3,7 +3,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ._helpers import (_cap_season_for_fa_year, _owned_connection, _pkg,
-                       _warehouse_tables)
+                       _warehouse_tables, declare_money)
 from .cap_hold_derivation import CAP_HOLD_CONTRACT, derive_cap_holds, hold_amount
 from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
@@ -133,7 +133,7 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
         return {"tool": "get_free_agents", "ok": False,
                 "error": "warehouse absent; run seed_free_agents.py first."}
     _normalize_hold_rows(fa)
-    return {
+    return declare_money({
         "tool": "get_free_agents",
         "ok": True,
         "team": abbr or "league",
@@ -150,4 +150,4 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
             "cap_hold_contract": CAP_HOLD_CONTRACT,
             "cap_hold_derivation": hold_payload.get("meta") or {},
         },
-    }
+    }, ["cap_room", "salary", "amount"])
