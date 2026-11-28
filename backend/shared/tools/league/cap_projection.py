@@ -320,7 +320,7 @@ _CAP_BASE_2026_27 = 164_961_000
 
 def _exceptions_block(lines: dict[str, Any], effects: list[dict[str, Any]],
                       pay_after: int) -> list[dict[str, Any]]:
-    ratio = lines["cap"] / _CAP_BASE_2026_27 if lines.get("cap") else 1.0
+    ratio = lines["cap"] / _CAP_BASE_2026_27
     rows = []
     for name, base in _EXCEPTION_AMOUNTS_2026_27.items():
         amount = int(round(base * ratio, -3))
