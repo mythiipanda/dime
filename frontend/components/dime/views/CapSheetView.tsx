@@ -448,7 +448,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                                 onClick={() => optionToggled(player, year.season)}
                               >
                                 {money(year.salary)}
-                                <span className="ml-1 rounded-sm border border-accent/50 px-0.5 text-[8.5px] uppercase text-accent">{year.option?.[0]}</span>
+                                <span className="ml-1 text-[9px] uppercase text-ink-3">{year.option?.[0]}</span>
                               </button>
                             ) : (
                               <>
@@ -548,7 +548,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                 <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
                   {onAsk && (
                     <button
-                      className="h-7 rounded-[7px] bg-[var(--accent)] px-2.5 text-[11.5px] font-medium text-white hover:opacity-90"
+                      className="h-7 rounded-[7px] border border-line px-2 text-[11.5px] text-ink-2 hover:bg-field"
                       onClick={() => onAsk(serializeScenario(), scenarioContext())}
                     >
                       Ask about this scenario
@@ -659,7 +659,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                   {scenario.restrictions.map((r, i) => (
                     <div key={i}>
                       <div className="flex items-baseline gap-1.5">
-                        <span className={`rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide ${r.status === "active" ? "border-red text-red" : r.status === "trigger" ? "border-line text-ink" : "border-line text-ink-3"}`}>
+                        <span className={`text-[10px] font-medium uppercase tracking-wide ${r.status === "active" ? "text-red" : r.status === "trigger" ? "text-ink" : "text-ink-3"}`}>
                           {r.status}
                         </span>
                         <span className="text-[11px] text-ink-3">{r.threshold}</span>
