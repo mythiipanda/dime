@@ -23,6 +23,7 @@ export type {
   TeamCardArtifactPayload,
   TradeVerdictArtifactPayload,
   TradeVerdictTeamPayload,
+  CapSummaryArtifactPayload,
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   StreamFailure,

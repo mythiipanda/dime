@@ -73,6 +73,24 @@ export const worstcaseFixtures: DimeArtifact[] = [
     ],
     evaluationTool: "get_trade_check",
     provenance: { origin: "undeclared", capability: "Worst-case fixture · no live query", season: "Illustrative season", liveSources: [] } },
+  { kind: "cap_summary", title: "Worst-case apron-crunch scenario", sourceRef: "worstcase-cap-fixture",
+    team: "PHX", season: "2031-32",
+    payrollBefore: 231440997654321, payrollAfter: 267440997654321, delta: 36000000000000,
+    capRoom: 0, capRoomBefore: 0, taxRoom: -12000000, roomApron1: -30500000, roomApron2: -48600000,
+    rosterBefore: 15, rosterAfter: 19,
+    overTax: true, overApron1: true, overApron2: true, hardCap: "first apron",
+    issues: ["roster would be 19 players - must trim to 15", "signing Jonas Valančiūnas Fixture-O'Neill for the full non-taxpayer midlevel exception is impossible while hard-capped at the first apron and this issue string is deliberately verbose to probe wrapping inside the issue list"],
+    steps: [
+      { kind: "payroll", detail: "PHX committed payroll", delta: 0, payroll: 231440997654321 },
+      { kind: "signing", detail: "sign Nikola Jokić-Valančiūnas Hyphenated Fixture-Name-Extra-Long", delta: 36000000000000, payroll: 267440997654321 },
+      { kind: "post_move", detail: "post-move payroll", delta: 0, payroll: 267440997654321 },
+    ],
+    restrictions: [
+      { threshold: "second apron", rule: "aggregating salaries, sending cash, or using a sign-and-trade generated exception in a deal hard-caps the team at the second apron and this rule copy is deliberately verbose" },
+      { threshold: "first apron", rule: "acquiring a sign-and-traded player hard-caps the team at the first apron" },
+    ],
+    evaluationTool: "get_cap_scenario",
+    provenance: { origin: "undeclared", capability: "Worst-case fixture · no live query", season: "Illustrative season", liveSources: [] } },
 ];
 
 export const worstcaseEvents: [string, unknown][] = [

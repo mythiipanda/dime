@@ -270,6 +270,87 @@ test("worst-case trade verdict survives the replay stream reducer", async () => 
   } finally { Object.assign(process.env, { NODE_ENV: previous }); }
 });
 
+test("cap_summary resolver accepts evaluator-shaped payloads and rejects malformed ones", () => {
+  const valid = {
+    kind: "cap_summary", title: "Vucevic signing fits", sourceRef: "cap-src", team: "MEM", season: "2031-32",
+    payrollBefore: 140089456, payrollAfter: 152089456, delta: 12000000,
+    capRoom: 85763787, capRoomBefore: 97763787, taxRoom: 136902789, roomApron1: 149284175, roomApron2: 167554181,
+    rosterBefore: 16, rosterAfter: 17,
+    issues: ["roster would be 17 players - must trim to 15"],
+    steps: [
+      { kind: "payroll", detail: "MEM committed payroll", delta: 0, payroll: 140089456 },
+      { kind: "signing", detail: "sign Nikola Vucevic", delta: 12000000, payroll: 152089456 },
+    ],
+    restrictions: [{ threshold: "second apron", rule: "aggregating salaries hard-caps the team" }],
+    evaluationTool: "get_cap_scenario",
+  };
+  const [resolved] = asResolvedArtifacts([valid]);
+  assert.equal(resolved.kind, "cap_summary");
+  if (resolved.kind !== "cap_summary") return;
+  assert.equal(resolved.team, "MEM");
+  assert.equal(resolved.payrollBefore, 140089456);
+  assert.equal(resolved.capRoom, 85763787);
+  assert.equal(resolved.steps?.length, 2);
+  assert.equal(resolved.restrictions?.length, 1);
+  for (const malformed of [
+    { ...valid, payrollBefore: "big" },
+    { ...valid, payrollAfter: undefined },
+    { ...valid, sourceRef: "" },
+    { ...valid, team: "" },
+    { ...valid, capRoom: "lots" },
+    { ...valid, steps: [{ detail: 3 }] },
+    { ...valid, restrictions: [{ threshold: "x" }] },
+  ]) assert.deepEqual(asResolvedArtifacts([malformed]), []);
+});
+
+test("cap_summary markup renders payroll movement, room rows, issues and restrictions", async () => {
+  const { default: ArtifactCapSummary } = await import("./components/dime/ArtifactCapSummary");
+  const worstcase = (await import("./lib/worstcase-fixture")).worstcaseFixtures.find(a => a.kind === "cap_summary");
+  assert.ok(worstcase && worstcase.kind === "cap_summary");
+  const html = renderToStaticMarkup(<ArtifactCapSummary artifact={worstcase} />);
+  assert.match(html, /PHX/);
+  assert.match(html, /Payroll/);
+  assert.match(html, /Cap room/);
+  assert.match(html, /Room under first apron/);
+  assert.match(html, /hard-cap/);
+  assert.match(html, /must trim to 15/);
+  assert.match(html, /over second apron/);
+  assert.match(html, /sign Nikola Jokić-Valančiūnas/);
+  assert.match(html, /second apron/);
+  assert.match(html, /Resolved server-side/);
+});
+
+test("cap_summary copy text carries payroll, room rows, steps and issues", () => {
+  const artifact = {
+    kind: "cap_summary" as const, title: "t", sourceRef: "s", team: "MEM",
+    payrollBefore: 140089456, payrollAfter: 152089456, delta: 12000000,
+    capRoom: 85763787, roomApron1: 149284175,
+    issues: ["roster would be 17 players - must trim to 15"],
+    steps: [{ kind: "signing", detail: "sign Nikola Vucevic", delta: 12000000, payroll: 152089456 }],
+    restrictions: [{ threshold: "second apron", rule: "no aggregation" }],
+  };
+  const csv = artifactToCopyText(artifact);
+  assert.match(csv, /Team,MEM/);
+  assert.match(csv, /Payroll Before,140089456,Payroll After,152089456,Delta,12000000/);
+  assert.match(csv, /Cap Room,85763787/);
+  assert.match(csv, /Step,sign Nikola Vucevic,12000000,152089456/);
+  assert.match(csv, /Issue,roster would be 17/);
+  assert.match(csv, /Restriction,second apron,no aggregation/);
+});
+
+test("worst-case cap summary survives the replay stream reducer", async () => {
+  const previous = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: "development" });
+  try {
+    const stream = new DimeStream();
+    await replayStream("worstcase", { onEvent: (type, data) => stream.handle(type, data), onDone: () => stream.finish(), onError: message => assert.fail(message) });
+    const card = stream.snapshot().artifacts.find(a => a.kind === "cap_summary");
+    assert.ok(card && card.kind === "cap_summary");
+    assert.equal(card.team, "PHX");
+    assert.equal(card.overApron2, true);
+  } finally { Object.assign(process.env, { NODE_ENV: previous }); }
+});
+
 test("trade_verdict picks parse, render and copy", async () => {
   const { default: ArtifactTradeVerdict } = await import("./components/dime/ArtifactTradeVerdict");
   const artifact = {
