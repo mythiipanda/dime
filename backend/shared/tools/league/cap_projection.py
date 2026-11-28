@@ -12,6 +12,12 @@ from .waivers import player_contract_tail, waiver_dead_money
 _SEASON_RE = _re.compile(r"^(\d{4})-(\d{2})$")
 
 
+def _fmt_money(value: float | int) -> str:
+    v = float(value)
+    sign = "-" if v < 0 else ""
+    return f"{sign}${abs(v) / 1_000_000:.1f}M"
+
+
 def _shift_season(season: str, years: int) -> str | None:
     m = _SEASON_RE.match(str(season or ""))
     if not m:
@@ -531,8 +537,8 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         hard_cap_violation = ""
         if hard_cap_triggers and pay_after > lines["apron1"]:
             hard_cap_violation = (f"{team} is hard-capped at the first apron after using "
-                                  f"the {'/'.join(t.upper() for t in hard_cap_triggers)} — "
-                                  f"payroll ${pay_after:,} exceeds ${lines['apron1']:,}")
+                                  f"the {'/'.join(t.upper() for t in hard_cap_triggers)}. "
+                                  f"Payroll {_fmt_money(pay_after)} exceeds {_fmt_money(lines['apron1'])}")
         exception_usage = sorted({e["exception"] for e in effects
                                   if e.get("exception") and e["exception"] != "cap_room"})
         season_moves = moves_by_season.get(season, [])
@@ -545,9 +551,9 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             room_at_signing = lines["cap"] - running_pay
             if effect["delta"] > room_at_signing:
                 ordering_notes.append(
-                    f"move {effect['move']}: signing ${effect['delta']:,} exceeds cap room "
-                    f"${room_at_signing:,} available at that point — order-dependent; "
-                    f"renouncing or waiving earlier in the sequence changes this")
+                    f"move {effect['move']}: signing {_fmt_money(effect['delta'])} exceeds the "
+                    f"{_fmt_money(room_at_signing)} of cap room available at that point. "
+                    f"This is order-dependent: renouncing or waiving earlier in the sequence changes this")
         roster_issue_list = roster_issues(roster_after)
         season_blocks.append({
             "season": season,
