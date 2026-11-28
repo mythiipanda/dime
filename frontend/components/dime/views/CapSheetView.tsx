@@ -19,6 +19,7 @@ import {
   capSheetFixture,
   capScenarioFixture,
   describeScenarioMove,
+  deadMoneyBasisWords,
   type CapPlayer,
   type CapSheetResponse,
   type ScenarioMove,
@@ -40,6 +41,15 @@ function exactMoney(value: number | null | undefined): string {
   if (value == null) return "–";
   const sign = value < 0 ? "−" : "";
   return `${sign}$${Math.abs(value).toLocaleString("en-US")}`;
+}
+
+function deadMoneyHasUnknown(base: CapTotals | undefined): boolean {
+  return (base?.dead_money_detail ?? []).some((row) => row.amount_unknown);
+}
+
+function floorMoney(value: number | null | undefined, isFloor: boolean): string {
+  const rendered = money(value);
+  return isFloor && rendered !== "–" ? `${rendered}+` : rendered;
 }
 
 function shortSeason(season: string): string {
@@ -133,21 +143,30 @@ function PayrollMathPopover({ team, season, totals, lines, includePending, child
             <div className="mt-1 space-y-1 pl-2">
               {totals.base.dead_money_detail.map((row) => (
                 <div key={`${row.player}-${row.salary}`} className="flex items-baseline justify-between gap-4 text-[11px]">
-                  <span className="min-w-0 text-ink-3">{row.player}</span>
-                  <span className="shrink-0 tabular-nums text-ink-3">{exactMoney(row.salary)}</span>
+                  <span className="min-w-0 text-ink-3" title={row.amount_unknown ? deadMoneyBasisWords(row.basis) : undefined}>{row.player}</span>
+                  {row.amount_unknown ? (
+                    <span className="shrink-0 text-ink-3" title={deadMoneyBasisWords(row.basis)}>amount unknown</span>
+                  ) : (
+                    <span className="shrink-0 tabular-nums text-ink-3">{exactMoney(row.salary)}</span>
+                  )}
                 </div>
               ))}
+              {totals.base.dead_money_detail.some((row) => row.amount_unknown) && (
+                <p className="pt-1 text-[10.5px] leading-snug text-ink-3">
+                  dead money excludes {totals.base.dead_money_detail.filter((row) => row.amount_unknown).length} obligation(s) of unknown amount — totals are a floor, not an exact figure
+                </p>
+              )}
             </div>
           )} />
           <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-2 text-[12px]">
             <span className="text-ink-2">Committed salary subtotal</span>
-            <span className="shrink-0 tabular-nums text-ink">{exactMoney(totals.committed)}</span>
+            <span className="shrink-0 tabular-nums text-ink">{exactMoney(totals.committed)}{deadMoneyHasUnknown(totals.base) ? "+" : ""}</span>
           </div>
           <BreakdownRows rows={payrollAdditionRows} />
           {includePending && <BreakdownRows rows={optionRows} />}
           <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-2 text-[12.5px]">
             <span className="font-medium text-ink">Payroll estimate</span>
-            <span className="shrink-0 font-medium tabular-nums text-ink">{exactMoney(totals.payroll)}</span>
+            <span className="shrink-0 font-medium tabular-nums text-ink">{exactMoney(totals.payroll)}{deadMoneyHasUnknown(totals.base) ? "+" : ""}</span>
           </div>
         </div>
         {excluded.length > 0 && (
@@ -630,13 +649,16 @@ export default function CapSheetView({ onAsk, seed }: { onAsk?: (text: string, c
                         const value = row === "payroll" ? totals?.payroll : totals?.committed;
                         const lines = sheet.lines[season];
                         const over = row === "payroll" && value != null && lines && value > lines.apron2;
+                        const isFloor = deadMoneyHasUnknown(totals?.base);
                         return (
-                          <td key={season} className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${row === "payroll" ? "font-medium text-ink" : "text-ink-2"} ${over ? "text-red" : ""}`}>
+                          <td key={season} className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${row === "payroll" ? "font-medium text-ink" : "text-ink-2"} ${over ? "text-red" : ""}`}
+                            title={isFloor ? "excludes dead-money obligations of unknown amount — this figure is a floor, not an exact total" : undefined}
+                          >
                             {row === "payroll" && totals ? (
                               <PayrollMathPopover team={sheet.team} season={season} totals={totals} lines={lines} includePending={includePending}>
-                                {money(value)}
+                                {floorMoney(value, isFloor)}
                               </PayrollMathPopover>
-                            ) : money(value)}
+                            ) : floorMoney(value, isFloor)}
                           </td>
                         );
                       })}

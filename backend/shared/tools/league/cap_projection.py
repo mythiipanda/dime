@@ -715,7 +715,9 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "roster_payroll": int(base.get("roster_payroll") or 0),
             "dead_money": int(base.get("dead_money") or 0),
             "dead_money_detail": list(base.get("dead_money_detail") or []),
-            **({"dead_money_players": [{"player": p["player"], "salary": p["salary"]}
+            **({"dead_money_players": [{"player": p["player"], "salary": p["salary"],
+                                       **({"amount_unknown": True} if p.get("amount_unknown") else {}),
+                                       **({"basis": p["basis"]} if p.get("basis") else {})}
                                        for p in base.get("dead_money_detail", [])]}
                if base.get("dead_money_detail") else {}),
             "cap_room": lines["cap"] - pay_after,

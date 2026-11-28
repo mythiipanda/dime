@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { describeScenarioMove } from "@/lib/capsheet-fixture";
+import { describeScenarioMove, deadMoneyBasisWords } from "@/lib/capsheet-fixture";
 import type { MoveGroupsMap } from "@/lib/move-groups";
 import { ReadOnlyMoveList } from "@/components/dime/ScenarioMoveList";
 import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
@@ -152,12 +152,14 @@ export function SharedScenarioView({
                     <span>{money(season.cap_holds)}</span>
                   </div>
                 )}
-                {(season.dead_money ?? 0) > 0 && (
+                {((season.dead_money ?? 0) > 0 || (season.dead_money_players ?? []).some((d) => d.amount_unknown)) && (
                   <div className="flex justify-between">
-                    <span title={(season.dead_money_players ?? []).map((d) => `${d.player} ${money(d.salary)}`).join(" · ")}>
+                    <span title={(season.dead_money_players ?? []).map((d) => d.amount_unknown ? `${d.player}: amount unknown — ${deadMoneyBasisWords(d.basis)}` : `${d.player} ${money(d.salary)}`).join(" · ")}>
                       dead money{(season.dead_money_players ?? []).length > 0 ? ` (${(season.dead_money_players ?? []).map((d) => d.player.split(" ").slice(-1)[0]).join(", ")})` : ""}
                     </span>
-                    <span>{money(season.dead_money)}</span>
+                    <span title={(season.dead_money_players ?? []).some((d) => d.amount_unknown) ? "excludes obligations of unknown amount — this figure is a floor, not an exact total" : undefined}>
+                      {money(season.dead_money)}{(season.dead_money_players ?? []).some((d) => d.amount_unknown) ? "+" : ""}
+                    </span>
                   </div>
                 )}
               </div>

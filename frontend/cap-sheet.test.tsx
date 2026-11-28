@@ -357,3 +357,20 @@ test("per-season non-standard cells are quieted and disclose their exclusion", a
     await mounted.cleanup();
   }
 });
+
+test("unknown dead-money obligations read as disclosed unknowns, never as absent", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    const payrollTrigger = [...mounted.host.querySelectorAll("button")].find((button) => button.getAttribute("aria-label")?.startsWith("Payroll math"));
+    assert.ok(payrollTrigger, "payroll popover trigger renders");
+    const floorCells = [...mounted.host.querySelectorAll("td")].filter((cell) => (cell.getAttribute("title") ?? "").includes("floor, not an exact total"));
+    assert.ok(floorCells.length >= 1, "first-season totals admit their floor");
+    await click(payrollTrigger);
+    const popoverText = mounted.host.ownerDocument.body.textContent ?? "";
+    assert.ok(popoverText.includes("amount unknown"), "unknown obligation reads as amount unknown, not a dash");
+    assert.ok(popoverText.includes("totals are a floor"), "popover footnote discloses the floor");
+    assert.ok(!popoverText.includes("waived_standard_contract"), "machine basis strings never render");
+  } finally {
+    await mounted.cleanup();
+  }
+});
