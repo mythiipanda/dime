@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr, contract_details, match_record, normalize_name, salary_records
-from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money, declare_units
 from .cba_cap import (
     CAP,
     SalaryColumnError,
@@ -336,7 +336,7 @@ def get_trade_check(
         out_a, out_b, pay_a, pay_after_a, bool(state_a["over_apron1"]))
     rows_b["tpe_creation"] = _tpe_creation_block(
         out_b, out_a, pay_b, pay_after_b, bool(state_b["over_apron1"]))
-    return {"tool": "get_trade_check", "ok": True,
+    out = {"tool": "get_trade_check", "ok": True,
             "rows": {"team_a": rows_a,
                      "team_b": rows_b,
                      "legal": not issues, "issues": issues,
@@ -352,6 +352,7 @@ def get_trade_check(
             "meta": {"source": source, "rules": "v1-simplified",
                      "salary_date": salary_date, "season": season,
                      **_payroll_proxy_meta()}}
+    return declare_money(out, ["amount", "salary", "incoming", "outgoing", "allowed_incoming", "capacity", "payroll", "cap_room", "player_salary", "max_return_salary"])
 
 
 _TRADE_PARTNER_PACKAGE_MAX = 3
@@ -458,7 +459,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
                 no_fit.append(team)
         source = _payroll_source(con)
         salary_date = _salary_date(con)
-    return {"tool": "get_trade_partners", "ok": True,
+    out = {"tool": "get_trade_partners", "ok": True,
             "rows": rows,
             "meta": {"source": source, "salary_date": salary_date,
                      "season": season, "rules": "v1-simplified",
@@ -468,6 +469,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
                      "match_rule_in": rule_a,
                      "teams_without_fit": no_fit,
                      "disclaimer": _TRADE_PARTNER_DISCLAIMER}}
+    return declare_money(out, ["amount", "salary", "incoming", "outgoing", "allowed_incoming", "capacity", "payroll", "cap_room", "player_salary", "max_return_salary"])
 
 
 _TRADE_VALUE_WEIGHTS = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
@@ -1028,7 +1030,7 @@ def get_trade_value(
           f"versus {sal_season} salaries, so this is not cap-legality advice: "
           "pair it with get_trade_check.")
 
-    return {"tool": "get_trade_value", "ok": True,
+    return declare_units({"tool": "get_trade_value", "ok": True,
             "rows": {"team_a": {"team": abbr_a, "players": players_a,
                                 "picks": picks_list_a, "side_total_m": total_a},
                      "team_b": {"team": abbr_b, "players": players_b,
@@ -1047,4 +1049,7 @@ def get_trade_value(
             "meta": {"source": payroll_source,
                      "production_season": prod_season,
                      "salary_season": sal_season,
-                     "estimates": True}}
+                     "estimates": True}},
+            {"salary": "usd_dollars", "side_total_m": "usd_millions",
+             "delta_m": "usd_millions", "residual_m": "usd_millions",
+             "value_m": "usd_millions"})

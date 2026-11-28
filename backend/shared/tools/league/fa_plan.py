@@ -3,7 +3,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ._helpers import (_cap_season_for_fa_year, _owned_connection, _pkg,
-                       _warehouse_tables)
+                       _warehouse_tables, declare_money)
 from .cap_hold_derivation import CAP_HOLD_CONTRACT, derive_cap_holds, hold_amount
 from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
@@ -342,4 +342,4 @@ def get_fa_plan(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                     "disclaimer": "Planning-grade estimates - hold, room "
                     "and exception figures are CBA-formula estimates, not "
                     "official numbers."}}
-    return out
+    return declare_money(out, ["amount", "salary", "ntmle", "tmle", "bae", "room", "committed_salary", "pending_option_salary", "fa_holds_est", "roster_charges", "roster_charge_minimum", "max_room", "projected_cap", "projected_tax", "projected_apron1", "projected_apron2", "cap_room"])

@@ -3,7 +3,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr
-from ._helpers import _owned_connection, _pkg
+from ._helpers import _owned_connection, _pkg, declare_money
 from .cba_cap import CAP, _payroll_source, _salary_date, _resolve_team_abbr
 from .draft_contracts import _contract_norm
 from .._core import season_rows_error, team_error_message
@@ -225,4 +225,4 @@ def get_value_contracts(team: str = "", season: str | None = None,
                     - (b["median_value_per_m"] or 0),
                 "bargain_count_delta":
                     a["bargains"] - b["bargains"]}
-    return out
+    return declare_money(out, ["salary"])
