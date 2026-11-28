@@ -50,7 +50,7 @@ stdlib seeded generation instead of adding a runtime or CI-only dependency.
 
 ## Coverage record
 
-Sync commit: `29f5d793ae27068b3f7397b25a65480ae85f96c8`
+Sync commit: `8db89164a2ea01ac80535b324b39e7135c4c83f7`
 
 Covered files and functions at that commit:
 
@@ -126,7 +126,7 @@ Before relying on the harness after pulling new work, compare the covered files
 with the sync commit:
 
 ```sh
-git diff 29f5d793ae27068b3f7397b25a65480ae85f96c8 -- backend/shared/tools/cap_rules.py backend/shared/tools/league/cba_cap.py backend/shared/tools/league/trade_legality.py
+git diff 8db89164a2ea01ac80535b324b39e7135c4c83f7 -- backend/shared/tools/cap_rules.py backend/shared/tools/league/cba_cap.py backend/shared/tools/league/trade_legality.py
 ```
 
 If the diff is empty, the coverage record is current. If it is not empty, inspect
