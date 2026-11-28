@@ -14,8 +14,8 @@ from ..cap_rules import (
     payroll_proxy_meta as _payroll_proxy_meta,
 )
 from ._helpers import _owned_connection, _pkg, declare_money
+from .cap_lines import resolve_cap_lines
 from .cba_cap import (
-    CAP,
     SalaryColumnError,
     _allowed_incoming,
     _apron_state,
@@ -688,6 +688,9 @@ def _load_trade_state(con: Any, moves: list[dict[str, Any]], season: str | None,
     guard_error = _trade_guard_vintage_error(con, resolved_season)
     if guard_error:
         return None, _trade_error(guard_error)
+    cap_resolution = resolve_cap_lines(con, resolved_season)
+    if not cap_resolution["ok"]:
+        return None, _trade_error(cap_resolution["error"], "cap_lines_unavailable")
     teams = sorted({canonical_team_abbr(move["from"]) for move in moves} |
                    {canonical_team_abbr(move["to"]) for move in moves})
     side: dict[str, dict[str, Any]] = {}
@@ -713,11 +716,15 @@ def _load_trade_state(con: Any, moves: list[dict[str, Any]], season: str | None,
             "source": _payroll_source(con),
             "season_start": season_start, "pick_held": pick_held,
             "pick_vintage": pick_vintage,
-            "snt_salary_prior": snt_salary_prior}, None
+            "snt_salary_prior": snt_salary_prior,
+            "cap_lines": cap_resolution["lines"],
+            "cap_lines_source": cap_resolution["source"],
+            "cap_lines_projected": cap_resolution["projected"]}, None
 
 
 def _byc_adjustment(side: dict[str, Any], snt: dict[str, Any] | None,
-                    snt_salary_prior: int) -> tuple[int, str | None]:
+                    snt_salary_prior: int,
+                    lines: dict[str, Any]) -> tuple[int, str | None]:
     out_total = side["out_total"]
     if not snt or not snt["new_salary"]:
         return out_total, None
@@ -726,7 +733,7 @@ def _byc_adjustment(side: dict[str, Any], snt: dict[str, Any] | None,
         return out_total, None
     raise_ratio = (snt["new_salary"] / snt_salary_prior
                    if snt_salary_prior else 0)
-    if raise_ratio <= 1.2 or side["pay_before"] <= CAP["cap"]:
+    if raise_ratio <= 1.2 or side["pay_before"] <= lines["cap"]:
         return out_total, None
     byc = max(snt_salary_prior, snt["new_salary"] // 2)
     adjusted = out_total - snt_salary_prior + byc
@@ -840,14 +847,15 @@ def _evaluate_team(team: str, side: dict[str, Any],
                    snt_receiver: str | None,
                    snt: dict[str, Any] | None,
                    snt_salary_prior: int,
-                   season_start: int | None
+                   season_start: int | None,
+                   lines: dict[str, Any]
                    ) -> tuple[dict[str, Any], list[str]]:
     team = canonical_team_abbr(team)
-    out_eff, byc_note = _byc_adjustment(side, snt, snt_salary_prior)
+    out_eff, byc_note = _byc_adjustment(side, snt, snt_salary_prior, lines)
     pay_after = side["pay_before"] - side["out_total"] + side["in_total"]
-    state_after = _apron_state(pay_after)
-    state_before = _apron_state(side["pay_before"])
-    room_before = max(0, CAP["cap"] - side["pay_before"])
+    state_after = _apron_state(pay_after, lines)
+    state_before = _apron_state(side["pay_before"], lines)
+    room_before = max(0, lines["cap"] - side["pay_before"])
     allow, rule = _allowed_incoming(
         out_eff, bool(state_after["over_apron1"]), room_before)
     usage = _tpe_usage(team_tpes, bool(state_after["over_apron1"]))
@@ -891,11 +899,12 @@ def _evaluate_team(team: str, side: dict[str, Any],
     hard_cap = _hard_cap_consequences(
         team, pay_after, aggregates=aggregates, cash_out=cash_out,
         prior_tpe=usage["prior"], snt_tpe=usage["snt"],
-        is_snt_receiver=is_snt_receiver, expanded_matching=expanded_matching)
+        is_snt_receiver=is_snt_receiver, expanded_matching=expanded_matching,
+        lines=lines)
     tpe_creation = None
     if (out_eff > side["in_total"]
-            and side["pay_before"] > CAP["cap"]
-            and pay_after > CAP["cap"]
+            and side["pay_before"] > lines["cap"]
+            and pay_after > lines["cap"]
             and not state_after["over_apron1"]):
         amount = out_eff - side["in_total"]
         tpe_creation = {
@@ -1161,7 +1170,8 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
         row, team_issues = _evaluate_team(
             team, state["side"][team], moves, cash_moves,
             tpe_by_team.get(team, []), receiver, snt,
-            state["snt_salary_prior"], state["season_start"])
+            state["snt_salary_prior"], state["season_start"],
+            state["cap_lines"])
         team_rows[team] = row
         issues.extend(team_issues)
 
@@ -1178,6 +1188,9 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
         "source": state["source"], "rules": "v2-2023cba-full",
         "salary_date": state["salary_date"],
         "season": state["season"],
+        "cap_lines": state["cap_lines"],
+        "cap_lines_source": state["cap_lines_source"],
+        "cap_lines_projected": state["cap_lines_projected"],
         **_payroll_proxy_meta(),
         "disclaimer": "Estimate only. Covers matching, apron "
         "aggregation, hard caps, typed TPE restrictions, cash "

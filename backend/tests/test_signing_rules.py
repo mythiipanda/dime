@@ -224,7 +224,9 @@ def test_unknown_mechanism_is_an_input_error():
 def test_legacy_string_signings_use_auto_one_year_compatibility_shim():
     from shared.tools.league.cap_scenario import _validate_legacy_signings
     moves = [{"kind": "signing", "amount": 8_000_000, "player": "Legacy Player"}]
-    out = _validate_legacy_signings("TST", moves, 190_000_000)
+    from shared.tools.cap_rules import CAP
+    out = _validate_legacy_signings(
+        "TST", moves, 190_000_000, lines=dict(CAP), season="2026-27")
     validation = out["validations"][0]
     assert validation["mechanism_input"] == "auto"
     assert validation["years"] == 1
@@ -384,6 +386,24 @@ def test_future_season_exceptions_scale_from_season_cap_line_or_require_lines():
         team="TST", payroll_before=190_000_000, season="2027-28")
     assert missing_lines["input_errors"]
     assert "season-specific cap lines are required" in missing_lines["input_errors"][0]
+
+
+def test_future_season_minimum_uses_scaled_boundary_exactly():
+    ratio_lines = {key: int(round(value * 1.07)) for key, value in CAP.items()}
+    scaled = minimum_salary(0, "2027-28", ratio_lines)
+    assert scaled != minimum_salary(0)
+    move = {"player": "Future Minimum", "amount": scaled, "years": 1,
+            "mechanism": "minimum", "years_of_service": 0}
+    exact = validate_signing(
+        move, team="TST", payroll_before=225_000_000,
+        lines=ratio_lines, season="2027-28")
+    assert exact["outcome"] == "legal_approximation"
+    above = validate_signing(
+        dict(move, amount=scaled + 1), team="TST", payroll_before=225_000_000,
+        lines=ratio_lines, season="2027-28")
+    assert above["outcome"] == "illegal"
+    assert "exactly the applicable minimum" in above["blocking_issues"][0]
+    assert f"${scaled:,}" in above["blocking_issues"][0]
 
 
 @pytest.mark.parametrize(("mechanism", "amount"), [

@@ -2,8 +2,6 @@ import re as _re
 from typing import Any
 
 from ..cap_rules import (
-    CAP,
-    CAP_GROWTH_ASSUMPTION,
     active_hard_cap_failure,
     apron_state,
     cba_restrictions,
@@ -29,6 +27,7 @@ from ..cap_sheet import horizon_seasons, option_column, season_column, unroll_te
 from .._core import warehouse_identity_meta
 from ...contracts import is_dead_money_row, normalize_name, row_kind_declared
 from .cap_hold_derivation import derive_cap_holds, hold_amount
+from .cap_lines import projection_cap_lines
 from .cba_cap import (
     _locate_player_team,
     _match_trade_players,
@@ -140,41 +139,8 @@ def _option_decline_move(con, team: str, season: str, player: str) -> tuple[dict
 
 
 
-def cap_lines_for_season(con, season: str) -> tuple[dict[str, Any], bool]:
-    if season == "2026-27":
-        return dict(CAP), False
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-    except Exception:
-        tables = set()
-    base = dict(CAP)
-    base_year = 2026
-    if "silver_cap_room" in tables:
-        try:
-            rows = con.execute(
-                "SELECT CAP_SEASON, PROJECTED_CAP, PROJECTED_TAX, PROJECTED_APRON1, PROJECTED_APRON2 "
-                "FROM silver_cap_room").fetchall()
-            by_season = {str(r[0]): r for r in rows if r and r[0]}
-            if season in by_season:
-                row = by_season[season]
-                if row[1]:
-                    return {"cap": int(row[1]), "tax": int(row[2] or 0),
-                            "apron1": int(row[3] or 0), "apron2": int(row[4] or 0)}, True
-            latest = sorted(by_season)
-            if latest:
-                anchor = by_season[latest[-1]]
-                anchor_year = int(str(anchor[0])[:4])
-                if anchor[1]:
-                    base = {"cap": float(anchor[1]), "tax": float(anchor[2] or 0),
-                            "apron1": float(anchor[3] or 0), "apron2": float(anchor[4] or 0)}
-                    base_year = anchor_year
-        except Exception:
-            pass
-    m = _re.match(r"(\d{4})", str(season or ""))
-    want_year = int(m.group(1)) if m else base_year
-    steps = max(0, want_year - base_year)
-    factor = (1 + CAP_GROWTH_ASSUMPTION) ** steps
-    return {k: int(round(v * factor)) for k, v in base.items()}, steps > 0
+def cap_lines_for_season(con, season: str) -> dict[str, Any]:
+    return projection_cap_lines(con, season)
 
 
 def exception_amounts_for_season(con, season: str) -> dict[str, int]:
@@ -378,12 +344,27 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                             + entry["incomplete_roster_charges"])
     lines_by_season: dict[str, Any] = {}
     for label in totals:
-        llines, lproj = cap_lines_for_season(con, label)
-        lines_by_season[label] = {**llines, "projected": lproj}
-    lines, projected = cap_lines_for_season(con, season)
+        lres = cap_lines_for_season(con, label)
+        if lres["ok"]:
+            lines_by_season[label] = {
+                **lres["lines"], "projected": lres["projected"],
+                "source": lres["source"], "exact": lres["exact"],
+                "approximation_basis": lres["approximation_basis"]}
+        else:
+            lines_by_season[label] = {"unavailable": True, "error": lres["error"]}
+    current = cap_lines_for_season(con, season)
     committed_now = totals.get(season, {}).get("payroll", 0)
-    state = apron_state(int(committed_now), lines)
-    state["room_under_apron2"] = state["room_apron2"]
+    projected = False
+    if current["ok"]:
+        projected = bool(current["projected"])
+        state = apron_state(int(committed_now), current["lines"])
+        state["room_under_apron2"] = state["room_apron2"]
+        state["cap_lines_source"] = current["source"]
+        state["cap_lines_exact"] = current["exact"]
+        if current["approximation_basis"]:
+            state["approximation_basis"] = current["approximation_basis"]
+    else:
+        state = {"unavailable": True, "error": current["error"]}
     return {"ok": True, "team": str(team).upper(), "season": season,
             "lines": lines_by_season, "lines_projected": projected,
             "players": sheet["players"], "totals": totals,
@@ -974,7 +955,8 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
                      pay_before: int, roster: list[dict[str, Any]],
                      lines: dict[str, Any], lines_projected: bool,
                      waiver_timing: dict[str, Any],
-                     sequence: dict[str, Any]) -> dict[str, Any]:
+                     sequence: dict[str, Any],
+                     lines_provenance: dict[str, Any] | None = None) -> dict[str, Any]:
     trace = scenario_trace(pay_before, sequence["moves"], f"{team} committed payroll")
     pay_after = int(trace["pay_after"])
     money_before = _baseline_money_state(sequence, pay_before)
@@ -1034,6 +1016,7 @@ def _scenario_result(con, team: str, season: str, requested_season: str,
             "cap_hold_events": [dict(event) for event in sequence["cap_hold_events"]],
             "state": state,
             "lines": lines, "lines_projected": lines_projected,
+            "lines_provenance": lines_provenance or {},
             "restrictions": restrictions,
             "roster_before": len(roster), "roster_after": roster_after,
             "roster_issues": roster_issue_list,
@@ -1082,7 +1065,12 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         payload.get("waiver_date"), season)
     if waiver_timing_error:
         return {"ok": False, "error": waiver_timing_error}
-    lines, lines_projected = cap_lines_for_season(con, season)
+    lines_res = cap_lines_for_season(con, season)
+    if not lines_res["ok"]:
+        return {"ok": False, "error": lines_res["error"],
+                "reason": "cap_lines_unavailable"}
+    lines = lines_res["lines"]
+    lines_projected = bool(lines_res["projected"])
     try:
         pay_before, roster, _dead = _payroll(team, con, season)
     except Exception as exc:
@@ -1104,4 +1092,7 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
     _close_trade_group(sequence, team, lines)
     return _scenario_result(
         con, team, season, requested_season, pay_before, roster,
-        lines, lines_projected, waiver_timing, sequence)
+        lines, lines_projected, waiver_timing, sequence,
+        lines_provenance={"source": lines_res["source"],
+                          "exact": lines_res["exact"],
+                          "approximation_basis": lines_res["approximation_basis"]})

@@ -11,7 +11,7 @@ def test_history_covers_cap_era():
     seasons = sorted(frame["season"].to_list())
     assert seasons[0] == 1985
     assert seasons[-1] == 2027
-    assert len(seasons) >= 42
+    assert len(seasons) >= 43
 
 
 def test_anchor_values():

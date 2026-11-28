@@ -139,7 +139,7 @@ def scaled_exception_rules(lines: dict[str, Any], season: str = "2026-27",
                            exception_amounts: dict[str, int] | None = None,
                            exception_amounts_source: str = "supplied season exception amounts"
                            ) -> dict[str, dict[str, Any]]:
-    cap_amount = lines.get("cap") or CAP["cap"]
+    cap_amount = lines["cap"]
     overrides = exception_amounts or {}
     override_basis = exception_amounts_source
     scaled: dict[str, dict[str, Any]] = {}
@@ -834,7 +834,10 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
         exception_amounts)
     if amount_errors or normalized_amounts is None:
         return _input_error_result(raw, amount_errors)
-    lines = dict(lines or CAP)
+    if lines is None:
+        lines = dict(CAP)
+    else:
+        lines = dict(lines)
     move, input_errors = normalize_signing_input(raw)
     if move is None or input_errors:
         return _input_error_result(raw, input_errors)

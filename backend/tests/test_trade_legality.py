@@ -45,6 +45,13 @@ def _seed(monkeypatch, tmp_path, salaries, picks=None, legacy_picks=False):
             con.execute(
                 "INSERT INTO silver_salaries VALUES (?, ?, ?, '2026-27', "
                 "'2026-10-01')", [name, team, salary])
+        con.execute(
+            "CREATE TABLE silver_cap_room (CAP_SEASON VARCHAR, "
+            "PROJECTED_CAP BIGINT, PROJECTED_TAX BIGINT, "
+            "PROJECTED_APRON1 BIGINT, PROJECTED_APRON2 BIGINT)")
+        con.execute(
+            "INSERT INTO silver_cap_room VALUES "
+            "('2026-27', 164961000, 200428000, 209015000, 221686000)")
         if picks is not None:
             if legacy_picks:
                 _write_legacy_picks(con, picks)

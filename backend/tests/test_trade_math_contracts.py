@@ -15,6 +15,13 @@ def _use_salary_warehouse(monkeypatch, tmp_path, rows):
             con.execute(
                 "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, '2026-27', "
                 "'2026-10-01')", row)
+        con.execute(
+            "CREATE TABLE silver_cap_room (CAP_SEASON VARCHAR, "
+            "PROJECTED_CAP BIGINT, PROJECTED_TAX BIGINT, "
+            "PROJECTED_APRON1 BIGINT, PROJECTED_APRON2 BIGINT)")
+        con.execute(
+            "INSERT INTO silver_cap_room VALUES "
+            "('2026-27', 164961000, 200428000, 209015000, 221686000)")
     finally:
         con.close()
     monkeypatch.setattr(store, "DB_PATH", path)
