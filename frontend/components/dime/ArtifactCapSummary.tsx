@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, Scale } from "lucide-react";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 import { StatusPill } from "@/components/ds/StatusPill";
 import { formatHeadlineMetric } from "@/lib/metric-format";
 import type { CapSummaryArtifactPayload } from "@/lib/dime-stream";
@@ -108,8 +108,7 @@ export default function ArtifactCapSummary({ artifact }: { artifact: CapSummaryA
         </dl>
       )}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-        <p className="flex items-center gap-1.5 text-xs text-ink-3">
-          <Scale size={12} aria-hidden="true" />
+        <p className="text-xs text-ink-3">
           {artifact.evaluationTool ? `Resolved server-side from ${artifact.evaluationTool}.` : "Resolved server-side."} Estimate only; confirm with a cap specialist.
         </p>
       </div>
