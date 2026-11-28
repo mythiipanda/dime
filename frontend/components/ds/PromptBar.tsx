@@ -65,7 +65,7 @@ export function PromptBar({ value, onChange, onSend, onStop, busy, models, model
         role="listbox"
         aria-label="Choose model"
         onMouseLeave={() => setHovered(null)}
-        className="absolute z-10 max-h-72 w-60 overflow-y-auto rounded-[10px] bg-surface p-1 shadow-raised"
+        className="absolute z-10 max-h-72 w-80 overflow-y-auto rounded-[10px] bg-surface p-1 shadow-raised"
         style={{ left: menuLeft, bottom: menuBottom, animation: "pop-in 180ms cubic-bezier(0.23,1,0.32,1) both", transformOrigin: "bottom left" }}
       >
         <span
