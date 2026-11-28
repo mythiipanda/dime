@@ -202,6 +202,8 @@ def test_cap_new_schedule_and_wrapper(warehouse):
     _new_warehouse(warehouse)
     result = league.get_cap_ledger.invoke({'team': 'BOS'})
     assert result['ok']
+    assert result['units']['payroll'] == 'usd_dollars'
+    assert result['units']['room_under_apron2'] == 'usd_dollars'
     player = result['rows']['players'][0]
     assert player['player_id'] == 1
     assert player['years_remaining'] == 2
@@ -210,6 +212,8 @@ def test_cap_new_schedule_and_wrapper(warehouse):
     from analyst.tools import cba
     wrapped = cba.register()['get_cap_ledger'].invoke({'team': 'BOS'})
     assert wrapped['rows'][0]['players'][0]['future_salaries'] == {'2027-28': 110}
+    assert wrapped['units']['payroll'] == 'usd_dollars'
+    assert wrapped['units']['room_under_apron2'] == 'usd_dollars'
 
 
 def test_cap_table_all_teams_ranked(warehouse):
@@ -224,6 +228,11 @@ def test_cap_table_all_teams_ranked(warehouse):
     assert by_team['NYK']['payroll'] == 200
     assert by_team['NYK']['over_tax'] is False
     assert by_team['NYK']['room_under_apron2'] == result['meta']['apron2'] - 200
+    assert result['units'] == {
+        'payroll': 'usd_dollars',
+        'cap_room': 'usd_dollars',
+        'room_under_apron2': 'usd_dollars',
+    }
     for key in ('cap', 'tax', 'apron1', 'apron2'):
         assert key in result['meta']
     assert 'source' in result['meta'] and 'salary_date' in result['meta']
@@ -232,6 +241,8 @@ def test_cap_table_all_teams_ranked(warehouse):
     assert wrapped['ok']
     assert len(wrapped['rows']) == 30
     assert list(wrapped['columns']) == list(wrapped['rows'][0].keys())
+    assert wrapped['units']['payroll'] == 'usd_dollars'
+    assert wrapped['units']['cap_room'] == 'usd_dollars'
 
 
 def test_contract_value_id_join_and_name_fallback(warehouse):

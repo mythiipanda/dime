@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr, contract_details, resolve_salary_column, salary_records
-from .._core import coerce_team_id, team_error_message
+from .._core import coerce_team_id, team_error_message, warehouse_identity_meta
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
 
@@ -21,6 +21,13 @@ from ..cap_rules import (
     payroll_proxy_meta as _payroll_proxy_meta,
     used_expanded_matching as _used_expanded_matching,
 )
+
+
+_CAP_ROW_UNITS = {
+    "payroll": "usd_dollars",
+    "cap_room": "usd_dollars",
+    "room_under_apron2": "usd_dollars",
+}
 
 
 def _team_salary_lookup(con, name: str) -> str | None:
@@ -462,7 +469,9 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                                        reverse=True),
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
+            "units": _CAP_ROW_UNITS,
             "meta": {"source": source, "season": season or "2026-27",
+                     **warehouse_identity_meta(),
                      "salary_date": salary_date,
                      **_payroll_proxy_meta(),
                      **{k: v for k, v in CAP.items()}}}
@@ -503,7 +512,9 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
     rows.sort(key=lambda r: r["payroll"], reverse=True)
     res = {"tool": "get_cap_table", "ok": True,
            "rows": rows,
+           "units": _CAP_ROW_UNITS,
            "meta": {"source": source, "season": season or season_used or "2026-27",
+                    **warehouse_identity_meta(),
                     "salary_date": salary_date,
                     **_payroll_proxy_meta(),
                     **{k: v for k, v in CAP.items()}}}

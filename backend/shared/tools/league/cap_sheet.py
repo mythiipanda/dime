@@ -25,6 +25,7 @@ from ..signing_rules import (
     validate_signing,
 )
 from ..cap_sheet import option_column, season_column, unroll_team_sheet
+from .._core import warehouse_identity_meta
 from ...contracts import normalize_name
 from .cap_hold_derivation import derive_cap_holds, hold_amount
 from .cba_cap import (
@@ -316,6 +317,7 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
             "state": state,
             "meta": {"holds_note": holds_note, "season_columns": sheet["seasons"],
                      "unrolling": "shared.tools.cap_sheet",
+                     **warehouse_identity_meta(),
                      "source": _payroll_source(con), "salary_date": _salary_date(con),
                      "season": season,
                      "cap_hold_derivation": (hold_payloads.get(season) or {}).get("meta", {}),

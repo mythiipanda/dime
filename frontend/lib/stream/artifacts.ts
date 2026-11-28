@@ -339,7 +339,7 @@ function parseCardSections(raw: unknown): PlayerCardSectionPayload[] | undefined
       }
     }
     if (typeof section.provenance === "object" && section.provenance !== null)
-      resolved.provenance = section.provenance as DimeProvenance;
+      resolved.provenance = parseProvenance(section.provenance);
     sections.push(resolved);
   }
   return sections;

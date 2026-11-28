@@ -61,14 +61,85 @@ export function resolveFields(row: Record<string, unknown>, selectors: { column:
     });
 }
 
+function provenanceText(value: unknown) {
+    return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function firstProvenanceText(...values: unknown[]) {
+    for (const value of values) {
+        const text = provenanceText(value);
+        if (text)
+            return text;
+    }
+    return undefined;
+}
+
+function liveProducerIds(value: string | undefined) {
+    const normalized = value?.trim().toLowerCase().replace(/-/g, "_");
+    if (!normalized)
+        return [];
+    const ids: string[] = [];
+    if (normalized.includes("nba_api") || normalized.includes("pbpstats") || normalized.includes("stats.nba.com"))
+        ids.push("nba_api");
+    if (normalized.includes("basketball_reference") || normalized.includes("bbref") || normalized.startsWith("bref"))
+        ids.push("basketball_reference");
+    if (normalized.includes("espn"))
+        ids.push("espn");
+    return ids;
+}
+
+function contractLiveSources(meta: Record<string, unknown> | undefined, producer: string | undefined) {
+    const declared = Array.isArray(meta?.live_sources) ? meta.live_sources : [];
+    const sources: string[] = [];
+    for (const candidate of [...declared, producer]) {
+        const text = provenanceText(candidate);
+        if (!text)
+            continue;
+        const candidates = /^https?:\/\/\S+$/i.test(text) ? [text] : liveProducerIds(text);
+        for (const source of candidates)
+            if (!sources.includes(source))
+                sources.push(source);
+    }
+    return sources;
+}
+
+function compositeProducer(value: string | undefined) {
+    const normalized = value?.trim().toLowerCase().replace(/-/g, "_");
+    if (!normalized)
+        return false;
+    if (normalized.includes("+") || normalized.includes("mixed") || normalized.includes("composite"))
+        return true;
+    const producerCount = liveProducerIds(normalized).length;
+    return producerCount > 1 || (producerCount > 0 && normalized.includes("warehouse"));
+}
+
 export function resolveProvenance(record: SourceRecord, data: Record<string, unknown>) {
     const meta = objectValue(data?.meta);
+    const source = provenanceText(meta?.source);
+    const warehouseId = provenanceText(meta?.warehouse_id);
+    const fallback = objectValue(meta?.live_fallback);
+    const fallbackOutcome = provenanceText(fallback?.outcome);
+    const lineage = provenanceText(meta?.lineage_kind);
+    const fetchedAt = provenanceText(meta?.fetched_at);
+    const live = lineage === "live" || fallbackOutcome === "served" ||
+        (meta?.cached === false && fetchedAt !== undefined && warehouseId === undefined);
+    const declaresWarehouse = meta?.dataset === "warehouse" || source === "warehouse" || source?.startsWith("warehouse:") === true;
+    const infersWarehouseIdentity = lineage === undefined && fallbackOutcome === undefined &&
+        meta?.cached !== false && !compositeProducer(source);
+    const warehouse = !live && warehouseId !== undefined &&
+        (declaresWarehouse || meta?.cached === true || fallbackOutcome === "stale" || infersWarehouseIdentity);
+    const origin = live ? "live" : warehouse ? "warehouse" : "undeclared";
+    const producer = firstProvenanceText(fallback?.live_source, source);
+    const asOf = firstProvenanceText(meta?.as_of, meta?.data_through, meta?.salary_date, meta?.fetched_at, meta?.last_fetch);
+    const sql = firstProvenanceText(record.args?.sql, data?.sql, meta?.sql);
     return {
-        capability: record.tool, origin: "undeclared",
-        ...(typeof meta?.source === "string" ? { dataset: meta.source } : {}),
+        capability: record.tool, origin,
+        live_sources: origin === "live" ? contractLiveSources(meta, producer) : [],
+        ...(origin === "warehouse" && warehouseId ? { warehouse_id: warehouseId } : {}),
+        ...(source ? { dataset: source } : {}),
         ...(typeof meta?.season === "string" ? { season: meta.season } : {}),
-        ...(typeof meta?.as_of === "string" ? { as_of: meta.as_of } : {}),
-        ...(typeof meta?.sql === "string" ? { sql: meta.sql } : {})
+        ...(asOf ? { as_of: asOf } : {}),
+        ...(sql ? { sql } : {})
     };
 }
 

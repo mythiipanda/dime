@@ -201,7 +201,8 @@ def get_splits(player_id: str | int, season: str | None = None) -> dict[str, Any
         "tool": "get_splits",
         "ok": True,
         "rows": rows,
-        "meta": {"source": meta_source, "fetched_at": meta_fetched, "rows": len(rows), "cached": False},
+        "meta": {**warehouse_meta, "source": meta_source, "fetched_at": meta_fetched,
+                 "rows": len(rows), "cached": warehouse_meta.get("cached", False)},
     }
 
 

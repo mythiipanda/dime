@@ -5,6 +5,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from .._core import warehouse_identity_meta
 from ..season_semantics import annotate_schema
 from ..splits import _resolve_name as _rname
 from ._helpers import _pkg
@@ -651,7 +652,8 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         return {"tool": "text_to_sql", "ok": True,
                 "rows": out_rows,
                 "sql": sql,
-                "meta": {"sql": sql[:500], "source": "warehouse"}}
+                "meta": {"sql": sql[:500], "source": "warehouse",
+                         **warehouse_identity_meta()}}
     return {"tool": "text_to_sql", "ok": False,
             "error": ("the warehouse query did not succeed after several "
                       "attempts; answer from results already gathered or "

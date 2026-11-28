@@ -413,6 +413,35 @@ test("a resolved artifact keeps its provenance through the answer", () => {
   }
 });
 
+test("a warehouse-resolved artifact displays warehouse provenance instead of source not declared", () => {
+  const run = runOf(
+    answerFrames([], PASS_CARRY, [
+      {
+        kind: "chart",
+        title: "QA FIXTURE warehouse chart",
+        series: [{ name: "QA Fixture A", values: [12.3] }],
+        provenance: {
+          capability: "sql_exec",
+          origin: "warehouse",
+          warehouse_id: "fixture-team-warehouse",
+          dataset: "warehouse",
+          season: "2026-27",
+          as_of: "2026-06-18",
+          sql: "SELECT team_name, wins FROM fixture_team",
+          live_sources: [],
+        },
+      },
+    ]),
+  );
+  for (const html of [persistedAnswer(run), liveAnswer(run)]) {
+    assert.match(html, /warehouse/i, html);
+    assert.ok(html.includes("fixture-team-warehouse"), html);
+    assert.ok(html.includes("2026-27"), html);
+    assert.ok(html.includes("2026-06-18"), html);
+    assert.ok(!/source not declared/i.test(html), html);
+  }
+});
+
 test("a resolved artifact with no provenance is disclosed as undeclared", () => {
   const run = runOf(
     answerFrames([], PASS_CARRY, [

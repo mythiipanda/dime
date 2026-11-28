@@ -106,8 +106,10 @@ Optional `sections` extends the card into a multi-source snapshot — each secti
 selects from its own `ref`/`row`, so contract, season line, impact, zones and
 injury status can each cite a different queried source. Identity stays on the
 header row only; a section never carries a name column. Per section the host
-resolves values, declared units and provenance (capability, dataset, season)
-from that source's result. `metrics` selects numbers (finite or null);
+resolves values, declared units and provenance from that source's result:
+capability, origin (`live`, `warehouse` or `undeclared`), `warehouse_id` for
+warehouse-origin rows, live-source identities for live-origin rows, dataset,
+season, as-of and SQL when declared. `metrics` selects numbers (finite or null);
 `fields` selects text (e.g. status, contract type). Up to 6 sections, each with
 1-6 metrics and/or fields; a section with neither is rejected.
 

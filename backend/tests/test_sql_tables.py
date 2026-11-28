@@ -98,6 +98,15 @@ def test_sql_exec_tables_are_validated_physical_sources(
         f"Agent-written SQL over {', '.join(expected)}; ")
 
 
+def test_sql_exec_meta_declares_available_warehouse_identity(warehouse, monkeypatch):
+    identity = {"warehouse_id": "fixture-warehouse", "warehouse_sha256": "fixture-sha"}
+    monkeypatch.setattr(store, "warehouse_identity", lambda: identity.copy())
+    result = _run("SELECT TEAM, WINS FROM silver_standings")
+    assert result["ok"] is True
+    assert result["meta"]["warehouse_id"] == "fixture-warehouse"
+    assert result["meta"]["warehouse_sha256"] == "fixture-sha"
+
+
 def test_sql_exec_season_attribution_uses_validated_table(warehouse):
     result = _run(
         "SELECT s._season, s.TEAM FROM silver_standings AS s")

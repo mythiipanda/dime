@@ -5,6 +5,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from ._core import warehouse_identity_meta
 from .count_evidence import count_evidence_meta
 from .league import (
     RERUN_ROW_CAP,
@@ -193,6 +194,7 @@ def _introspection_result(query: str) -> dict[str, Any] | None:
                 "columns": ["table_name"], "row_count": len(rows),
                 "sql": query,
                 "meta": {"source": SOURCE, "dataset": "warehouse",
+                         **warehouse_identity_meta(),
                          "sql": query[:500], "tables": [],
                          "result_type": "schema_listing",
                          "coverage": "Declared silver table allowlist; warehouse_schema carries columns, units and season notes per table."}}
@@ -210,6 +212,7 @@ def _introspection_result(query: str) -> dict[str, Any] | None:
     return {"tool": TOOL, "ok": True, "rows": rows, "columns": cols,
             "row_count": len(rows), "sql": query,
             "meta": {"source": SOURCE, "dataset": "warehouse",
+                     **warehouse_identity_meta(),
                      "sql": query[:500], "tables": [table],
                      "result_type": "schema_listing",
                      "coverage": f"Declared columns on {table} with types, units and notes from the warehouse schema catalog."}}
@@ -280,6 +283,7 @@ async def sql_exec(sql: str) -> dict[str, Any]:
     meta: dict[str, Any] = {
         "source": SOURCE,
         "dataset": "warehouse",
+        **warehouse_identity_meta(),
         "sql": query[:500],
         "tables": tables,
         "row_cap": RERUN_ROW_CAP,
