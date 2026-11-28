@@ -45,6 +45,26 @@ def memory_dead_money_con():
     return con
 
 
+def memory_component_probe_con(column_name="ROW_KIND", dead_kind="dead_money"):
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GUARANTEED BIGINT, "
+        f"SALARY_2026_27 BIGINT, {column_name} VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?, ?)",
+        [("Roster Player", "TST", 1, 10_000_000, 10_000_000, "roster"),
+         ("Dead Player", "TST", 2, 2_000_000, 2_000_000, dead_kind)])
+    con.execute(
+        "CREATE TABLE silver_cap_room ("
+        "TEAM VARCHAR, CAP_SEASON VARCHAR, FA_HOLDS_EST BIGINT, "
+        "INCOMPLETE_ROSTER_CHARGES BIGINT)")
+    con.execute(
+        "INSERT INTO silver_cap_room VALUES ('TST', '2026-27', 3000000, 9000000)")
+    return con
+
+
 def test_future_option_decision_uses_option_year_salary_and_baseline():
     from shared.tools.league.cap_sheet import evaluate_cap_scenario
     con = memory_salary_con()
@@ -150,6 +170,33 @@ def test_dead_money_rows_are_labeled_components_not_roster_players():
     assert out["dead_money_unit"] == "usd_dollars"
     assert entry["component_availability"]["dead_money"] is True
     assert entry["component_availability"]["roster_payroll"] is True
+
+
+@pytest.mark.parametrize("column_name,dead_kind", [
+    ("ROW_KIND", "dead_money"),
+    ("row_kind", "dead_money"),
+    ("ROW_KIND", "DEAD_MONEY"),
+])
+def test_payroll_components_exact_figures_across_row_kind_degradation(column_name, dead_kind):
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_component_probe_con(column_name, dead_kind)
+    try:
+        out = cap_sheet_rows(con, "TST", "2026-27")
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert [row["player"] for row in out["players"]] == ["Roster Player"]
+    entry = out["totals"]["2026-27"]
+    assert entry["roster_payroll"] == 10_000_000
+    assert entry["dead_money"] == 2_000_000
+    assert entry["committed"] == 12_000_000
+    assert entry["cap_holds"] == 3_000_000
+    assert entry["incomplete_roster_charges"] == 9_000_000
+    assert entry["payroll"] == 24_000_000
+    assert entry["dead_money_detail"] == [
+        {"player": "Dead Player", "team": "TST", "salary": 2_000_000},
+    ]
+    assert entry["component_availability"]["dead_money"] is True
 
 
 def test_payroll_adds_holds_and_charges_without_double_counting_dead_money():
@@ -312,11 +359,14 @@ def test_scenario_requires_moves(con):
 
 
 def test_endpoint_wrappers():
-    from analyst.direct_data import product_cap_scenario_eval, product_cap_sheet
+    from analyst.direct_data import internal_catalogue, product_cap_scenario_eval, product_cap_sheet
     bad = product_cap_sheet.invoke({"team": "", "season": "2026-27"})
     assert bad["ok"] is False
     bad2 = product_cap_scenario_eval.invoke({"payload": {"team": "", "moves": []}})
     assert bad2["ok"] is False
+    exposed = internal_catalogue()["product_cap_sheet"].description
+    assert "players is roster-only" in exposed
+    assert "dead_money/dead_money_detail" in exposed
 
 
 def test_projection_openapi_documents_dead_money_decomposition():

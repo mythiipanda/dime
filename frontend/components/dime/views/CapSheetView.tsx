@@ -107,6 +107,8 @@ function PayrollMathPopover({ team, season, totals, lines, includePending, child
 }) {
   const rows = payrollBreakdownRows(totals, includePending);
   const counted = rows.filter((row) => row.status === "counted" && row.label !== "Team-option salary");
+  const committedRows = counted.filter((row) => row.label === "Roster payroll" || row.label === "Dead money");
+  const payrollAdditionRows = counted.filter((row) => row.label === "Cap holds" || row.label === "Minimum-roster charges");
   const optionRows = rows.filter((row) => row.label === "Team-option salary");
   const excluded = rows.filter((row) => row.status === "excluded");
   const undeclared = rows.filter((row) => row.status === "undeclared");
@@ -127,7 +129,7 @@ function PayrollMathPopover({ team, season, totals, lines, includePending, child
         </PopoverDescription>
         <div className="border-t border-line pt-2">
           <p className="text-[11px] font-medium text-ink-3">Counted in payroll</p>
-          <BreakdownRows rows={counted} afterDeadMoney={totals.base.dead_money_detail.length > 0 && (
+          <BreakdownRows rows={committedRows} afterDeadMoney={totals.base.dead_money_detail.length > 0 && (
             <div className="mt-1 space-y-1 pl-2">
               {totals.base.dead_money_detail.map((row) => (
                 <div key={`${row.player}-${row.salary}`} className="flex items-baseline justify-between gap-4 text-[11px]">
@@ -141,6 +143,7 @@ function PayrollMathPopover({ team, season, totals, lines, includePending, child
             <span className="text-ink-2">Committed salary subtotal</span>
             <span className="shrink-0 tabular-nums text-ink">{exactMoney(totals.committed)}</span>
           </div>
+          <BreakdownRows rows={payrollAdditionRows} />
           {includePending && <BreakdownRows rows={optionRows} />}
           <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-2 text-[12.5px]">
             <span className="font-medium text-ink">Payroll estimate</span>

@@ -45,6 +45,36 @@ def resolve_salary_column(columns: set[str], season: str | None) -> str:
     return ''
 
 
+def row_kind_column(columns) -> str | None:
+    for column in columns:
+        if str(column).lower() == 'row_kind':
+            return str(column)
+    return None
+
+
+def row_kind_declared(columns) -> bool:
+    return row_kind_column(columns) is not None
+
+
+def is_dead_money_row(row: dict) -> bool:
+    for key, value in row.items():
+        if str(key).lower() == 'row_kind':
+            return str(value or 'roster').lower() == 'dead_money'
+    return False
+
+
+def _quoted_identifier(name: str) -> str:
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def dead_money_row_predicate(column: str) -> str:
+    return f"LOWER(COALESCE({_quoted_identifier(column)}, 'roster')) = 'dead_money'"
+
+
+def roster_row_predicate(column: str) -> str:
+    return f"NOT ({dead_money_row_predicate(column)})"
+
+
 def contract_details(row: dict | None) -> dict:
     row = row or {}
     current = str(row.get('_season') or '')
@@ -93,15 +123,17 @@ def salary_records(con, season: str | None = None, salary_season: str | None = N
                   if table == 'silver_salaries' else ('salary' if table == 'silver_cap_players' else 'SALARY'))
         if not salary:
             continue
-        where = ''
+        filters = []
         params = []
         season_filter = season or (salary_season if table == 'silver_contracts' else None)
         if season_filter and '_season' in columns:
-            where = ' WHERE _season = ?'
+            filters.append('_season = ?')
             params = [season_filter]
+        kind_column = row_kind_column(columns) if table == 'silver_salaries' else None
+        if kind_column:
+            filters.append(roster_row_predicate(kind_column))
+        where = ' WHERE ' + ' AND '.join(filters) if filters else ''
         rows = [dict(zip(columns, values)) for values in con.execute(f'SELECT * FROM {table}{where}', params).fetchall()]
-        if table == 'silver_salaries' and 'ROW_KIND' in columns:
-            rows = [r for r in rows if r.get('ROW_KIND') != 'dead_money']
         if rows and not season and '_season' in columns:
             latest = max(str(r.get('_season') or '') for r in rows)
             rows = [r for r in rows if str(r.get('_season') or '') == latest]

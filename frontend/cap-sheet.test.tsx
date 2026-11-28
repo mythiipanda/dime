@@ -261,6 +261,15 @@ test("payroll math explains labeled components, dead-money rows and room derivat
     assert.match(text, /\$1,234,567/);
     assert.match(text, /Payroll estimate/);
     assert.match(text, /\$210,732,207/);
+    const committedIndex = text.indexOf("Committed salary subtotal");
+    const deadIndex = text.indexOf("Dead money");
+    const capHoldsIndex = text.indexOf("Cap holds");
+    const chargesIndex = text.indexOf("Minimum-roster charges");
+    const payrollIndex = text.indexOf("Payroll estimate");
+    assert.ok(deadIndex >= 0 && committedIndex > deadIndex, "committed subtotal follows roster payroll and dead money");
+    assert.ok(capHoldsIndex > committedIndex, "cap holds render after the committed subtotal");
+    assert.ok(chargesIndex > capHoldsIndex, "minimum-roster charges render after cap holds");
+    assert.ok(payrollIndex > chargesIndex, "payroll estimate follows the additive components");
     assert.match(text, /Team-option salary/);
     assert.match(text, /\$2,726,487/);
     assert.match(text, /Outside this estimate/);

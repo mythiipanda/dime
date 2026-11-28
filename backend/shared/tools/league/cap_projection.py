@@ -1,7 +1,7 @@
 import re as _re
 from typing import Any
 
-from ...contracts import canonical_team_abbr, salary_records
+from ...contracts import canonical_team_abbr, dead_money_row_predicate, row_kind_column, salary_records
 from ..cap_rules import apron_state, payroll_proxy_meta, roster_issues
 from .cap_hold_derivation import derive_cap_holds, hold_amount
 from ._helpers import declare_money
@@ -80,10 +80,11 @@ def _dead_money_schedules(con, team: str) -> list[dict[str, Any]]:
         if "silver_salaries" not in tables:
             return []
         cols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
-        if "ROW_KIND" not in cols:
+        kind_column = row_kind_column(cols)
+        if not kind_column:
             return []
         cur = con.execute(
-            "SELECT * FROM silver_salaries WHERE LOWER(ROW_KIND) = 'dead_money'")
+            "SELECT * FROM silver_salaries WHERE " + dead_money_row_predicate(kind_column))
         names = [d[0] for d in cur.description]
         rows = [dict(zip(names, row)) for row in cur.fetchall()]
         if "_season" in cols:

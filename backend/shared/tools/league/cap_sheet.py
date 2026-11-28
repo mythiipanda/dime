@@ -26,7 +26,7 @@ from ..signing_rules import (
 )
 from ..cap_sheet import horizon_seasons, option_column, season_column, unroll_team_sheet
 from .._core import warehouse_identity_meta
-from ...contracts import normalize_name
+from ...contracts import is_dead_money_row, normalize_name, row_kind_declared
 from .cap_hold_derivation import derive_cap_holds, hold_amount
 from .cba_cap import (
     _locate_player_team,
@@ -232,12 +232,7 @@ def _roster_charge(players: int, hold_count: int, minimum: int) -> int:
 
 
 def _row_kind_present(names: list[str]) -> bool:
-    return "ROW_KIND" in names or "row_kind" in names
-
-
-def _is_dead_money_row(row: dict[str, Any]) -> bool:
-    value = row.get("ROW_KIND", row.get("row_kind", "roster"))
-    return str(value or "roster").lower() == "dead_money"
+    return row_kind_declared(names)
 
 
 def _dead_money_components(con, team: str, seasons: list[str]) -> tuple[dict[str, list[dict[str, Any]]], set[str]]:
@@ -287,7 +282,7 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
             pass
     row_kinds_declared = _row_kind_present(names)
     roster_rows = [row for row in rows
-                   if not row_kinds_declared or not _is_dead_money_row(row)]
+                   if not row_kinds_declared or not is_dead_money_row(row)]
     seasons = horizon_seasons(rows)
     sheet = unroll_team_sheet(roster_rows, season, seasons)
     dead_details, dead_available = _dead_money_components(con, team, sheet["seasons"])

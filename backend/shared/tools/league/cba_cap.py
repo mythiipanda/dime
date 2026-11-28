@@ -3,7 +3,14 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ...contracts import canonical_team_abbr, contract_details, resolve_salary_column, salary_records
+from ...contracts import (
+    canonical_team_abbr,
+    contract_details,
+    dead_money_row_predicate,
+    resolve_salary_column,
+    row_kind_column,
+    salary_records,
+)
 from .._core import coerce_team_id, team_error_message, warehouse_identity_meta
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
@@ -37,7 +44,9 @@ def _team_salary_lookup(con, name: str) -> str | None:
         return None
     try:
         scols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
-        order = " ORDER BY CASE WHEN ROW_KIND = 'roster' THEN 0 ELSE 1 END" if "ROW_KIND" in scols else ""
+        kind_column = row_kind_column(scols)
+        order = (" ORDER BY CASE WHEN " + dead_money_row_predicate(kind_column) + " THEN 1 ELSE 0 END"
+                 if kind_column else "")
         row = con.execute(
             "SELECT TEAM FROM silver_salaries "
             "WHERE LOWER(PLAYER_NAME) = LOWER(?)" + order + " LIMIT 1", [name]).fetchone()
@@ -291,18 +300,16 @@ def _payroll(team: str, con: object = None,
                 rows.append((r['PLAYER_NAME'], salary))
                 players.append({"player": r['PLAYER_NAME'], "salary": salary,
                                 "team": record_team, **contract_details(r)})
-            if rows:
-                dead = []
-                if "ROW_KIND" in scols:
-                    try:
-                        dcur = con.execute(
-                            "SELECT PLAYER_NAME, TEAM, " + scol + " FROM silver_salaries "
-                            "WHERE ROW_KIND = 'dead_money' AND UPPER(TEAM) = UPPER(?)",
-                            [team_code]).fetchall()
-                        dead = [{"player": str(d[0]), "salary": d[2], "team": str(d[1])}
-                                for d in dcur if d[2] is not None]
-                    except Exception:
-                        dead = []
+            dead = []
+            kind_column = row_kind_column(scols)
+            if kind_column:
+                dcur = con.execute(
+                    "SELECT PLAYER_NAME, TEAM, " + scol + " FROM silver_salaries "
+                    "WHERE " + dead_money_row_predicate(kind_column) + " AND UPPER(TEAM) = UPPER(?)",
+                    [team_code]).fetchall()
+                dead = [{"player": str(d[0]), "salary": d[2], "team": str(d[1])}
+                        for d in dcur if d[2] is not None]
+            if rows or dead:
                 dead_total = sum(d["salary"] or 0 for d in dead)
                 return sum(r[1] or 0 for r in rows) + dead_total, players, dead
         if "silver_cap_players" in tables:
@@ -594,7 +601,9 @@ def _unknown_player_hints(unknown: list[str], con: object = None) -> list[str]:
                     scols2 = {r[1] for r in con2.execute("PRAGMA table_info(silver_salaries)").fetchall()}
                 except Exception:
                     scols2 = set()
-                order2 = " ORDER BY CASE WHEN ROW_KIND = 'roster' THEN 0 ELSE 1 END" if "ROW_KIND" in scols2 else ""
+                kind_column2 = row_kind_column(scols2)
+                order2 = (" ORDER BY CASE WHEN " + dead_money_row_predicate(kind_column2) + " THEN 1 ELSE 0 END"
+                          if kind_column2 else "")
                 hit = con2.execute(
                     """SELECT TEAM, PLAYER_NAME FROM silver_salaries
                     WHERE PLAYER_NAME LIKE ?""" + order2 + " LIMIT 1",

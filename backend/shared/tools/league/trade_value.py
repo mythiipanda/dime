@@ -4,7 +4,15 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ...contracts import canonical_team_abbr, contract_details, match_record, normalize_name, salary_records
+from ...contracts import (
+    canonical_team_abbr,
+    contract_details,
+    match_record,
+    normalize_name,
+    roster_row_predicate,
+    row_kind_column,
+    salary_records,
+)
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money, declare_units
 from .cba_cap import (
     CAP,
@@ -112,8 +120,9 @@ def _trade_guard_team_error(con, team: str, players: str,
             kind_filter = ""
             try:
                 scols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
-                if "ROW_KIND" in scols:
-                    kind_filter = "AND ROW_KIND = 'roster'"
+                kind_column = row_kind_column(scols)
+                if kind_column:
+                    kind_filter = "AND " + roster_row_predicate(kind_column)
             except Exception:
                 pass
             row = con.execute(
