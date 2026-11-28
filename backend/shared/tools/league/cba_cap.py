@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from ...contracts import canonical_team_abbr, contract_details, resolve_salary_column, salary_records
 from .._core import coerce_team_id, team_error_message
 from ..competitive import _resolve_team_abbr
-from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
 
 from ..cap_rules import (
     CAP,
@@ -438,7 +438,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         season, _, _ = _salary_vintage(con)
     finally:
         con.close()
-    return {"tool": "get_cap_ledger", "ok": True,
+    result = {"tool": "get_cap_ledger", "ok": True,
             "rows": {"team": team.upper(), "payroll": total,
                      "players": sorted(players, key=lambda p: p["salary"] or 0,
                                        reverse=True),
@@ -448,6 +448,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      "salary_date": salary_date,
                      **_payroll_proxy_meta(),
                      **{k: v for k, v in CAP.items()}}}
+    return declare_money(result, ["payroll", "room_under_apron2", "salary", "remaining_guaranteed"])
 
 
 @tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits or over-the-line scans against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total. Requested-season payroll must use salary coverage for that exact season; when coverage is absent, report that season unavailable or surface salary_column_unmatched instead of substituting another year. Team-level only, no player salaries: an individual player salary lives in silver_salaries, and trade legality or matching-band math goes to get_trade_check.')
@@ -487,7 +488,7 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
                     **{k: v for k, v in CAP.items()}}}
     if missing:
         res["meta"]["missing_teams"] = missing
-    return res
+    return declare_money(res, ["payroll", "cap_room", "room_under_apron2"])
 
 
 class _RosterIndex:

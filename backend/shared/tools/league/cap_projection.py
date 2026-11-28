@@ -4,6 +4,7 @@ from typing import Any
 from ...contracts import canonical_team_abbr, salary_records
 from ..cap_rules import apron_state, payroll_proxy_meta, roster_issues
 from .cap_hold_derivation import derive_cap_holds, hold_amount
+from ._helpers import declare_money
 from .cap_sheet import cap_lines_for_season
 from .cba_cap import _locate_player_team, _match_trade_players
 from .waivers import player_contract_tail, waiver_dead_money
@@ -602,7 +603,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         disclosures.append("incomplete-roster minimum charges are not yet projected — the cap sheet includes them for the current season")
     if truncated:
         disclosures.append(f"seasons beyond warehouse salary coverage are excluded: {', '.join(truncated)}")
-    return {
+    return declare_money({
         "ok": True, "team": team, "base_season": base_season,
         "seasons": season_blocks,
         "errors": errors, "warnings": warnings,
@@ -610,4 +611,4 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         "meta": {"horizon_seasons": seasons, "coverage": coverage,
                  "projection_basis": "silver_salaries contract schedules plus silver_cap_room lines",
                  **payroll_proxy_meta()},
-    }
+    }, ["pay_before", "pay_after", "cap_room", "salary", "delta", "cap_holds", "amount"])
