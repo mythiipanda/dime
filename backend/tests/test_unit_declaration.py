@@ -51,7 +51,8 @@ def test_projection_declares_money_units_on_scenario_outputs():
         con.close()
     assert out["ok"] is True
     declared = out.get("declared_column_semantics") or {}
-    for field in ("pay_before", "pay_after", "cap_room", "salary", "delta", "cap_holds", "amount"):
+    for field in ("pay_before", "pay_after", "roster_payroll", "dead_money",
+                  "cap_room", "salary", "delta", "cap_holds", "amount"):
         assert declared.get(field, {}).get("unit") == "usd_dollars", f"{field} undeclared"
 
 
