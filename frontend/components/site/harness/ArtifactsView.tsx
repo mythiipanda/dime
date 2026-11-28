@@ -189,11 +189,15 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
     const lines = [`Verdict,${artifact.legal ? "Legal" : "Illegal"}`];
     lines.push("Team,Players Out,Outgoing,Players In,Incoming,Payroll Before,Payroll After,Allowed Incoming,Match Rule,Hard Cap");
     for (const team of artifact.teams) {
+      const pickCell = (picks: { year: number; round: number; swap?: boolean; protection?: string }[] | undefined) =>
+        (picks ?? []).map(p => `${p.year} ${p.round === 1 ? "1st" : p.round === 2 ? "2nd" : `R${p.round}`}${p.swap ? " swap" : ""}${p.protection ? ` (${p.protection})` : ""}`).join("; ");
+      const outAssets = [team.playersOut.join("; "), pickCell(team.picksOut)].filter(Boolean).join("; ");
+      const inAssets = [team.playersIn.join("; "), pickCell(team.picksIn)].filter(Boolean).join("; ");
       lines.push([
         team.team,
-        team.playersOut.join("; "),
+        outAssets,
         team.outgoing,
-        team.playersIn.join("; "),
+        inAssets,
         team.incoming,
         team.payrollBefore,
         team.payrollAfter,

@@ -9,8 +9,15 @@ function money(value: number | undefined): string {
   return value === undefined ? "—" : formatHeadlineMetric(value, "usd_dollars");
 }
 
-function playerList(names: string[]): string {
-  return names.length ? names.join(", ") : "—";
+function pickLabel(pick: { year: number; round: number; swap?: boolean; protection?: string }): string {
+  const round = pick.round === 1 ? "1st" : pick.round === 2 ? "2nd" : `R${pick.round}`;
+  return `${pick.year} ${round}${pick.swap ? " swap" : ""}${pick.protection ? ` (${pick.protection})` : ""}`;
+}
+
+function assetLine(players: string[], picks: { year: number; round: number; swap?: boolean; protection?: string }[] | undefined): string {
+  const parts = [...players];
+  if (picks) parts.push(...picks.map(pickLabel));
+  return parts.length ? parts.join(", ") : "—";
 }
 
 function TeamPanel({ team }: { team: TradeVerdictTeamPayload }) {
@@ -31,12 +38,12 @@ function TeamPanel({ team }: { team: TradeVerdictTeamPayload }) {
       <dl className="mt-3 space-y-2.5 text-[13px]">
         <div>
           <dt className="text-xs text-ink-3">Out</dt>
-          <dd className="mt-0.5 break-words text-ink">{playerList(team.playersOut)}</dd>
+          <dd className="mt-0.5 break-words text-ink">{assetLine(team.playersOut, team.picksOut)}</dd>
           <dd className="tabular-nums text-ink-2">{money(team.outgoing)}</dd>
         </div>
         <div>
           <dt className="text-xs text-ink-3">In</dt>
-          <dd className="mt-0.5 break-words text-ink">{playerList(team.playersIn)}</dd>
+          <dd className="mt-0.5 break-words text-ink">{assetLine(team.playersIn, team.picksIn)}</dd>
           <dd className="tabular-nums text-ink-2">{money(team.incoming)}</dd>
         </div>
         {(team.payrollBefore !== undefined || team.payrollAfter !== undefined) && (

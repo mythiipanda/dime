@@ -456,6 +456,20 @@ function parseVerdictTeam(raw: unknown): TradeVerdictTeamPayload | null {
       team.tpeCreation = { amount, ...(typeof tpe.condition === "string" && tpe.condition ? { condition: tpe.condition } : {}) };
     }
   }
+  for (const key of ["picksOut", "picksIn"] as const) {
+    if (entry[key] === undefined) continue;
+    if (!Array.isArray(entry[key])) return null;
+    const picks: { year: number; round: number; swap?: boolean; protection?: string }[] = [];
+    for (const rawPick of entry[key] as unknown[]) {
+      if (!rawPick || typeof rawPick !== "object") return null;
+      const pick = rawPick as Record<string, unknown>;
+      const year = finiteNumber(pick.year);
+      const round = finiteNumber(pick.round);
+      if (year === undefined || round === undefined) return null;
+      picks.push({ year, round, ...(pick.swap === true ? { swap: true } : {}), ...(typeof pick.protection === "string" && pick.protection ? { protection: pick.protection } : {}) });
+    }
+    if (picks.length) team[key] = picks;
+  }
   return team;
 }
 

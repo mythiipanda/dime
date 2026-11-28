@@ -233,6 +233,8 @@ export interface TradeVerdictTeamPayload {
   matchingFailed?: boolean;
   aggregates?: boolean;
   tpeCreation?: { amount: number; condition?: string };
+  picksOut?: { year: number; round: number; swap?: boolean; protection?: string }[];
+  picksIn?: { year: number; round: number; swap?: boolean; protection?: string }[];
 }
 
 export interface TradeVerdictArtifactPayload {

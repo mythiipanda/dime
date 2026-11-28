@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   validateAnswerSubmission,
   createSubmitAnswerTool,
+  resolveSalvagedArtifacts,
 } from "./dist/submit-tool.js";
 import { ProductStore } from "./dist/product-store.js";
 import { Type } from "typebox";
@@ -2469,18 +2470,32 @@ test("validateAnswerSubmission keeps legitimate prose mentioning tools intact", 
 });
 
 function tradeCheckSource(overrides = {}) {
+  const legal = overrides.legal ?? true;
+  const issues = overrides.issues ?? [];
+  const checks = overrides.checks ?? [{ rule: "salary matching", note: "both sides within band" }];
+  const rows = [
+    { side: "team_a", team: "DAL", outgoing: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_incoming: 28909044, match_rule: "standard TPE matching: 100% of outgoing salary plus applicable cushion", hard_cap: "", over_apron1: false, over_apron2: false, tpe_creation: { amount: 313044, condition: "would generate only if this construction is executed as a non-simultaneous trade" }, legal, issues },
+    { side: "team_b", team: "TOR", outgoing: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_incoming: 28596000, match_rule: "outgoing salary plus $9.096M (below the first apron)", hard_cap: "first apron", over_apron1: false, over_apron2: false, legal, issues }
+  ];
+  const source = makeSourceRecord("trade-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
+  source.response.structuredContent.legal = legal;
+  source.response.structuredContent.issues = issues;
+  source.response.structuredContent.checks = checks;
+  return source;
+}
+
+function tradeCheckDictSource() {
   const rows = {
-    team_a: { team: "DAL", out: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_in: 28909044, match_rule: "standard TPE matching: 100% of outgoing salary plus applicable cushion", hard_cap: "", over_apron1: false, over_apron2: false, tpe_creation: { amount: 313044, condition: "would generate only if this construction is executed as a non-simultaneous trade" } },
-    team_b: { team: "TOR", out: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_in: 28596000, match_rule: "outgoing salary plus $9.096M (below the first apron)", hard_cap: "first apron", over_apron1: false, over_apron2: false },
-    legal: true, issues: [], checks: [{ rule: "salary matching", note: "both sides within band" }],
-    ...overrides.rows
+    team_a: { team: "DAL", out: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_in: 28909044, match_rule: "standard TPE matching", hard_cap: "", tpe_creation: { amount: 313044, condition: "non-simultaneous" } },
+    team_b: { team: "TOR", out: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_in: 28596000, match_rule: "outgoing plus $9.096M", hard_cap: "first apron" },
+    legal: true, issues: [], checks: [{ rule: "salary matching", note: "fits" }]
   };
-  return makeSourceRecord("trade-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
+  return makeSourceRecord("trade-dict-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
 }
 
 function tradeLegalitySource() {
   const rows = [
-    { team: "DAL", payroll_before: 183593937, payroll_after: 179322417, outgoing: 34270627, incoming: 30000000, players_out: ["Daniel Gafford", "Santi Aldama"], players_in: ["Jalen Johnson"], allowed_incoming: 43522627, match_rule: "outgoing plus $9.096M", matching_ok: true, aggregates: true, hard_cap: "second apron", tpe_creation: { amount: 4270627, condition: "non-simultaneous only" } },
+    { team: "DAL", payroll_before: 183593937, payroll_after: 179322417, outgoing: 34270627, incoming: 30000000, players_out: ["Daniel Gafford", "Santi Aldama"], players_in: ["Jalen Johnson"], picks_out: [{ year: 2028, round: 1, protection: "top-3" }, { year: 2029, round: 2, swap: true }], allowed_incoming: 43522627, match_rule: "outgoing plus $9.096M", matching_ok: true, aggregates: true, hard_cap: "second apron", tpe_creation: { amount: 4270627, condition: "non-simultaneous only" } },
     { team: "ATL", payroll_before: 150000000, payroll_after: 154270627, outgoing: 30000000, incoming: 34270627, players_out: ["Jalen Johnson"], players_in: ["Daniel Gafford", "Santi Aldama"], allowed_incoming: 40000000, match_rule: "cap room", matching_ok: true, hard_cap: "first apron" }
   ];
   const source = makeSourceRecord("legality-src", { rows, tool: "get_trade_legality", meta: { season: "2026-27" } });
@@ -2515,6 +2530,18 @@ test("trade_verdict resolves the evaluator verdict, never model-written outcomes
   assert.deepEqual(input, original);
 });
 
+test("trade_verdict still resolves the legacy dict-shaped rows", () => {
+  const source = tradeCheckDictSource();
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "Legacy", ref: "trade-dict-src" }] }, () => source);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.teams.length, 2);
+  assert.equal(verdict.teams[0].team, "DAL");
+  assert.deepEqual(verdict.teams[0].playersOut, ["P.J. Washington"]);
+  assert.equal(verdict.teams[0].outgoing, 19813044);
+  assert.equal(verdict.teams[0].tpeCreation.amount, 313044);
+});
+
 test("trade_verdict resolves the multi-team get_trade_legality shape", () => {
   const source = tradeLegalitySource();
   const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "Aggregation works", ref: "legality-src" }] }, () => source);
@@ -2524,11 +2551,13 @@ test("trade_verdict resolves the multi-team get_trade_legality shape", () => {
   assert.equal(verdict.teams[0].payrollAfter, 179322417);
   assert.equal(verdict.teams[0].aggregates, true);
   assert.equal(verdict.teams[0].tpeCreation.amount, 4270627);
+  assert.deepEqual(verdict.teams[0].picksOut, [{ year: 2028, round: 1, protection: "top-3" }, { year: 2029, round: 2, swap: true }]);
+  assert.equal(verdict.teams[1].picksOut, undefined);
   assert.equal(verdict.teams[1].hardCap, "first apron");
 });
 
 test("trade_verdict rejects illegal verdicts structure intact, not silently legal", () => {
-  const source = tradeCheckSource({ rows: { legal: false, issues: ["CHA takes back too much"] } });
+  const source = tradeCheckSource({ legal: false, issues: ["CHA takes back too much"] });
   const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: " Booker-for-Allen fails ", ref: "trade-src" }] }, () => source);
   const verdict = result.artifacts[0];
   assert.equal(verdict.legal, false);
@@ -2554,4 +2583,37 @@ test("trade_verdict gate: rejects unknown refs, non-evaluation tools, forged out
   const errored = tradeCheckSource();
   errored.response.isError = true;
   assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => errored), /errored/);
+});
+
+test("resolveSalvagedArtifacts resolves ref-only verdicts against run sources", () => {
+  const source = tradeCheckSource();
+  const sourceMap = new Map([[source.ref, source]]);
+  const raw = [
+    { kind: "trade_verdict", title: "Washington-for-Poeltl works", ref: "trade-src" },
+    { kind: "table", title: "Numbers", columns: [{ key: "a", label: "A" }], rows: [["x"]] }
+  ];
+  const { artifacts, dropped } = resolveSalvagedArtifacts(raw, ref => sourceMap.get(ref), [...sourceMap.keys()]);
+  assert.equal(dropped, 0);
+  assert.equal(artifacts.length, 2);
+  const verdict = artifacts[0];
+  assert.equal(verdict.kind, "trade_verdict");
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.teams.length, 2);
+  assert.equal(verdict.teams[0].team, "DAL");
+  assert.deepEqual(verdict.teams[0].playersOut, ["P.J. Washington"]);
+  assert.equal(artifacts[1].kind, "table", "self-contained artifacts survive untouched");
+});
+
+test("resolveSalvagedArtifacts drops unresolvable ref artifacts instead of emitting raw refs", () => {
+  const sourceMap = new Map();
+  const raw = [
+    { kind: "trade_verdict", title: "x", ref: "missing-src" },
+    { kind: "player_card", title: "y", ref: "missing-src", row: 0, nameColumn: "player", metrics: [{ column: "pts", label: "PTS" }] },
+    { kind: "table", title: "Numbers", columns: [{ key: "a", label: "A" }], rows: [["x"]] }
+  ];
+  const { artifacts, dropped } = resolveSalvagedArtifacts(raw, ref => sourceMap.get(ref), []);
+  assert.equal(dropped, 2);
+  assert.equal(artifacts.length, 1);
+  assert.equal(artifacts[0].kind, "table");
+  assert.ok(!artifacts.some(a => a.kind === "trade_verdict"), "no raw ref-only verdict survives salvage");
 });

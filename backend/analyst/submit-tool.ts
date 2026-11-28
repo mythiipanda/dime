@@ -336,6 +336,27 @@ export function validateAnswerSubmission(
     };
 }
 
+export function resolveSalvagedArtifacts(
+    artifacts: Record<string, unknown>[],
+    getSource: (ref: string) => SourceRecord | undefined,
+    availableRefs?: readonly string[]
+): { artifacts: Record<string, unknown>[]; dropped: number } {
+    const out: Record<string, unknown>[] = [];
+    let dropped = 0;
+    for (const artifact of artifacts) {
+        try {
+            const kind = artifact.kind as string;
+            if (kind === "player_card") out.push(resolvePlayerCard(artifact, getSource));
+            else if (kind === "team_card") out.push(resolveTeamCard(artifact, getSource));
+            else if (kind === "trade_verdict") out.push(resolveTradeVerdict(artifact, getSource));
+            else out.push(attachArtifactProvenance(validateAnswerArtifact(artifact, out.length), getSource, availableRefs));
+        } catch {
+            dropped++;
+        }
+    }
+    return { artifacts: out, dropped };
+}
+
 export function createSubmitAnswerTool(
     getContextSources: () => SourceRecord[],
     onAccept: (submission: AnswerSubmission) => void,
@@ -344,7 +365,7 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
-        description: "Submit final prose blocks with the visual artifacts the ask's shape calls for and optional source selectors. Ranked lists, leaderboards, top-N boards, rosters and multi-row results carry a 'table'; head-to-head asks a 'compare'; trends and season paths a 'chart'; court-location asks a 'shot_chart' — even when the ask names no artifact kind. Blocks carry the complete user-facing answer verbatim — the reader sees only what the submission holds, so write the full answer text into block text; never describe or announce the submission, name this tool call, or point to answer text that lives outside the submission. Kinds: (table, compare, chart, shot_chart, scatter, player_card, team_card, memo). Exact minimal shapes — table {kind,title,columns:[{key,label}],rows:[[cell,...] matching columns]}; compare {kind,title,aName,bName,rows:[{label,a,b}]}; chart {kind,title,series:[{name,values:[number|null,...]}],xLabels?} — series values align to xLabels by index; scatter {kind,title,xLabel,yLabel,points:[{label,x,y}]}; shot_chart {kind,title,zones:[{x,y,att,pct}]} with pct as a 0-1 fraction; memo {kind,title,sections:[{heading,body}]}. Extra keys are rejected — emit only listed fields plus an optional footnote. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. memo sections may carry anchors validated like block anchors. table/compare/chart/shot_chart/scatter/memo artifacts may carry sources: [{ref, rows?, columns?}] naming the source rows the artifact draws from — the host validates them like anchors and attaches merged provenance, so include sources whenever the artifact's figures come from tool results. Artifacts with unknown kinds or no usable data are dropped and reported back as warnings. Every figure the question requests must appear in the submission verbatim — exact computed values, never rounded-away approximations; a number shown only as prose commentary outside blocks does not count. A block that merely announces or confirms the analysis ('Submitted.', 'Done', 'see above') discards all of it — the reader never sees your tool results, so put the computed values and tables in the blocks even when you could not satisfy every check. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out rather than silently dropping them. Validates selector traceability, not semantic correctness.",
+        description: "Submit final prose blocks with the visual artifacts the ask's shape calls for and optional source selectors. Ranked lists, leaderboards, top-N boards, rosters and multi-row results carry a 'table'; head-to-head asks a 'compare'; trends and season paths a 'chart'; court-location asks a 'shot_chart' — even when the ask names no artifact kind. Blocks carry the complete user-facing answer verbatim — the reader sees only what the submission holds, so write the full answer text into block text; never describe or announce the submission, name this tool call, or point to answer text that lives outside the submission. Kinds: (table, compare, chart, shot_chart, scatter, player_card, team_card, memo, trade_verdict). Exact minimal shapes — table {kind,title,columns:[{key,label}],rows:[[cell,...] matching columns]}; compare {kind,title,aName,bName,rows:[{label,a,b}]}; chart {kind,title,series:[{name,values:[number|null,...]}],xLabels?} — series values align to xLabels by index; scatter {kind,title,xLabel,yLabel,points:[{label,x,y}]}; shot_chart {kind,title,zones:[{x,y,att,pct}]} with pct as a 0-1 fraction; memo {kind,title,sections:[{heading,body}]}. Extra keys are rejected — emit only listed fields plus an optional footnote. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. trade_verdict takes exactly {kind, title, ref} where ref is this run's get_trade_check or get_trade_legality result — the host resolves verdict, salary math, apron status, TPE creation, issues and checks from the evaluator; never write outcomes, legal flags, salaries or issues yourself, and never emit it when no trade evaluation ran this run. memo sections may carry anchors validated like block anchors. table/compare/chart/shot_chart/scatter/memo artifacts may carry sources: [{ref, rows?, columns?}] naming the source rows the artifact draws from — the host validates them like anchors and attaches merged provenance, so include sources whenever the artifact's figures come from tool results. Artifacts with unknown kinds or no usable data are dropped and reported back as warnings. Every figure the question requests must appear in the submission verbatim — exact computed values, never rounded-away approximations; a number shown only as prose commentary outside blocks does not count. A block that merely announces or confirms the analysis ('Submitted.', 'Done', 'see above') discards all of it — the reader never sees your tool results, so put the computed values and tables in the blocks even when you could not satisfy every check. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out rather than silently dropping them. Validates selector traceability, not semantic correctness.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const sources = getContextSources();
