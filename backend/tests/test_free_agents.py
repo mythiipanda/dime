@@ -202,3 +202,25 @@ def test_tool_missing(scratch):
     res = get_free_agents.func(team="BOS")
     assert res["ok"] is False
     assert "seed_free_agents" in res["error"]
+
+
+def test_legacy_row_prefers_seeded_derivation():
+    from shared.tools.league.cap_hold_derivation import _legacy_row
+    row = {"PLAYER_NAME": "X", "TEAM": "BOS", "FA_TYPE": "ufa", "PRIOR_SALARY": 100,
+           "CAP_HOLD_EST": 5_000_000, "CAP_HOLD": 27_333_333,
+           "CAP_HOLD_EXACTNESS": "approximate",
+           "CAP_HOLD_RULE": "qualifying_veteran_150_percent"}
+    out = _legacy_row(row, "inputs missing")
+    assert out["cap_hold"] == 27_333_333
+    assert out["hold_exactness"] == "approximate"
+    assert out["derivation_status"] == "seeded_derivation_fallback"
+    assert out["legacy_cap_hold_est"] == 5_000_000
+
+
+def test_legacy_row_falls_back_to_est_when_no_seeded_value():
+    from shared.tools.league.cap_hold_derivation import _legacy_row
+    row = {"PLAYER_NAME": "X", "TEAM": "BOS", "FA_TYPE": "ufa", "PRIOR_SALARY": 100,
+           "CAP_HOLD_EST": 5_000_000}
+    out = _legacy_row(row, "inputs missing")
+    assert out["cap_hold"] == 5_000_000
+    assert out["derivation_status"] == "legacy_fallback"
