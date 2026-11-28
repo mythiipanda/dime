@@ -23,6 +23,28 @@ def memory_con(rows=None):
     return con
 
 
+def salary_row(player, team, player_id, guaranteed, salaries, row_kind="roster"):
+    padded = list(salaries) + [None] * (4 - len(salaries))
+    return (player, team, player_id, guaranteed, *padded,
+            None, None, None, None, row_kind, "2026-27")
+
+
+def memory_dead_con(rows):
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GUARANTEED BIGINT, "
+        "SALARY_2026_27 BIGINT, SALARY_2027_28 BIGINT, SALARY_2028_29 BIGINT, "
+        "SALARY_2029_30 BIGINT, "
+        "OPTION_2026_27 VARCHAR, OPTION_2027_28 VARCHAR, OPTION_2028_29 VARCHAR, OPTION_2029_30 VARCHAR, "
+        "ROW_KIND VARCHAR, _season VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows)
+    return con
+
+
 def project(con, moves, season="2026-27", team="TST"):
     from shared.tools.league.cap_projection import project_cap_scenario
     return project_cap_scenario(con, {"team": team, "season": season, "moves": moves})
@@ -224,6 +246,118 @@ def test_stretch_waive_spreads_installments_forward():
     assert installments, "stretch installments must project forward"
     assert all(e["delta"] == installments[0]["delta"] for e in installments)
     assert y1["pay_after"] < 30_000_000
+
+
+def test_preexisting_dead_money_enters_baseline_with_exact_fixture_figures():
+    rows = [
+        salary_row("Roster Wing", "DAL", 1, 10_000_000, [10_000_000]),
+        salary_row("Klay Thompson", "DAL", 2, 7_660_317, [7_660_317], "dead_money"),
+        salary_row("Olivier-Maxence Prosper", "DAL", 3, 1_002_360, [1_002_360], "dead_money"),
+    ]
+    con = memory_dead_con(rows)
+    try:
+        out = project(con, [], team="DAL")
+    finally:
+        con.close()
+    base = block(out, "2026-27")
+    assert base["roster_payroll"] == 10_000_000
+    assert base["dead_money"] == 8_662_677
+    assert base["pay_before"] == 18_662_677
+    assert base["pay_after"] == 18_662_677
+    assert base["cap_room"] == base["lines"]["cap"] - 18_662_677
+    assert base["state"]["room_apron2"] == base["lines"]["apron2"] - 18_662_677
+    detail = {row["player"]: row["salary"] for row in base["dead_money_detail"]}
+    assert detail == {"Klay Thompson": 7_660_317,
+                      "Olivier-Maxence Prosper": 1_002_360}
+    alias = {row["player"]: row["salary"] for row in base["dead_money_players"]}
+    assert alias == detail
+    assert [row["player"] for row in base["players"]] == ["Roster Wing"]
+    assert base["roster_before"] == 1
+
+
+def test_dead_money_rows_follow_their_own_schedule_length():
+    rows = [
+        salary_row("Roster Wing", "DAL", 1, 30_000_000,
+                   [10_000_000, 10_000_000, 10_000_000]),
+        salary_row("Klay Thompson", "DAL", 2, 10_660_317,
+                   [7_660_317, 3_000_000], "dead_money"),
+        salary_row("Olivier-Maxence Prosper", "DAL", 3, 1_002_360,
+                   [1_002_360], "dead_money"),
+    ]
+    con = memory_dead_con(rows)
+    try:
+        out = project(con, [], team="DAL")
+    finally:
+        con.close()
+    assert block(out, "2026-27")["dead_money"] == 8_662_677
+    assert block(out, "2026-27")["pay_before"] == 18_662_677
+    assert block(out, "2027-28")["dead_money"] == 3_000_000
+    assert block(out, "2027-28")["pay_before"] == 13_000_000
+    assert block(out, "2028-29")["dead_money"] == 0
+    assert block(out, "2028-29")["dead_money_detail"] == []
+    assert block(out, "2028-29")["pay_before"] == 10_000_000
+
+
+def test_dead_money_uses_only_the_latest_salary_snapshot():
+    current = salary_row("Klay Thompson", "DAL", 2, 7_660_317, [7_660_317], "dead_money")
+    stale = tuple(list(current[:-1]) + ["2025-26"])
+    rows = [
+        salary_row("Roster Wing", "DAL", 1, 10_000_000, [10_000_000]),
+        current,
+        stale,
+    ]
+    con = memory_dead_con(rows)
+    try:
+        out = project(con, [], team="DAL")
+    finally:
+        con.close()
+    base = block(out, "2026-27")
+    assert base["dead_money"] == 7_660_317
+    assert base["pay_before"] == 17_660_317
+    assert len(base["dead_money_detail"]) == 1
+
+
+def test_dead_money_rows_do_not_count_as_roster_players():
+    rows = [salary_row(f"Roster {i}", "DAL", i, 1_000_000, [1_000_000])
+            for i in range(1, 15)]
+    rows.extend([
+        salary_row("Klay Thompson", "DAL", 20, 7_660_317, [7_660_317], "dead_money"),
+        salary_row("Olivier-Maxence Prosper", "DAL", 21, 1_002_360, [1_002_360], "dead_money"),
+    ])
+    con = memory_dead_con(rows)
+    try:
+        out = project(con, [], team="DAL")
+    finally:
+        con.close()
+    base = block(out, "2026-27")
+    assert base["roster_before"] == 14
+    assert base["roster_after"] == 14
+    assert len(base["players"]) == 14
+    assert base["roster_issues"] == []
+
+
+def test_hypothetical_waive_dead_money_stacks_with_preexisting_dead_money_once():
+    rows = [
+        salary_row("Alpha", "TST", 1, 15_000_000, [10_000_000, 10_000_000]),
+        salary_row("Klay Thompson", "TST", 2, 10_660_317,
+                   [7_660_317, 3_000_000], "dead_money"),
+    ]
+    con = memory_dead_con(rows)
+    try:
+        out = project(con, [{"kind": "waive", "player": "Alpha", "season": "2026-27"}])
+    finally:
+        con.close()
+    first = block(out, "2026-27")
+    second = block(out, "2027-28")
+    assert first["pay_before"] == 17_660_317
+    assert first["pay_after"] == 17_660_317
+    assert first["roster_after"] == 0
+    assert second["dead_money"] == 3_000_000
+    assert second["pay_before"] == 13_000_000
+    assert second["pay_after"] == 8_000_000
+    hypo = [e for e in second["effects"] if e["kind"] == "waive_dead"]
+    assert len(hypo) == 1
+    assert hypo[0]["delta"] == 5_000_000
 
 
 def test_signing_beyond_cap_room_is_flagged_order_dependent():
