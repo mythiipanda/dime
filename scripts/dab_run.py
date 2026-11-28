@@ -200,6 +200,57 @@ def generate_manifest(env: dict[str, str], path: Path) -> bool:
     return True
 
 
+STATIC_PROVIDER_URLS = {
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+    "amd": "https://developer.amd.com.cn/radeon/api/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
+
+
+def preflight_lane(model: str, parsed: dict[str, str]) -> None:
+    provider = provider_of(model)
+    if not provider:
+        return
+    upper = provider.upper()
+    key = parsed.get(f"{upper}_RELAY_API_KEY") or parsed.get(f"{upper}_API_KEY")
+    base = parsed.get(f"{upper}_RELAY_BASE_URL") or STATIC_PROVIDER_URLS.get(provider, "")
+    if not key or not base:
+        return
+    _, _, model_id = model.partition(":")
+    body = json.dumps({
+        "model": model_id,
+        "messages": [{"role": "user", "content": "Reply with the single word: ok"}],
+        "max_tokens": 8,
+    }).encode()
+    samples = []
+    for _ in range(2):
+        start = time.time()
+        try:
+            req = httpx.Request(
+                "POST", f"{base.rstrip('/')}/chat/completions",
+                content=body,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            )
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.send(req)
+                resp.read()
+            if resp.status_code < 500:
+                samples.append(time.time() - start)
+        except Exception:
+            pass
+        time.sleep(1)
+    if not samples:
+        print(f"preflight WARNING: lane {provider} unreachable — probe completions all failed; "
+              f"measurement legs in this state risk lane-state contamination", flush=True)
+        return
+    median = sorted(samples)[len(samples) // 2]
+    print(f"preflight: lane {provider} probe round-trip median {median:.1f}s", flush=True)
+    if median > 4.0:
+        print(f"preflight WARNING: lane {provider} degraded — tiny-probe median {median:.1f}s exceeds 4s; "
+              f"historically healthy lanes probe at 1-3s and per-tool-call latency inflates proportionally. "
+              f"Timeout-capped deaths in this state measure lane survival, not model decisions.", flush=True)
+
+
 def boot_host(env: dict[str, str], log_file: Path) -> subprocess.Popen | None:
     log_file.parent.mkdir(parents=True, exist_ok=True)
     with log_file.open("w", encoding="utf-8") as handle:
@@ -425,6 +476,8 @@ def main(argv: list[str] | None = None) -> int:
     })
     if provider:
         env[f"DIME_ENABLE_{provider.upper()}"] = "true"
+
+    preflight_lane(model, parsed)
 
     reuse_pid: int | None = None
     held_by = listener_pid(args.port)
