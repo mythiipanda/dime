@@ -202,7 +202,7 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
                 "meta": {"award": canon, "season": season},
                 "error": f"warehouse read failed: {str(exc)[:120]}"}
     if not pool:
-        return {"tool": "get_award_race", "ok": False, "rows": {},
+        return {"tool": "get_award_race", "ok": False, "rows": {}, "state": "empty",
                 "meta": {"award": canon, "season": season},
                 "error": f"no rows for season {season}"}
     qual = spec.get("qualification", {})
@@ -214,7 +214,7 @@ def get_award_race(award: str, season: str | None = None) -> dict[str, Any]:
             gaps = ", ".join(f"{FEATURE_LABELS.get(feat, feat)} ({count} players)"
                              for feat, count in sorted(unscored.items()))
             error += f"; the warehouse holds no value for {gaps}"
-        return {"tool": "get_award_race", "ok": False, "rows": {},
+        return {"tool": "get_award_race", "ok": False, "rows": {}, "state": "empty",
                 "meta": {"award": canon, "season": season}, "error": error}
     candidates, means, bests, signs = _ranked_candidates(eligible, comps)
     meta: dict[str, Any] = {

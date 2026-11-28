@@ -695,6 +695,7 @@ def product_awards(season: str = '') -> dict:
             'award': key,
             'ok': bool(result.get('ok')) and candidates is not None,
             'error': result.get('error'),
+            'state': result.get('state'),
             'season': (result.get('meta') or {}).get('season'),
             'caveat': PROJECTION_SPECS[key].get('proxy_caveat'),
             'candidates': (candidates or [])[:10],

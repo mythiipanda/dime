@@ -21,6 +21,7 @@ type AwardBoard = {
   award: string;
   ok: boolean;
   error?: string | null;
+  state?: string | null;
   season?: string | null;
   caveat?: string | null;
   candidates: Candidate[];
@@ -55,7 +56,7 @@ function Board({ board }: { board: AwardBoard }) {
   if (!board.ok || board.candidates.length === 0) {
     return (
       <div className="rounded-card bg-surface px-5 py-8 text-center shadow-hairline">
-        <DataState tone={board.error ? "error" : "absent"} label={board.error || "No projection available for this award yet."} detail="No substitute data is shown." />
+        <DataState tone={board.error && board.state !== "empty" ? "error" : "absent"} label={board.error || "No projection available for this award yet."} detail="No substitute data is shown." />
       </div>
     );
   }
