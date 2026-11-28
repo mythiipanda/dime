@@ -1,7 +1,13 @@
 from datetime import date as _date
+from fractions import Fraction
 from typing import Any
 
-from .cap_rules import CAP, active_hard_cap_failure, hard_cap_consequences
+from .cap_rules import (
+    CAP,
+    CAP_GROWTH_ASSUMPTION,
+    active_hard_cap_failure,
+    hard_cap_consequences,
+)
 
 SIGNING_VALIDATION_VERSION = "v1"
 SIGNING_MECHANISMS = (
@@ -37,22 +43,33 @@ EXCEPTION_RULES = {
         "refs": ["Art. VII §6(d)", "Art. VII §2(e)(2) row A"],
     },
 }
-CAP_2023_24 = 136_021_000
-TMLE_BASE_2023_24 = 5_000_000
+WAREHOUSE_EXCEPTION_AMOUNT_BASIS = (
+    "warehouse silver_cap_room projected estimate; not official cba amounts")
+FALLBACK_EXCEPTION_AMOUNT_BASIS = (
+    "warehouse-style exact cap-growth projection; not official cba amounts")
+OFFICIAL_EXCEPTION_AMOUNT_BASIS = "2026-27 official cba amounts"
 MECHANISM_REFS = {
     "cap_room": ["Art. VII §2(b)(2)", "Art. IX §1"],
     "minimum": ["Art. II §6(a)", "Art. VII §6(i)"],
 }
-MINIMUM_SALARY_SCALE_2026_27 = {
-    0: 1_357_763, 1: 2_185_116, 2: 2_449_421, 3: 2_537_526,
-    4: 2_625_627, 5: 2_845_883, 6: 3_066_143, 7: 3_286_399,
-    8: 3_506_659, 9: 3_524_115, 10: 3_876_529,
+MINIMUM_SALARY_SCALE_2023_24 = {
+    0: 1_119_563, 1: 1_801_769, 2: 2_019_706, 3: 2_092_354,
+    4: 2_165_000, 5: 2_346_614, 6: 2_528_233, 7: 2_709_849,
+    8: 2_891_467, 9: 2_905_861, 10: 3_196_448,
 }
-MINIMUM_SECOND_YEAR_SCALE_2026_27 = {
-    1: 2_294_370, 2: 2_571_895, 3: 2_664_401, 4: 2_756_912,
-    5: 2_988_178, 6: 3_219_451, 7: 3_450_720, 8: 3_681_991,
-    9: 3_700_320, 10: 4_070_355,
+MINIMUM_SECOND_YEAR_SCALE_2023_24 = {
+    1: 1_891_857, 2: 2_120_693, 3: 2_196_970, 4: 2_273_252,
+    5: 2_463_946, 6: 2_654_644, 7: 2_845_342, 8: 3_036_040,
+    9: 3_051_153, 10: 3_356_271,
 }
+MINIMUM_CAP_BY_START_YEAR = {
+    2023: 136_021_000, 2024: 140_588_000,
+    2025: 154_647_000, 2026: int(CAP["cap"]),
+}
+MINIMUM_PROJECTED_CAP_2027 = 181_457_100
+MINIMUM_PROJECTED_CAP_GROWTH = 1 + Fraction(str(CAP_GROWTH_ASSUMPTION))
+INPUT_ERROR_EXCEPTION_AMOUNT_BASIS = (
+    "unknown; input validation failed before exception amount resolution")
 SIGNING_PROXY_DISCLOSURE = (
     "Approximation, not exact CBA signing legality: this result uses the "
     "warehouse salary ledger of listed player salaries only. It validates "
@@ -91,23 +108,75 @@ def _strict_integer(value: Any) -> int | None:
     return None
 
 
-def _round_exception_amount(value: float) -> int:
-    return int((value + 500) // 1_000) * 1_000
+def _positive_fraction(value: Any) -> Fraction | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, Fraction):
+        out = value
+    elif isinstance(value, int):
+        out = Fraction(value, 1)
+    elif isinstance(value, float):
+        out = Fraction(str(value))
+    else:
+        return None
+    return out if out > 0 else None
 
 
-def scaled_exception_rules(lines: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    cap_amount = float(lines.get("cap") or CAP["cap"])
+def _scaled_whole_dollars(base_amount: int, cap_amount: Any,
+                          base_cap: Any, rounding: str) -> int | None:
+    base = _positive_fraction(base_amount)
+    cap = _positive_fraction(cap_amount)
+    anchor = _positive_fraction(base_cap)
+    if base is None or cap is None or anchor is None:
+        return None
+    scaled = base * cap / anchor
+    if rounding == "nearest_half_up":
+        return int(scaled + Fraction(1, 2))
+    return int(scaled)
+
+
+def scaled_exception_rules(lines: dict[str, Any], season: str = "2026-27",
+                           exception_amounts: dict[str, int] | None = None,
+                           exception_amounts_source: str = "supplied season exception amounts"
+                           ) -> dict[str, dict[str, Any]]:
+    cap_amount = lines.get("cap") or CAP["cap"]
+    overrides = exception_amounts or {}
+    override_basis = exception_amounts_source
     scaled: dict[str, dict[str, Any]] = {}
     for mechanism, base in EXCEPTION_RULES.items():
         rule = dict(base)
-        if mechanism == "tmle":
-            rule["amount"] = _round_exception_amount(
-                TMLE_BASE_2023_24 * cap_amount / CAP_2023_24)
+        if season == "2026-27":
+            rule["amount"] = int(base["amount"])
+            rule["amount_basis"] = OFFICIAL_EXCEPTION_AMOUNT_BASIS
+        elif mechanism in overrides:
+            rule["amount"] = int(overrides[mechanism])
+            rule["amount_basis"] = override_basis
         else:
-            rule["amount"] = _round_exception_amount(
-                cap_amount * float(base["cap_percentage"]))
+            amount = _scaled_whole_dollars(
+                int(base["amount"]), cap_amount, int(CAP["cap"]), "floor")
+            rule["amount"] = amount if amount is not None else int(base["amount"])
+            rule["amount_basis"] = FALLBACK_EXCEPTION_AMOUNT_BASIS
         scaled[mechanism] = rule
     return scaled
+
+
+def normalize_exception_amounts_input(raw: Any) -> tuple[dict[str, int] | None, list[str]]:
+    if raw is None:
+        return {}, []
+    if not isinstance(raw, dict):
+        return None, ["exception_amounts must be an object"]
+    errors: list[str] = []
+    amounts: dict[str, int] = {}
+    for key, value in raw.items():
+        if key not in EXCEPTION_RULES:
+            errors.append(f"unknown exception_amounts key '{key}'")
+            continue
+        parsed = _strict_integer(value)
+        if parsed is None or parsed <= 0:
+            errors.append(f"exception_amounts.{key} must be a positive integer")
+        else:
+            amounts[key] = parsed
+    return (None if errors else amounts), errors
 
 
 def _normalize_salary_schedule(raw: Any, amount: int, years: int) -> tuple[list[int] | None, list[str]]:
@@ -253,27 +322,82 @@ def normalize_signing_input(raw: Any) -> tuple[dict[str, Any] | None, list[str]]
     return move, errors
 
 
+def _season_start_year(season: str) -> int | None:
+    try:
+        return int(str(season)[:4])
+    except ValueError:
+        return None
+
+
+def _projected_minimum_cap(start_year: int) -> int:
+    cap = MINIMUM_PROJECTED_CAP_2027
+    for _ in range(2028, start_year + 1):
+        cap = int(Fraction(cap) * MINIMUM_PROJECTED_CAP_GROWTH + Fraction(1, 2))
+    return cap
+
+
+def _minimum_cap_path(season: str, lines: dict[str, Any] | None
+                      ) -> list[Fraction] | None:
+    target_year = _season_start_year(season)
+    if target_year is None or target_year < 2023:
+        return None
+    target_cap = _positive_fraction((lines or {}).get("cap"))
+    path: list[Fraction] = []
+    for year in range(2023, target_year + 1):
+        actual = MINIMUM_CAP_BY_START_YEAR.get(year)
+        if actual is not None:
+            cap = Fraction(actual, 1)
+        elif year == target_year:
+            if target_cap is None:
+                return None
+            cap = target_cap
+        elif year >= 2027:
+            cap = Fraction(_projected_minimum_cap(year), 1)
+        else:
+            return None
+        path.append(cap)
+    return path
+
+
+def _chained_minimum_scale(base_scale: dict[int, int],
+                           cap_path: list[Fraction]) -> dict[int, int] | None:
+    scale = dict(base_scale)
+    for previous_cap, cap in zip(cap_path, cap_path[1:]):
+        chained: dict[int, int] = {}
+        for yos, amount in scale.items():
+            scaled = _scaled_whole_dollars(
+                amount, cap, previous_cap, "nearest_half_up")
+            if scaled is None:
+                return None
+            chained[yos] = scaled
+        scale = chained
+    return scale
+
+
+def _minimum_scale_for_season(base_scale: dict[int, int], season: str,
+                              lines: dict[str, Any] | None) -> dict[int, int] | None:
+    cap_path = _minimum_cap_path(season, lines)
+    if cap_path is None:
+        return None
+    return _chained_minimum_scale(base_scale, cap_path)
+
+
 def minimum_salary(years_of_service: int, season: str = "2026-27",
                    lines: dict[str, Any] | None = None) -> int | None:
-    base = MINIMUM_SALARY_SCALE_2026_27[min(10, max(0, years_of_service))]
-    if season == "2026-27" or not lines:
-        return base
-    cap_amount = float(lines.get("cap") or 0)
-    if cap_amount <= 0:
+    scale = _minimum_scale_for_season(
+        MINIMUM_SALARY_SCALE_2023_24, season, lines)
+    if scale is None:
         return None
-    return int(round(base * cap_amount / CAP["cap"]))
+    return scale[min(10, max(0, years_of_service))]
 
 
 def second_year_minimum_salary(years_of_service: int, season: str,
                                lines: dict[str, Any]) -> int | None:
-    base = MINIMUM_SECOND_YEAR_SCALE_2026_27[
-        min(10, max(1, years_of_service + 1))]
-    if season == "2026-27":
-        return base
-    cap_amount = float(lines.get("cap") or 0)
-    if cap_amount <= 0:
+    scale = _minimum_scale_for_season(
+        MINIMUM_SECOND_YEAR_SCALE_2023_24, season, lines)
+    if scale is None:
         return None
-    return int(round(base * cap_amount / CAP["cap"]))
+    return scale[min(10, max(1, years_of_service + 1))]
 
 
 def _maximum_salary(move: dict[str, Any], lines: dict[str, Any]) -> int | None:
@@ -446,9 +570,11 @@ def _mode_failure(mechanism: str, rule: dict[str, Any], payroll_before: int,
 
 def _exception_candidate(mechanism: str, move: dict[str, Any], team: str,
                          payroll_before: int, lines: dict[str, Any],
-                         state: dict[str, Any],
+                         state: dict[str, Any], season: str,
+                         exception_amounts: dict[str, int],
                          team_salary_before: int | None = None) -> dict[str, Any]:
-    rule = scaled_exception_rules(lines)[mechanism]
+    rule = scaled_exception_rules(
+        lines, season=season, exception_amounts=exception_amounts)[mechanism]
     refs = list(rule["refs"])
     used_key = str(rule["used_key"])
     use_amount = move["amount"] + move["unlikely_bonus"]
@@ -529,6 +655,7 @@ def _exception_candidate(mechanism: str, move: dict[str, Any], team: str,
 def _candidate_map(move: dict[str, Any], team: str, payroll_before: int,
                    lines: dict[str, Any], state: dict[str, Any], season: str,
                    active_hard_caps: list[str],
+                   exception_amounts: dict[str, int],
                    team_salary_before: int | None = None) -> dict[str, dict[str, Any]]:
     post_move = payroll_before + move["amount"]
     room_basis = payroll_before if team_salary_before is None else int(team_salary_before)
@@ -540,8 +667,8 @@ def _candidate_map(move: dict[str, Any], team: str, payroll_before: int,
     }
     for mechanism in ("room_exception", "tmle", "ntmle", "bae"):
         candidates[mechanism] = _exception_candidate(
-            mechanism, move, team, payroll_before, lines, state,
-            team_salary_before=room_basis)
+            mechanism, move, team, payroll_before, lines, state, season,
+            exception_amounts, team_salary_before=room_basis)
     if active_failure:
         for mechanism, candidate in candidates.items():
             if candidate["ok"]:
@@ -561,13 +688,29 @@ def _unsupported_candidate(mechanism: str) -> dict[str, Any]:
         unknown=True)
 
 
+def _exception_basis(lines: dict[str, Any], move: dict[str, Any],
+                     selected: str | None, season: str,
+                     exception_amounts: dict[str, int],
+                     exception_amounts_source: str) -> str:
+    mechanism = selected if selected in EXCEPTION_RULES else move.get("mechanism")
+    if mechanism not in EXCEPTION_RULES:
+        mechanism = "ntmle"
+    rule = scaled_exception_rules(
+        lines, season=season, exception_amounts=exception_amounts,
+        exception_amounts_source=exception_amounts_source).get(str(mechanism), {})
+    return str(rule.get("amount_basis") or FALLBACK_EXCEPTION_AMOUNT_BASIS)
+
+
 def _result(move: dict[str, Any], *, outcome: str, selected: str | None,
             inference: str, candidates: dict[str, dict[str, Any]],
             evaluation: dict[str, Any] | None, blocking: list[str],
             checks: dict[str, str], missing: list[str],
             payroll_before: int, lines: dict[str, Any],
             input_errors: list[str] | None = None,
-            tie_breaker: str = "") -> dict[str, Any]:
+            tie_breaker: str = "", season: str = "2026-27",
+            exception_amounts: dict[str, int] | None = None,
+            exception_amounts_source: str = "supplied season exception amounts"
+            ) -> dict[str, Any]:
     evaluation = evaluation or {}
     post_move = payroll_before + move["amount"]
     trigger = str(evaluation.get("hard_cap_trigger") or "")
@@ -589,6 +732,8 @@ def _result(move: dict[str, Any], *, outcome: str, selected: str | None,
     if selected == "minimum" and move["years"] > 1 and not move.get("salary_schedule"):
         advisory.append("later-year exact minimum salary amounts are not represented in signing validation v1")
         missing_inputs.append("later_year_minimum_salary_schedule")
+    if season != "2026-27" and move.get("years_of_service") is not None:
+        advisory.append("future minimum salaries use chained year-over-year cap-ratio scaling rounded half-up to whole dollars; intermediate future caps use Dime's disclosed projection path, not league-official values")
     use_amount = move["amount"] + move["unlikely_bonus"]
     exception_use = None
     if legal and selected in EXCEPTION_RULES:
@@ -617,8 +762,9 @@ def _result(move: dict[str, Any], *, outcome: str, selected: str | None,
         "validation_checks": checks,
         "cba_refs": list(evaluation.get("refs") or []),
         "salary_basis": "approximate_salary_ledger_not_exact_apron_team_salary",
-        "exception_amount_basis": ("2026-27 official cba amounts" if lines.get("cap") == CAP["cap"]
-                                   else "cba cap-growth formula using supplied season cap line"),
+        "exception_amount_basis": _exception_basis(
+            lines, move, selected, season, exception_amounts or {},
+            exception_amounts_source),
         "ats_exact": False,
         "signing_validation_version": SIGNING_VALIDATION_VERSION,
         "signing_proxy_disclosure": SIGNING_PROXY_DISCLOSURE,
@@ -632,10 +778,12 @@ def _input_error_result(raw: Any, errors: list[str]) -> dict[str, Any]:
             "amount": 0, "years": 0, "mechanism": "unknown",
             "years_defaulted": False, "unlikely_bonus": 0,
             "unlikely_bonus_declared": False}
-    return _result(
+    result = _result(
         move, outcome="unknown", selected=None, inference="input_error",
         candidates={}, evaluation=None, blocking=errors, checks={},
         missing=[], payroll_before=0, lines=dict(CAP), input_errors=errors)
+    result["exception_amount_basis"] = INPUT_ERROR_EXCEPTION_AMOUNT_BASIS
+    return result
 
 
 def _auto_choice(candidates: dict[str, dict[str, Any]], payroll_before: int,
@@ -675,10 +823,17 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
                      exception_state: dict[str, Any] | None = None,
                      active_hard_caps: list[str] | None = None,
                      season: str = "2026-27",
-                     team_salary_before: int | None = None) -> dict[str, Any]:
+                     team_salary_before: int | None = None,
+                     exception_amounts: dict[str, Any] | None = None,
+                     exception_amounts_source: str = "supplied season exception amounts"
+                     ) -> dict[str, Any]:
     if lines is None and season != "2026-27":
         return _input_error_result(
             raw, [f"season-specific cap lines are required for {season}; 2026-27 exception constants cannot be applied"])
+    normalized_amounts, amount_errors = normalize_exception_amounts_input(
+        exception_amounts)
+    if amount_errors or normalized_amounts is None:
+        return _input_error_result(raw, amount_errors)
     lines = dict(lines or CAP)
     move, input_errors = normalize_signing_input(raw)
     if move is None or input_errors:
@@ -699,14 +854,16 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
     checks, generic_failures, missing = _generic_checks(move, lines, season)
     candidates = _candidate_map(
         move, team, payroll_before, lines, state, season,
-        list(active_hard_caps or []), team_salary_before=team_salary_before)
+        list(active_hard_caps or []), normalized_amounts,
+        team_salary_before=team_salary_before)
     mechanism = move["mechanism"]
     if generic_failures:
         return _result(
             move, outcome="illegal", selected=None, inference="not_applicable",
             candidates={}, evaluation=None, blocking=generic_failures,
             checks=checks, missing=missing, payroll_before=payroll_before,
-            lines=lines)
+            lines=lines, season=season, exception_amounts=normalized_amounts,
+            exception_amounts_source=exception_amounts_source)
     if mechanism == "auto":
         selected, inference, blocking, tie_breaker = _auto_choice(
             candidates, payroll_before, lines, state,
@@ -718,13 +875,16 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
                 inference=inference, candidates=candidates, evaluation=evaluation,
                 blocking=[], checks=checks, missing=missing,
                 payroll_before=payroll_before, lines=lines,
-                tie_breaker=tie_breaker)
+                tie_breaker=tie_breaker, season=season,
+                exception_amounts=normalized_amounts,
+                exception_amounts_source=exception_amounts_source)
         outcome = "unknown" if inference == "explicit_required" else "illegal"
         return _result(
             move, outcome=outcome, selected=None, inference=inference,
             candidates=candidates, evaluation=None, blocking=blocking,
             checks=checks, missing=missing, payroll_before=payroll_before,
-            lines=lines)
+            lines=lines, season=season, exception_amounts=normalized_amounts,
+            exception_amounts_source=exception_amounts_source)
     evaluation = candidates.get(mechanism) or _unsupported_candidate(mechanism)
     candidates.setdefault(mechanism, evaluation)
     if evaluation["ok"]:
@@ -734,7 +894,9 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
             move, outcome="legal_approximation", selected=mechanism,
             inference="explicit", candidates=candidates, evaluation=evaluation,
             blocking=[], checks=checks, missing=missing,
-            payroll_before=payroll_before, lines=lines)
+            payroll_before=payroll_before, lines=lines, season=season,
+            exception_amounts=normalized_amounts,
+            exception_amounts_source=exception_amounts_source)
         if preferred and preferred != mechanism:
             result["less_restrictive_alternative"] = preferred
         return result
@@ -743,7 +905,9 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
         move, outcome=outcome, selected=None, inference="explicit",
         candidates=candidates, evaluation=evaluation,
         blocking=[evaluation["reason"]], checks=checks, missing=missing,
-        payroll_before=payroll_before, lines=lines)
+        payroll_before=payroll_before, lines=lines, season=season,
+        exception_amounts=normalized_amounts,
+        exception_amounts_source=exception_amounts_source)
 
 
 def consume_signing_exception(state: dict[str, Any], validation: dict[str, Any]
