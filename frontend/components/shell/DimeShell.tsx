@@ -20,7 +20,7 @@ import WorkflowsPanel from "../WorkflowsPanel";
 import { BoardsPanel } from "../BoardsPanel";
 import { NotebooksPanel } from "../NotebooksPanel";
 import { parseShellTab, shellNavigation, shellUrl, validThread, type ShellTab } from "../../lib/shell-navigation";
-import { WORKBENCH_EVENT, type TradeConstructionSeed, type WorkbenchSeed } from "../../lib/workbench-navigation";
+import { WORKBENCH_EVENT, type CapScenarioSeed, type TradeConstructionSeed, type WorkbenchSeed } from "../../lib/workbench-navigation";
 import { replayName } from "../../lib/replay";
 import { createWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
@@ -40,6 +40,7 @@ export function DimeShell() {
   const [dark, setDark] = useState(true);
   const [workflowRequest, setWorkflowRequest] = useState<{ thread: string; text: string } | null>(null);
   const [tradeSeed, setTradeSeed] = useState<TradeConstructionSeed | null>(null);
+  const [capSeed, setCapSeed] = useState<CapScenarioSeed | null>(null);
   const workflowStarting = useRef(false);
   useEffect(() => {
     const read = () => {
@@ -66,6 +67,10 @@ export function DimeShell() {
       if (detail?.kind === "trade" && detail.construction?.legs?.length) {
         setTradeSeed(detail.construction);
         navigateRef.current("trades");
+      }
+      if (detail?.kind === "cap_scenario" && detail.construction?.team) {
+        setCapSeed(detail.construction);
+        navigateRef.current("cap");
       }
     };
     window.addEventListener("dime:navigate", external);
@@ -143,7 +148,7 @@ export function DimeShell() {
         {tab === "draft" && <div className="tools-view"><DraftView onAsk={askBoard} /></div>}
         {tab === "matchups" && <div className="tools-view"><MatchupsView onAsk={askBoard} /></div>}
         {tab === "scout" && <div className="tools-view"><ScoutView onAsk={askBoard} /></div>}
-        {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard} /></div>}
+        {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard}  seed={capSeed} /></div>}
         {tab === "planner" && <div className="tools-view"><PlannerView /></div>}
         {tab === "history" && <div className="tools-view"><HistoryView onAsk={askBoard} /></div>}
         {tab === "awards" && <div className="tools-view"><AwardsView onAsk={askBoard} /></div>}

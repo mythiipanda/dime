@@ -54,7 +54,7 @@ function scenarioSeasonForMoves(moves: ScenarioMove[]): string | null {
   return seasons.size === 1 ? Array.from(seasons)[0] : null;
 }
 
-export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
+export default function CapSheetView({ onAsk, seed }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void; seed?: import("@/lib/workbench-navigation").CapScenarioSeed | null }) {
   const [team, setTeam] = useState(() => initialTeamParam() ?? "BOS");
   const [sheet, setSheet] = useState<CapSheetResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +72,14 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
   const [signingLabel, setSigningLabel] = useState("");
   const fixture = useFixture();
   const scenarioSeason = useMemo(() => scenarioSeasonForMoves(moves), [moves]);
+
+  useEffect(() => {
+    if (!seed?.team) return;
+    setTeam(seed.team);
+    setMoves(seed.moves as ScenarioMove[]);
+    setGroups({});
+    setHandoffNote("Opened from a chat artifact. The scenario is a one-way copy: edits here don't affect the artifact.");
+  }, [seed]);
 
   const handoffConsumed = useRef(false);
   useEffect(() => {

@@ -12,6 +12,7 @@ from .cap_sheet import (
     _hold_inclusion,
     _roster_charge,
     cap_lines_for_season,
+    exception_amounts_for_season,
 )
 from .cba_cap import (
     SalaryColumnError,
@@ -37,6 +38,7 @@ from ..cap_rules import (
 from ..signing_rules import (
     SIGNING_PROXY_DISCLOSURE,
     SIGNING_VALIDATION_VERSION,
+    WAREHOUSE_EXCEPTION_AMOUNT_BASIS,
     consume_signing_exception,
     initial_exception_state,
     validate_signing,
@@ -95,7 +97,8 @@ def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
                               lines: dict[str, Any],
                               season: str,
                               team_salary_before: int | None = None,
-                              hold_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                              hold_rows: list[dict[str, Any]] | None = None,
+                              exception_amounts: dict[str, int] | None = None) -> dict[str, Any]:
     state = initial_exception_state(None)
     active_hard_caps: list[str] = []
     validations: list[dict[str, Any]] = []
@@ -124,7 +127,9 @@ def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
              "amount": move.get("amount"), "mechanism": "auto"},
             team=team, payroll_before=running, lines=lines,
             exception_state=state, active_hard_caps=active_hard_caps,
-            season=season, team_salary_before=validation_team_salary)
+            season=season, team_salary_before=validation_team_salary,
+            exception_amounts=exception_amounts or {},
+            exception_amounts_source=WAREHOUSE_EXCEPTION_AMOUNT_BASIS)
         validation["move_index"] = move_index
         move["validation"] = validation
         validations.append(validation)
@@ -252,6 +257,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
                     "error": lines_res["error"]}
         lines = lines_res["lines"]
         lines_projected = bool(lines_res["projected"])
+        exception_amounts = exception_amounts_for_season(con, season)
         trade_total, trade_names, trade_unknown = _match_trade_players(
             team, trade_out_players, con, season)
         _waive_total, waive_names, waive_unknown = _match_trade_players(
@@ -323,7 +329,8 @@ def get_cap_scenario(team: str = "", signings: str = "",
     cap_room_before = lines["cap"] - team_salary_before
     signing_validation = _validate_legacy_signings(
         team.upper(), moves, pay_before, lines=lines, season=season,
-        team_salary_before=team_salary_before, hold_rows=hold_rows)
+        team_salary_before=team_salary_before, hold_rows=hold_rows,
+        exception_amounts=exception_amounts)
     room_before = max(0, cap_room_before)
     trace = scenario_trace(pay_before, moves,
                            f"{team.upper()} committed payroll")

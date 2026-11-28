@@ -36,6 +36,7 @@ def test_aprons_only_post_2023():
     assert row_2027["apron_1"] == 209_015_000
     assert row_2027["apron_2"] == 221_686_000
     assert row_2027["season_label"] == "2026-27"
+    assert row_2027["salary_cap"] * 1.1 == 181_457_100
 
 
 def test_era_labels_and_max_tiers():

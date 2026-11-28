@@ -17,6 +17,7 @@ from ..cap_rules import (
 from ..signing_rules import (
     SIGNING_PROXY_DISCLOSURE,
     SIGNING_VALIDATION_VERSION,
+    WAREHOUSE_EXCEPTION_AMOUNT_BASIS,
     consume_signing_exception,
     initial_exception_state,
     normalize_exception_state_input,
@@ -140,6 +141,32 @@ def _option_decline_move(con, team: str, season: str, player: str) -> tuple[dict
 
 def cap_lines_for_season(con, season: str) -> dict[str, Any]:
     return projection_cap_lines(con, season)
+
+
+def exception_amounts_for_season(con, season: str) -> dict[str, int]:
+    mapping = {"ntmle": "NTMLE_EST", "bae": "BAE_EST",
+               "room_exception": "ROOM_EST", "tmle": "TMLE_EST"}
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_cap_room" not in tables:
+            return {}
+        cols = {r[1] for r in con.execute("PRAGMA table_info(silver_cap_room)").fetchall()}
+        available = {mechanism: column for mechanism, column in mapping.items()
+                     if column in cols}
+        if not available:
+            return {}
+        row = con.execute(
+            "SELECT " + ", ".join(available.values()) + " FROM silver_cap_room "
+            "WHERE CAP_SEASON = ? LIMIT 1", [season]).fetchone()
+    except Exception:
+        return {}
+    if not row:
+        return {}
+    amounts: dict[str, int] = {}
+    for mechanism, value in zip(available, row):
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            amounts[mechanism] = value
+    return amounts
 
 
 def _cap_hold_payload(con, team: str, season: str) -> dict[str, Any]:
@@ -446,14 +473,17 @@ def _validated_signing_move(raw: dict[str, Any], move_index: int, team: str,
                             payroll_before: int, lines: dict[str, Any],
                             exception_state: dict[str, Any],
                             active_hard_caps: list[str], season: str,
-                            team_salary_before: int
+                            team_salary_before: int,
+                            sequence_amounts: dict[str, int] | None = None
                             ) -> tuple[dict[str, Any] | None, dict[str, Any], str | None]:
     validation_input = {key: value for key, value in raw.items()
                         if key != "exception_state"}
     validation = validate_signing(
         validation_input, team=team, payroll_before=payroll_before, lines=lines,
         exception_state=exception_state, active_hard_caps=active_hard_caps,
-        season=season, team_salary_before=team_salary_before)
+        season=season, team_salary_before=team_salary_before,
+        exception_amounts=sequence_amounts,
+        exception_amounts_source=WAREHOUSE_EXCEPTION_AMOUNT_BASIS)
     validation["move_index"] = move_index
     if validation["input_errors"]:
         return None, validation, "; ".join(validation["input_errors"])
@@ -669,14 +699,16 @@ def _process_signing(raw: dict[str, Any], move_index: int, team: str,
             raw, team=team, payroll_before=int(sequence["running_payroll"]),
             lines=lines, active_hard_caps=sequence["active_hard_caps"],
             season=season,
-            team_salary_before=validation_team_salary)
+            team_salary_before=validation_team_salary,
+            exception_amounts=sequence.get("exception_amounts") or {},
+            exception_amounts_source=WAREHOUSE_EXCEPTION_AMOUNT_BASIS)
         validation["move_index"] = move_index
         sequence["signing_validations"].append(validation)
         return
     move, validation, error = _validated_signing_move(
         validation_raw, move_index, team, int(sequence["running_payroll"]), lines,
         sequence["exception_state"], sequence["active_hard_caps"], season,
-        validation_team_salary)
+        validation_team_salary, sequence.get("exception_amounts") or {})
     if error:
         _add_move_error(sequence, move_index, str(error))
         return
@@ -1002,6 +1034,7 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         payload, pay_before, initial_errors,
         list(hold_payload.get("rows") or []), charge_inputs, len(roster))
     sequence["cap_hold_meta"] = hold_payload.get("meta") or {}
+    sequence["exception_amounts"] = exception_amounts_for_season(con, season)
     for move_index, raw in enumerate(moves_in):
         _process_scenario_move(
             con, raw, move_index, team, season, lines, roster,

@@ -24,6 +24,16 @@ def rejection_reasons(out):
     return {row["mechanism"]: row["reason"] for row in out["rejected_candidates"]}
 
 
+def projected_2027_lines():
+    return {"cap": 181_457_100, "tax": 220_470_800,
+            "apron1": 229_916_500, "apron2": 243_854_600}
+
+
+def projected_2028_lines():
+    return {"cap": 194_159_097, "tax": 235_903_756,
+            "apron1": 246_010_655, "apron2": 260_924_422}
+
+
 def test_vector_1_max_salary_external_signing_has_no_valid_mechanism():
     out = validate(195_000_000, 41_240_250, 4, yos=0)
     assert out["outcome"] == "illegal"
@@ -361,7 +371,7 @@ def test_unsupported_typed_free_agent_inputs_are_errors_not_silently_ignored():
 
 def test_future_season_exceptions_scale_from_season_cap_line_or_require_lines():
     ratio_lines = {key: int(round(value * 1.07)) for key, value in CAP.items()}
-    amount = 16_098_000
+    amount = 16_097_080
     out = validate_signing(
         {"player": "Future MLE", "amount": amount, "years": 4,
          "mechanism": "ntmle"},
@@ -369,7 +379,7 @@ def test_future_season_exceptions_scale_from_season_cap_line_or_require_lines():
         season="2027-28")
     assert out["outcome"] == "legal_approximation"
     assert out["exception_amount"] == amount
-    assert out["exception_amount_basis"] == "cba cap-growth formula using supplied season cap line"
+    assert out["exception_amount_basis"] == "warehouse-style exact cap-growth projection; not official cba amounts"
     missing_lines = validate_signing(
         {"player": "Future MLE", "amount": amount, "years": 4,
          "mechanism": "ntmle"},
@@ -396,6 +406,176 @@ def test_future_season_minimum_uses_scaled_boundary_exactly():
     assert f"${scaled:,}" in above["blocking_issues"][0]
 
 
+@pytest.mark.parametrize(("mechanism", "amount"), [
+    ("ntmle", 16_548_400), ("bae", 6_024_700),
+    ("room_exception", 10_302_600), ("tmle", 6_670_400),
+])
+def test_projected_2027_exception_boundaries_are_exact_to_the_dollar(mechanism, amount):
+    lines = projected_2027_lines()
+    payroll = 190_000_000
+    state = {}
+    if mechanism == "tmle":
+        payroll = lines["apron1"]
+    if mechanism == "room_exception":
+        payroll = 150_000_000
+        state = {"operating_mode": "below_cap"}
+    move = {"player": "Projected Boundary", "amount": amount,
+            "years": 1, "mechanism": mechanism}
+    exact = validate_signing(
+        move, team="TST", payroll_before=payroll, lines=lines,
+        exception_state=state, season="2027-28")
+    assert exact["outcome"] == "legal_approximation"
+    assert exact["exception_amount"] == amount
+    assert exact["exception_amount_basis"] == "warehouse-style exact cap-growth projection; not official cba amounts"
+    over = validate_signing(
+        dict(move, amount=amount + 1), team="TST", payroll_before=payroll,
+        lines=lines, exception_state=state, season="2027-28")
+    assert over["outcome"] == "illegal"
+    assert "ceiling" in over["blocking_issues"][0]
+
+
+def test_warehouse_exception_amounts_override_pure_projection():
+    lines = {key: int(round(value * 1.07)) for key, value in CAP.items()}
+    move = {"player": "Warehouse Precise", "amount": 16_548_400,
+            "years": 1, "mechanism": "ntmle"}
+    out = validate_signing(
+        move, team="TST", payroll_before=190_000_000, lines=lines,
+        season="2027-28", exception_amounts={"ntmle": 16_548_400},
+        exception_amounts_source="warehouse silver_cap_room projected estimate; not official cba amounts")
+    assert out["outcome"] == "legal_approximation"
+    assert out["exception_amount"] == 16_548_400
+    assert out["exception_amount_basis"] == "warehouse silver_cap_room projected estimate; not official cba amounts"
+
+
+def test_scenario_reads_warehouse_exception_amounts_for_projected_season():
+    import duckdb
+    from shared.tools.league.cap_sheet import evaluate_cap_scenario
+    con = duckdb.connect(":memory:")
+    try:
+        con.execute(
+            "CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, "
+            "PLAYER_ID BIGINT, GUARANTEED BIGINT, SALARY_2027_28 BIGINT)")
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?)",
+            [(f"Roster {i}", "TST", i, 19_000_000, 19_000_000)
+             for i in range(1, 11)])
+        con.execute(
+            "CREATE TABLE silver_cap_room (TEAM VARCHAR, CAP_SEASON VARCHAR, "
+            "PROJECTED_CAP BIGINT, PROJECTED_TAX BIGINT, PROJECTED_APRON1 BIGINT, "
+            "PROJECTED_APRON2 BIGINT, NTMLE_EST BIGINT, BAE_EST BIGINT, "
+            "ROOM_EST BIGINT, TMLE_EST BIGINT)")
+        con.execute(
+            "INSERT INTO silver_cap_room VALUES "
+            "('TST', '2027-28', 176000000, 214000000, 224000000, 237000000, "
+            "16548400, 6024700, 10302600, 6670400)")
+        out = evaluate_cap_scenario(con, {
+            "team": "TST", "season": "2027-28",
+            "moves": [{"kind": "signing", "player": "Warehouse Precise",
+                       "amount": 16_548_400, "years": 1, "mechanism": "ntmle"}]})
+    finally:
+        con.close()
+    validation = out["signing_validations"][0]
+    assert validation["outcome"] == "legal_approximation"
+    assert validation["exception_amount"] == 16_548_400
+    assert validation["exception_amount_basis"] == "warehouse silver_cap_room projected estimate; not official cba amounts"
+
+
+def test_legacy_signing_validation_uses_the_scenario_season():
+    from shared.tools.league.cap_scenario import _validate_legacy_signings
+    moves = [{"kind": "signing", "player": "Future Player", "amount": 16_548_400}]
+    out = _validate_legacy_signings(
+        "TST", moves, 190_000_000, lines=projected_2027_lines(), season="2027-28")
+    validation = out["validations"][0]
+    assert validation["outcome"] == "legal_approximation"
+    assert validation["exception_amount"] == 16_548_400
+
+
+def test_current_season_official_amounts_take_precedence_over_estimates():
+    move = {"player": "Current Season", "amount": 15_044_001,
+            "years": 1, "mechanism": "ntmle"}
+    out = validate_signing(
+        move, team="TST", payroll_before=190_000_000,
+        exception_amounts={"ntmle": 20_000_000})
+    assert out["outcome"] == "illegal"
+    assert out["exception_amount"] == 15_044_000
+    assert out["exception_amount_basis"] == "2026-27 official cba amounts"
+
+
+def test_exception_amount_overrides_are_strictly_validated():
+    move = {"player": "Override", "amount": 1, "years": 1,
+            "mechanism": "ntmle"}
+    bad_value = validate_signing(
+        move, team="TST", payroll_before=190_000_000,
+        lines=projected_2027_lines(), season="2027-28",
+        exception_amounts={"ntmle": 1.5})
+    assert "exception_amounts.ntmle must be a positive integer" in bad_value["input_errors"]
+    bad_key = validate_signing(
+        move, team="TST", payroll_before=190_000_000,
+        lines=projected_2027_lines(), season="2027-28",
+        exception_amounts={"mle": 16_548_400})
+    assert "unknown exception_amounts key 'mle'" in bad_key["input_errors"]
+
+
+def test_future_minimum_scaling_uses_exact_rational_half_up_dollars():
+    lines = {"cap": CAP["cap"] // 2}
+    assert minimum_salary(2, "2027-28", lines) == 1_224_711
+    move = {"player": "Future Minimum", "amount": 1_224_711, "years": 1,
+            "mechanism": "minimum", "years_of_service": 2}
+    lines = {**projected_2027_lines(), "cap": CAP["cap"] // 2}
+    out = validate_signing(
+        move, team="TST", payroll_before=150_000_000, lines=lines,
+        season="2027-28")
+    assert out["validation_checks"]["minimum_salary"] == "passed"
+    assert any("chained year-over-year" in issue
+               for issue in out["advisory_issues"])
+
+
+def test_chained_2028_yos2_minimum_boundary_is_exact_to_the_dollar():
+    lines = projected_2028_lines()
+    assert minimum_salary(2, "2028-29", lines) == 2_882_968
+    move = {"player": "Chained Boundary", "amount": 2_882_968,
+            "years": 1, "mechanism": "minimum", "years_of_service": 2}
+    good = validate_signing(
+        move, team="TST", payroll_before=150_000_000, lines=lines,
+        season="2028-29")
+    assert good["outcome"] == "legal_approximation"
+    direct_scaled = validate_signing(
+        dict(move, amount=2_882_969), team="TST", payroll_before=150_000_000,
+        lines=lines, season="2028-29")
+    assert direct_scaled["outcome"] == "illegal"
+    assert "$2,882,968" in direct_scaled["blocking_issues"][0]
+
+
+@pytest.mark.parametrize(("yos", "chained", "direct_scaled"), [
+    (3, 2_986_669, 2_986_668),
+    (9, 4_147_884, 4_147_883),
+])
+def test_chained_multi_step_minimum_pins_reject_direct_scaled_dollars(
+        yos, chained, direct_scaled):
+    lines = projected_2028_lines()
+    assert minimum_salary(yos, "2028-29", lines) == chained
+    move = {"player": "Chained Multi Step", "amount": chained,
+            "years": 1, "mechanism": "minimum", "years_of_service": yos}
+    good = validate_signing(
+        move, team="TST", payroll_before=150_000_000, lines=lines,
+        season="2028-29")
+    assert good["outcome"] == "legal_approximation"
+    direct = validate_signing(
+        dict(move, amount=direct_scaled), team="TST", payroll_before=150_000_000,
+        lines=lines, season="2028-29")
+    assert direct["outcome"] == "illegal"
+
+
+def test_future_input_error_does_not_claim_current_official_amount_basis():
+    out = validate_signing(
+        {"player": "Future MLE", "amount": 16_000_000, "years": 1,
+         "mechanism": "ntmle"},
+        team="TST", payroll_before=190_000_000, season="2027-28")
+    assert "season-specific cap lines are required" in out["input_errors"][0]
+    assert out["exception_amount_basis"] == (
+        "unknown; input validation failed before exception amount resolution")
+
+
 def test_roster_failure_is_reported_before_apron_failure():
     import duckdb
     from shared.tools.league.cap_sheet import evaluate_cap_scenario
@@ -418,7 +598,7 @@ def test_roster_failure_is_reported_before_apron_failure():
     assert "first apron" in out["issues"][1]
 
 
-def test_minimum_salary_scales_match_published_2026_27_multiyear_table():
+def test_chained_minimum_salary_scales_match_published_2026_27_multiyear_table():
     first_year = {
         0: 1_357_763, 1: 2_185_116, 2: 2_449_421, 3: 2_537_526,
         4: 2_625_627, 5: 2_845_883, 6: 3_066_143, 7: 3_286_399,
