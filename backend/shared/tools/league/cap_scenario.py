@@ -152,7 +152,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
             return {"tool": "get_cap_scenario", "ok": False,
                     "error": waiver_timing_error}
         try:
-            pay_before, roster = _payroll(team, con, season)
+            pay_before, roster, _dead = _payroll(team, con, season)
         except SalaryColumnError as exc:
             return {"tool": "get_cap_scenario", "ok": False,
                     "reason": exc.reason, "error": str(exc)}

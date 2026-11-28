@@ -246,7 +246,7 @@ def _resolve_salary_column(scols: set[str], season: str | None) -> str:
 
 
 def _payroll(team: str, con: object = None,
-             season: str | None = None) -> tuple[int, list[dict]]:
+             season: str | None = None) -> tuple[int, list[dict], list[dict]]:
     own = con is None
     if own:
         con = _pkg().store.connect(read_only=True)
@@ -285,7 +285,19 @@ def _payroll(team: str, con: object = None,
                 players.append({"player": r['PLAYER_NAME'], "salary": salary,
                                 "team": record_team, **contract_details(r)})
             if rows:
-                return sum(r[1] or 0 for r in rows), players
+                dead = []
+                if "ROW_KIND" in scols:
+                    try:
+                        dcur = con.execute(
+                            "SELECT PLAYER_NAME, TEAM, " + scol + " FROM silver_salaries "
+                            "WHERE ROW_KIND = 'dead_money' AND UPPER(TEAM) = UPPER(?)",
+                            [team_code]).fetchall()
+                        dead = [{"player": str(d[0]), "salary": d[2], "team": str(d[1])}
+                                for d in dcur if d[2] is not None]
+                    except Exception:
+                        dead = []
+                dead_total = sum(d["salary"] or 0 for d in dead)
+                return sum(r[1] or 0 for r in rows) + dead_total, players, dead
         if "silver_cap_players" in tables:
             cap_rows = con.execute(
                 "SELECT player, salary, team FROM silver_cap_players").fetchall()
@@ -297,7 +309,7 @@ def _payroll(team: str, con: object = None,
         if own:
             con.close()
     players = [{"player": r[0], "salary": r[1], **contract_details(None)} for r in rows]
-    return sum(r[1] or 0 for r in rows), players
+    return sum(r[1] or 0 for r in rows), players, []
 
 
 def _outgoing_needed(incoming: int, over_apron1: bool,
@@ -431,7 +443,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
     con = _pkg().store.connect(read_only=True)
     try:
         try:
-            total, players = _payroll(team, con)
+            total, players, dead = _payroll(team, con)
         except SalaryColumnError as exc:
             return {"tool": "get_cap_ledger", "ok": False,
                     "reason": exc.reason, "error": str(exc)}
@@ -440,8 +452,12 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         season, _, _ = _salary_vintage(con)
     finally:
         con.close()
+    dead_total = sum(d["salary"] or 0 for d in dead)
     result = {"tool": "get_cap_ledger", "ok": True,
             "rows": {"team": team.upper(), "payroll": total,
+                     "roster_payroll": total - dead_total,
+                     "dead_money": dead_total,
+                     "dead_money_detail": sorted(dead, key=lambda d: d["salary"] or 0, reverse=True),
                      "players": sorted(players, key=lambda p: p["salary"] or 0,
                                        reverse=True),
                      "room_under_apron2": CAP["apron2"] - total,
@@ -463,14 +479,17 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
         for item in _teams.get_teams():
             abbr = str(item["abbreviation"]).upper()
             try:
-                total, _players = _payroll(abbr, con, season)
+                total, _players, dead = _payroll(abbr, con, season)
             except SalaryColumnError as exc:
                 return {"tool": "get_cap_table", "ok": False,
                         "reason": exc.reason, "error": str(exc)}
             except Exception as exc:
                 missing.append({"team": abbr, "error": str(exc)[:200]})
                 continue
+            dead_total = sum(d["salary"] or 0 for d in dead)
             rows.append({"team": abbr, "payroll": total,
+                         "roster_payroll": total - dead_total,
+                         "dead_money": dead_total,
                          "cap_room": CAP["cap"] - total,
                          "room_under_apron2": CAP["apron2"] - total,
                          "over_tax": total > CAP["tax"],
@@ -535,7 +554,7 @@ def _match_trade_players(team: str, names: str,
                          con: object = None,
                          season: str | None = None) -> tuple[int, list[str], list[str]]:
     with _owned_connection(con) as live:
-        _, roster = _payroll(team, live, season)
+        _, roster, _dead = _payroll(team, live, season)
         index = _RosterIndex(roster)
         matched: list[str] = []
         unknown: list[str] = []
