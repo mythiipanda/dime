@@ -7,6 +7,7 @@ from ...contracts import canonical_team_abbr, contract_details, resolve_salary_c
 from .._core import coerce_team_id, team_error_message, warehouse_identity_meta
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
+from .cap_lines import resolve_cap_lines
 
 from ..cap_rules import (
     CAP,
@@ -457,8 +458,15 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         source = _payroll_source(con)
         salary_date = _salary_date(con)
         season, _, _ = _salary_vintage(con)
+        season = season or _pkg().current_season() or _pkg().resolve_season(None)
+        cap_resolution = resolve_cap_lines(con, season)
     finally:
         con.close()
+    if not cap_resolution["ok"]:
+        return {"tool": "get_cap_ledger", "ok": False,
+                "reason": "cap_lines_unavailable",
+                "error": cap_resolution["error"]}
+    lines = cap_resolution["lines"]
     dead_total = sum(d["salary"] or 0 for d in dead)
     result = {"tool": "get_cap_ledger", "ok": True,
             "rows": {"team": team.upper(), "payroll": total,
@@ -467,14 +475,16 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      "dead_money_detail": sorted(dead, key=lambda d: d["salary"] or 0, reverse=True),
                      "players": sorted(players, key=lambda p: p["salary"] or 0,
                                        reverse=True),
-                     "room_under_apron2": CAP["apron2"] - total,
-                     "over_tax": total > CAP["tax"]},
+                     "room_under_apron2": lines["apron2"] - total,
+                     "over_tax": total > lines["tax"]},
             "units": _CAP_ROW_UNITS,
-            "meta": {"source": source, "season": season or "2026-27",
+            "meta": {"source": source, "season": season,
                      **warehouse_identity_meta(),
                      "salary_date": salary_date,
+                     "cap_lines_source": cap_resolution["source"],
+                     "cap_lines_projected": cap_resolution["projected"],
                      **_payroll_proxy_meta(),
-                     **{k: v for k, v in CAP.items()}}}
+                     **{k: v for k, v in lines.items()}}}
     return declare_money(result, ["payroll", "room_under_apron2", "salary", "remaining_guaranteed"])
 
 
@@ -485,6 +495,15 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
     try:
         rows = []
         missing = []
+        season_used, _, _ = _salary_vintage(con)
+        season_used = (str(season or "").strip() or season_used
+                       or _pkg().current_season() or _pkg().resolve_season(None))
+        cap_resolution = resolve_cap_lines(con, season_used)
+        if not cap_resolution["ok"]:
+            return {"tool": "get_cap_table", "ok": False,
+                    "reason": "cap_lines_unavailable",
+                    "error": cap_resolution["error"]}
+        lines = cap_resolution["lines"]
         for item in _teams.get_teams():
             abbr = str(item["abbreviation"]).upper()
             try:
@@ -499,25 +518,26 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
             rows.append({"team": abbr, "payroll": total,
                          "roster_payroll": total - dead_total,
                          "dead_money": dead_total,
-                         "cap_room": CAP["cap"] - total,
-                         "room_under_apron2": CAP["apron2"] - total,
-                         "over_tax": total > CAP["tax"],
-                         "over_apron1": total > CAP["apron1"],
-                         "over_apron2": total > CAP["apron2"]})
+                         "cap_room": lines["cap"] - total,
+                         "room_under_apron2": lines["apron2"] - total,
+                         "over_tax": total > lines["tax"],
+                         "over_apron1": total > lines["apron1"],
+                         "over_apron2": total > lines["apron2"]})
         source = _payroll_source(con)
         salary_date = _salary_date(con)
-        season_used, _, _ = _salary_vintage(con)
     finally:
         con.close()
     rows.sort(key=lambda r: r["payroll"], reverse=True)
     res = {"tool": "get_cap_table", "ok": True,
            "rows": rows,
            "units": _CAP_ROW_UNITS,
-           "meta": {"source": source, "season": season or season_used or "2026-27",
+           "meta": {"source": source, "season": season_used,
                     **warehouse_identity_meta(),
                     "salary_date": salary_date,
+                    "cap_lines_source": cap_resolution["source"],
+                    "cap_lines_projected": cap_resolution["projected"],
                     **_payroll_proxy_meta(),
-                    **{k: v for k, v in CAP.items()}}}
+                    **{k: v for k, v in lines.items()}}}
     if missing:
         res["meta"]["missing_teams"] = missing
     return declare_money(res, ["payroll", "cap_room", "room_under_apron2"])

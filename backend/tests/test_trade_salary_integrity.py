@@ -54,6 +54,13 @@ def test_trade_check_serves_season_column_under_later_vintage_label(
         con.execute(
             "INSERT INTO silver_salaries VALUES "
             "('Giannis Antetokounmpo', 'MIA', 40000000, '2026-27', NULL)")
+        con.execute(
+            "CREATE TABLE silver_cap_history (season INTEGER, "
+            "season_label VARCHAR, salary_cap DOUBLE, luxury_tax DOUBLE, "
+            "apron_1 DOUBLE, apron_2 DOUBLE)")
+        con.execute(
+            "INSERT INTO silver_cap_history VALUES "
+            "(2026, '2025-26', 154647000, 187895000, 195945000, 207824000)")
     finally:
         con.close()
     monkeypatch.setattr(store, "DB_PATH", path)

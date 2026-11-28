@@ -6,6 +6,7 @@ from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr, contract_details, match_record, normalize_name, salary_records
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money, declare_units
+from .cap_lines import resolve_cap_lines
 from .cba_cap import (
     CAP,
     SalaryColumnError,
@@ -230,9 +231,11 @@ def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
 
 
 def _tpe_creation_block(outgoing: int, incoming: int, pay_before: int,
-                        pay_after: int, over_apron1: bool) -> dict[str, Any] | None:
-    if not (outgoing > incoming and pay_before > CAP["cap"]
-            and pay_after > CAP["cap"] and not over_apron1):
+                        pay_after: int, over_apron1: bool,
+                        lines: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    lines = lines or CAP
+    if not (outgoing > incoming and pay_before > lines["cap"]
+            and pay_after > lines["cap"] and not over_apron1):
         return None
     amount = outgoing - incoming
     return {
@@ -260,8 +263,13 @@ def get_trade_check(
     with _owned_connection(None, read_only=True) as guard_con:
         guard_error = _trade_guard(guard_con, season, team_a, players_a,
                                    team_b, players_b)
+        cap_resolution = None if guard_error else resolve_cap_lines(guard_con, season)
     if guard_error:
         return {"tool": "get_trade_check", "ok": False, "error": guard_error}
+    if not cap_resolution["ok"]:
+        return {"tool": "get_trade_check", "ok": False,
+                "reason": "cap_lines_unavailable",
+                "error": cap_resolution["error"]}
 
     if (not team_a or not team_b) and players_a and players_b:
         with _owned_connection(None, read_only=True) as infer_con:
@@ -304,10 +312,11 @@ def get_trade_check(
         source = _payroll_source(con)
     pay_after_a = pay_a - out_a + out_b
     pay_after_b = pay_b - out_b + out_a
-    state_a = _apron_state(pay_after_a)
-    state_b = _apron_state(pay_after_b)
-    room_a = max(0, CAP["cap"] - pay_a)
-    room_b = max(0, CAP["cap"] - pay_b)
+    lines = cap_resolution["lines"]
+    state_a = _apron_state(pay_after_a, lines)
+    state_b = _apron_state(pay_after_b, lines)
+    room_a = max(0, lines["cap"] - pay_a)
+    room_b = max(0, lines["cap"] - pay_b)
     allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]), room_a)
     allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]), room_b)
     need_a = _outgoing_needed(out_b, bool(state_a["over_apron1"]), room_a)
@@ -326,10 +335,10 @@ def get_trade_check(
     rule_b = _operative_match_rule(rule_b, election_b)
     hard_cap_a = _hard_cap_consequences(
         team_a.upper(), pay_after_a, aggregates=len(names_a) > 1,
-        expanded_matching=expanded_a)
+        expanded_matching=expanded_a, lines=lines)
     hard_cap_b = _hard_cap_consequences(
         team_b.upper(), pay_after_b, aggregates=len(names_b) > 1,
-        expanded_matching=expanded_b)
+        expanded_matching=expanded_b, lines=lines)
     issues = _trade_check_issues(team_a, state_a, names_a, team_b, state_b,
                                  names_b, out_a, allow_a, out_b, allow_b)
     issues.extend(hard_cap_a["issues"])
@@ -341,9 +350,9 @@ def get_trade_check(
         team_b, side_b, pay_b, state_b, allow_b, rule_b,
         need_b, hard_cap_b["hard_cap"], election_b)
     rows_a["tpe_creation"] = _tpe_creation_block(
-        out_a, out_b, pay_a, pay_after_a, bool(state_a["over_apron1"]))
+        out_a, out_b, pay_a, pay_after_a, bool(state_a["over_apron1"]), lines)
     rows_b["tpe_creation"] = _tpe_creation_block(
-        out_b, out_a, pay_b, pay_after_b, bool(state_b["over_apron1"]))
+        out_b, out_a, pay_b, pay_after_b, bool(state_b["over_apron1"]), lines)
     out = {"tool": "get_trade_check", "ok": True,
             "rows": {"team_a": rows_a,
                      "team_b": rows_b,
@@ -359,6 +368,9 @@ def get_trade_check(
                      "Confirm with a cap specialist."},
             "meta": {"source": source, "rules": "v1-simplified",
                      "salary_date": salary_date, "season": season,
+                     "cap_lines": lines,
+                     "cap_lines_source": cap_resolution["source"],
+                     "cap_lines_projected": cap_resolution["projected"],
                      **_payroll_proxy_meta()}}
     return declare_money(out, ["amount", "salary", "incoming", "outgoing", "allowed_incoming", "capacity", "payroll", "cap_room", "player_salary", "max_return_salary"])
 

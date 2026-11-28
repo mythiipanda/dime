@@ -2,8 +2,6 @@ import re as _re
 from typing import Any
 
 from ..cap_rules import (
-    CAP,
-    CAP_GROWTH_ASSUMPTION,
     active_hard_cap_failure,
     apron_state,
     cba_restrictions,
@@ -28,6 +26,7 @@ from ..cap_sheet import option_column, season_column, unroll_team_sheet
 from .._core import warehouse_identity_meta
 from ...contracts import normalize_name
 from .cap_hold_derivation import derive_cap_holds, hold_amount
+from .cap_lines import projection_cap_lines
 from .cba_cap import (
     _locate_player_team,
     _match_trade_players,
@@ -140,40 +139,7 @@ def _option_decline_move(con, team: str, season: str, player: str) -> tuple[dict
 
 
 def cap_lines_for_season(con, season: str) -> tuple[dict[str, Any], bool]:
-    if season == "2026-27":
-        return dict(CAP), False
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-    except Exception:
-        tables = set()
-    base = dict(CAP)
-    base_year = 2026
-    if "silver_cap_room" in tables:
-        try:
-            rows = con.execute(
-                "SELECT CAP_SEASON, PROJECTED_CAP, PROJECTED_TAX, PROJECTED_APRON1, PROJECTED_APRON2 "
-                "FROM silver_cap_room").fetchall()
-            by_season = {str(r[0]): r for r in rows if r and r[0]}
-            if season in by_season:
-                row = by_season[season]
-                if row[1]:
-                    return {"cap": int(row[1]), "tax": int(row[2] or 0),
-                            "apron1": int(row[3] or 0), "apron2": int(row[4] or 0)}, True
-            latest = sorted(by_season)
-            if latest:
-                anchor = by_season[latest[-1]]
-                anchor_year = int(str(anchor[0])[:4])
-                if anchor[1]:
-                    base = {"cap": float(anchor[1]), "tax": float(anchor[2] or 0),
-                            "apron1": float(anchor[3] or 0), "apron2": float(anchor[4] or 0)}
-                    base_year = anchor_year
-        except Exception:
-            pass
-    m = _re.match(r"(\d{4})", str(season or ""))
-    want_year = int(m.group(1)) if m else base_year
-    steps = max(0, want_year - base_year)
-    factor = (1 + CAP_GROWTH_ASSUMPTION) ** steps
-    return {k: int(round(v * factor)) for k, v in base.items()}, steps > 0
+    return projection_cap_lines(con, season)
 
 
 def _cap_hold_payload(con, team: str, season: str) -> dict[str, Any]:
