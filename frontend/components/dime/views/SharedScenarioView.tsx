@@ -23,7 +23,7 @@ function sharedDate(iso: string): string {
 
 export function SharedFrame({ children, label }: { children: ReactNode; label?: string }) {
   return (
-    <main className="share-frame mx-auto min-h-screen w-full max-w-[860px] px-5 py-10 sm:px-8">
+    <main className="share-frame mx-auto flex min-h-screen w-full max-w-[1060px] flex-col px-5 py-10 sm:px-8">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <a href="/" className="text-[15px] font-semibold tracking-tight text-ink">dime</a>
         <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{label ?? "shared cap scenario"}</span>
@@ -31,7 +31,7 @@ export function SharedFrame({ children, label }: { children: ReactNode; label?: 
           read-only
         </span>
       </header>
-      {children}
+      <div className="flex-1">{children}</div>
       <footer className="mt-10 border-t border-line pt-4 text-[12px] leading-[1.6] text-ink-3">
         <p>
           dime is an AI analyst workbench for NBA data.{" "}
@@ -73,9 +73,9 @@ export function SharedScenarioNotice({ tone, kind }: { tone: "archived" | "not_f
   const { title, body } = copy[tone];
   return (
     <SharedFrame label={`shared ${noun}`}>
-      <section className="mt-8 rounded-[10px] bg-surface p-6 shadow-hairline">
+      <section className="mx-auto mt-[18vh] max-w-[560px] rounded-[10px] bg-surface p-8 shadow-hairline">
         <h1 className="text-[17px] font-semibold text-ink">{title}</h1>
-        <p className="mt-2 max-w-[520px] text-[13px] leading-[1.6] text-ink-2">{body}</p>
+        <p className="mt-2 text-[13px] leading-[1.6] text-ink-2">{body}</p>
       </section>
     </SharedFrame>
   );
@@ -104,7 +104,7 @@ export function SharedScenarioView({
         </p>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_280px]">
+      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-4">
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">Moves</h2>
@@ -294,7 +294,7 @@ export function SharedTradeView({
         </p>
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_280px]">
+      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-4">
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">Trade legs</h2>
