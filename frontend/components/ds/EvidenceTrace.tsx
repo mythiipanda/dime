@@ -58,9 +58,6 @@ export function EvidenceTrace({ busy, thinking, tools }: {
         onClick={() => setManualExpanded((current) => !(current ?? busy))}
         className="-mx-1.5 flex w-fit items-center gap-2 rounded-control px-1.5 py-1 transition-colors duration-100 hover:bg-hover-2"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill={busy ? "var(--ink-2)" : "var(--ink-3)"} aria-hidden="true">
-          <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
-        </svg>
         <span role="status" className="contents">
           {busy ? (
             <Shimmer className="text-[13px] font-medium whitespace-nowrap">{statusLabel}</Shimmer>
