@@ -233,6 +233,7 @@ _COLUMN_UNITS: dict[str, tuple[str, str]] = {
     "TMLE_EST": ("usd_dollars", "estimated taxpayer mid-level exception in US dollars"),
     "PRIOR_SALARY": ("usd_dollars", "prior-season salary in US dollars"),
     "CAP_HOLD_EST": ("usd_dollars", "estimated cap hold in US dollars"),
+    "CAP_HOLD": ("usd_dollars", "cap hold in US dollars"),
     "SALARY_CAP": ("usd_dollars", "salary cap in US dollars for the season"),
     "LUXURY_TAX": ("usd_dollars", "luxury tax line in US dollars for the season"),
     "APRON_1": ("usd_dollars", "first apron in US dollars for the season"),

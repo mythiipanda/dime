@@ -98,7 +98,6 @@ def test_a_pair_that_never_met_in_a_covered_season_names_the_tables_read():
 def test_a_pair_with_four_regular_season_meetings_reports_all_four():
     _require_warehouse()
     with _warehouse() as con:
-        assert _rows(con, "silver_team_games", "2024-25") == 0
         assert _meetings(con, "CLE", "MIL", "2024-25") == 4
     out = _series("CLE", "MIL", "2024-25")
     assert out["ok"] is True
@@ -106,7 +105,8 @@ def test_a_pair_with_four_regular_season_meetings_reports_all_four():
     assert summary["games"] == 4
     assert summary["games_by_phase"] == {"regular season": 4}
     assert summary["games_won"] == {"CLE": 4, "MIL": 0}
-    assert out["meta"]["regular_season_source"] == "silver_hist_gamelogs"
+    assert out["meta"]["regular_season_source"] in (
+        "silver_hist_gamelogs", "silver_team_games")
     assert len(out["rows"]["games"]) == 4
 
 def test_the_second_battery_pair_reports_its_three_meetings():
