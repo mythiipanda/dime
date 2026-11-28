@@ -118,21 +118,40 @@ def _slug_lookup(evidence: dict, name: str) -> list:
 
 def _contract_events(con) -> dict[str, list[tuple[str, str, str, str]]]:
     events: dict[str, list[tuple[str, str, str, str]]] = {}
-    base = ("SELECT player, txn_type, team, txn_date, {detail} FROM silver_transactions "
+    base = ("SELECT player, txn_type, team, txn_date, {detail}, {gsort}, {asort} "
+            "FROM silver_transactions "
             "WHERE txn_type IN ('Signing', 'Waive', 'ContractConverted')")
-    try:
-        rows = con.execute(base.format(detail="detail")).fetchall()
-    except Exception:
+    rows = None
+    for detail_col, gsort_col, asort_col in (
+            ("detail", "group_sort", "additional_sort"),
+            ("detail", "NULL", "NULL"),
+            ("NULL", "NULL", "NULL")):
         try:
-            rows = con.execute(base.format(detail="NULL")).fetchall()
+            rows = con.execute(base.format(
+                detail=detail_col, gsort=gsort_col, asort=asort_col)).fetchall()
+            break
         except Exception:
-            return events
-    for slug, txn_type, team, txn_date, detail in rows:
+            continue
+    if rows is None:
+        return events
+    rows = [tuple(row) + (None,) * (7 - len(row)) for row in rows]
+
+    def _sort_key(row):
+        slug, txn_type, team, txn_date, detail, gsort, asort = row
+        trailing = 0
+        if gsort:
+            match = re.search(r"(\d+)\s*$", str(gsort))
+            if match:
+                trailing = int(match.group(1))
+        return (str(txn_date or ""), trailing, float(asort or 0),
+                (txn_type or "").lower(), str(team or ""), str(slug or ""),
+                str(detail or ""))
+
+    for slug, txn_type, team, txn_date, detail, _gsort, _asort in sorted(
+            rows, key=_sort_key):
         abbr = SLUG_TO_ABBR.get(team or "")
         events.setdefault(slug or "", []).append(
             (str(txn_date or ""), txn_type or "", abbr or "", (detail or "").lower()))
-    for slug in events:
-        events[slug].sort()
     return events
 
 
@@ -140,13 +159,16 @@ def contract_state(events: list[tuple[str, str, str, str]]) -> dict:
     two_way_team: str | None = None
     standard_by_team: dict[str, str] = {}
     waived_by: dict[str, str] = {}
+    two_way_waived_by: dict[str, str] = {}
     for date, txn_type, abbr, detail in events:
         if not abbr:
             continue
         if txn_type == "Waive":
-            waived_by[abbr] = max(waived_by.get(abbr, ""), date)
             if two_way_team == abbr:
+                two_way_waived_by[abbr] = max(two_way_waived_by.get(abbr, ""), date)
                 two_way_team = None
+            else:
+                waived_by[abbr] = max(waived_by.get(abbr, ""), date)
             continue
         if "to a two-way contract" in detail:
             two_way_team = abbr
@@ -158,8 +180,13 @@ def contract_state(events: list[tuple[str, str, str, str]]) -> dict:
         team for team, waive_date in waived_by.items()
         if standard_by_team.get(team, "") < waive_date
     }
+    two_way_only_waived = {
+        team for team, waive_date in two_way_waived_by.items()
+        if team not in dead_teams and standard_by_team.get(team, "") < waive_date
+    }
     return {"two_way_team": two_way_team, "standard_by_team": standard_by_team,
-            "dead_teams": dead_teams, "latest_standard_team": max(
+            "dead_teams": dead_teams, "two_way_only_waived": two_way_only_waived,
+            "latest_standard_team": max(
                 standard_by_team, key=lambda t: standard_by_team[t]) if standard_by_team else None}
 
 
@@ -173,11 +200,13 @@ def annotate_row_kinds(frame: pl.DataFrame, con) -> pl.DataFrame:
     dead = 0
     two_way = 0
     unresolved = 0
+    unknown = 0
     for name, idxs in by_player.items():
         teams = {rows[i].get("TEAM") for i in idxs}
         state = contract_state(_slug_lookup(evidence, name))
         two_way_team = state["two_way_team"]
         dead_teams = state["dead_teams"]
+        two_way_only_waived = state["two_way_only_waived"]
         roster_abbr = state["latest_standard_team"]
         for i in idxs:
             team = rows[i].get("TEAM")
@@ -187,6 +216,9 @@ def annotate_row_kinds(frame: pl.DataFrame, con) -> pl.DataFrame:
             elif team == two_way_team:
                 kinds[i] = "two_way"
                 two_way += 1
+            elif team in two_way_only_waived:
+                kinds[i] = "unknown"
+                unknown += 1
             elif len(teams) > 1 and roster_abbr and team != roster_abbr and any(
                     rows[j].get("TEAM") == roster_abbr for j in idxs):
                 kinds[i] = "dead_money"
@@ -194,6 +226,7 @@ def annotate_row_kinds(frame: pl.DataFrame, con) -> pl.DataFrame:
         if len(teams) > 1 and not roster_abbr:
             unresolved += 1
     print(f"row kinds: {dead} dead_money, {two_way} two_way rows annotated, "
+          f"{unknown} unknown (waived two-way), "
           f"{unresolved} unresolved multi-team players left roster")
     return frame.with_columns(pl.Series("ROW_KIND", kinds))
 

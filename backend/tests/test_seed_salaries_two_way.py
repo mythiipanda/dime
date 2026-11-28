@@ -105,9 +105,47 @@ def test_waive_of_two_way_team_ends_two_way_state():
         ("end-player", "Waive", "kings", "2026-10-01", "Sacramento Kings waived End Player."),
     ]
     rows = kinds([{"PLAYER_NAME": "End Player", "TEAM": "SAC"}], txns)
-    assert rows["End Player|SAC"] == "dead_money"
+    assert rows["End Player|SAC"] == "unknown"
+
+
+def test_standard_waive_dead_money_survives_later_two_way_waive():
+    txns = [
+        ("precedence-player", "Signing", "bucks", "2026-07-01",
+         "Milwaukee Bucks signed Precedence Player."),
+        ("precedence-player", "Waive", "bucks", "2026-10-01",
+         "Milwaukee Bucks waived Precedence Player."),
+        ("precedence-player", "Signing", "bucks", "2026-10-03",
+         "Milwaukee Bucks signed Precedence Player to a Two-Way Contract."),
+        ("precedence-player", "Waive", "bucks", "2026-12-01",
+         "Milwaukee Bucks waived Precedence Player."),
+    ]
+    rows = kinds([{"PLAYER_NAME": "Precedence Player", "TEAM": "MIL"}], txns)
+    assert rows["Precedence Player|MIL"] == "dead_money"
+
+
+def test_two_way_waive_then_standard_resign_restores_roster():
+    txns = [
+        ("return-player", "Signing", "kings", "2026-07-01",
+         "Sacramento Kings signed Return Player to a Two-Way Contract."),
+        ("return-player", "Waive", "kings", "2026-10-01", "Sacramento Kings waived Return Player."),
+        ("return-player", "Signing", "kings", "2026-11-01",
+         "Sacramento Kings signed Return Player."),
+    ]
+    rows = kinds([{"PLAYER_NAME": "Return Player", "TEAM": "SAC"}], txns)
+    assert rows["Return Player|SAC"] == "roster"
 
 
 def test_suffix_matching_handles_jr_discrepancy():
     rows = kinds([{"PLAYER_NAME": "Walter Clayton Jr.", "TEAM": "MEM"}], CLAYTON_TXNS)
     assert rows["Walter Clayton Jr.|MEM"] == "dead_money"
+
+
+def test_same_day_events_order_by_group_sort_trailing_integer():
+    txns = [
+        ("order-player", "Signing", "kings", "2026-10-01",
+         "Sacramento Kings signed Order Player to a Two-Way Contract.", "TrxSign3", 0.0),
+        ("order-player", "Waive", "kings", "2026-10-01",
+         "Sacramento Kings waived Order Player.", "TrxWaive1", 0.0),
+    ]
+    rows = kinds([{"PLAYER_NAME": "Order Player", "TEAM": "SAC"}], txns)
+    assert rows["Order Player|SAC"] == "dead_money"
