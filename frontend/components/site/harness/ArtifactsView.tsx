@@ -116,6 +116,12 @@ function ProvenanceFields({ provenance }: { provenance: DimeProvenance }) {
       {provenance.warehouseId && (
         <ProvenanceRow label="Warehouse">{provenance.warehouseId}</ProvenanceRow>
       )}
+      {provenance.dataset && (
+        <ProvenanceRow label="Dataset">{provenance.dataset}</ProvenanceRow>
+      )}
+      {provenance.sql && (
+        <ProvenanceRow label="SQL"><span className="break-all font-mono text-[11px]">{provenance.sql}</span></ProvenanceRow>
+      )}
       <ProvenanceRow label="Season">{provenance.season ?? "not provided"}</ProvenanceRow>
       <ProvenanceRow label="As of">{provenance.asOf ?? "not provided"}</ProvenanceRow>
       <ProvenanceRow label="Live sources">
