@@ -3,6 +3,7 @@
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { ChartAnnotation, ChartMark, ChartSeriesPayload, ChartTone } from "@/lib/dime-stream";
 import ArtifactTable from "./ArtifactTable";
+import { QuietDetails } from "@/components/ds/QuietDetails";
 
 export type ChartSeries = ChartSeriesPayload;
 
@@ -68,8 +69,8 @@ export default function ArtifactChart({ series, height = 220, footnote, unit, xL
       {annotationRows.map((a, i) => <li key={i} className="flex items-start gap-2 break-words text-xs text-ink-2"><span aria-hidden="true" className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: "var(--accent-ink)" }} /><span><span className="font-medium text-ink">{String(data[a.index]?.label ?? "")}:</span> {a.text}</span></li>)}
     </ul>}
     {footnote && <p className="mt-2 break-words text-xs leading-relaxed text-ink-3">{footnote}</p>}
-    <details className="mt-3 text-xs text-ink-2"><summary className="cursor-pointer py-2">View chart data</summary>
+    <QuietDetails label="View chart data">
       <ArtifactTable title={`${title} data`} columns={[{ key: "label", label: "Observation" }, ...series.map((s, i) => ({ key: `series${i}`, label: `${s.name}${s.unit ? ` (${s.unit})` : unit ? ` (${unit})` : ""}`, numeric: true }))]} rows={data.map(row => [String(row.label), ...series.map((_, i) => row[`series${i}`] as number | null)])} />
-    </details>
+    </QuietDetails>
   </figure>;
 }
