@@ -16,7 +16,8 @@ export async function replayStream(name: string, handlers: Parameters<typeof pos
     handlers.onEvent(type, data);
     await new Promise<void>(resolve => {
       const done = () => { clearTimeout(timer); signal?.removeEventListener("abort", done); resolve(); };
-      const timer = setTimeout(done, 80);
+      const ms = typeof (data as { ms?: unknown }).ms === "number" ? (data as { ms: number }).ms : 340;
+      const timer = setTimeout(done, ms);
       signal?.addEventListener("abort", done, { once: true });
     });
   }
