@@ -30,6 +30,41 @@ def memory_salary_con():
     return con
 
 
+def memory_dead_money_con():
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GUARANTEED BIGINT, "
+        "SALARY_2026_27 BIGINT, ROW_KIND VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?, ?)",
+        [("Roster Wing", "DAL", 1, 10_000_000, 10_000_000, "roster"),
+         ("Klay Thompson", "DAL", 2, 7_660_317, 7_660_317, "dead_money"),
+         ("Olivier-Maxence Prosper", "DAL", 3, 1_002_360, 1_002_360, "dead_money")])
+    return con
+
+
+def memory_component_probe_con(column_name="ROW_KIND", dead_kind="dead_money"):
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GUARANTEED BIGINT, "
+        f"SALARY_2026_27 BIGINT, {column_name} VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?, ?)",
+        [("Roster Player", "TST", 1, 10_000_000, 10_000_000, "roster"),
+         ("Dead Player", "TST", 2, 2_000_000, 2_000_000, dead_kind)])
+    con.execute(
+        "CREATE TABLE silver_cap_room ("
+        "TEAM VARCHAR, CAP_SEASON VARCHAR, FA_HOLDS_EST BIGINT, "
+        "INCOMPLETE_ROSTER_CHARGES BIGINT)")
+    con.execute(
+        "INSERT INTO silver_cap_room VALUES ('TST', '2026-27', 3000000, 9000000)")
+    return con
+
+
 def test_future_option_decision_uses_option_year_salary_and_baseline():
     from shared.tools.league.cap_sheet import evaluate_cap_scenario
     con = memory_salary_con()
@@ -104,12 +139,107 @@ def test_projected_cap_room_rows_disclose_projected_lines():
         con.execute(
             "INSERT INTO silver_cap_room VALUES "
             "('2027-28', 176000000, 214000000, 224000000, 237000000)")
-        lines, projected = cap_lines_for_season(con, "2027-28")
+        resolved = cap_lines_for_season(con, "2027-28")
     finally:
         con.close()
-    assert lines == {"cap": 176_000_000, "tax": 214_000_000,
-                     "apron1": 224_000_000, "apron2": 237_000_000}
-    assert projected is True
+    assert resolved["ok"] is True
+    assert resolved["lines"] == {"cap": 176_000_000, "tax": 214_000_000,
+                                 "apron1": 224_000_000, "apron2": 237_000_000}
+    assert resolved["projected"] is True
+    assert resolved["source"] == "silver_cap_room"
+    assert resolved["exact"] is True
+
+
+def test_dead_money_rows_are_labeled_components_not_roster_players():
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_dead_money_con()
+    try:
+        out = cap_sheet_rows(con, "DAL", "2026-27")
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert [row["player"] for row in out["players"]] == ["Roster Wing"]
+    entry = out["totals"]["2026-27"]
+    assert entry["roster_payroll"] == 10_000_000
+    assert entry["dead_money"] == 8_662_677
+    assert entry["committed"] == 18_662_677
+    assert entry["payroll"] == 18_662_677
+    assert entry["committed"] == entry["roster_payroll"] + entry["dead_money"]
+    assert entry["dead_money_detail"] == [
+        {"player": "Klay Thompson", "team": "DAL", "salary": 7_660_317},
+        {"player": "Olivier-Maxence Prosper", "team": "DAL", "salary": 1_002_360},
+    ]
+    assert out["dead_money_detail"] == entry["dead_money_detail"]
+    assert out["dead_money_unit"] == "usd_dollars"
+    assert entry["component_availability"]["dead_money"] is True
+    assert entry["component_availability"]["roster_payroll"] is True
+
+
+@pytest.mark.parametrize("column_name,dead_kind", [
+    ("ROW_KIND", "dead_money"),
+    ("row_kind", "dead_money"),
+    ("ROW_KIND", "DEAD_MONEY"),
+])
+def test_payroll_components_exact_figures_across_row_kind_degradation(column_name, dead_kind):
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_component_probe_con(column_name, dead_kind)
+    try:
+        out = cap_sheet_rows(con, "TST", "2026-27")
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert [row["player"] for row in out["players"]] == ["Roster Player"]
+    entry = out["totals"]["2026-27"]
+    assert entry["roster_payroll"] == 10_000_000
+    assert entry["dead_money"] == 2_000_000
+    assert entry["committed"] == 12_000_000
+    assert entry["cap_holds"] == 3_000_000
+    assert entry["incomplete_roster_charges"] == 9_000_000
+    assert entry["payroll"] == 24_000_000
+    assert entry["dead_money_detail"] == [
+        {"player": "Dead Player", "team": "TST", "salary": 2_000_000},
+    ]
+    assert entry["component_availability"]["dead_money"] is True
+
+
+def test_payroll_adds_holds_and_charges_without_double_counting_dead_money():
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_dead_money_con()
+    try:
+        con.execute(
+            "CREATE TABLE silver_cap_room ("
+            "TEAM VARCHAR, CAP_SEASON VARCHAR, FA_HOLDS_EST BIGINT, "
+            "INCOMPLETE_ROSTER_CHARGES BIGINT)")
+        con.execute(
+            "INSERT INTO silver_cap_room VALUES ('DAL', '2026-27', 1000000, 500000)")
+        out = cap_sheet_rows(con, "DAL", "2026-27")
+    finally:
+        con.close()
+    entry = out["totals"]["2026-27"]
+    assert entry["committed"] == 18_662_677
+    assert entry["cap_holds"] == 1_000_000
+    assert entry["incomplete_roster_charges"] == 500_000
+    assert entry["payroll"] == 20_162_677
+    assert entry["payroll"] == (entry["committed"] + entry["cap_holds"]
+                                + entry["incomplete_roster_charges"])
+    assert entry["component_availability"]["cap_holds"] is True
+    assert entry["component_availability"]["incomplete_roster_charges"] is True
+
+
+def test_unlabeled_salary_rows_keep_legacy_aggregate_behavior():
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_salary_con()
+    try:
+        out = cap_sheet_rows(con, "TST", "2026-27")
+    finally:
+        con.close()
+    entry = out["totals"]["2026-27"]
+    assert len(out["players"]) == 2
+    assert entry["roster_payroll"] == 40_000_000
+    assert entry["dead_money"] == 0
+    assert entry["committed"] == 40_000_000
+    assert entry["component_availability"]["dead_money"] is False
+    assert entry["component_availability"]["roster_payroll"] is False
 
 
 def test_sheet_shape_boston(con):
@@ -128,10 +258,13 @@ def test_sheet_shape_boston(con):
     totals = out["totals"]
     assert "2026-27" in totals
     entry = totals["2026-27"]
-    for key in ("committed", "pending_option", "dead_money", "cap_holds",
-                "incomplete_roster_charges", "payroll"):
+    for key in ("committed", "roster_payroll", "pending_option", "dead_money",
+                "dead_money_detail", "cap_holds", "incomplete_roster_charges",
+                "payroll", "component_availability"):
         assert key in entry
-    assert entry["payroll"] == entry["committed"] + entry["dead_money"] + entry["cap_holds"] + entry["incomplete_roster_charges"] or entry["payroll"] >= entry["committed"]
+    assert entry["committed"] == entry["roster_payroll"] + entry["dead_money"]
+    assert entry["payroll"] == (entry["committed"] + entry["cap_holds"]
+                                + entry["incomplete_roster_charges"])
     assert {"over_tax", "over_apron1", "over_apron2", "room_apron1", "room_apron2", "room_under_apron2"} <= set(out["state"])
 
 
@@ -148,15 +281,24 @@ def test_sheet_multi_year_matrix(con):
 
 def test_cap_lines_projection_behavior(con):
     from shared.tools.league.cap_sheet import cap_lines_for_season
-    lines, projected = cap_lines_for_season(con, "2026-27")
-    assert projected is False
-    assert lines["cap"] == 164_961_000
-    lines27, projected27 = cap_lines_for_season(con, "2027-28")
-    assert lines27["cap"] > 0
-    lines31, projected31 = cap_lines_for_season(con, "2031-32")
-    assert projected31 is True
-    assert lines31["cap"] > lines27["cap"]
-    assert lines31["apron2"] > lines31["apron1"] > lines31["tax"] > lines31["cap"]
+    current = cap_lines_for_season(con, "2026-27")
+    assert current["ok"] is True
+    assert current["projected"] is False
+    assert current["exact"] is True
+    assert current["lines"]["cap"] == 164_961_000
+    res27 = cap_lines_for_season(con, "2027-28")
+    assert res27["ok"] is True
+    assert res27["lines"]["cap"] > 0
+    res31 = cap_lines_for_season(con, "2031-32")
+    assert res31["ok"] is True
+    assert res31["projected"] is True
+    assert res31["exact"] is False
+    assert res31["source"] == "growth_extrapolation"
+    assert res31["approximation_basis"]
+    assert "not an official league figure" in res31["approximation_basis"]
+    assert res31["lines"]["cap"] > res27["lines"]["cap"]
+    assert (res31["lines"]["apron2"] > res31["lines"]["apron1"]
+            > res31["lines"]["tax"] > res31["lines"]["cap"])
 
 
 def test_scenario_signing_matches_tool_arithmetic(con):
@@ -229,11 +371,14 @@ def test_scenario_requires_moves(con):
 
 
 def test_endpoint_wrappers():
-    from analyst.direct_data import product_cap_scenario_eval, product_cap_sheet
+    from analyst.direct_data import internal_catalogue, product_cap_scenario_eval, product_cap_sheet
     bad = product_cap_sheet.invoke({"team": "", "season": "2026-27"})
     assert bad["ok"] is False
     bad2 = product_cap_scenario_eval.invoke({"payload": {"team": "", "moves": []}})
     assert bad2["ok"] is False
+    exposed = internal_catalogue()["product_cap_sheet"].description
+    assert "players is roster-only" in exposed
+    assert "dead_money/dead_money_detail" in exposed
 
 
 def test_projection_openapi_documents_dead_money_decomposition():

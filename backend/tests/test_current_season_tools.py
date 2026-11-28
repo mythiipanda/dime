@@ -35,6 +35,8 @@ def test_trade_check_defaults_to_the_current_season(monkeypatch, tmp_path):
         "INSERT INTO silver_salaries VALUES "
         "('LeBron James', 'LAL', 50000000, 51000000, '2026-27', NULL), "
         "('Giannis Antetokounmpo', 'MIA', 40000000, 41000000, '2026-27', NULL)")
+    from cap_line_fixtures import seed_cap_history
+    seed_cap_history(con)
     con.close()
     monkeypatch.setattr(store, "DB_PATH", path)
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
@@ -85,6 +87,8 @@ def test_trade_guard_names_the_season_on_a_stale_team_premise(
         "'2025-26', NULL), "
         "('Jayson Tatum', 'BOS', 70, 26.0, 8.0, 6.0, 1.0, 0.5, 2.5, 2, "
         "'2025-26', NULL)")
+    from cap_line_fixtures import seed_cap_history
+    seed_cap_history(con)
     con.close()
     monkeypatch.setattr(store, "DB_PATH", path)
     monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")

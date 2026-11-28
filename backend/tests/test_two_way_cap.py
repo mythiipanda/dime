@@ -412,11 +412,12 @@ def test_cap_sheet_projection_and_payroll_use_same_two_way_baseline():
         assert len(payroll_dead) == 1
         assert payroll_dead[0]["salary"] == 4_190_520
         totals = sheet["totals"]["2026-27"]
-        assert totals["committed"] == 20_000_000
+        assert totals["roster_payroll"] == 20_000_000
+        assert totals["committed"] == 24_190_520
         assert totals["dead_money"] == 4_190_520
         assert totals["payroll"] == payroll_total
         assert [row["player"] for row in sheet["players"]] == ["Standard Grizzly"]
-        assert base["roster_payroll"] == totals["committed"]
+        assert base["roster_payroll"] == totals["roster_payroll"]
         assert base["dead_money"] == totals["dead_money"]
         assert base["pay_before"] == payroll_total
         assert [row["player"] for row in base["players"]] == ["Standard Grizzly"]
@@ -446,7 +447,8 @@ def test_explicit_dead_money_row_is_not_roster_payroll_or_double_counted():
         assert [row["player"] for row in roster] == ["Standard Grizzly"]
         assert len(dead) == 1
         assert dead[0]["salary"] == 4_000_000
-        assert sheet["totals"]["2026-27"]["committed"] == 20_000_000
+        assert sheet["totals"]["2026-27"]["roster_payroll"] == 20_000_000
+        assert sheet["totals"]["2026-27"]["committed"] == 24_000_000
         assert sheet["totals"]["2026-27"]["dead_money"] == 4_000_000
         assert base["roster_payroll"] == 20_000_000
         assert base["dead_money"] == 4_000_000

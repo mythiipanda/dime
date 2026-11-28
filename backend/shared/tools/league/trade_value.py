@@ -4,10 +4,18 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ...contracts import canonical_team_abbr, contract_details, match_record, normalize_name, salary_records
+from ...contracts import (
+    canonical_team_abbr,
+    contract_details,
+    match_record,
+    normalize_name,
+    roster_row_predicate,
+    row_kind_column,
+    salary_records,
+)
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money, declare_units
+from .cap_lines import resolve_cap_lines
 from .cba_cap import (
-    CAP,
     SalaryColumnError,
     _allowed_incoming,
     _outgoing_needed,
@@ -112,8 +120,9 @@ def _trade_guard_team_error(con, team: str, players: str,
             kind_filter = ""
             try:
                 scols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
-                if "ROW_KIND" in scols:
-                    kind_filter = "AND ROW_KIND = 'roster'"
+                kind_column = row_kind_column(scols)
+                if kind_column:
+                    kind_filter = "AND " + roster_row_predicate(kind_column)
             except Exception:
                 pass
             row = con.execute(
@@ -230,9 +239,10 @@ def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
 
 
 def _tpe_creation_block(outgoing: int, incoming: int, pay_before: int,
-                        pay_after: int, over_apron1: bool) -> dict[str, Any] | None:
-    if not (outgoing > incoming and pay_before > CAP["cap"]
-            and pay_after > CAP["cap"] and not over_apron1):
+                        pay_after: int, over_apron1: bool,
+                        lines: dict[str, Any]) -> dict[str, Any] | None:
+    if not (outgoing > incoming and pay_before > lines["cap"]
+            and pay_after > lines["cap"] and not over_apron1):
         return None
     amount = outgoing - incoming
     return {
@@ -245,7 +255,7 @@ def _tpe_creation_block(outgoing: int, incoming: int, pay_before: int,
                  f"execution date. Executed simultaneously, it generates nothing."),
     }
 
-@tool(description='Trade legality check. Player names comma separated per side.\n\n2023 CBA matching for 2026-27 below the first apron: 200 percent plus\n250k when outgoing is up to 8.846M, outgoing plus 9.096M up to 35.384M,\n125 percent plus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Expanded matching use hard-caps at the\nfirst apron; cap-room absorption does not. Cash and exceptions stay out.')
+@tool(description='Trade legality check. Player names comma separated per side.\nExact cap/tax/apron lines are resolved for the requested season; missing\ncoverage is reported as unavailable rather than substituted.\n\n2023 CBA matching below the first apron: 200 percent plus\n250k when outgoing is up to the low band, outgoing plus the mid cushion up\nto the high band, 125 percent plus 250k above that. 100 percent above the\nfirst apron, no aggregation above the second apron. Expanded matching use\nhard-caps at the first apron; cap-room absorption does not. Cash and\nexceptions stay out.')
 
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
@@ -260,8 +270,13 @@ def get_trade_check(
     with _owned_connection(None, read_only=True) as guard_con:
         guard_error = _trade_guard(guard_con, season, team_a, players_a,
                                    team_b, players_b)
+        cap_resolution = None if guard_error else resolve_cap_lines(guard_con, season)
     if guard_error:
         return {"tool": "get_trade_check", "ok": False, "error": guard_error}
+    if not cap_resolution["ok"]:
+        return {"tool": "get_trade_check", "ok": False,
+                "reason": "cap_lines_unavailable",
+                "error": cap_resolution["error"]}
 
     if (not team_a or not team_b) and players_a and players_b:
         with _owned_connection(None, read_only=True) as infer_con:
@@ -304,10 +319,11 @@ def get_trade_check(
         source = _payroll_source(con)
     pay_after_a = pay_a - out_a + out_b
     pay_after_b = pay_b - out_b + out_a
-    state_a = _apron_state(pay_after_a)
-    state_b = _apron_state(pay_after_b)
-    room_a = max(0, CAP["cap"] - pay_a)
-    room_b = max(0, CAP["cap"] - pay_b)
+    lines = cap_resolution["lines"]
+    state_a = _apron_state(pay_after_a, lines)
+    state_b = _apron_state(pay_after_b, lines)
+    room_a = max(0, lines["cap"] - pay_a)
+    room_b = max(0, lines["cap"] - pay_b)
     allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]), room_a)
     allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]), room_b)
     need_a = _outgoing_needed(out_b, bool(state_a["over_apron1"]), room_a)
@@ -326,10 +342,10 @@ def get_trade_check(
     rule_b = _operative_match_rule(rule_b, election_b)
     hard_cap_a = _hard_cap_consequences(
         team_a.upper(), pay_after_a, aggregates=len(names_a) > 1,
-        expanded_matching=expanded_a)
+        expanded_matching=expanded_a, lines=lines)
     hard_cap_b = _hard_cap_consequences(
         team_b.upper(), pay_after_b, aggregates=len(names_b) > 1,
-        expanded_matching=expanded_b)
+        expanded_matching=expanded_b, lines=lines)
     issues = _trade_check_issues(team_a, state_a, names_a, team_b, state_b,
                                  names_b, out_a, allow_a, out_b, allow_b)
     issues.extend(hard_cap_a["issues"])
@@ -341,9 +357,9 @@ def get_trade_check(
         team_b, side_b, pay_b, state_b, allow_b, rule_b,
         need_b, hard_cap_b["hard_cap"], election_b)
     rows_a["tpe_creation"] = _tpe_creation_block(
-        out_a, out_b, pay_a, pay_after_a, bool(state_a["over_apron1"]))
+        out_a, out_b, pay_a, pay_after_a, bool(state_a["over_apron1"]), lines)
     rows_b["tpe_creation"] = _tpe_creation_block(
-        out_b, out_a, pay_b, pay_after_b, bool(state_b["over_apron1"]))
+        out_b, out_a, pay_b, pay_after_b, bool(state_b["over_apron1"]), lines)
     out = {"tool": "get_trade_check", "ok": True,
             "rows": {"team_a": rows_a,
                      "team_b": rows_b,
@@ -359,6 +375,9 @@ def get_trade_check(
                      "Confirm with a cap specialist."},
             "meta": {"source": source, "rules": "v1-simplified",
                      "salary_date": salary_date, "season": season,
+                     "cap_lines": lines,
+                     "cap_lines_source": cap_resolution["source"],
+                     "cap_lines_projected": cap_resolution["projected"],
                      **_payroll_proxy_meta()}}
     return declare_money(out, ["amount", "salary", "incoming", "outgoing", "allowed_incoming", "capacity", "payroll", "cap_room", "player_salary", "max_return_salary"])
 
@@ -373,7 +392,7 @@ _TRADE_PARTNER_DISCLAIMER = (
 
 def _partner_package_rows(team: str, roster: list[dict], incoming: int,
                           pay_a: int, room_a: int, pay_b: int, room_b: int,
-                          limit: int) -> list[dict]:
+                          limit: int, lines: dict[str, Any]) -> list[dict]:
     paid = [p for p in roster
             if isinstance(p.get("salary"), (int, float)) and p["salary"] > 0]
     paid.sort(key=lambda p: int(p["salary"]))
@@ -381,8 +400,8 @@ def _partner_package_rows(team: str, roster: list[dict], incoming: int,
     for size in range(1, _TRADE_PARTNER_PACKAGE_MAX + 1):
         for combo in _it.combinations(paid, size):
             total = sum(int(p["salary"]) for p in combo)
-            state_a = _apron_state(pay_a - incoming + total)
-            state_b = _apron_state(pay_b - total + incoming)
+            state_a = _apron_state(pay_a - incoming + total, lines)
+            state_b = _apron_state(pay_b - total + incoming, lines)
             if size > 1 and state_b["over_apron2"]:
                 continue
             allow_a, _ = _allowed_incoming(
@@ -403,14 +422,17 @@ def _partner_package_rows(team: str, roster: list[dict], incoming: int,
 
 
 @tool(description='Find CBA-legal salary-matching trade packages for one player '
-      'across the league. Player name; season defaults to 2026-27; teams '
+      'across the league. Player name; season defaults to the current season; '
+      'exact cap/tax/apron lines are resolved for the requested season and '
+      'missing coverage is reported as unavailable rather than substituted; teams '
       'optionally restricts partners (comma-separated abbreviations); '
       'max_packages caps rows per team (default 3). Each row is a roster '
       'package (up to 3 players) whose salary satisfies both sides\' matching '
       'rules under the same simplified 2023 CBA as get_trade_check.')
 def get_trade_partners(player: str = "", season: str | None = None,
                        teams: str = "", max_packages: int = 3) -> dict[str, Any]:
-    season = str(season or "").strip() or "2026-27"
+    season = (str(season or "").strip() or _pkg().current_season()
+              or _pkg().resolve_season(None))
     if not str(player or "").strip():
         return {"tool": "get_trade_partners", "ok": False,
                 "error": "player needed"}
@@ -437,14 +459,20 @@ def get_trade_partners(player: str = "", season: str | None = None,
         if record.get("salary") is None:
             return {"tool": "get_trade_partners", "ok": False,
                     "error": f"no {season} salary for {record['PLAYER_NAME']}"}
+        cap_resolution = resolve_cap_lines(con, season)
+        if not cap_resolution["ok"]:
+            return {"tool": "get_trade_partners", "ok": False,
+                    "reason": "cap_lines_unavailable",
+                    "error": cap_resolution["error"]}
+        lines = cap_resolution["lines"]
         name = str(record["PLAYER_NAME"])
         team_a = canonical_team_abbr(record["TEAM"])
         incoming = int(record["salary"])
         pay_a, _roster_a, _dead_a = _payroll(team_a, con, season)
-        room_a = max(0, CAP["cap"] - pay_a)
+        room_a = max(0, lines["cap"] - pay_a)
         expanded_a, rule_expanded_a = _allowed_incoming(incoming, False, room_a)
         strict_a, rule_strict_a = _allowed_incoming(incoming, True, room_a)
-        below_apron_max = CAP["apron1"] - pay_a + incoming
+        below_apron_max = lines["apron1"] - pay_a + incoming
         if min(expanded_a, below_apron_max) >= strict_a:
             allow_a = min(expanded_a, below_apron_max)
             rule_a = rule_expanded_a
@@ -458,9 +486,10 @@ def get_trade_partners(player: str = "", season: str | None = None,
             if restrict and team not in restrict:
                 continue
             pay_b, roster, _dead = _payroll(team, con, season)
-            room_b = max(0, CAP["cap"] - pay_b)
+            room_b = max(0, lines["cap"] - pay_b)
             packages = _partner_package_rows(
-                team, roster, incoming, pay_a, room_a, pay_b, room_b, limit)
+                team, roster, incoming, pay_a, room_a, pay_b, room_b, limit,
+                lines)
             if packages:
                 rows.extend(packages)
             else:
@@ -471,6 +500,9 @@ def get_trade_partners(player: str = "", season: str | None = None,
             "rows": rows,
             "meta": {"source": source, "salary_date": salary_date,
                      "season": season, "rules": "v1-simplified",
+                     "cap_lines": lines,
+                     "cap_lines_source": cap_resolution["source"],
+                     "cap_lines_projected": cap_resolution["projected"],
                      **_payroll_proxy_meta(),
                      "player": name, "player_team": team_a,
                      "player_salary": incoming, "max_return_salary": allow_a,

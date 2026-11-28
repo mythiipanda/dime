@@ -1,7 +1,7 @@
 import re as _re
 from typing import Any
 
-from ...contracts import canonical_team_abbr, salary_records
+from ...contracts import canonical_team_abbr, dead_money_row_predicate, row_kind_column, salary_records
 from ..cap_rules import apron_state, payroll_proxy_meta, roster_issues
 from .cap_hold_derivation import derive_cap_holds, hold_amount
 from ._helpers import declare_money
@@ -96,10 +96,11 @@ def _dead_money_schedules(con, team: str) -> list[dict[str, Any]]:
         if "silver_salaries" not in tables:
             return []
         cols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
-        if "ROW_KIND" not in cols:
+        kind_column = row_kind_column(cols)
+        if not kind_column:
             return []
         cur = con.execute(
-            "SELECT * FROM silver_salaries WHERE LOWER(ROW_KIND) = 'dead_money'")
+            "SELECT * FROM silver_salaries WHERE " + dead_money_row_predicate(kind_column))
         names = [d[0] for d in cur.description]
         rows = [dict(zip(names, row)) for row in cur.fetchall()]
         if "_season" in cols:
@@ -143,6 +144,7 @@ def _inferred_dead_schedules(schedules: dict[str, dict[str, Any]], team: str) ->
         rows.append({"player": str(dead.get("player") or entry["player"]),
                      "team": team_code,
                      "salary_by_season": {str(entry.get("evidence_season")): amount},
+                     "row_kind": "dead_money",
                      "basis": dead.get("basis"),
                      "inferred": True})
     return rows
@@ -178,6 +180,7 @@ def _team_baseline(con, team: str, schedules: dict[str, dict[str, Any]], seasons
             if salary:
                 inferred_candidates.append({"player": entry["player"], "salary": int(salary),
                                             "team": entry["team"],
+                                            "row_kind": "dead_money",
                                             "basis": entry.get("basis")})
         dead_detail = merge_dead_rows(explicit_candidates, inferred_candidates, team_code)
         dead_total = sum(int(row.get("salary") or 0) for row in dead_detail)
@@ -367,7 +370,7 @@ _CAP_BASE_2026_27 = 164_961_000
 
 def _exceptions_block(lines: dict[str, Any], effects: list[dict[str, Any]],
                       pay_after: int) -> list[dict[str, Any]]:
-    ratio = lines["cap"] / _CAP_BASE_2026_27 if lines.get("cap") else 1.0
+    ratio = lines["cap"] / _CAP_BASE_2026_27
     rows = []
     for name, base in _EXCEPTION_AMOUNTS_2026_27.items():
         amount = int(round(base * ratio, -3))
@@ -623,7 +626,12 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
 
     season_blocks: list[dict[str, Any]] = []
     for season in seasons:
-        lines, lines_projected = cap_lines_for_season(con, season)
+        lines_res = cap_lines_for_season(con, season)
+        if not lines_res["ok"]:
+            return {"ok": False, "error": lines_res["error"],
+                    "reason": "cap_lines_unavailable"}
+        lines = lines_res["lines"]
+        lines_projected = bool(lines_res["projected"])
         base = baseline.get(season, {"payroll": 0, "players": [], "roster_count": 0})
         effects = carried.get(season, [])
         pay_after = int(base["payroll"]) + sum(int(e["delta"]) for e in effects)
@@ -666,6 +674,9 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "state": state,
             "lines": lines,
             "lines_projected": lines_projected,
+            "cap_lines_source": lines_res["source"],
+            "cap_lines_exact": bool(lines_res["exact"]),
+            "cap_lines_approximation_basis": lines_res["approximation_basis"],
             "players": adjusted_rows(season, base["players"]),
             "roster_before": int(base["roster_count"]),
             "roster_after": roster_after,
@@ -726,6 +737,14 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         "disclosures": [d for d in disclosures if d],
         "meta": {"horizon_seasons": seasons, "coverage": coverage,
                  "projection_basis": "silver_salaries roster and dead-money contract schedules plus silver_cap_room lines",
+                 "cap_lines_by_season": {
+                     block["season"]: {
+                         "cap_lines_source": block["cap_lines_source"],
+                         "cap_lines_exact": block["cap_lines_exact"],
+                         "cap_lines_approximation_basis": block["cap_lines_approximation_basis"],
+                     }
+                     for block in season_blocks
+                 },
                  **payroll_proxy_meta()},
     }, ["pay_before", "pay_after", "roster_payroll", "dead_money", "cap_room",
         "salary", "delta", "cap_holds", "amount"])

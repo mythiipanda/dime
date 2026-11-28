@@ -3,10 +3,18 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from ...contracts import canonical_team_abbr, contract_details, resolve_salary_column, salary_records
+from ...contracts import (
+    canonical_team_abbr,
+    contract_details,
+    dead_money_row_predicate,
+    resolve_salary_column,
+    row_kind_column,
+    salary_records,
+)
 from .._core import coerce_team_id, team_error_message, warehouse_identity_meta
 from ..competitive import _resolve_team_abbr
 from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
+from .cap_lines import resolve_cap_lines
 from .cba_two_way import (
     merge_dead_rows,
     payroll_evidence_season,
@@ -44,7 +52,9 @@ def _team_salary_lookup(con, name: str) -> str | None:
         return None
     try:
         scols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
-        order = " ORDER BY CASE WHEN ROW_KIND = 'roster' THEN 0 ELSE 1 END" if "ROW_KIND" in scols else ""
+        kind_column = row_kind_column(scols)
+        order = (" ORDER BY CASE WHEN " + dead_money_row_predicate(kind_column) + " THEN 1 ELSE 0 END"
+                 if kind_column else "")
         row = con.execute(
             "SELECT TEAM FROM silver_salaries "
             "WHERE LOWER(PLAYER_NAME) = LOWER(?)" + order + " LIMIT 1", [name]).fetchone()
@@ -230,7 +240,7 @@ def _auto_correct_side(unks: list[str], old_team: str, plist: str,
     located = []
     for u in unks:
         base = u.split(" (suggestions")[0].strip()
-        hit = _locate_player_team(base, con)
+        hit = _locate_player_team(base, con, season)
         if hit is None:
             return None
         located.append((base,) + hit)
@@ -241,8 +251,9 @@ def _auto_correct_side(unks: list[str], old_team: str, plist: str,
     if canonical_team_abbr(new_team) == canonical_team_abbr(old_team):
         return None
     matched = _match_trade_players(new_team, plist, con, season)
+    salary_sheet_season = str(season or "current")
     corrections = [
-        f"{cname} is on {t} per the 2026-27 salary sheet "
+        f"{cname} is on {t} per the {salary_sheet_season} salary sheet "
         f"(not {str(old_team).upper()}); computed for the corrected team"
         for base, cname, t, _s in located
     ]
@@ -311,12 +322,13 @@ def _collect_salary_payroll(records: list[dict], con: object, team_code: str,
 
 def _explicit_dead_rows(con: object, scols: list[str], scol: str,
                         team_code: str) -> list[dict]:
-    if "ROW_KIND" not in scols:
+    kind_column = row_kind_column(scols)
+    if not kind_column:
         return []
     try:
         rows = con.execute(
             "SELECT PLAYER_NAME, TEAM, " + scol + " FROM silver_salaries "
-            "WHERE LOWER(ROW_KIND) = 'dead_money' AND UPPER(TEAM) = UPPER(?)",
+            "WHERE " + dead_money_row_predicate(kind_column) + " AND UPPER(TEAM) = UPPER(?)",
             [team_code]).fetchall()
     except Exception:
         return []
@@ -504,7 +516,7 @@ def _salary_date(con: object = None) -> str | None:
     return None
 
 
-@tool(description='Payroll plus apron room for one abbreviation, on the salary-ledger basis. 2026-27 thresholds. Any all-30-teams sweep or league-wide analysis is ONE sql_exec over the warehouse table the ask names (or silver_cap_room for committed-salary audits), never per-team calls of this tool. Never answer a league-wide payroll-tier, committed-salary, over-tax or over-apron audit from this tool: those audits are ONE sql_exec over silver_cap_room unless the ask names a specific table — a named table is authoritative (COMMITTED_SALARY plus the projected cap/tax/apron lines per team), and the payroll basis here differs, so per-team fanout totals produce wrong tier counts — not a data gap. Team-level only, no player salaries: an individual player salary lives in silver_salaries (PLAYER_NAME, TEAM, SALARY for the row-season cap hit; SALARY_YYYY_YY only for that exact contract year), and trade legality or matching-band math for a named swap goes to get_trade_check, which already returns both sides salaries, the ceiling and the verdict.')
+@tool(description='Payroll plus apron room for one abbreviation, on the salary-ledger basis. Exact cap/tax/apron lines are resolved for the evaluation season; missing coverage is reported as unavailable rather than substituted. Any all-30-teams sweep or league-wide analysis is ONE sql_exec over the warehouse table the ask names (or silver_cap_room for committed-salary audits), never per-team calls of this tool. Never answer a league-wide payroll-tier, committed-salary, over-tax or over-apron audit from this tool: those audits are ONE sql_exec over silver_cap_room unless the ask names a specific table — a named table is authoritative (COMMITTED_SALARY plus the projected cap/tax/apron lines per team), and the payroll basis here differs, so per-team fanout totals produce wrong tier counts — not a data gap. Team-level only, no player salaries: an individual player salary lives in silver_salaries (PLAYER_NAME, TEAM, SALARY for the row-season cap hit; SALARY_YYYY_YY only for that exact contract year), and trade legality or matching-band math for a named swap goes to get_trade_check, which already returns both sides salaries, the ceiling and the verdict.')
 def get_cap_ledger(team: str = "") -> dict[str, Any]:
     if not team:
         return {"tool": "get_cap_ledger", "ok": False, "error": "team needed"}
@@ -527,8 +539,15 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         source = _payroll_source(con)
         salary_date = _salary_date(con)
         season, _, _ = _salary_vintage(con)
+        season = season or _pkg().current_season() or _pkg().resolve_season(None)
+        cap_resolution = resolve_cap_lines(con, season)
     finally:
         con.close()
+    if not cap_resolution["ok"]:
+        return {"tool": "get_cap_ledger", "ok": False,
+                "reason": "cap_lines_unavailable",
+                "error": cap_resolution["error"]}
+    lines = cap_resolution["lines"]
     dead_total = sum(d["salary"] or 0 for d in dead)
     result = {"tool": "get_cap_ledger", "ok": True,
             "rows": {"team": team.upper(), "payroll": total,
@@ -537,24 +556,35 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      "dead_money_detail": sorted(dead, key=lambda d: d["salary"] or 0, reverse=True),
                      "players": sorted(players, key=lambda p: p["salary"] or 0,
                                        reverse=True),
-                     "room_under_apron2": CAP["apron2"] - total,
-                     "over_tax": total > CAP["tax"]},
+                     "room_under_apron2": lines["apron2"] - total,
+                     "over_tax": total > lines["tax"]},
             "units": _CAP_ROW_UNITS,
-            "meta": {"source": source, "season": season or "2026-27",
+            "meta": {"source": source, "season": season,
                      **warehouse_identity_meta(),
                      "salary_date": salary_date,
+                     "cap_lines_source": cap_resolution["source"],
+                     "cap_lines_projected": cap_resolution["projected"],
                      **_payroll_proxy_meta(),
-                     **{k: v for k, v in CAP.items()}}}
+                     **{k: v for k, v in lines.items()}}}
     return declare_money(result, ["payroll", "room_under_apron2", "salary", "remaining_guaranteed"])
 
 
-@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits or over-the-line scans against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total. Requested-season payroll must use salary coverage for that exact season; when coverage is absent, report that season unavailable or surface salary_column_unmatched instead of substituting another year. Team-level only, no player salaries: an individual player salary lives in silver_salaries, and trade legality or matching-band math goes to get_trade_check.')
+@tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, on the salary-ledger basis. Exact cap/tax/apron lines are resolved for the requested season; missing coverage is reported as unavailable rather than substituted. For committed-salary audits or over-the-line scans against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total. Requested-season payroll must use salary coverage for that exact season; when coverage is absent, report that season unavailable or surface salary_column_unmatched instead of substituting another year. Team-level only, no player salaries: an individual player salary lives in silver_salaries, and trade legality or matching-band math goes to get_trade_check.')
 def get_cap_table(season: str | None = None) -> dict[str, Any]:
     from nba_api.stats.static import teams as _teams
     con = _pkg().store.connect(read_only=True)
     try:
         rows = []
         missing = []
+        season_used, _, _ = _salary_vintage(con)
+        season_used = (str(season or "").strip() or season_used
+                       or _pkg().current_season() or _pkg().resolve_season(None))
+        cap_resolution = resolve_cap_lines(con, season_used)
+        if not cap_resolution["ok"]:
+            return {"tool": "get_cap_table", "ok": False,
+                    "reason": "cap_lines_unavailable",
+                    "error": cap_resolution["error"]}
+        lines = cap_resolution["lines"]
         for item in _teams.get_teams():
             abbr = str(item["abbreviation"]).upper()
             try:
@@ -569,25 +599,26 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
             rows.append({"team": abbr, "payroll": total,
                          "roster_payroll": total - dead_total,
                          "dead_money": dead_total,
-                         "cap_room": CAP["cap"] - total,
-                         "room_under_apron2": CAP["apron2"] - total,
-                         "over_tax": total > CAP["tax"],
-                         "over_apron1": total > CAP["apron1"],
-                         "over_apron2": total > CAP["apron2"]})
+                         "cap_room": lines["cap"] - total,
+                         "room_under_apron2": lines["apron2"] - total,
+                         "over_tax": total > lines["tax"],
+                         "over_apron1": total > lines["apron1"],
+                         "over_apron2": total > lines["apron2"]})
         source = _payroll_source(con)
         salary_date = _salary_date(con)
-        season_used, _, _ = _salary_vintage(con)
     finally:
         con.close()
     rows.sort(key=lambda r: r["payroll"], reverse=True)
     res = {"tool": "get_cap_table", "ok": True,
            "rows": rows,
            "units": _CAP_ROW_UNITS,
-           "meta": {"source": source, "season": season or season_used or "2026-27",
+           "meta": {"source": source, "season": season_used,
                     **warehouse_identity_meta(),
                     "salary_date": salary_date,
+                    "cap_lines_source": cap_resolution["source"],
+                    "cap_lines_projected": cap_resolution["projected"],
                     **_payroll_proxy_meta(),
-                    **{k: v for k, v in CAP.items()}}}
+                    **{k: v for k, v in lines.items()}}}
     if missing:
         res["meta"]["missing_teams"] = missing
     return declare_money(res, ["payroll", "cap_room", "room_under_apron2"])
@@ -664,7 +695,9 @@ def _unknown_player_hints(unknown: list[str], con: object = None) -> list[str]:
                     scols2 = {r[1] for r in con2.execute("PRAGMA table_info(silver_salaries)").fetchall()}
                 except Exception:
                     scols2 = set()
-                order2 = " ORDER BY CASE WHEN ROW_KIND = 'roster' THEN 0 ELSE 1 END" if "ROW_KIND" in scols2 else ""
+                kind_column2 = row_kind_column(scols2)
+                order2 = (" ORDER BY CASE WHEN " + dead_money_row_predicate(kind_column2) + " THEN 1 ELSE 0 END"
+                          if kind_column2 else "")
                 hit = con2.execute(
                     """SELECT TEAM, PLAYER_NAME FROM silver_salaries
                     WHERE PLAYER_NAME LIKE ?""" + order2 + " LIMIT 1",

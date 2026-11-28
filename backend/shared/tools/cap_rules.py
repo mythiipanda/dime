@@ -54,8 +54,7 @@ def payroll_proxy_meta() -> dict[str, Any]:
     }
 
 
-def apron_state(payroll: int, lines: dict | None = None) -> dict[str, object]:
-    lines = lines or CAP
+def apron_state(payroll: int, lines: dict) -> dict[str, object]:
     return {
         "over_tax": payroll > lines["tax"],
         "over_apron1": payroll > lines["apron1"],
@@ -192,8 +191,7 @@ def hard_cap_consequences(team: str, payroll_after: int, *,
                           used_bae: bool = False,
                           used_tmle: bool = False,
                           signed_high_salary_waived_player: bool = False,
-                          lines: dict | None = None) -> dict[str, Any]:
-    lines = lines or CAP
+                          lines: dict) -> dict[str, Any]:
     triggers: list[tuple[str, str]] = []
     if aggregates:
         triggers.append(("second apron", "aggregation"))
@@ -257,9 +255,8 @@ def hard_cap_consequences(team: str, payroll_after: int, *,
 
 
 def active_hard_cap_failure(payroll_after: int, active_hard_caps: list[str],
-                            lines: dict | None = None,
+                            lines: dict,
                             transaction: str = "move") -> str:
-    lines = lines or CAP
     active = set(active_hard_caps or [])
     if "first apron" in active and payroll_after > lines["apron1"]:
         return (f"post-{transaction} payroll proxy (${payroll_after:,}) exceeds "

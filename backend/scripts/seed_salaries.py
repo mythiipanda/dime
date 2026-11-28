@@ -97,44 +97,104 @@ def _player_slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
+_NAME_SUFFIXES = ("jr", "sr", "ii", "iii", "iv", "v")
+
+
+def _slug_lookup(evidence: dict, name: str) -> list:
+    slug = _player_slug(name)
+    if slug in evidence:
+        return evidence[slug]
+    for suffix in _NAME_SUFFIXES:
+        extended = f"{slug}-{suffix}"
+        if extended in evidence:
+            return evidence[extended]
+    parts = slug.split("-")
+    if parts and parts[-1] in _NAME_SUFFIXES:
+        shortened = "-".join(parts[:-1])
+        if shortened in evidence:
+            return evidence[shortened]
+    return []
+
+
+def _contract_events(con) -> dict[str, list[tuple[str, str, str, str]]]:
+    events: dict[str, list[tuple[str, str, str, str]]] = {}
+    base = ("SELECT player, txn_type, team, txn_date, {detail} FROM silver_transactions "
+            "WHERE txn_type IN ('Signing', 'Waive', 'ContractConverted')")
+    try:
+        rows = con.execute(base.format(detail="detail")).fetchall()
+    except Exception:
+        try:
+            rows = con.execute(base.format(detail="NULL")).fetchall()
+        except Exception:
+            return events
+    for slug, txn_type, team, txn_date, detail in rows:
+        abbr = SLUG_TO_ABBR.get(team or "")
+        events.setdefault(slug or "", []).append(
+            (str(txn_date or ""), txn_type or "", abbr or "", (detail or "").lower()))
+    for slug in events:
+        events[slug].sort()
+    return events
+
+
+def contract_state(events: list[tuple[str, str, str, str]]) -> dict:
+    two_way_team: str | None = None
+    standard_by_team: dict[str, str] = {}
+    waived_by: dict[str, str] = {}
+    for date, txn_type, abbr, detail in events:
+        if not abbr:
+            continue
+        if txn_type == "Waive":
+            waived_by[abbr] = max(waived_by.get(abbr, ""), date)
+            if two_way_team == abbr:
+                two_way_team = None
+            continue
+        if "to a two-way contract" in detail:
+            two_way_team = abbr
+            continue
+        if txn_type in ("Signing", "ContractConverted"):
+            two_way_team = None
+            standard_by_team[abbr] = max(standard_by_team.get(abbr, ""), date)
+    dead_teams = {
+        team for team, waive_date in waived_by.items()
+        if standard_by_team.get(team, "") < waive_date
+    }
+    return {"two_way_team": two_way_team, "standard_by_team": standard_by_team,
+            "dead_teams": dead_teams, "latest_standard_team": max(
+                standard_by_team, key=lambda t: standard_by_team[t]) if standard_by_team else None}
+
+
 def annotate_row_kinds(frame: pl.DataFrame, con) -> pl.DataFrame:
     rows = frame.to_dicts()
     by_player: dict[str, list[int]] = {}
     for i, row in enumerate(rows):
         by_player.setdefault(row.get("PLAYER_NAME") or "", []).append(i)
-    evidence: dict[str, dict] = {}
-    try:
-        for slug, txn_type, team, txn_date in con.execute(
-                "SELECT player, txn_type, team, txn_date FROM silver_transactions "
-                "WHERE txn_type IN ('Signing', 'Waive')").fetchall():
-            ev = evidence.setdefault(slug, {})
-            cur = ev.get(txn_type)
-            if cur is None or str(txn_date) > str(cur[1]):
-                ev[txn_type] = (team, str(txn_date))
-    except Exception:
-        evidence = {}
+    evidence = _contract_events(con)
     kinds = ["roster"] * len(rows)
     dead = 0
+    two_way = 0
     unresolved = 0
     for name, idxs in by_player.items():
         teams = {rows[i].get("TEAM") for i in idxs}
-        ev = evidence.get(_player_slug(name), {})
-        signing = ev.get("Signing")
-        waive = ev.get("Waive")
-        if len(teams) > 1:
-            roster_abbr = SLUG_TO_ABBR.get(signing[0]) if signing else None
-            if roster_abbr and any(rows[i].get("TEAM") == roster_abbr for i in idxs):
-                for i in idxs:
-                    if rows[i].get("TEAM") != roster_abbr:
-                        kinds[i] = "dead_money"
-                        dead += 1
-            else:
-                unresolved += 1
-        elif waive and (not signing or waive[1] > signing[1]):
-            if SLUG_TO_ABBR.get(waive[0]) == rows[idxs[0]].get("TEAM"):
-                kinds[idxs[0]] = "dead_money"
+        state = contract_state(_slug_lookup(evidence, name))
+        two_way_team = state["two_way_team"]
+        dead_teams = state["dead_teams"]
+        roster_abbr = state["latest_standard_team"]
+        for i in idxs:
+            team = rows[i].get("TEAM")
+            if team in dead_teams:
+                kinds[i] = "dead_money"
                 dead += 1
-    print(f"row kinds: {dead} dead_money rows annotated, {unresolved} unresolved multi-team players left roster")
+            elif team == two_way_team:
+                kinds[i] = "two_way"
+                two_way += 1
+            elif len(teams) > 1 and roster_abbr and team != roster_abbr and any(
+                    rows[j].get("TEAM") == roster_abbr for j in idxs):
+                kinds[i] = "dead_money"
+                dead += 1
+        if len(teams) > 1 and not roster_abbr:
+            unresolved += 1
+    print(f"row kinds: {dead} dead_money, {two_way} two_way rows annotated, "
+          f"{unresolved} unresolved multi-team players left roster")
     return frame.with_columns(pl.Series("ROW_KIND", kinds))
 
 

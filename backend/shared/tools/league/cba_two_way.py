@@ -1,6 +1,6 @@
 import re
 
-from ...contracts import canonical_team_abbr, normalize_name
+from ...contracts import canonical_team_abbr, is_dead_money_row, normalize_name
 from ...possessions import TEAM_NICKNAMES
 from ..competitive import _resolve_team_abbr
 
@@ -284,15 +284,21 @@ def _inferred_dead_amount(row: dict, state: dict | None, row_team: str,
     return _deterministic_dead_amount(row, season)
 
 
+def _case_insensitive_value(row: dict, name: str) -> object:
+    for key, value in row.items():
+        if str(key).lower() == name:
+            return value
+    return None
+
+
 def explicit_two_way_record(row: dict) -> bool:
-    row_kind = str(row.get("ROW_KIND") or row.get("row_kind") or "").lower().replace("-", "_")
-    contract_type = str(row.get("CONTRACT_TYPE") or row.get("contract_type") or "").lower().replace("-", "_")
+    row_kind = str(_case_insensitive_value(row, "row_kind") or "").lower().replace("-", "_")
+    contract_type = str(_case_insensitive_value(row, "contract_type") or "").lower().replace("-", "_")
     return row_kind == "two_way" or contract_type == "two_way"
 
 
 def explicit_dead_money_record(row: dict) -> bool:
-    row_kind = str(row.get("ROW_KIND") or row.get("row_kind") or "").lower().replace("-", "_")
-    return row_kind == "dead_money"
+    return is_dead_money_row(row)
 
 
 def inferred_dead_entry(row: dict, state: dict | None, row_team: str,
@@ -301,6 +307,7 @@ def inferred_dead_entry(row: dict, state: dict | None, row_team: str,
     if amount is None:
         return None
     return {"player": row.get('PLAYER_NAME'), "salary": amount, "team": row_team,
+            "row_kind": "dead_money",
             "basis": "waived_standard_contract_before_two_way"}
 
 
@@ -313,13 +320,15 @@ def salary_row_cap_status(row: dict, state: dict | None, row_team: str,
     no_standard = bool(state and state.get("two_way_end")
                        and not state.get("standard_team"))
     counts = not (explicit or explicit_dead or active or terminated or no_standard)
+    dead_entry = (None if explicit_dead else
+                  inferred_dead_entry(row, state, row_team, season))
     return {"explicit_two_way": explicit,
             "explicit_dead_money": explicit_dead,
             "active_two_way": active,
             "terminated_standard": terminated,
             "no_standard_roster": no_standard,
             "counts_as_standard": counts,
-            "dead_entry": inferred_dead_entry(row, state, row_team, season)}
+            "dead_entry": dead_entry}
 
 
 def dead_key(row: dict) -> tuple[str, str, int]:

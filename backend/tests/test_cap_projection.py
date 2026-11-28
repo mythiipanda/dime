@@ -29,7 +29,7 @@ def salary_row(player, team, player_id, guaranteed, salaries, row_kind="roster")
             None, None, None, None, row_kind, "2026-27")
 
 
-def memory_dead_con(rows):
+def memory_dead_con(rows, column_name="ROW_KIND"):
     import duckdb
     con = duckdb.connect(":memory:")
     con.execute(
@@ -38,7 +38,7 @@ def memory_dead_con(rows):
         "SALARY_2026_27 BIGINT, SALARY_2027_28 BIGINT, SALARY_2028_29 BIGINT, "
         "SALARY_2029_30 BIGINT, "
         "OPTION_2026_27 VARCHAR, OPTION_2027_28 VARCHAR, OPTION_2028_29 VARCHAR, OPTION_2029_30 VARCHAR, "
-        "ROW_KIND VARCHAR, _season VARCHAR)")
+        f"{column_name} VARCHAR, _season VARCHAR)")
     con.executemany(
         "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows)
@@ -67,6 +67,25 @@ def test_baseline_no_moves_projects_warehouse_schedule_per_season():
     assert block(out, "2028-29")["pay_before"] == 30_000_000
     assert block(out, "2029-30")["pay_before"] == 0
     assert all(s["pay_after"] == s["pay_before"] for s in out["seasons"])
+
+
+def test_projection_emits_cap_line_provenance_per_season_and_meta():
+    con = memory_con()
+    try:
+        out = project(con, [])
+    finally:
+        con.close()
+    first = block(out, "2026-27")
+    future = block(out, "2027-28")
+    assert first["cap_lines_exact"] is True
+    assert first["cap_lines_source"]
+    assert future["cap_lines_exact"] is False
+    assert future["cap_lines_source"] == "growth_extrapolation"
+    assert "not an official league figure" in future["cap_lines_approximation_basis"]
+    meta = out["meta"]["cap_lines_by_season"]
+    assert meta["2026-27"]["cap_lines_exact"] is True
+    assert meta["2027-28"]["cap_lines_source"] == "growth_extrapolation"
+    assert meta["2027-28"]["cap_lines_approximation_basis"] == future["cap_lines_approximation_basis"]
 
 
 def test_one_year_signing_affects_only_its_target_season():
@@ -273,6 +292,32 @@ def test_preexisting_dead_money_enters_baseline_with_exact_fixture_figures():
     assert alias == detail
     assert [row["player"] for row in base["players"]] == ["Roster Wing"]
     assert base["roster_before"] == 1
+
+
+@pytest.mark.parametrize("column_name,dead_kind", [
+    ("ROW_KIND", "dead_money"),
+    ("row_kind", "dead_money"),
+    ("ROW_KIND", "DEAD_MONEY"),
+])
+def test_preexisting_dead_money_normalizes_row_kind_degradation(column_name, dead_kind):
+    rows = [
+        salary_row("Roster Player", "TST", 1, 10_000_000, [10_000_000]),
+        salary_row("Dead Player", "TST", 2, 2_000_000, [2_000_000], dead_kind),
+    ]
+    con = memory_dead_con(rows, column_name)
+    try:
+        out = project(con, [])
+    finally:
+        con.close()
+    base = block(out, "2026-27")
+    assert base["roster_payroll"] == 10_000_000
+    assert base["dead_money"] == 2_000_000
+    assert base["pay_before"] == 12_000_000
+    assert base["pay_after"] == 12_000_000
+    assert base["dead_money_detail"] == [
+        {"player": "Dead Player", "salary": 2_000_000, "team": "TST"},
+    ]
+    assert [row["player"] for row in base["players"]] == ["Roster Player"]
 
 
 def test_dead_money_rows_follow_their_own_schedule_length():
