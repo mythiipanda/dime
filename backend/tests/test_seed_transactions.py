@@ -40,7 +40,7 @@ def test_mapper_rows_match_source_count():
     frame = seed.map_transactions(_payload())
     assert frame.height == 4
     assert frame.columns == ["txn_date", "txn_type", "player", "player_id",
-                             "team", "team_id", "detail"]
+                             "team", "team_id", "detail", "group_sort", "additional_sort"]
 
 
 def test_mapper_rejects_payload_without_rows():
