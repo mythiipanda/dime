@@ -1,6 +1,6 @@
 import re
 
-from ...contracts import canonical_team_abbr, is_dead_money_row, normalize_name
+from ...contracts import canonical_team_abbr, normalize_name
 from ...possessions import TEAM_NICKNAMES
 from ..competitive import _resolve_team_abbr
 
@@ -84,13 +84,28 @@ def league_year_for_date(value: object) -> str | None:
     return f"{start}-{str(start + 1)[-2:]}"
 
 
-def _evidence_league_years(season: str | None) -> set[str] | None:
+def _season_start_year(season: object) -> int | None:
     match = re.fullmatch(r"(\d{4})-\d{2}", str(season or ""))
-    if not match:
+    return int(match.group(1)) if match else None
+
+
+def _evidence_league_years(season: str | None) -> set[str] | None:
+    start_year = _season_start_year(season)
+    if start_year is None:
         return None
-    start_year = int(match.group(1))
     return {f"{year}-{str(year + 1)[-2:]}"
             for year in range(start_year - 2, start_year + 1)}
+
+
+def active_two_way_for_season(state: dict | None, season: str | None) -> bool:
+    if not state or not state.get("active_team"):
+        return False
+    formation_year = league_year_for_date(state.get("active_date"))
+    formation_start = _season_start_year(formation_year)
+    target_start = _season_start_year(season)
+    if formation_start is None or target_start is None:
+        return True
+    return 0 <= target_start - formation_start <= 1
 
 
 def _first_present(row: dict, *names: str) -> object:
@@ -151,6 +166,8 @@ def _transaction_two_way_rows(con: object, season: str | None,
 def _link_terminations(state: dict, formation_team: str, formation_date: str) -> None:
     latest: dict[str, dict] = {}
     for waive in state.get("waives") or []:
+        if waive.get("claimed"):
+            continue
         waive_date = str(waive.get("date") or "")
         if formation_date and waive_date and waive_date > formation_date:
             continue
@@ -168,20 +185,67 @@ def _link_terminations(state: dict, formation_team: str, formation_date: str) ->
                 "formation_team": formation_team, "formation_date": formation_date})
 
 
+def _latest_unclaimed_waive(state: dict, date: str) -> dict | None:
+    for waive in reversed(state.get("waives") or []):
+        waive_date = str(waive.get("date") or "")
+        if not waive.get("claimed") and (not date or not waive_date or waive_date <= date):
+            return waive
+    return None
+
+
 def _apply_contract_transaction(state: dict, row: dict) -> None:
     team = _transaction_team_abbr(row.get("team"))
     txn_type = str(row.get("txn_type") or "").lower()
     detail = str(row.get("detail") or "").lower()
     date = str(row.get("txn_date") or "")[:10]
     if txn_type == "waive":
-        state["waives"].append({"team": team, "date": date})
+        contract_kind = ""
+        formation_date = ""
         if state["active_team"] == team:
+            contract_kind = "two_way"
+            formation_date = str(state.get("active_date") or "")
+        elif state["standard_team"] == team:
+            contract_kind = "standard"
+        state["waives"].append({"team": team, "date": date,
+                                "contract_kind": contract_kind,
+                                "formation_date": formation_date})
+        if contract_kind == "two_way":
             state["active_team"] = ""
             state["active_date"] = ""
-            state["two_way_end"] = {"kind": "waive", "team": team, "date": date}
-        if state["standard_team"] == team:
+            state["two_way_end"] = {"kind": "waive", "team": team, "date": date,
+                                    "formation_date": formation_date}
+        if contract_kind == "standard":
             state["standard_team"] = ""
             state["standard_date"] = ""
+        return
+    if txn_type == "trade":
+        if state["active_team"]:
+            state["active_team"] = team
+        if state["standard_team"]:
+            state["standard_team"] = team
+        return
+    if txn_type in {"awardonwaivers", "awardedonwaivers"}:
+        waive = _latest_unclaimed_waive(state, date)
+        if waive is None:
+            return
+        waive["claimed"] = True
+        waive_team = canonical_team_abbr(waive.get("team"))
+        waive_date = str(waive.get("date") or "")
+        state["terminations"] = [item for item in state.get("terminations") or []
+                                 if not (canonical_team_abbr(item.get("team")) == waive_team
+                                         and str(item.get("waive_date") or "") == waive_date)]
+        if waive.get("contract_kind") == "two_way":
+            state["active_team"] = team
+            state["active_date"] = str(waive.get("formation_date") or "") or date
+            state["standard_team"] = ""
+            state["standard_date"] = ""
+            state["two_way_end"] = None
+        elif waive.get("contract_kind") == "standard":
+            state["active_team"] = ""
+            state["active_date"] = ""
+            state["standard_team"] = team
+            state["standard_date"] = date
+            state["two_way_end"] = None
         return
     if "to a two-way contract" in detail:
         _link_terminations(state, team, date)
@@ -274,14 +338,27 @@ def terminated_contract_fact(state: dict | None, row_team: str) -> dict | None:
                                         str(item.get("formation_date") or "")))
 
 
-def _inferred_dead_amount(row: dict, state: dict | None, row_team: str,
-                          season: str | None) -> int | None:
+def _dead_fact_for_inference(state: dict | None, row_team: str) -> dict | None:
     fact = terminated_contract_fact(state, row_team)
     if fact is None:
         return None
     if canonical_team_abbr(row_team) == canonical_team_abbr(fact.get("formation_team")):
         return None
-    return _deterministic_dead_amount(row, season)
+    return fact
+
+
+def _dead_amount_unknown(row: dict, season: str | None) -> bool:
+    try:
+        salary = int(row.get("salary") or 0)
+    except (TypeError, ValueError):
+        return False
+    if salary <= 0:
+        return False
+    try:
+        guaranteed = int(row.get("GUARANTEED"))
+    except (TypeError, ValueError):
+        return True
+    return guaranteed < salary or _has_positive_future_salary(row, season)
 
 
 def _case_insensitive_value(row: dict, name: str) -> object:
@@ -291,37 +368,51 @@ def _case_insensitive_value(row: dict, name: str) -> object:
     return None
 
 
+def explicit_row_kind(row: dict) -> str | None:
+    value = str(_case_insensitive_value(row, "row_kind") or "").strip().lower().replace("-", "_")
+    return value if value in {"roster", "two_way", "dead_money"} else None
+
+
 def explicit_two_way_record(row: dict) -> bool:
-    row_kind = str(_case_insensitive_value(row, "row_kind") or "").lower().replace("-", "_")
+    row_kind = explicit_row_kind(row)
+    if row_kind is not None:
+        return row_kind == "two_way"
     contract_type = str(_case_insensitive_value(row, "contract_type") or "").lower().replace("-", "_")
-    return row_kind == "two_way" or contract_type == "two_way"
+    return contract_type == "two_way"
 
 
 def explicit_dead_money_record(row: dict) -> bool:
-    return is_dead_money_row(row)
+    return explicit_row_kind(row) == "dead_money"
 
 
 def inferred_dead_entry(row: dict, state: dict | None, row_team: str,
                         season: str | None) -> dict | None:
-    amount = _inferred_dead_amount(row, state, row_team, season)
-    if amount is None:
+    if _dead_fact_for_inference(state, row_team) is None:
         return None
-    return {"player": row.get('PLAYER_NAME'), "salary": amount, "team": row_team,
-            "row_kind": "dead_money",
-            "basis": "waived_standard_contract_before_two_way"}
+    amount = _deterministic_dead_amount(row, season)
+    if amount is not None:
+        return {"player": row.get('PLAYER_NAME'), "salary": amount, "team": row_team,
+                "row_kind": "dead_money",
+                "basis": "waived_standard_contract_before_two_way"}
+    if _dead_amount_unknown(row, season):
+        return {"player": row.get('PLAYER_NAME'), "salary": None, "team": row_team,
+                "row_kind": "dead_money",
+                "basis": "waived_standard_contract_before_two_way_protection_unknown",
+                "amount_unknown": True}
+    return None
 
 
 def salary_row_cap_status(row: dict, state: dict | None, row_team: str,
                           season: str | None) -> dict:
     explicit = explicit_two_way_record(row)
     explicit_dead = explicit_dead_money_record(row)
-    active = bool(state and state.get("active_team"))
-    terminated = terminated_contract_fact(state, row_team) is not None
-    no_standard = bool(state and state.get("two_way_end")
-                       and not state.get("standard_team"))
+    reconstruct = explicit_row_kind(row) is None and not explicit
+    active = reconstruct and active_two_way_for_season(state, season)
+    terminated = reconstruct and terminated_contract_fact(state, row_team) is not None
+    no_standard = reconstruct and bool(state and state.get("two_way_end")
+                                       and not state.get("standard_team"))
     counts = not (explicit or explicit_dead or active or terminated or no_standard)
-    dead_entry = (None if explicit_dead else
-                  inferred_dead_entry(row, state, row_team, season))
+    dead_entry = inferred_dead_entry(row, state, row_team, season) if reconstruct else None
     return {"explicit_two_way": explicit,
             "explicit_dead_money": explicit_dead,
             "active_two_way": active,
@@ -340,13 +431,21 @@ def dead_key(row: dict) -> tuple[str, str, int]:
             canonical_team_abbr(row.get("team")), salary)
 
 
+def dead_identity(row: dict) -> tuple[str, str]:
+    return (normalize_name(row.get("player") or ""),
+            canonical_team_abbr(row.get("team")))
+
+
 def merge_dead_rows(explicit: list[dict], inferred: list[dict],
                     team_code: str) -> list[dict]:
     dead = list(explicit)
+    explicit_identities = {dead_identity(row) for row in dead}
     seen = {dead_key(row) for row in dead}
     for row in inferred:
         key = dead_key(row)
-        if canonical_team_abbr(row.get("team")) == team_code and key not in seen:
+        identity = dead_identity(row)
+        if (canonical_team_abbr(row.get("team")) == team_code
+                and identity not in explicit_identities and key not in seen):
             dead.append(row)
             seen.add(key)
     return dead

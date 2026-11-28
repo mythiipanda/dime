@@ -52,7 +52,7 @@ warehouse metadata columns `_source`, `_season`, `_fetched_at`, and `_entity`:
 | Column | Polars type as written | Meaning |
 | --- | --- | --- |
 | `txn_date` | `String` | First ten characters (`YYYY-MM-DD`) of `TRANSACTION_DATE`. |
-| `txn_type` | `String` | Source `Transaction_Type`, such as `Signing`, `Waive`, `Trade`, `ContractConverted`, or `AwardedOnWaivers`. |
+| `txn_type` | `String` | Source `Transaction_Type`, such as `Signing`, `Waive`, `Trade`, `ContractConverted`, or `AwardOnWaivers`. |
 | `player` | `String` | Source `PLAYER_SLUG`. It is a slug, not display-name text. |
 | `player_id` | `Float64` | Source `PLAYER_ID`. Values are integral in the feed but are currently stored in the feed-native floating representation for compatibility with existing warehouses. |
 | `team` | `String` | Source `TEAM_SLUG`. |
@@ -90,7 +90,10 @@ for continuing two-way contracts. The additional preceding year captures a
 waiver immediately before an early-July formation, such as a June standard-contract
 waiver followed by a July two-way signing. Older rows are outside the
 plausibly active formation window and are not used for this reconstruction.
-The window is a compatibility bound, not a claim that old dead money expires;
+Reconstructed active two-way state may cover the formation league year and the
+following league year at most; it must not exclude standard salary in a third
+league year unless explicit current annotation says the row is two-way. The
+window is a compatibility bound, not a claim that old dead money expires;
 exact multi-year dead money requires explicit dead-money rows.
 
 ## Same-date transaction ordering
@@ -132,8 +135,20 @@ Use case-insensitive detail parsing:
 - a waive of the active two-way team ends active two-way state. After that
   waiver, and before any later standard signing or conversion, the player is on
   no team's standard roster;
+- a `Trade` row transfers the current active two-way or standard-contract state
+  to the transaction team. In the movement feed, a player row's team is the
+  receiving team;
+- an `AwardOnWaivers` row claims the most recent unclaimed waive. The claimed
+  contract continues with the claiming team, so a known two-way state resumes
+  as two-way and a known standard state resumes as standard. A claimed waive is
+  not terminated-contract evidence;
 - preserve every waive event, even when the waived contract was not itself a
   two-way contract, because it is needed to connect later dead-money rows.
+
+When the waived contract's type is outside reconstruction coverage, an
+`AwardOnWaivers` row still blocks terminated-contract inference for that waive,
+but the evaluator cannot know which contract type continues. That boundary
+requires explicit row annotation rather than a confident reconstruction.
 
 Resolve transaction team slugs through the canonical team mapping, including
 nicknames such as `sixers` and `blazers`.
@@ -182,9 +197,12 @@ synthetic key only if it is stable across reseeds; otherwise contract identity
 is unavailable and must be disclosed rather than invented. This is why exact
 coexistence cannot be reconstructed for every legacy row.
 
-The evaluator honors explicit `ROW_KIND='two_way'` and
-`CONTRACT_TYPE='two_way'` once seeding is correct. Transaction reconstruction
-is only a compatibility fallback for incompletely annotated warehouses.
+Explicit `ROW_KIND` is authoritative for the row's cap-ledger role: `roster`
+counts as roster payroll, `two_way` is excluded as two-way compensation, and
+`dead_money` counts as dead salary. `CONTRACT_TYPE='two_way'` is exclusion
+evidence only when `ROW_KIND` is absent or undeclared. Transaction
+reconstruction is only a compatibility fallback for those incompletely
+annotated rows; it must not override an explicit row kind.
 
 ## Clayton end state
 
@@ -255,9 +273,15 @@ or exclude option years depending on source semantics.
 
 The evaluator-side compatibility path:
 
-- honors explicit `ROW_KIND='two_way'` and `CONTRACT_TYPE='two_way'`;
+- treats explicit `ROW_KIND` as authoritative and uses `CONTRACT_TYPE='two_way'`
+  only when the row kind is absent or undeclared;
 - reconstructs active, ended, and converted two-way state from transaction
   details and the `silver_contracts.TWO_WAY` fallback;
+- bounds reconstructed active two-way state to the maximum two-league-year term
+  unless explicit current annotation exists;
+- transfers reconstructed contract state on `Trade` rows and honors
+  `AwardOnWaivers` as continuation with the claiming team when the waived
+  contract type is known;
 - maps transaction dates to cap league years rather than trusting the storage
   `_season` partition;
 - uses `group_sort`/`additional_sort` when present and a documented deterministic
@@ -266,21 +290,27 @@ The evaluator-side compatibility path:
   payroll, cap-sheet, and cap-projection baselines;
 - recognizes conversion back `to an NBA Contract` as standard-contract treatment;
 - preserves terminated-contract evidence after a later two-way waiver or
-  conversion;
+  conversion, except when the underlying waive was claimed;
 - recognizes the Clayton pattern when a player was waived by the salary-row team
   before signing a two-way contract elsewhere.
 
 The dead-money inference is deliberately narrow. It infers the current salary as
-Memphis-style dead money only when the warehouse shows a preceding waive by that
-row team, the row team differs from the two-way formation team, the row has no
-positive future-season salary, and `GUARANTEED` covers at least the full current
-salary. The different-team requirement avoids treating an indistinguishable
-same-team current two-way row as its own terminated standard row; same-team
-cases need explicit contract identity and are currently unavailable. The
-inference does not fabricate partial-protection, multi-year, buyout, stretch or
-set-off allocations that the warehouse cannot currently represent. Those cases
-remain undercounted until the seeder writes explicit dead-money rows with the
-fields above.
+Memphis-style dead money only when the warehouse shows a preceding unclaimed
+waive by that row team, the row team differs from the two-way formation team,
+the row has no positive future-season salary, and `GUARANTEED` covers at least
+the full current salary. The different-team requirement avoids treating an
+indistinguishable same-team current two-way row as its own terminated standard
+row; same-team cases need explicit contract identity and are currently
+unavailable. An explicit dead-money row for the same normalized player and team
+suppresses inference regardless of whether the amounts agree.
+
+When terminated-contract evidence exists but protection is partial, missing, or
+cannot be allocated because positive future salary remains, the evaluator emits
+a dead-money detail row with null salary, `amount_unknown=true`, and a
+protection-unknown basis. Numeric payroll totals do not fabricate that amount,
+and dead-money component availability is false for the affected cap-sheet
+season. Those cases remain unquantified until the seeder writes explicit
+dead-money rows with the fields above.
 
 Continuing two-way players can still be missed when all of the following are
 true: the formation is older than the bounded reconstruction window,
@@ -315,3 +345,14 @@ Minimum seeder/evaluator regression cases:
     salary.
 11. Waived standard contract followed by a two-way contract elsewhere: original
     team keeps dead money, new team's two-way salary is excluded.
+12. Explicit `ROW_KIND='roster'` remains roster payroll even when reconstruction
+    finds durable termination evidence for the same player.
+13. A two-way formation two or more league years before the salary season does
+    not exclude a current standard row without explicit current annotation.
+14. Partial protection or positive unallocated future salary produces a null-
+    amount `amount_unknown` dead-money detail rather than silent omission.
+15. An explicit corrected dead-money row suppresses inferred dead money for the
+    same player and team even when the explicit and inferred amounts differ.
+16. A traded two-way contract follows the receiving team, a subsequent waive by
+    that team ends it, and a waiver claim continues the contract with the
+    claiming team rather than creating terminated-contract evidence.

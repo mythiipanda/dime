@@ -128,17 +128,18 @@ def _dead_money_schedules(con, team: str) -> list[dict[str, Any]]:
 def _inferred_dead_schedules(schedules: dict[str, dict[str, Any]], team: str) -> list[dict[str, Any]]:
     team_code = canonical_team_abbr(team)
     rows: list[dict[str, Any]] = []
-    seen: set[tuple[str, int]] = set()
+    seen: set[tuple[str, int | None]] = set()
     for entry in schedules.values():
         dead = (entry.get("cap_status") or {}).get("dead_entry")
         if not dead or canonical_team_abbr(dead.get("team")) != team_code:
             continue
+        unknown = bool(dead.get("amount_unknown"))
         try:
-            amount = int(dead.get("salary") or 0)
+            amount = None if unknown else int(dead.get("salary") or 0)
         except (TypeError, ValueError):
             continue
         key = (str(dead.get("player") or "").lower(), amount)
-        if amount <= 0 or key in seen:
+        if (not unknown and (amount or 0) <= 0) or key in seen:
             continue
         seen.add(key)
         rows.append({"player": str(dead.get("player") or entry["player"]),
@@ -146,6 +147,7 @@ def _inferred_dead_schedules(schedules: dict[str, dict[str, Any]], team: str) ->
                      "salary_by_season": {str(entry.get("evidence_season")): amount},
                      "row_kind": "dead_money",
                      "basis": dead.get("basis"),
+                     "amount_unknown": unknown,
                      "inferred": True})
     return rows
 
@@ -176,12 +178,17 @@ def _team_baseline(con, team: str, schedules: dict[str, dict[str, Any]], seasons
                 explicit_candidates.append({"player": entry["player"], "salary": int(salary),
                                             "team": entry["team"]})
         for entry in inferred_dead:
-            salary = entry["salary_by_season"].get(season)
-            if salary:
-                inferred_candidates.append({"player": entry["player"], "salary": int(salary),
-                                            "team": entry["team"],
-                                            "row_kind": "dead_money",
-                                            "basis": entry.get("basis")})
+            if season not in entry["salary_by_season"]:
+                continue
+            salary = entry["salary_by_season"][season]
+            item = {"player": entry["player"],
+                    "salary": int(salary) if salary is not None else None,
+                    "team": entry["team"],
+                    "row_kind": "dead_money",
+                    "basis": entry.get("basis")}
+            if entry.get("amount_unknown"):
+                item["amount_unknown"] = True
+            inferred_candidates.append(item)
         dead_detail = merge_dead_rows(explicit_candidates, inferred_candidates, team_code)
         dead_total = sum(int(row.get("salary") or 0) for row in dead_detail)
         dead_detail.sort(key=lambda row: -int(row.get("salary") or 0))
@@ -669,7 +676,7 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "dead_money_detail": list(base.get("dead_money_detail") or []),
             **({"dead_money_players": [{"player": p["player"], "salary": p["salary"]}
                                        for p in base.get("dead_money_detail", [])]}
-               if base.get("dead_money") else {}),
+               if base.get("dead_money_detail") else {}),
             "cap_room": lines["cap"] - pay_after,
             "state": state,
             "lines": lines,

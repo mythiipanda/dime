@@ -1,4 +1,5 @@
 import duckdb
+import pytest
 
 from shared.tools.league.cap_projection import project_cap_scenario
 from shared.tools.league.cap_sheet import cap_sheet_rows
@@ -27,7 +28,7 @@ def _clayton_warehouse(con):
         "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
         [
             ("Walter Clayton", "MEM", 1642383, 4_190_520, 4_190_520,
-             4_190_520, None, "2026-27", "roster"),
+             4_190_520, None, "2026-27", None),
             ("Standard Mav", "DAL", 900001, 10_000_000, 10_000_000,
              10_000_000, None, "2026-27", "roster"),
             ("Standard Grizzly", "MEM", 900002, 20_000_000, 20_000_000,
@@ -133,7 +134,7 @@ def test_contracts_two_way_flag_is_used_when_transaction_coverage_is_absent():
             "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
             [
                 ("Flagged Two Way", "SAC", 810001, 559_782, 559_782,
-                 50_000, None, "2026-27", "roster"),
+                 50_000, None, "2026-27", None),
                 ("Standard King", "SAC", 810002, 8_000_000, 8_000_000,
                  8_000_000, None, "2026-27", "roster"),
             ])
@@ -170,7 +171,7 @@ def _single_two_way_salary(con, name="Offseason Two Way", salary=678_882):
         "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
         [
             (name, "DAL", 820001, salary, salary, 91_000,
-             None, "2026-27", "roster"),
+             None, "2026-27", None),
             ("Standard Mav", "DAL", 820002, 10_000_000, 10_000_000,
              10_000_000, None, "2026-27", "roster"),
         ])
@@ -299,7 +300,7 @@ def test_same_date_ordering_is_deterministic_without_ordering_columns():
         con.execute(
             "INSERT INTO silver_salaries VALUES "
             "('Duane Washington Jr', 'NYK', 1630613, 1000000, 1000000, "
-            "1000000, NULL, '2026-27', 'roster')")
+            "1000000, NULL, '2026-27', NULL)")
         _transaction_table(con)
         con.executemany("INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)", rows)
         return con
@@ -492,3 +493,221 @@ def test_team_absent_from_salary_rows_falls_back_to_cap_players():
         assert dead == []
     finally:
         con.close()
+
+
+def test_explicit_roster_annotation_is_authoritative_after_two_way_termination():
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Resigned Wing", "MEM", 910001, 5_000_000, 5_000_000,
+                 5_000_000, None, "2026-27", "roster"),
+                ("Standard Grizzly", "MEM", 910002, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        con.executemany(
+            "INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)",
+            [
+                ("2026-10-19", "Waive", "resigned-wing", 910001,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies waived forward Resigned Wing.", "2026-27"),
+                ("2026-10-21", "Signing", "resigned-wing", 910001,
+                 "mavericks", 1610612742,
+                 "Dallas Mavericks signed forward Resigned Wing to a Two-Way Contract.",
+                 "2026-27"),
+                ("2026-11-05", "Waive", "resigned-wing", 910001,
+                 "mavericks", 1610612742,
+                 "Dallas Mavericks waived forward Resigned Wing.", "2026-27"),
+                ("2026-11-10", "Signing", "resigned-wing", 910001,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies signed forward Resigned Wing.", "2026-27"),
+            ])
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+        base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+        assert total == 15_000_000
+        assert [row["player"] for row in roster] == ["Resigned Wing", "Standard Grizzly"]
+        assert dead == []
+        assert sheet["totals"]["2026-27"]["roster_payroll"] == 15_000_000
+        assert sheet["totals"]["2026-27"]["dead_money"] == 0
+        assert base["roster_payroll"] == 15_000_000
+        assert base["dead_money"] == 0
+    finally:
+        con.close()
+
+
+def test_two_way_formed_two_seasons_before_target_does_not_exclude_standard_row():
+    con = duckdb.connect()
+    try:
+        _single_two_way_salary(con, "Expired Two Way")
+        _transaction_table(con)
+        con.execute(
+            "INSERT INTO silver_transactions VALUES "
+            "('2024-08-15', 'Signing', 'expired-two-way', 820001, "
+            "'mavericks', 1610612742, "
+            "'Dallas Mavericks signed forward Expired Two Way to a Two-Way Contract.', "
+            "'2024-25')")
+        total, roster, dead = _payroll("DAL", con, "2026-27")
+        assert total == 10_678_882
+        assert {row["player"] for row in roster} == {"Expired Two Way", "Standard Mav"}
+        assert dead == []
+    finally:
+        con.close()
+
+
+@pytest.mark.parametrize("guaranteed,future", [(3_000_000, None), (8_000_000, 5_000_000)])
+def test_terminated_row_with_unallocated_protection_is_disclosed_unknown(guaranteed, future):
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Protection Unknown", "MEM", 930001, 5_000_000, 5_000_000,
+                 guaranteed, future, "2026-27", None),
+                ("Standard Grizzly", "MEM", 930002, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        con.executemany(
+            "INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)",
+            [
+                ("2026-10-19", "Waive", "protection-unknown", 930001,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies waived forward Protection Unknown.", "2026-27"),
+                ("2026-10-21", "Signing", "protection-unknown", 930001,
+                 "mavericks", 1610612742,
+                 "Dallas Mavericks signed forward Protection Unknown to a Two-Way Contract.",
+                 "2026-27"),
+            ])
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+        base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+        expected = {"player": "Protection Unknown", "salary": None, "team": "MEM",
+                    "row_kind": "dead_money",
+                    "basis": "waived_standard_contract_before_two_way_protection_unknown",
+                    "amount_unknown": True}
+        assert total == 10_000_000
+        assert [row["player"] for row in roster] == ["Standard Grizzly"]
+        assert dead == [expected]
+        assert sheet["totals"]["2026-27"]["dead_money_detail"] == [expected]
+        assert sheet["totals"]["2026-27"]["component_availability"]["dead_money"] is False
+        assert base["dead_money_detail"] == [expected]
+        assert base["dead_money"] == 0
+    finally:
+        con.close()
+
+
+def test_explicit_dead_row_suppresses_inference_for_player_team_regardless_of_amount():
+    con = duckdb.connect()
+    try:
+        _salary_table(con)
+        con.executemany(
+            "INSERT INTO silver_salaries VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                ("Corrected Dead", "MEM", 940001, 3_000_000, 3_000_000,
+                 3_000_000, None, "2026-27", "dead_money"),
+                ("Corrected Dead", "MEM", 940001, 4_000_000, 4_000_000,
+                 4_000_000, None, "2026-27", None),
+                ("Standard Grizzly", "MEM", 940002, 10_000_000, 10_000_000,
+                 10_000_000, None, "2026-27", "roster"),
+            ])
+        _transaction_table(con)
+        con.executemany(
+            "INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)",
+            [
+                ("2026-10-19", "Waive", "corrected-dead", 940001,
+                 "grizzlies", 1610612763,
+                 "Memphis Grizzlies waived forward Corrected Dead.", "2026-27"),
+                ("2026-10-21", "Signing", "corrected-dead", 940001,
+                 "mavericks", 1610612742,
+                 "Dallas Mavericks signed forward Corrected Dead to a Two-Way Contract.",
+                 "2026-27"),
+            ])
+        total, roster, dead = _payroll("MEM", con, "2026-27")
+        sheet = cap_sheet_rows(con, "MEM", "2026-27")
+        projection = project_cap_scenario(
+            con, {"team": "MEM", "season": "2026-27", "moves": []})
+        base = next(row for row in projection["seasons"] if row["season"] == "2026-27")
+        expected = [{"player": "Corrected Dead", "salary": 3_000_000, "team": "MEM"}]
+        assert total == 13_000_000
+        assert [row["player"] for row in roster] == ["Standard Grizzly"]
+        assert dead == expected
+        assert sheet["totals"]["2026-27"]["dead_money_detail"] == expected
+        assert base["dead_money_detail"] == expected
+    finally:
+        con.close()
+
+
+def _movement_state(rows, player, player_id):
+    con = duckdb.connect()
+    try:
+        _transaction_table(con)
+        con.executemany("INSERT INTO silver_transactions VALUES (?,?,?,?,?,?,?,?)", rows)
+        states = two_way_states(con, "2026-27", {"silver_transactions"})
+        return two_way_state_for_record(states, player, player_id)
+    finally:
+        con.close()
+
+
+def test_trade_transfers_active_two_way_so_new_team_waive_ends_it():
+    state = _movement_state([
+        ("2026-10-01", "Signing", "traded-two-way", 950001,
+         "mavericks", 1610612742,
+         "Dallas Mavericks signed guard Traded Two Way to a Two-Way Contract.", "2026-27"),
+        ("2026-11-01", "Trade", "traded-two-way", 950001,
+         "celtics", 1610612738,
+         "Boston Celtics received guard Traded Two Way from Dallas Mavericks.", "2026-27"),
+        ("2026-11-05", "Waive", "traded-two-way", 950001,
+         "celtics", 1610612738,
+         "Boston Celtics waived guard Traded Two Way.", "2026-27"),
+    ], "Traded Two Way", 950001)
+    assert state["active_team"] == ""
+    assert state["two_way_end"]["kind"] == "waive"
+    assert state["two_way_end"]["team"] == "BOS"
+
+
+def test_waiver_claim_transfers_active_two_way_to_claiming_team():
+    state = _movement_state([
+        ("2026-10-01", "Signing", "claimed-two-way", 950002,
+         "mavericks", 1610612742,
+         "Dallas Mavericks signed guard Claimed Two Way to a Two-Way Contract.", "2026-27"),
+        ("2026-11-01", "Waive", "claimed-two-way", 950002,
+         "mavericks", 1610612742,
+         "Dallas Mavericks waived guard Claimed Two Way.", "2026-27"),
+        ("2026-11-03", "AwardOnWaivers", "claimed-two-way", 950002,
+         "celtics", 1610612738,
+         "Boston Celtics claimed guard Claimed Two Way off waivers.", "2026-27"),
+    ], "Claimed Two Way", 950002)
+    assert state["active_team"] == "BOS"
+    assert state["active_date"] == "2026-10-01"
+    assert state["two_way_end"] is None
+    assert state["waives"][0]["claimed"] is True
+
+
+def test_standard_waiver_claim_transfers_standard_state_and_blocks_dead_evidence():
+    state = _movement_state([
+        ("2026-07-01", "Signing", "claimed-standard", 950003,
+         "grizzlies", 1610612763,
+         "Memphis Grizzlies signed forward Claimed Standard.", "2026-27"),
+        ("2026-10-19", "Waive", "claimed-standard", 950003,
+         "grizzlies", 1610612763,
+         "Memphis Grizzlies waived forward Claimed Standard.", "2026-27"),
+        ("2026-10-21", "AwardOnWaivers", "claimed-standard", 950003,
+         "celtics", 1610612738,
+         "Boston Celtics claimed forward Claimed Standard off waivers.", "2026-27"),
+        ("2026-11-01", "Signing", "claimed-standard", 950003,
+         "mavericks", 1610612742,
+         "Dallas Mavericks signed forward Claimed Standard to a Two-Way Contract.", "2026-27"),
+    ], "Claimed Standard", 950003)
+    assert state["active_team"] == "DAL"
+    assert state["standard_team"] == ""
+    assert state["terminations"] == []
+    assert state["waives"][0]["claimed"] is True

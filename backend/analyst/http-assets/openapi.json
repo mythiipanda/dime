@@ -1322,7 +1322,16 @@
                                   "type": "string"
                                 },
                                 "salary": {
-                                  "type": "number"
+                                  "type": ["number", "null"]
+                                },
+                                "row_kind": {
+                                  "type": "string"
+                                },
+                                "basis": {
+                                  "type": "string"
+                                },
+                                "amount_unknown": {
+                                  "type": "boolean"
                                 }
                               },
                               "additionalProperties": false
@@ -1378,7 +1387,16 @@
                             "type": "string"
                           },
                           "salary": {
-                            "type": "number"
+                            "type": ["number", "null"]
+                          },
+                          "row_kind": {
+                            "type": "string"
+                          },
+                          "basis": {
+                            "type": "string"
+                          },
+                          "amount_unknown": {
+                            "type": "boolean"
                           }
                         },
                         "additionalProperties": false
@@ -1531,7 +1549,7 @@
                               "type": "object",
                               "properties": {
                                 "player": { "type": "string" },
-                                "salary": { "type": "integer" },
+                                "salary": { "type": ["integer", "null"] },
                                 "team": { "type": "string" }
                               },
                               "additionalProperties": true
@@ -1543,7 +1561,7 @@
                               "type": "object",
                               "properties": {
                                 "player": { "type": "string" },
-                                "salary": { "type": "integer" }
+                                "salary": { "type": ["integer", "null"] }
                               },
                               "additionalProperties": true
                             }

@@ -391,4 +391,11 @@ def test_projection_openapi_documents_dead_money_decomposition():
     for key in ("pay_before", "pay_after", "roster_payroll", "dead_money",
                 "dead_money_detail", "dead_money_players"):
         assert key in properties
+    detail_item = properties["dead_money_detail"]["items"]
+    assert detail_item["properties"]["salary"]["type"] == ["integer", "null"]
     assert item["additionalProperties"] is True
+
+    sheet_item = spec["paths"]["/api/cap/sheet"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["properties"]["totals"]["additionalProperties"]["properties"]["dead_money_detail"]["items"]
+    assert sheet_item["properties"]["salary"]["type"] == ["number", "null"]
+    assert sheet_item["properties"]["amount_unknown"]["type"] == "boolean"
+    assert sheet_item["additionalProperties"] is False

@@ -282,15 +282,18 @@ def _dead_money_components(con, team: str, seasons: list[str],
             continue
         rows = []
         for row in dead:
-            if row.get("salary") is None:
+            if row.get("salary") is None and not row.get("amount_unknown"):
                 continue
             item = {"player": str(row.get("player") or ""),
                     "team": str(row.get("team") or team).upper(),
-                    "salary": int(row.get("salary") or 0)}
+                    "salary": (int(row.get("salary") or 0)
+                               if row.get("salary") is not None else None)}
             if row.get("row_kind") or row.get("ROW_KIND"):
                 item["row_kind"] = "dead_money"
             if row.get("basis"):
                 item["basis"] = row.get("basis")
+            if row.get("amount_unknown"):
+                item["amount_unknown"] = True
             rows.append(item)
         if inferred and label == current_season:
             rows = merge_dead_rows(rows, inferred, team_code)
@@ -339,6 +342,7 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
         base = sheet["totals"].get(label, {"committed": 0, "pending_option": 0})
         detail = dead_details.get(label, [])
         dead_total = sum(int(row.get("salary") or 0) for row in detail)
+        dead_unknown = any(row.get("amount_unknown") for row in detail)
         roster_payroll = int(base["committed"])
         totals[label] = {"committed": roster_payroll + dead_total,
                          "roster_payroll": roster_payroll,
@@ -351,7 +355,8 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                              "committed": True,
                              "roster_payroll": row_kinds_declared,
                              "pending_option": True,
-                             "dead_money": row_kinds_declared and label in dead_available,
+                             "dead_money": (row_kinds_declared and label in dead_available
+                                            and not dead_unknown),
                              "cap_holds": False,
                              "incomplete_roster_charges": False,
                          }}
