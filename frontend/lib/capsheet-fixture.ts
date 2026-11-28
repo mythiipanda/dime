@@ -20,6 +20,12 @@ export type CapLines = {
   projected: boolean;
 };
 
+export type CapMoneyDetail = {
+  player: string;
+  team: string;
+  salary: number;
+};
+
 export type CapSheetResponse = {
   ok: boolean;
   team: string;
@@ -28,12 +34,24 @@ export type CapSheetResponse = {
   players: CapPlayer[];
   totals: Record<string, {
     committed: number;
+    roster_payroll: number;
     pending_option: number;
     dead_money: number;
+    dead_money_detail: CapMoneyDetail[];
     cap_holds: number;
     incomplete_roster_charges: number;
     payroll: number;
+    component_availability?: {
+      committed?: boolean;
+      roster_payroll?: boolean;
+      pending_option?: boolean;
+      dead_money?: boolean;
+      cap_holds?: boolean;
+      incomplete_roster_charges?: boolean;
+    };
   }>;
+  dead_money_detail?: CapMoneyDetail[];
+  dead_money_unit?: string;
   state: {
     over_tax: boolean;
     over_apron1: boolean;
@@ -194,18 +212,41 @@ export const capSheetFixture: CapSheetResponse = {
     player("Neemias Queta", 1629674, "Minimum", 2524525, [null, "team", null, null, null, null]),
   ],
   totals: Object.fromEntries(
-    SEASONS.map((season, i) => [
-      season,
-      {
-        committed: 198000000 + i * 8400000,
-        pending_option: i >= 2 ? 62786682 : 0,
-        dead_money: i === 0 ? 0 : 0,
-        cap_holds: i === 1 ? 4100000 : 0,
-        incomplete_roster_charges: 0,
-        payroll: 198000000 + i * 8400000,
-      },
-    ]),
+    SEASONS.map((season, i) => {
+      const rosterPayroll = 189337323 + i * 8400000;
+      const deadMoney = [8662677, 7660317, 1002360, 0, 0, 0][i];
+      const deadDetail = deadMoney > 0
+        ? [{ player: "Dead-money example", team: "BOS", salary: deadMoney }]
+        : [];
+      const committed = rosterPayroll + deadMoney;
+      const capHolds = i === 1 ? 4100000 : 0;
+      const rosterCharges = i === 1 ? 1234567 : 0;
+      const capRoomCovered = i === 1;
+      return [
+        season,
+        {
+          committed,
+          roster_payroll: rosterPayroll,
+          pending_option: i === 1 ? 2726487 : i >= 2 ? 62786682 : 0,
+          dead_money: deadMoney,
+          dead_money_detail: deadDetail,
+          cap_holds: capHolds,
+          incomplete_roster_charges: rosterCharges,
+          payroll: committed + capHolds + rosterCharges,
+          component_availability: {
+            committed: true,
+            roster_payroll: true,
+            pending_option: true,
+            dead_money: true,
+            cap_holds: capRoomCovered,
+            incomplete_roster_charges: capRoomCovered,
+          },
+        },
+      ];
+    }),
   ),
+  dead_money_detail: [{ player: "Dead-money example", team: "BOS", salary: 8662677 }],
+  dead_money_unit: "usd_dollars",
   state: { over_tax: true, over_apron1: false, over_apron2: false, room_under_apron2: 23686000 },
   meta: { source: "basketball-reference contracts", salary_date: "2026-11-20", season: "2026-27" },
 };

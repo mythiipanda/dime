@@ -1188,6 +1188,247 @@
         }
       }
     },
+    "/api/cap/sheet": {
+      "get": {
+        "tags": [
+          "cap"
+        ],
+        "operationId": "cap_sheet_rows",
+        "summary": "Read a team's cap sheet with labeled payroll components",
+        "parameters": [
+          {
+            "name": "team",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 12
+            }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "2026-27"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cap sheet rows. Dead-money rows are labeled payroll components rather than roster players. Committed salary is roster payroll plus dead money; payroll adds cap holds and incomplete-roster charges. component_availability distinguishes an unavailable component from a true zero.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok",
+                    "team",
+                    "season",
+                    "players",
+                    "totals"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "team": {
+                      "type": "string"
+                    },
+                    "season": {
+                      "type": "string"
+                    },
+                    "lines": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "cap": {
+                            "type": "number"
+                          },
+                          "tax": {
+                            "type": "number"
+                          },
+                          "apron1": {
+                            "type": "number"
+                          },
+                          "apron2": {
+                            "type": "number"
+                          },
+                          "projected": {
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    },
+                    "lines_projected": {
+                      "type": "boolean"
+                    },
+                    "players": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "totals": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "committed",
+                          "roster_payroll",
+                          "pending_option",
+                          "dead_money",
+                          "dead_money_detail",
+                          "cap_holds",
+                          "incomplete_roster_charges",
+                          "payroll",
+                          "component_availability"
+                        ],
+                        "properties": {
+                          "committed": {
+                            "type": "number",
+                            "description": "Roster payroll plus dead money in US dollars."
+                          },
+                          "roster_payroll": {
+                            "type": "number",
+                            "description": "Roster-player salary in US dollars. Check component_availability.roster_payroll before treating it as a declared decomposition."
+                          },
+                          "pending_option": {
+                            "type": "number"
+                          },
+                          "dead_money": {
+                            "type": "number",
+                            "description": "Dead-money salary in US dollars."
+                          },
+                          "dead_money_detail": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "player",
+                                "team",
+                                "salary"
+                              ],
+                              "properties": {
+                                "player": {
+                                  "type": "string"
+                                },
+                                "team": {
+                                  "type": "string"
+                                },
+                                "salary": {
+                                  "type": "number"
+                                }
+                              },
+                              "additionalProperties": false
+                            }
+                          },
+                          "cap_holds": {
+                            "type": "number"
+                          },
+                          "incomplete_roster_charges": {
+                            "type": "number"
+                          },
+                          "payroll": {
+                            "type": "number",
+                            "description": "Committed salary plus declared cap holds and incomplete-roster charges in US dollars."
+                          },
+                          "component_availability": {
+                            "type": "object",
+                            "properties": {
+                              "committed": {
+                                "type": "boolean"
+                              },
+                              "roster_payroll": {
+                                "type": "boolean"
+                              },
+                              "pending_option": {
+                                "type": "boolean"
+                              },
+                              "dead_money": {
+                                "type": "boolean"
+                              },
+                              "cap_holds": {
+                                "type": "boolean"
+                              },
+                              "incomplete_roster_charges": {
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "dead_money_detail": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "player": {
+                            "type": "string"
+                          },
+                          "team": {
+                            "type": "string"
+                          },
+                          "salary": {
+                            "type": "number"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "dead_money_unit": {
+                      "type": "string",
+                      "enum": [
+                        "usd_dollars"
+                      ]
+                    },
+                    "cap_hold_details": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "cap_hold_money_unit": {
+                      "type": "string",
+                      "enum": [
+                        "usd_dollars"
+                      ]
+                    },
+                    "state": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "meta": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Missing team, unavailable salary data, or domain error"
+          }
+        }
+      }
+    },
     "/api/cap/projection": {
       "post": {
         "tags": [

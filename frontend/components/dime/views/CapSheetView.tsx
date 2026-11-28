@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
+import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { apiPath } from "@/lib/api";
 import { initialTeamParam } from "@/lib/open-in-view";
 import { DataState } from "@/components/ds/DataState";
@@ -35,8 +36,142 @@ function money(value: number | null | undefined): string {
   return `$${(value / 1e6).toFixed(1)}`;
 }
 
+function exactMoney(value: number | null | undefined): string {
+  if (value == null) return "–";
+  const sign = value < 0 ? "−" : "";
+  return `${sign}$${Math.abs(value).toLocaleString("en-US")}`;
+}
+
 function shortSeason(season: string): string {
   return `’${season.slice(5)}`;
+}
+
+type CapTotals = CapSheetResponse["totals"][string];
+
+type YearTotals = {
+  committed: number;
+  rosterPayroll: number;
+  pending: number;
+  payroll: number;
+  base: CapTotals;
+};
+
+type ComponentKey = "roster_payroll" | "dead_money" | "cap_holds" | "incomplete_roster_charges";
+
+function componentAvailable(base: CapTotals, key: ComponentKey): boolean {
+  const declared = base.component_availability?.[key];
+  if (typeof declared === "boolean") return declared;
+  return base[key] !== 0;
+}
+
+type BreakdownRow = {
+  label: string;
+  amount: number | null;
+  status: "counted" | "excluded" | "undeclared";
+};
+
+function payrollBreakdownRows(totals: YearTotals, includePending: boolean): BreakdownRow[] {
+  const rows: BreakdownRow[] = [
+    { label: "Roster payroll", amount: totals.rosterPayroll, status: componentAvailable(totals.base, "roster_payroll") ? "counted" : "undeclared" },
+    { label: "Dead money", amount: totals.base.dead_money, status: componentAvailable(totals.base, "dead_money") ? "counted" : "undeclared" },
+    { label: "Cap holds", amount: totals.base.cap_holds, status: componentAvailable(totals.base, "cap_holds") ? "counted" : "undeclared" },
+    { label: "Minimum-roster charges", amount: totals.base.incomplete_roster_charges, status: componentAvailable(totals.base, "incomplete_roster_charges") ? "counted" : "undeclared" },
+    { label: "Team-option salary", amount: totals.pending, status: includePending ? "counted" : "excluded" },
+  ];
+  return rows.map((row) => row.status === "undeclared" ? { ...row, amount: null } : row);
+}
+
+function BreakdownRows({ rows, muted = false, afterDeadMoney }: { rows: BreakdownRow[]; muted?: boolean; afterDeadMoney?: ReactNode }) {
+  return (
+    <div className="mt-1.5 space-y-1">
+      {rows.map((row) => (
+        <div key={row.label}>
+          <div className="flex items-baseline justify-between gap-4 text-[12px]">
+            <span className="text-ink-2">{row.label}</span>
+            <span className={`shrink-0 tabular-nums ${muted ? "text-ink-3" : "text-ink"}`}>{exactMoney(row.amount)}</span>
+          </div>
+          {row.label === "Dead money" && afterDeadMoney}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PayrollMathPopover({ team, season, totals, lines, includePending, children }: {
+  team: string;
+  season: string;
+  totals: YearTotals;
+  lines: CapSheetResponse["lines"][string] | undefined;
+  includePending: boolean;
+  children: ReactNode;
+}) {
+  const rows = payrollBreakdownRows(totals, includePending);
+  const counted = rows.filter((row) => row.status === "counted" && row.label !== "Team-option salary");
+  const optionRows = rows.filter((row) => row.label === "Team-option salary");
+  const excluded = rows.filter((row) => row.status === "excluded");
+  const undeclared = rows.filter((row) => row.status === "undeclared");
+  const capRoom = lines ? lines.cap - totals.payroll : null;
+  const apronRoom = lines ? lines.apron2 - totals.payroll : null;
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label={`Payroll math for ${season}`}
+        className="w-full cursor-pointer rounded-[4px] text-right font-medium tabular-nums text-current underline decoration-line decoration-dotted underline-offset-4 transition-colors hover:text-ink"
+      >
+        {children}
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" aria-label={`Payroll components for ${season}`} className="w-80 bg-surface text-ink">
+        <PopoverTitle>{team} payroll · {season}</PopoverTitle>
+        <PopoverDescription className="text-[12px] leading-[1.5]">
+          Exact US dollars. Committed salary is roster payroll plus dead money; payroll adds declared cap holds and minimum-roster charges. Unavailable components are not shown as zero.
+        </PopoverDescription>
+        <div className="border-t border-line pt-2">
+          <p className="text-[11px] font-medium text-ink-3">Counted in payroll</p>
+          <BreakdownRows rows={counted} afterDeadMoney={totals.base.dead_money_detail.length > 0 && (
+            <div className="mt-1 space-y-1 pl-2">
+              {totals.base.dead_money_detail.map((row) => (
+                <div key={`${row.player}-${row.salary}`} className="flex items-baseline justify-between gap-4 text-[11px]">
+                  <span className="min-w-0 text-ink-3">{row.player}</span>
+                  <span className="shrink-0 tabular-nums text-ink-3">{exactMoney(row.salary)}</span>
+                </div>
+              ))}
+            </div>
+          )} />
+          <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-2 text-[12px]">
+            <span className="text-ink-2">Committed salary subtotal</span>
+            <span className="shrink-0 tabular-nums text-ink">{exactMoney(totals.committed)}</span>
+          </div>
+          {includePending && <BreakdownRows rows={optionRows} />}
+          <div className="mt-2 flex items-baseline justify-between gap-4 border-t border-line pt-2 text-[12.5px]">
+            <span className="font-medium text-ink">Payroll estimate</span>
+            <span className="shrink-0 font-medium tabular-nums text-ink">{exactMoney(totals.payroll)}</span>
+          </div>
+        </div>
+        {excluded.length > 0 && (
+          <div className="border-t border-line pt-2">
+            <p className="text-[11px] font-medium text-ink-3">Outside this estimate</p>
+            <BreakdownRows rows={excluded} muted />
+          </div>
+        )}
+        {undeclared.length > 0 && (
+          <div className="border-t border-line pt-2">
+            <p className="text-[11px] font-medium text-ink-3">Not available</p>
+            <BreakdownRows rows={undeclared} muted />
+          </div>
+        )}
+        {lines && (
+          <div className="border-t border-line pt-2">
+            <p className="text-[11px] font-medium text-ink-3">Room math</p>
+            <div className="mt-1.5 space-y-1 text-[12px]">
+              <div className="flex items-baseline justify-between gap-4"><span className="text-ink-2">Salary cap</span><span className="shrink-0 tabular-nums text-ink">{exactMoney(lines.cap)}</span></div>
+              <div className="flex items-baseline justify-between gap-4"><span className="text-ink-2">Cap room estimate</span><span className="shrink-0 tabular-nums text-ink">{exactMoney(capRoom)}</span></div>
+              <div className="flex items-baseline justify-between gap-4"><span className="text-ink-2">Room under second apron</span><span className="shrink-0 tabular-nums text-ink">{exactMoney(apronRoom)}</span></div>
+            </div>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function useFixture(): boolean {
@@ -239,23 +374,24 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     return removal ?? null;
   }
 
-  function yearTotals(season: string) {
+  function yearTotals(season: string): YearTotals | null {
     if (!sheet) return null;
     const base = sheet.totals[season];
     if (!base) return null;
-    let committed = base.committed;
+    let rosterPayroll = base.roster_payroll;
     let pending = base.pending_option ?? 0;
     for (const move of moves) {
       if (move.kind === "option_decision" && move.season === season && move.exercise === false) {
         const player = sheet.players.find((p) => p.player === move.player);
         const year = player?.years.find((y) => y.season === season);
-        if (year?.salary && year.option === "player") committed -= year.salary;
+        if (year?.salary && year.option === "player") rosterPayroll -= year.salary;
         if (year?.salary && year.option === "team") pending -= year.salary;
       }
     }
+    const committed = rosterPayroll + base.dead_money;
     const payroll = committed + (includePending ? Math.max(0, pending) : 0)
-      + base.dead_money + base.cap_holds + base.incomplete_roster_charges;
-    return { committed, pending, payroll, base };
+      + base.cap_holds + base.incomplete_roster_charges;
+    return { committed, rosterPayroll, pending, payroll, base };
   }
 
   const state = scenario?.state ?? sheet?.state;
@@ -388,7 +524,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
           <div className="min-w-0 flex-1 rounded-[10px] bg-surface shadow-hairline">
             <div className="flex items-center justify-between px-4 pt-3">
               <span className="text-[13px] font-semibold text-ink">
-                {sheet.team} · committed money by season
+                {sheet.team} · payroll estimate by season
               </span>
               <label className="flex items-center gap-1.5 text-[11.5px] text-ink-2">
                 <input
@@ -397,7 +533,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                   onChange={(e) => setIncludePending(e.target.checked)}
                   className="size-3 accent-[var(--accent)]"
                 />
-                include pending options
+                count team-option salary
               </label>
             </div>
             <div className="overflow-x-auto p-3">
@@ -467,8 +603,8 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                 <tfoot>
                   {(["committed", "payroll"] as const).map((row) => (
                     <tr key={row}>
-                      <td className={`sticky left-0 z-10 border-t border-line bg-surface px-2 py-1.5 font-mono text-[10px] uppercase tracking-wide ${row === "payroll" ? "text-ink" : "text-ink-3"}`}>
-                        {row}
+                      <td className={`sticky left-0 z-10 border-t border-line bg-surface px-2 py-1.5 text-[11px] ${row === "payroll" ? "font-medium text-ink" : "text-ink-3"}`}>
+                        {row === "payroll" ? "payroll estimate" : "committed salary"}
                       </td>
                       {seasons.map((season) => {
                         const totals = yearTotals(season);
@@ -477,7 +613,11 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                         const over = row === "payroll" && value != null && lines && value > lines.apron2;
                         return (
                           <td key={season} className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${row === "payroll" ? "font-medium text-ink" : "text-ink-2"} ${over ? "text-red" : ""}`}>
-                            {money(value)}
+                            {row === "payroll" && totals ? (
+                              <PayrollMathPopover team={sheet.team} season={season} totals={totals} lines={lines} includePending={includePending}>
+                                {money(value)}
+                              </PayrollMathPopover>
+                            ) : money(value)}
                           </td>
                         );
                       })}
@@ -504,11 +644,12 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                 </tfoot>
               </table>
             </div>
-            <p className="px-4 pb-3 font-mono text-[10px] leading-[1.6] text-ink-3">
-              {sheet.meta.source} · salaries as of {sheet.meta.salary_date}
-              {" · "}p/t = player/team option, click an option cell to toggle it in the scenario
-              {" · "}lines beyond 2027-28 projected at a 7% growth assumption
-            </p>
+            <div className="px-4 pb-3 text-[11px] leading-[1.55] text-ink-3">
+              <p>{sheet.meta.source} · salaries as of {sheet.meta.salary_date}</p>
+              <p className="mt-1">
+                Committed salary is roster payroll plus dead money. Payroll adds declared cap holds and minimum-roster charges; select a payroll figure for exact season math. Team-option salary is counted only when enabled. Lines beyond 2027-28 use a 7% growth assumption. p/t = player/team option.
+              </p>
+            </div>
           </div>
 
           <aside className="w-full shrink-0 space-y-3 lg:sticky lg:top-6 lg:w-[280px] lg:self-start">

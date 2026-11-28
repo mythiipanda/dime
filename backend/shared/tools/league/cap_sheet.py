@@ -24,7 +24,7 @@ from ..signing_rules import (
     normalize_exception_state_input,
     validate_signing,
 )
-from ..cap_sheet import option_column, season_column, unroll_team_sheet
+from ..cap_sheet import horizon_seasons, option_column, season_column, unroll_team_sheet
 from .._core import warehouse_identity_meta
 from ...contracts import normalize_name
 from .cap_hold_derivation import derive_cap_holds, hold_amount
@@ -231,6 +231,34 @@ def _roster_charge(players: int, hold_count: int, minimum: int) -> int:
     return max(0, 12 - int(players) - int(hold_count)) * int(minimum)
 
 
+def _row_kind_present(names: list[str]) -> bool:
+    return "ROW_KIND" in names or "row_kind" in names
+
+
+def _is_dead_money_row(row: dict[str, Any]) -> bool:
+    value = row.get("ROW_KIND", row.get("row_kind", "roster"))
+    return str(value or "roster").lower() == "dead_money"
+
+
+def _dead_money_components(con, team: str, seasons: list[str]) -> tuple[dict[str, list[dict[str, Any]]], set[str]]:
+    details: dict[str, list[dict[str, Any]]] = {}
+    available: set[str] = set()
+    for label in seasons:
+        try:
+            _payroll_total, _players, dead = _payroll(team, con, label)
+        except Exception:
+            details[label] = []
+            continue
+        rows = [{"player": str(row.get("player") or ""),
+                 "team": str(row.get("team") or team).upper(),
+                 "salary": int(row.get("salary") or 0)}
+                for row in dead if row.get("salary") is not None]
+        rows.sort(key=lambda row: (-row["salary"], row["player"]))
+        details[label] = rows
+        available.add(label)
+    return details, available
+
+
 def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
     tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
     if "silver_salaries" not in tables:
@@ -257,14 +285,33 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                     row["contract_type"] = hit
         except Exception:
             pass
-    sheet = unroll_team_sheet(rows, season)
+    row_kinds_declared = _row_kind_present(names)
+    roster_rows = [row for row in rows
+                   if not row_kinds_declared or not _is_dead_money_row(row)]
+    seasons = horizon_seasons(rows)
+    sheet = unroll_team_sheet(roster_rows, season, seasons)
+    dead_details, dead_available = _dead_money_components(con, team, sheet["seasons"])
     totals: dict[str, dict[str, Any]] = {}
     for label in sheet["seasons"]:
         base = sheet["totals"].get(label, {"committed": 0, "pending_option": 0})
-        totals[label] = {"committed": base["committed"],
+        detail = dead_details.get(label, [])
+        dead_total = sum(int(row.get("salary") or 0) for row in detail)
+        roster_payroll = int(base["committed"])
+        totals[label] = {"committed": roster_payroll + dead_total,
+                         "roster_payroll": roster_payroll,
                          "pending_option": base["pending_option"],
-                         "dead_money": 0, "cap_holds": 0,
-                         "incomplete_roster_charges": 0}
+                         "dead_money": dead_total,
+                         "dead_money_detail": detail,
+                         "cap_holds": 0,
+                         "incomplete_roster_charges": 0,
+                         "component_availability": {
+                             "committed": True,
+                             "roster_payroll": row_kinds_declared,
+                             "pending_option": True,
+                             "dead_money": row_kinds_declared and label in dead_available,
+                             "cap_holds": False,
+                             "incomplete_roster_charges": False,
+                         }}
     holds_note = ("cap_holds are active expired-contract holds; option-dependent "
                   "potential holds are detailed but excluded until an explicit "
                   "option decline, and incomplete_roster_charges count positive "
@@ -296,11 +343,17 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
                         int(charge_inputs["minimum"]))
                 else:
                     totals[label]["incomplete_roster_charges"] = int(r[2] or 0)
+                availability = totals[label]["component_availability"]
+                hold_status = str(payload.get("meta", {}).get("derivation_status") or "")
+                availability["cap_holds"] = bool(
+                    r[1] is not None or (hold_status and hold_status != "error"))
+                availability["incomplete_roster_charges"] = bool(
+                    players is not None or r[2] is not None)
         except Exception:
             pass
     for label, entry in totals.items():
-        entry["payroll"] = (entry["committed"] + entry["dead_money"]
-                            + entry["cap_holds"] + entry["incomplete_roster_charges"])
+        entry["payroll"] = (entry["committed"] + entry["cap_holds"]
+                            + entry["incomplete_roster_charges"])
     lines_by_season: dict[str, Any] = {}
     for label in totals:
         llines, lproj = cap_lines_for_season(con, label)
@@ -312,6 +365,8 @@ def cap_sheet_rows(con, team: str, season: str) -> dict[str, Any]:
     return {"ok": True, "team": str(team).upper(), "season": season,
             "lines": lines_by_season, "lines_projected": projected,
             "players": sheet["players"], "totals": totals,
+            "dead_money_detail": dead_details.get(season, []),
+            "dead_money_unit": "usd_dollars",
             "cap_hold_details": (hold_payloads.get(season) or {}).get("rows", []),
             "cap_hold_money_unit": "usd_dollars",
             "state": state,

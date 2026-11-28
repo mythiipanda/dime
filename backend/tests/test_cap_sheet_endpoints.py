@@ -30,6 +30,21 @@ def memory_salary_con():
     return con
 
 
+def memory_dead_money_con():
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE silver_salaries ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, PLAYER_ID BIGINT, GUARANTEED BIGINT, "
+        "SALARY_2026_27 BIGINT, ROW_KIND VARCHAR)")
+    con.executemany(
+        "INSERT INTO silver_salaries VALUES (?, ?, ?, ?, ?, ?)",
+        [("Roster Wing", "DAL", 1, 10_000_000, 10_000_000, "roster"),
+         ("Klay Thompson", "DAL", 2, 7_660_317, 7_660_317, "dead_money"),
+         ("Olivier-Maxence Prosper", "DAL", 3, 1_002_360, 1_002_360, "dead_money")])
+    return con
+
+
 def test_future_option_decision_uses_option_year_salary_and_baseline():
     from shared.tools.league.cap_sheet import evaluate_cap_scenario
     con = memory_salary_con()
@@ -112,6 +127,71 @@ def test_projected_cap_room_rows_disclose_projected_lines():
     assert projected is True
 
 
+def test_dead_money_rows_are_labeled_components_not_roster_players():
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_dead_money_con()
+    try:
+        out = cap_sheet_rows(con, "DAL", "2026-27")
+    finally:
+        con.close()
+    assert out["ok"] is True
+    assert [row["player"] for row in out["players"]] == ["Roster Wing"]
+    entry = out["totals"]["2026-27"]
+    assert entry["roster_payroll"] == 10_000_000
+    assert entry["dead_money"] == 8_662_677
+    assert entry["committed"] == 18_662_677
+    assert entry["payroll"] == 18_662_677
+    assert entry["committed"] == entry["roster_payroll"] + entry["dead_money"]
+    assert entry["dead_money_detail"] == [
+        {"player": "Klay Thompson", "team": "DAL", "salary": 7_660_317},
+        {"player": "Olivier-Maxence Prosper", "team": "DAL", "salary": 1_002_360},
+    ]
+    assert out["dead_money_detail"] == entry["dead_money_detail"]
+    assert out["dead_money_unit"] == "usd_dollars"
+    assert entry["component_availability"]["dead_money"] is True
+    assert entry["component_availability"]["roster_payroll"] is True
+
+
+def test_payroll_adds_holds_and_charges_without_double_counting_dead_money():
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_dead_money_con()
+    try:
+        con.execute(
+            "CREATE TABLE silver_cap_room ("
+            "TEAM VARCHAR, CAP_SEASON VARCHAR, FA_HOLDS_EST BIGINT, "
+            "INCOMPLETE_ROSTER_CHARGES BIGINT)")
+        con.execute(
+            "INSERT INTO silver_cap_room VALUES ('DAL', '2026-27', 1000000, 500000)")
+        out = cap_sheet_rows(con, "DAL", "2026-27")
+    finally:
+        con.close()
+    entry = out["totals"]["2026-27"]
+    assert entry["committed"] == 18_662_677
+    assert entry["cap_holds"] == 1_000_000
+    assert entry["incomplete_roster_charges"] == 500_000
+    assert entry["payroll"] == 20_162_677
+    assert entry["payroll"] == (entry["committed"] + entry["cap_holds"]
+                                + entry["incomplete_roster_charges"])
+    assert entry["component_availability"]["cap_holds"] is True
+    assert entry["component_availability"]["incomplete_roster_charges"] is True
+
+
+def test_unlabeled_salary_rows_keep_legacy_aggregate_behavior():
+    from shared.tools.league.cap_sheet import cap_sheet_rows
+    con = memory_salary_con()
+    try:
+        out = cap_sheet_rows(con, "TST", "2026-27")
+    finally:
+        con.close()
+    entry = out["totals"]["2026-27"]
+    assert len(out["players"]) == 2
+    assert entry["roster_payroll"] == 40_000_000
+    assert entry["dead_money"] == 0
+    assert entry["committed"] == 40_000_000
+    assert entry["component_availability"]["dead_money"] is False
+    assert entry["component_availability"]["roster_payroll"] is False
+
+
 def test_sheet_shape_boston(con):
     from shared.tools.league.cap_sheet import cap_sheet_rows
     out = cap_sheet_rows(con, "BOS", "2026-27")
@@ -128,10 +208,13 @@ def test_sheet_shape_boston(con):
     totals = out["totals"]
     assert "2026-27" in totals
     entry = totals["2026-27"]
-    for key in ("committed", "pending_option", "dead_money", "cap_holds",
-                "incomplete_roster_charges", "payroll"):
+    for key in ("committed", "roster_payroll", "pending_option", "dead_money",
+                "dead_money_detail", "cap_holds", "incomplete_roster_charges",
+                "payroll", "component_availability"):
         assert key in entry
-    assert entry["payroll"] == entry["committed"] + entry["dead_money"] + entry["cap_holds"] + entry["incomplete_roster_charges"] or entry["payroll"] >= entry["committed"]
+    assert entry["committed"] == entry["roster_payroll"] + entry["dead_money"]
+    assert entry["payroll"] == (entry["committed"] + entry["cap_holds"]
+                                + entry["incomplete_roster_charges"])
     assert {"over_tax", "over_apron1", "over_apron2", "room_apron1", "room_apron2", "room_under_apron2"} <= set(out["state"])
 
 

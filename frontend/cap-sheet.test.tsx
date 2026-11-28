@@ -42,8 +42,16 @@ async function mountCapSheet(seededMoves?: ScenarioMove[]) {
     window: dom.window,
     document: dom.window.document,
     HTMLElement: dom.window.HTMLElement,
+    HTMLInputElement: dom.window.HTMLInputElement,
     Element: dom.window.Element,
     Node: dom.window.Node,
+    NodeFilter: dom.window.NodeFilter,
+    MutationObserver: dom.window.MutationObserver,
+    Event: dom.window.Event,
+    CustomEvent: dom.window.CustomEvent,
+    KeyboardEvent: dom.window.KeyboardEvent,
+    MouseEvent: dom.window.MouseEvent,
+    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
     localStorage: dom.window.localStorage,
     IS_REACT_ACT_ENVIRONMENT: true,
   });
@@ -226,6 +234,40 @@ test("post-mint edits surface Share updated instead of a dead end", async () => 
     assert.match(mounted.host.textContent!, /changed since this link was minted/);
     await click(again);
     assert.equal(mounted.objectRequests.length, 2, "second mint creates a new object");
+  } finally {
+    await mounted.cleanup();
+  }
+});
+
+test("payroll math explains labeled components, dead-money rows and room derivation", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    const trigger = [...mounted.host.querySelectorAll("button")].find((button) => button.getAttribute("aria-label") === "Payroll math for 2027-28");
+    assert.ok(trigger, "payroll popover trigger renders");
+    await click(trigger);
+    const popover = mounted.host.ownerDocument.querySelector('[role="dialog"]');
+    assert.ok(popover, "payroll popover opens");
+    const text = popover.textContent ?? "";
+    assert.match(text, /Roster payroll/);
+    assert.match(text, /\$197,737,323/);
+    assert.match(text, /Dead money/);
+    assert.match(text, /\$7,660,317/);
+    assert.match(text, /Dead-money example/);
+    assert.match(text, /Committed salary subtotal/);
+    assert.match(text, /\$205,397,640/);
+    assert.match(text, /Cap holds/);
+    assert.match(text, /\$4,100,000/);
+    assert.match(text, /Minimum-roster charges/);
+    assert.match(text, /\$1,234,567/);
+    assert.match(text, /Payroll estimate/);
+    assert.match(text, /\$210,732,207/);
+    assert.match(text, /Team-option salary/);
+    assert.match(text, /\$2,726,487/);
+    assert.match(text, /Outside this estimate/);
+    assert.match(text, /Salary cap/);
+    assert.match(text, /\$176,508,270/);
+    assert.match(text, /Cap room estimate/);
+    assert.ok(text.includes("−$34,223,937"), "cap room derives exactly from cap minus payroll");
   } finally {
     await mounted.cleanup();
   }
