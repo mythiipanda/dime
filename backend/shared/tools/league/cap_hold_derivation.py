@@ -79,6 +79,36 @@ def _dependency(fa_type: object) -> str:
 
 
 def _legacy_row(row: dict[str, Any], reason: str) -> dict[str, Any]:
+    seeded = row.get("CAP_HOLD")
+    if seeded is not None:
+        amount = int(seeded)
+        dependency = _dependency(row.get("FA_TYPE"))
+        return {
+            **row,
+            "player": row.get("PLAYER_NAME"),
+            "team": row.get("TEAM"),
+            "fa_type": row.get("FA_TYPE"),
+            "prior_salary": row.get("PRIOR_SALARY"),
+            "cap_hold": amount,
+            "cap_hold_est": amount,
+            "legacy_cap_hold_est": int(row.get("CAP_HOLD_EST") or 0),
+            "money_unit": _MONEY_UNIT,
+            "scenario_dependency": dependency,
+            "active_in_baseline": dependency == "active_expired_contract",
+            "rights_classification": None,
+            "rookie_scale_status": None,
+            "hold_rule": row.get("CAP_HOLD_RULE") or "seeded_derivation",
+            "hold_basis": "seeded_derivation",
+            "hold_exactness": row.get("CAP_HOLD_EXACTNESS") or EXACTNESS_ESTIMATED,
+            "provenance_class": "seeded_derivation",
+            "input_exactness": {},
+            "input_provenance": {},
+            "uncertainty": [
+                "consumer-time derivation inputs incomplete; retained seeder-written calculator-derived hold",
+                reason,
+            ],
+            "derivation_status": "seeded_derivation_fallback",
+        }
     amount = int(row.get("CAP_HOLD_EST") or 0)
     dependency = _dependency(row.get("FA_TYPE"))
     return {
@@ -740,7 +770,8 @@ def derive_cap_holds(con, fa_year: object, team: str = "") -> dict[str, Any]:
     try:
         available = _columns(con, "silver_free_agents")
         wanted = ["PLAYER_NAME", "TEAM", "BREF_SLUG", "FA_YEAR", "FA_TYPE",
-                  "PRIOR_SALARY", "CAP_HOLD_EST", "_source", "_season", "_fetched_at"]
+                  "PRIOR_SALARY", "CAP_HOLD_EST", "CAP_HOLD", "CAP_HOLD_EXACTNESS",
+                  "CAP_HOLD_RULE", "_source", "_season", "_fetched_at"]
         pick = [c for c in wanted if c in available]
         rows = [dict(zip(pick, r))
                 for r in con.execute(
@@ -764,7 +795,19 @@ def derive_cap_holds(con, fa_year: object, team: str = "") -> dict[str, Any]:
     derived = [_compute_row(con, tables, row, salary_index, draft_index,
                             contract_types, year, cap_season, target_cap)
                for row in rows]
-    return _result(derived, cap_season, "calculator_derived", "", target_cap)
+    divergent = [r["player"] for r, row in zip(derived, rows)
+                 if row.get("CAP_HOLD") is not None
+                 and r.get("cap_hold") is not None
+                 and int(row["CAP_HOLD"]) != int(r["cap_hold"])]
+    result = _result(derived, cap_season, "calculator_derived", "", target_cap)
+    if divergent:
+        result["meta"]["seeded_divergence"] = {
+            "count": len(divergent),
+            "players": divergent[:10],
+            "meaning": "consumer-time derivation disagrees with seeder-written CAP_HOLD; "
+                       "freshly-derived values win — the warehouse seed predates input changes",
+        }
+    return result
 
 
 def _cap_projection_meta(cap_season: str, target_cap: int | None) -> dict[str, Any]:
