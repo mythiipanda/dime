@@ -24,8 +24,26 @@ export type CapLines = {
 export type CapMoneyDetail = {
   player: string;
   team: string;
-  salary: number;
+  salary: number | null;
+  amount_unknown?: boolean;
+  basis?: string;
 };
+
+const DEAD_MONEY_BASIS_WORDS: Record<string, string> = {
+  waived_standard_contract_before_two_way:
+    "waived standard contract before a two-way signing — the dead amount is the protected guarantee",
+  waived_standard_contract_before_two_way_protection_unknown:
+    "waived standard contract before a two-way signing — the protected amount is unknown",
+  waived_standard_contract_before_same_team_resign_protection_unknown:
+    "waived, then re-signed by the same team — the guaranteed amount protected is unknown",
+  row_kind_unknown_protection_unknown:
+    "contract status unresolved — the protected amount is unknown",
+};
+
+export function deadMoneyBasisWords(basis: string | undefined): string {
+  if (!basis) return "the protected amount is unknown";
+  return DEAD_MONEY_BASIS_WORDS[basis] ?? "the protected amount is unknown";
+}
 
 export type CapSheetResponse = {
   ok: boolean;
@@ -229,7 +247,8 @@ export const capSheetFixture: CapSheetResponse = {
       const rosterPayroll = 189337323 + i * 8400000;
       const deadMoney = [8662677, 7660317, 1002360, 0, 0, 0][i];
       const deadDetail = deadMoney > 0
-        ? [{ player: "Dead-money example", team: "BOS", salary: deadMoney }]
+        ? [{ player: "Dead-money example", team: "BOS", salary: deadMoney },
+           ...(i === 0 ? [{ player: "Resigned Example", team: "BOS", salary: null, amount_unknown: true, basis: "waived_standard_contract_before_same_team_resign_protection_unknown" } as const] : [])]
         : [];
       const committed = rosterPayroll + deadMoney;
       const capHolds = i === 1 ? 4100000 : 0;
