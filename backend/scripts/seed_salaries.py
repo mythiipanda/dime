@@ -118,12 +118,15 @@ def _slug_lookup(evidence: dict, name: str) -> list:
 
 def _contract_events(con) -> dict[str, list[tuple[str, str, str, str]]]:
     events: dict[str, list[tuple[str, str, str, str]]] = {}
+    base = ("SELECT player, txn_type, team, txn_date, {detail} FROM silver_transactions "
+            "WHERE txn_type IN ('Signing', 'Waive', 'ContractConverted')")
     try:
-        rows = con.execute(
-            "SELECT player, txn_type, team, txn_date, detail FROM silver_transactions "
-            "WHERE txn_type IN ('Signing', 'Waive', 'ContractConverted')").fetchall()
+        rows = con.execute(base.format(detail="detail")).fetchall()
     except Exception:
-        return events
+        try:
+            rows = con.execute(base.format(detail="NULL")).fetchall()
+        except Exception:
+            return events
     for slug, txn_type, team, txn_date, detail in rows:
         abbr = SLUG_TO_ABBR.get(team or "")
         events.setdefault(slug or "", []).append(
