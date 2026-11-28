@@ -310,7 +310,7 @@ export default function MatchupsView({ onAsk }: { onAsk?: (text: string, context
         <h1 className="text-[15px] font-semibold text-ink">
           Matchups
           {data?.season && (
-            <span className="ml-2 shrink-0 rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[10.5px] font-normal uppercase tracking-wide text-ink-3">
+            <span className="ml-2 align-middle font-mono text-[10.5px] font-normal text-ink-3">
               {data.season}
             </span>
           )}

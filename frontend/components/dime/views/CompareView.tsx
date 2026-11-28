@@ -247,7 +247,6 @@ export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: st
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-[17px] font-medium">Compare players</h1>
-          <p className="mt-1 text-[12px] text-ink-3">Two to four players, same or different seasons: season lines, impact, shooting zones, contracts and age curves.</p>
         </div>
         {data && (
           <div className="flex flex-wrap items-center gap-2">

@@ -411,7 +411,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                       <th key={season} className="px-2 py-1.5 text-right font-mono text-[10px] font-normal uppercase tracking-wide text-ink-3">
                         ’{season.slice(2)}
                         {sheet.lines[season]?.projected && (
-                          <span className="ml-1 rounded-full border border-line px-1 text-[8.5px] normal-case tracking-normal">proj</span>
+                          <span className="ml-1 text-[9px] text-ink-3">proj</span>
                         )}
                       </th>
                     ))}
