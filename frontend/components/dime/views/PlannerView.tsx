@@ -193,7 +193,7 @@ export default function PlannerView() {
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-ink">Cap planner</h1>
           <p className="mt-1 text-[12.5px] text-ink-3">
-            Multi-year projection of the working scenario — every number derives server-side from warehouse contract schedules.
+            Multi-year projection of the working scenario. Every number derives server-side from warehouse contract schedules.
           </p>
         </div>
         <select
@@ -212,7 +212,7 @@ export default function PlannerView() {
         <div className="mt-8 rounded-[10px] bg-surface p-6 shadow-hairline">
           <h2 className="text-[15px] font-medium text-ink">The projection didn&apos;t complete</h2>
           <p className="mt-2 max-w-[520px] text-[13px] leading-[1.6] text-ink-2">
-            The multi-year evaluation is server-side and may be temporarily unavailable — reload in a moment. Nothing here is ever estimated client-side.
+            The multi-year evaluation is server-side and may be temporarily unavailable. Reload in a moment. Nothing here is ever estimated client-side.
           </p>
         </div>
       )}
@@ -221,13 +221,13 @@ export default function PlannerView() {
         <>
           {moves.length === 0 && (
             <p className="mt-6 rounded-[10px] bg-surface px-4 py-2.5 text-[12.5px] text-ink-2 shadow-hairline">
-              Baseline projection — no scenario moves yet. Add moves here or in the cap sheet; they write through to the shared draft.
+              Baseline projection. No scenario moves yet. Add moves here or in the cap sheet; they write through to the shared draft.
             </p>
           )}
 
           {syncFailed && (
             <div className="mt-4 rounded-[10px] border border-red/30 bg-surface px-4 py-3">
-              <p className="text-[12.5px] text-red">The moves below didn&apos;t persist to the shared draft — they project here but won&apos;t survive reload or reach the cap sheet. Retry by removing and re-adding the last move.</p>
+              <p className="text-[12.5px] text-red">The moves below didn&apos;t persist to the shared draft. They project here but won&apos;t survive reload or reach the cap sheet. Retry by removing and re-adding the last move.</p>
             </div>
           )}
 
@@ -281,7 +281,7 @@ export default function PlannerView() {
                   </tr>
                 ))}
                 {grid.rows.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-6 text-center text-ink-3">No contract data in the warehouse for {team} — the grid is honestly empty rather than zero-filled.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-6 text-center text-ink-3">No contract data in the warehouse for {team}; the grid is honestly empty rather than zero-filled.</td></tr>
                 )}
               </tbody>
               <tfoot>
@@ -320,7 +320,7 @@ export default function PlannerView() {
               </label>
               <button type="button" onClick={submitExtension} className="rounded-[6px] bg-[var(--accent)] px-3 py-1.5 text-[12px] font-medium text-white">Add extension</button>
               <button type="button" onClick={() => setExtendTarget(null)} className="rounded-[6px] px-3 py-1.5 text-[12px] font-medium text-ink-3 hover:text-ink">Cancel</button>
-              <p className="w-full text-[11px] leading-[1.5] text-ink-3">Flat structure, starts the season after the contract&apos;s last year — labeled unvalidated against exact CBA extension rules.</p>
+              <p className="w-full text-[11px] leading-[1.5] text-ink-3">Flat structure, starts the season after the contract&apos;s last year; labeled unvalidated against exact CBA extension rules.</p>
             </div>
           )}
 
@@ -384,7 +384,7 @@ export default function PlannerView() {
                   numbered
                 />
               </div>
-              <p className="mt-2 text-[11px] leading-[1.5] text-ink-3">Order matters — a signing that fits after a trade may be flagged before it. Moves write through to the shared cap-sheet draft.</p>
+              <p className="mt-2 text-[11px] leading-[1.5] text-ink-3">Order matters: a signing that fits after a trade may be flagged before it. Moves write through to the shared cap-sheet draft.</p>
               {editing && (share.phase !== "minted" || JSON.stringify(moves) !== JSON.stringify(share.moves)) && (
                 <button
                   type="button"
@@ -403,9 +403,9 @@ export default function PlannerView() {
                     onCopy={copyShare}
                     note={
                       <>
-                        Snapshot link minted — recipients see those moves evaluated live.
+                        Snapshot link minted. Recipients see those moves evaluated live.
                         {JSON.stringify(moves) !== JSON.stringify(share.moves)
-                          ? " The scenario has changed since this link was minted — the link still holds the earlier moves; use Share updated for a new link."
+                          ? " The scenario has changed since this link was minted. The link still holds the earlier moves; use Share updated for a new link."
                           : " Editing the scenario here won't change it; share again for a new link."}
                       </>
                     }
@@ -414,7 +414,7 @@ export default function PlannerView() {
               )}
               {share.phase === "error" && (
                 <p className="mt-2 text-[11px] leading-[1.45] text-red">
-                  The scenario couldn&apos;t be shared — the backend didn&apos;t accept the mint. Your moves are untouched; try again.
+                  The scenario couldn&apos;t be shared. The backend didn&apos;t accept the mint. Your moves are untouched; try again.
                 </p>
               )}
             </div>
@@ -422,7 +422,7 @@ export default function PlannerView() {
 
           <div className="mt-6 rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">Exceptions</h2>
-            <p className="mt-1 text-[11px] leading-[1.5] text-ink-3">Usage reflects scenario moves only — league-wide exception consumption isn&apos;t derivable from seeded transactions. MLE/BAE usage hard-caps at the first apron.</p>
+            <p className="mt-1 text-[11px] leading-[1.5] text-ink-3">Usage reflects scenario moves only; league-wide exception consumption isn&apos;t derivable from seeded transactions. MLE/BAE usage hard-caps at the first apron.</p>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full border-collapse text-[12.5px]">
                 <thead>
