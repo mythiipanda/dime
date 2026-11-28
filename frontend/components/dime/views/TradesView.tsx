@@ -733,7 +733,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-3 px-4 py-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <div>
           <div className="text-sm font-semibold text-ink">Trade builder</div>
           <div className="text-[11px] text-ink-2">
@@ -741,7 +741,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             {multi ? " · rotational construction: each team's outgoing goes to the next team" : ""}
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {teams.length < 4 && (
             <button
               className="h-7 rounded-[7px] border border-line bg-surface px-2.5 text-xs font-medium text-ink-2 hover:bg-hover"
