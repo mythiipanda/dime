@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy } from "iconoir-react";
+import { Check, Copy } from "lucide-react";
 import { PromptBar } from "../ds/PromptBar";
 import { CitationChip } from "../ds/CitationChip";
 import { EvidenceTrace } from "../ds/EvidenceTrace";

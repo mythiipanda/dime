@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
-import { EditPencil, Search, SidebarCollapse, SidebarExpand, Basketball } from "iconoir-react";
+import { PanelLeftClose, PanelLeftOpen, Pencil, Search } from "lucide-react";
+import { BasketballIcon } from "@/components/ds/BasketballIcon";
 
 export interface SidebarItem { id: string; label: string; icon: ReactNode; href?: string; group?: string }
 export interface SidebarRecent { id: string; label: string }
@@ -14,11 +15,11 @@ export function SidebarNav({ workspace, items, activeNav, recents, activeThread,
   const [search, setSearch] = useState("");
   return <aside className={`dime-sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Workspace navigation">
     <div className="flex h-11 items-center justify-between px-2">
-      <div className="flex items-center gap-2 text-[13px] font-medium"><Basketball width={17} height={17} /><span className="sidebar-copy">{workspace}</span></div>
-      <button className="icon-button sidebar-copy" aria-label="Collapse sidebar" onClick={() => setCollapsed(true)}><SidebarCollapse width={16} height={16} /></button>
+      <div className="flex items-center gap-2 text-[13px] font-medium"><BasketballIcon size={17} /><span className="sidebar-copy">{workspace}</span></div>
+      <button className="icon-button sidebar-copy" aria-label="Collapse sidebar" onClick={() => setCollapsed(true)}><PanelLeftClose width={16} height={16} /></button>
     </div>
-    {collapsed && <button className="icon-button mx-auto mb-2" aria-label="Expand sidebar" onClick={() => setCollapsed(false)}><SidebarExpand width={16} height={16} /></button>}
-    <button className="sidebar-row mt-2 mb-3" onClick={onNewChat} title="New chat"><EditPencil width={17} height={17} /><span className="sidebar-copy">New chat</span></button>
+    {collapsed && <button className="icon-button mx-auto mb-2" aria-label="Expand sidebar" onClick={() => setCollapsed(false)}><PanelLeftOpen width={16} height={16} /></button>}
+    <button className="sidebar-row mt-2 mb-3" onClick={onNewChat} title="New chat"><Pencil width={17} height={17} /><span className="sidebar-copy">New chat</span></button>
     <nav className="flex flex-col gap-0.5" aria-label="Main navigation">
       {items.map((item, index) => <Fragment key={item.id}>
         {item.group && item.group !== items[index - 1]?.group && <p className="sidebar-copy mt-5 mb-1 px-2 text-[10px] uppercase tracking-widest text-ink-3">{item.group}</p>}
