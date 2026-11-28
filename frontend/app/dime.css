@@ -8,7 +8,7 @@
 }
 button, summary, select { cursor: pointer; }
 button:disabled { cursor: default; }
-button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dime-shell { display: flex; height: 100dvh; padding: 8px 8px 8px 0; background: var(--canvas); overflow: hidden; }
 .skip-to-content { position: absolute; top: 10px; left: -9999px; z-index: 60; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--page); color: var(--ink); font-size: 13px; text-decoration: none; box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); }
 .skip-to-content:focus-visible { left: 14px; }
@@ -16,7 +16,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .dime-sidebar { flex: 0 0 224px; width: 224px; display: flex; flex-direction: column; padding: 0 8px; transition: width 220ms var(--ease-out-strong), flex-basis 220ms var(--ease-out-strong); overflow-y: auto; }
 .dime-sidebar.is-collapsed { flex-basis: 52px; width: 52px; }
 .sidebar-row { display: flex; align-items: center; gap: 9px; padding: 7px 9px; min-height: 34px; width: 100%; border-radius: 7px; color: var(--ink-2); font-size: 13px; white-space: nowrap; text-align: left; }
-.sidebar-row:hover { background: var(--hover-2); color: var(--ink); }
+.sidebar-row:not([aria-current=page]):hover { background: var(--hover); color: var(--ink); }
 .sidebar-row[aria-current=page] { background: var(--hover-2); color: var(--ink); font-weight: 500; }
 .dime-sidebar.is-collapsed .sidebar-copy { display: none; }
 .dime-main { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--page); display: flex; flex-direction: column; overflow: hidden; }
@@ -63,8 +63,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .tools-view { display: flex; flex-direction: column; height: 100%; min-height: 700px; }
 .tools-view > * { flex: 1; min-height: 0; min-width: 0; width: 100%; }
 .workflow-page { max-width: 1020px; margin: 0 auto; padding: 48px 40px 64px; }
-.workflow-card { text-align: left; display: flex; flex-direction: column; min-height: 164px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); transition: border-color 150ms, transform 200ms var(--ease-out-strong), box-shadow 200ms; }
-.workflow-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-card); transform: translateY(-2px); }
+.workflow-card { text-align: left; display: flex; flex-direction: column; min-height: 164px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); transition: border-color 150ms, box-shadow 200ms; }
+.workflow-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-card); }
 .workflow-field { display: grid; gap: 8px; font-size: 12px; color: var(--ink-2); }
 .workflow-field input, .workflow-field select { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 12px; background: var(--inset); color: var(--ink); font-size: 13px; }
 .workflow-field option { background: var(--surface); }
