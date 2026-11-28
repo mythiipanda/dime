@@ -112,7 +112,7 @@ function ShapeChart({ target, comp, features, labels, compName, mode }: {
   const width = (z: number) => `${Math.min(Math.abs(z), CLAMP) / CLAMP * 50}%`;
   return (
     <div data-testid="shape-chart" data-mode={mode ?? "comp"} className="rounded-[8px] bg-field p-3">
-      <p className="font-mono text-[10px] text-ink-3">{`shape profile vs ${compName} — within-season z-scores from center zero; overlap is the match, clamped at ±3`}</p>
+      <p className="font-mono text-[10px] text-ink-3">{`shape profile vs ${compName}: within-season z-scores from center zero; overlap is the match, clamped at ±3`}</p>
       <div className="mt-2 space-y-1">
         {features.map((feat) => {
           const tz = target[feat] ?? 0;
@@ -380,7 +380,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
               size="sm"
               variant="secondary"
               onClick={() => onAsk(
-                `Break down ${player}'s career arc — the peak, the trajectory, and how the era-relative profile compares.${selectedSeason ? ` Focus on the ${selectedSeason} season.` : ""}`,
+                `Break down ${player}'s career arc: the peak, the trajectory, and how the era-relative profile compares.${selectedSeason ? ` Focus on the ${selectedSeason} season.` : ""}`,
                 {
                   kind: "career_arc",
                   summary: `${player} career arc${selectedSeason ? ` · ${selectedSeason}` : ""}`,
