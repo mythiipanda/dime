@@ -96,7 +96,7 @@ def _round_exception_amount(value: float) -> int:
 
 
 def scaled_exception_rules(lines: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    cap_amount = float(lines.get("cap") or CAP["cap"])
+    cap_amount = float(lines["cap"])
     scaled: dict[str, dict[str, Any]] = {}
     for mechanism, base in EXCEPTION_RULES.items():
         rule = dict(base)
@@ -256,8 +256,10 @@ def normalize_signing_input(raw: Any) -> tuple[dict[str, Any] | None, list[str]]
 def minimum_salary(years_of_service: int, season: str = "2026-27",
                    lines: dict[str, Any] | None = None) -> int | None:
     base = MINIMUM_SALARY_SCALE_2026_27[min(10, max(0, years_of_service))]
-    if season == "2026-27" or not lines:
+    if season == "2026-27":
         return base
+    if not lines:
+        return None
     cap_amount = float(lines.get("cap") or 0)
     if cap_amount <= 0:
         return None
@@ -679,7 +681,10 @@ def validate_signing(raw: Any, *, team: str, payroll_before: int,
     if lines is None and season != "2026-27":
         return _input_error_result(
             raw, [f"season-specific cap lines are required for {season}; 2026-27 exception constants cannot be applied"])
-    lines = dict(lines or CAP)
+    if lines is None:
+        lines = dict(CAP)
+    else:
+        lines = dict(lines)
     move, input_errors = normalize_signing_input(raw)
     if move is None or input_errors:
         return _input_error_result(raw, input_errors)

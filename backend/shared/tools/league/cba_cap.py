@@ -224,7 +224,7 @@ def _auto_correct_side(unks: list[str], old_team: str, plist: str,
     located = []
     for u in unks:
         base = u.split(" (suggestions")[0].strip()
-        hit = _locate_player_team(base, con)
+        hit = _locate_player_team(base, con, season)
         if hit is None:
             return None
         located.append((base,) + hit)
@@ -235,8 +235,9 @@ def _auto_correct_side(unks: list[str], old_team: str, plist: str,
     if canonical_team_abbr(new_team) == canonical_team_abbr(old_team):
         return None
     matched = _match_trade_players(new_team, plist, con, season)
+    salary_sheet_season = str(season or "current")
     corrections = [
-        f"{cname} is on {t} per the 2026-27 salary sheet "
+        f"{cname} is on {t} per the {salary_sheet_season} salary sheet "
         f"(not {str(old_team).upper()}); computed for the corrected team"
         for base, cname, t, _s in located
     ]

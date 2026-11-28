@@ -306,7 +306,7 @@ def test_hard_cap_trigger_truth_table_at_apron_boundaries():
                 or flags["expanded_matching"]):
             expected_aprons.add("first apron")
         for payroll in payrolls:
-            result = hard_cap_consequences("BOS", payroll, **flags)
+            result = hard_cap_consequences("BOS", payroll, lines=dict(CAP), **flags)
             expected_violations = {
                 apron for apron in expected_aprons
                 if payroll > CAP["apron1" if apron == "first apron" else "apron2"]}

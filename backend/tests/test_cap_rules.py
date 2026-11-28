@@ -1,5 +1,8 @@
+import pytest
+
 from shared.tools.cap_rules import (
     CAP,
+    active_hard_cap_failure,
     allowed_incoming,
     apron_state,
     cba_restrictions,
@@ -15,16 +18,25 @@ from shared.tools.cap_rules import (
 
 
 def test_apron_state_boundaries_exact():
-    at_tax = apron_state(CAP["tax"])
+    at_tax = apron_state(CAP["tax"], dict(CAP))
     assert at_tax["over_tax"] is False
-    over = apron_state(CAP["tax"] + 1)
+    over = apron_state(CAP["tax"] + 1, dict(CAP))
     assert over["over_tax"] is True
-    at_a1 = apron_state(CAP["apron1"])
+    at_a1 = apron_state(CAP["apron1"], dict(CAP))
     assert at_a1["over_apron1"] is False
     assert at_a1["room_apron1"] == 0
-    over_a2 = apron_state(CAP["apron2"] + 1)
+    over_a2 = apron_state(CAP["apron2"] + 1, dict(CAP))
     assert over_a2["over_apron2"] is True
     assert over_a2["room_apron2"] == -1
+
+
+def test_cap_line_helpers_require_explicit_lines():
+    with pytest.raises(TypeError):
+        apron_state(CAP["tax"])
+    with pytest.raises(TypeError):
+        hard_cap_consequences("BOS", CAP["apron1"])
+    with pytest.raises(TypeError):
+        active_hard_cap_failure(CAP["apron1"], ["first apron"])
 
 
 def test_apron_state_custom_lines():
@@ -137,14 +149,14 @@ def test_operative_match_rule_non_expanded_fallback_shapes_are_coherent():
 def test_hard_cap_consequences_cover_both_triggers_post_trade():
     below = hard_cap_consequences(
         "BOS", CAP["apron1"] - 1,
-        aggregates=True, expanded_matching=True)
+        aggregates=True, expanded_matching=True, lines=dict(CAP))
     assert below["hard_cap"] == "second apron+first apron"
     assert below["violations"] == []
     assert below["issues"] == []
 
     over_first = hard_cap_consequences(
         "BOS", CAP["apron1"] + 1,
-        aggregates=True, expanded_matching=True)
+        aggregates=True, expanded_matching=True, lines=dict(CAP))
     assert over_first["violations"] == ["first apron"]
     assert len(over_first["issues"]) == 1
     assert "Expanded Traded Player Exception" in over_first["issues"][0]
@@ -152,7 +164,7 @@ def test_hard_cap_consequences_cover_both_triggers_post_trade():
 
     over_second = hard_cap_consequences(
         "BOS", CAP["apron2"] + 1,
-        aggregates=True, expanded_matching=True)
+        aggregates=True, expanded_matching=True, lines=dict(CAP))
     assert over_second["violations"] == ["second apron", "first apron"]
     assert len(over_second["issues"]) == 2
     assert "second apron" in over_second["issues"][0]
@@ -160,24 +172,25 @@ def test_hard_cap_consequences_cover_both_triggers_post_trade():
 
 def test_hard_cap_consequences_cover_signing_triggers():
     ntmle = hard_cap_consequences(
-        "BOS", CAP["apron1"], used_ntmle=True)
+        "BOS", CAP["apron1"], used_ntmle=True, lines=dict(CAP))
     assert ntmle["hard_cap"] == "first apron"
     assert ntmle["causes"]["first apron"] == ["the non-taxpayer mid-level exception"]
     assert ntmle["violations"] == []
 
     bae = hard_cap_consequences(
-        "BOS", CAP["apron1"] + 1, used_bae=True)
+        "BOS", CAP["apron1"] + 1, used_bae=True, lines=dict(CAP))
     assert bae["violations"] == ["first apron"]
     assert "bi-annual exception" in bae["issues"][0]
 
     tmle = hard_cap_consequences(
-        "BOS", CAP["apron2"], used_tmle=True)
+        "BOS", CAP["apron2"], used_tmle=True, lines=dict(CAP))
     assert tmle["hard_cap"] == "second apron"
     assert tmle["causes"]["second apron"] == ["the taxpayer mid-level exception"]
     assert tmle["violations"] == []
 
     waived = hard_cap_consequences(
-        "BOS", CAP["apron1"], signed_high_salary_waived_player=True)
+        "BOS", CAP["apron1"], signed_high_salary_waived_player=True,
+        lines=dict(CAP))
     assert waived["hard_cap"] == "first apron"
     assert waived["causes"]["first apron"] == ["the high-salary waived-player signing"]
 

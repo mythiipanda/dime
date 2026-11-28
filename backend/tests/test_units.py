@@ -130,9 +130,9 @@ def test_apron_matching_rules():
         33_580_652, "cap room plus outgoing salary plus $250k (under the cap)")
     assert _allowed_incoming(20_000_000, False, 1_000_000) == (
         29_096_000, "outgoing salary plus $9.096M (below the first apron)")
-    over = _apron_state(CAP["apron2"] + 1)
+    over = _apron_state(CAP["apron2"] + 1, dict(CAP))
     assert over["over_apron1"] and over["over_apron2"]
-    under = _apron_state(0)
+    under = _apron_state(0, dict(CAP))
     assert not under["over_apron1"] and not under["over_apron2"]
 
 

@@ -624,6 +624,9 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "state": state,
             "lines": lines,
             "lines_projected": lines_projected,
+            "cap_lines_source": lines_res["source"],
+            "cap_lines_exact": bool(lines_res["exact"]),
+            "cap_lines_approximation_basis": lines_res["approximation_basis"],
             "players": adjusted_rows(season, base["players"]),
             "roster_before": int(base["roster_count"]),
             "roster_after": roster_after,
@@ -684,6 +687,14 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         "disclosures": [d for d in disclosures if d],
         "meta": {"horizon_seasons": seasons, "coverage": coverage,
                  "projection_basis": "silver_salaries roster and dead-money contract schedules plus silver_cap_room lines",
+                 "cap_lines_by_season": {
+                     block["season"]: {
+                         "cap_lines_source": block["cap_lines_source"],
+                         "cap_lines_exact": block["cap_lines_exact"],
+                         "cap_lines_approximation_basis": block["cap_lines_approximation_basis"],
+                     }
+                     for block in season_blocks
+                 },
                  **payroll_proxy_meta()},
     }, ["pay_before", "pay_after", "roster_payroll", "dead_money", "cap_room",
         "salary", "delta", "cap_holds", "amount"])

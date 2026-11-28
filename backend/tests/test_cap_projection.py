@@ -69,6 +69,25 @@ def test_baseline_no_moves_projects_warehouse_schedule_per_season():
     assert all(s["pay_after"] == s["pay_before"] for s in out["seasons"])
 
 
+def test_projection_emits_cap_line_provenance_per_season_and_meta():
+    con = memory_con()
+    try:
+        out = project(con, [])
+    finally:
+        con.close()
+    first = block(out, "2026-27")
+    future = block(out, "2027-28")
+    assert first["cap_lines_exact"] is True
+    assert first["cap_lines_source"]
+    assert future["cap_lines_exact"] is False
+    assert future["cap_lines_source"] == "growth_extrapolation"
+    assert "not an official league figure" in future["cap_lines_approximation_basis"]
+    meta = out["meta"]["cap_lines_by_season"]
+    assert meta["2026-27"]["cap_lines_exact"] is True
+    assert meta["2027-28"]["cap_lines_source"] == "growth_extrapolation"
+    assert meta["2027-28"]["cap_lines_approximation_basis"] == future["cap_lines_approximation_basis"]
+
+
 def test_one_year_signing_affects_only_its_target_season():
     con = memory_con()
     try:

@@ -93,6 +93,7 @@ def _merge_cap_labels(*values: str) -> str:
 def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
                               pay_before: int,
                               lines: dict[str, Any],
+                              season: str,
                               team_salary_before: int | None = None,
                               hold_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     state = initial_exception_state(None)
@@ -123,7 +124,7 @@ def _validate_legacy_signings(team: str, moves: list[dict[str, Any]],
              "amount": move.get("amount"), "mechanism": "auto"},
             team=team, payroll_before=running, lines=lines,
             exception_state=state, active_hard_caps=active_hard_caps,
-            team_salary_before=validation_team_salary)
+            season=season, team_salary_before=validation_team_salary)
         validation["move_index"] = move_index
         move["validation"] = validation
         validations.append(validation)
@@ -321,7 +322,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
     team_salary_before = int(pay_before) + cap_holds_before + roster_charges_before
     cap_room_before = lines["cap"] - team_salary_before
     signing_validation = _validate_legacy_signings(
-        team.upper(), moves, pay_before, lines=lines,
+        team.upper(), moves, pay_before, lines=lines, season=season,
         team_salary_before=team_salary_before, hold_rows=hold_rows)
     room_before = max(0, cap_room_before)
     trace = scenario_trace(pay_before, moves,
