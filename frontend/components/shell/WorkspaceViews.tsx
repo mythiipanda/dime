@@ -43,7 +43,7 @@ export function HomeView({ onAsk, onMorningAsk }: { onAsk: () => void; onMorning
   }, [attempt]);
   return <div className="workspace-page">
     <PageHeader eyebrow="Your daily read" title="Around the league" description="The cached schedule and a warehouse-backed league snapshot. Evidence first, with coverage and freshness in view." actions={<Chip>Warehouse snapshot</Chip>} />
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-inset px-5 py-4"><div><p className="text-[13px] font-medium">Turn a question into a decision.</p><p className="mt-1 text-[12px] text-ink-3">Scouting, matchup analysis, and roster evaluation — start with a guided workflow.</p></div><Button size="sm" onClick={onAsk}>Explore workflows <ArrowRight width={13} height={13} /></Button></div>
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-inset px-5 py-4"><div><p className="text-[13px] font-medium">Turn a question into a decision.</p><p className="mt-1 text-[12px] text-ink-3">Scouting, matchup analysis, and roster evaluation; start with a guided workflow.</p></div><Button size="sm" onClick={onAsk}>Explore workflows <ArrowRight width={13} height={13} /></Button></div>
     <MorningPage onAsk={onMorningAsk} />
     {error ? <div role="alert" className="rounded-xl border border-line p-6"><p className="mb-4 text-[13px] text-red">Could not load the warehouse snapshot. No sample data is substituted.</p><Button size="sm" onClick={() => setAttempt(value => value + 1)}>Try again</Button></div> : data ? <HomeContent data={data} /> : <p role="status" className="py-12 text-[13px] text-ink-3">Loading the warehouse snapshot…</p>}
   </div>;

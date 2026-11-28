@@ -314,7 +314,7 @@ function ShareableArtifact({ artifact, shareContext }: { artifact: DimeArtifact;
             <button
               className="icon-button"
               aria-label={share.phase === "minting" ? "Creating share link" : "Share artifact"}
-              title={share.phase === "error" ? "Could not create share link — try again" : "Share artifact"}
+              title={share.phase === "error" ? "Could not create share link; try again" : "Share artifact"}
               disabled={share.phase === "minting"}
               onClick={mint}
             >
@@ -331,7 +331,7 @@ function ShareableArtifact({ artifact, shareContext }: { artifact: DimeArtifact;
           link={share.link}
           copied={share.copied}
           onCopy={copyLink}
-          note="Anyone with this link can view this artifact and its pinned evidence — read-only. Numbers are the capture-time snapshot."
+          note="Anyone with this link can view this artifact and its pinned evidence; read-only. Numbers are the capture-time snapshot."
         />
       )}
       {share.phase === "error" && (

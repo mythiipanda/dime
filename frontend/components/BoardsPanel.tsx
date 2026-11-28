@@ -162,7 +162,7 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
           link={share.link}
           copied={share.copied}
           onCopy={copyBoardShareLink}
-          note="Live link minted — recipients see this board re-evaluated from the warehouse at open time. Edits you make here keep flowing to the same link."
+          note="Live link minted; recipients see this board re-evaluated from the warehouse at open time. Edits you make here keep flowing to the same link."
         />
       </div>
     )}

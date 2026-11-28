@@ -439,14 +439,14 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                 series={series.slice(0, 1)}
                 xLabels={chartSeasons}
                 title={`${player} scoring trajectory`}
-                subtitle="points per game by season — open 'view chart data' for exact figures"
+                subtitle="points per game by season; open 'view chart data' for exact figures"
                 height={130}
               />
               <ArtifactChart
                 series={series.slice(1)}
                 xLabels={chartSeasons}
                 title={`${player} impact trajectory`}
-                subtitle="RAPTOR impact by season — open 'view chart data' for exact figures"
+                subtitle="RAPTOR impact by season; open 'view chart data' for exact figures"
                 height={130}
               />
             </div>

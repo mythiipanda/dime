@@ -22,7 +22,7 @@ function PinCard({ pin }: { pin: SharedBoardPin }) {
         <h3 className="mt-1 text-[13px] font-semibold text-ink">{pin.status === "archived" ? "This pin was removed by its owner" : "This pin can't be resolved"}</h3>
         <p className="mt-1 text-[12px] leading-[1.55] text-ink-3">
           {pin.status === "archived"
-            ? "The pinned object still exists in archived form — its contents are no longer shared."
+            ? "The pinned object still exists in archived form; its contents are no longer shared."
             : "The pinned object no longer exists. The rest of the board is unaffected."}
         </p>
       </section>

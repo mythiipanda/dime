@@ -67,7 +67,7 @@ export function SharedScenarioNotice({ tone, kind }: { tone: "archived" | "not_f
     },
     unavailable: {
       title: `This ${noun} can't be loaded right now`,
-      body: "The workbench backend isn't reachable. This is usually temporary — try again in a moment.",
+      body: "The workbench backend isn't reachable. This is usually temporary; try again in a moment.",
     },
   };
   const { title, body } = copy[tone];
