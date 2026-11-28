@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import "./dime.css";
 import "./system.css";
+import DimeToaster from "@/components/dime/DimeToaster";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -31,6 +32,7 @@ export default function RootLayout({
       </head>
       <body className={`${inter.variable} ${mono.variable} font-sans`}>
         {children}
+        <DimeToaster />
       </body>
     </html>
   );

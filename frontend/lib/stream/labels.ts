@@ -176,7 +176,7 @@ const FAILURE_COPY: Record<string, { title: string; body: string }> = {
   },
   quota: {
     title: "The model is out of quota",
-    body: "Dime's model hit its usage limit. Your question is fine \u2014 try again in a little while.",
+    body: "Dime's model hit its usage limit. Your question is fine; try again in a little while.",
   },
   rate_limited: {
     title: "Too many requests",
@@ -188,7 +188,7 @@ const FAILURE_COPY: Record<string, { title: string; body: string }> = {
   },
   provider_error: {
     title: "The analyst is down",
-    body: "Dime's model provider didn't respond. Nothing is wrong with your question \u2014 try again shortly.",
+    body: "Dime's model provider didn't respond. Nothing is wrong with your question; try again shortly.",
   },
   connection: {
     title: "Couldn't reach Dime",

@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr, normalize_name
-from ._helpers import _owned_connection, _pkg
+from ._helpers import _owned_connection, _pkg, declare_money
 from .cap_sheet import (
     _cap_hold_payload,
     _cap_room_charge_inputs,
@@ -239,7 +239,7 @@ def get_cap_scenario(team: str = "", signings: str = "",
             return {"tool": "get_cap_scenario", "ok": False,
                     "error": waiver_timing_error}
         try:
-            pay_before, roster = _payroll(team, con, season)
+            pay_before, roster, _dead = _payroll(team, con, season)
         except SalaryColumnError as exc:
             return {"tool": "get_cap_scenario", "ok": False,
                     "reason": exc.reason, "error": str(exc)}
@@ -442,4 +442,4 @@ def get_cap_scenario(team: str = "", signings: str = "",
         res["meta"]["waiver_timing"] = waiver_timing
     if matching is not None:
         res["matching"] = matching
-    return res
+    return declare_money(res, ["amount", "payroll", "payroll_before", "payroll_after", "delta", "team_salary_before", "team_salary_after", "cap_holds_before", "cap_holds_after", "roster_charges_before", "roster_charges_after", "cap_room", "incoming", "outgoing", "allowed_incoming", "included_amount_before", "included_amount_after"])

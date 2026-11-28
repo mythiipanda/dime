@@ -8,6 +8,9 @@ import type {
   DimeProvenance,
   MemoAnchor,
   MemoArtifactPayload,
+  TradeVerdictArtifactPayload,
+  CapSummaryArtifactPayload,
+  TradeVerdictTeamPayload,
   MemoSectionPayload,
   PlayerCardArtifactPayload,
   PlayerCardSectionPayload,
@@ -425,6 +428,143 @@ function resolveMemo(
   };
 }
 
+
+function parseVerdictTeam(raw: unknown): TradeVerdictTeamPayload | null {
+  if (!raw || typeof raw !== "object") return null;
+  const entry = raw as Record<string, unknown>;
+  if (typeof entry.team !== "string" || !entry.team) return null;
+  if (!Array.isArray(entry.playersOut) || !Array.isArray(entry.playersIn)) return null;
+  const playersOut = entry.playersOut.filter((p): p is string => typeof p === "string");
+  const playersIn = entry.playersIn.filter((p): p is string => typeof p === "string");
+  if (playersOut.length !== entry.playersOut.length || playersIn.length !== entry.playersIn.length) return null;
+  const team: TradeVerdictTeamPayload = { team: entry.team, playersOut, playersIn };
+  const numericKeys = ["outgoing", "incoming", "payrollBefore", "payrollAfter", "allowedIncoming"] as const;
+  for (const key of numericKeys) {
+    if (entry[key] === undefined) continue;
+    const value = finiteNumber(entry[key]);
+    if (value === undefined) return null;
+    team[key] = value;
+  }
+  if (typeof entry.matchRule === "string" && entry.matchRule) team.matchRule = entry.matchRule;
+  if (typeof entry.hardCap === "string" && entry.hardCap) team.hardCap = entry.hardCap;
+  for (const flag of ["overApron1", "overApron2", "matchingFailed", "aggregates"] as const) {
+    if (entry[flag] === true) team[flag] = true;
+  }
+  if (entry.tpeCreation && typeof entry.tpeCreation === "object") {
+    const tpe = entry.tpeCreation as Record<string, unknown>;
+    const amount = finiteNumber(tpe.amount);
+    if (amount !== undefined) {
+      team.tpeCreation = { amount, ...(typeof tpe.condition === "string" && tpe.condition ? { condition: tpe.condition } : {}) };
+    }
+  }
+  for (const key of ["picksOut", "picksIn"] as const) {
+    if (entry[key] === undefined) continue;
+    if (!Array.isArray(entry[key])) return null;
+    const picks: { year: number; round: number; swap?: boolean; protection?: string }[] = [];
+    for (const rawPick of entry[key] as unknown[]) {
+      if (!rawPick || typeof rawPick !== "object") return null;
+      const pick = rawPick as Record<string, unknown>;
+      const year = finiteNumber(pick.year);
+      const round = finiteNumber(pick.round);
+      if (year === undefined || round === undefined) return null;
+      picks.push({ year, round, ...(pick.swap === true ? { swap: true } : {}), ...(typeof pick.protection === "string" && pick.protection ? { protection: pick.protection } : {}) });
+    }
+    if (picks.length) team[key] = picks;
+  }
+  return team;
+}
+
+function resolveTradeVerdict(entry: Record<string, unknown>, title: string, provenance: DimeProvenance | undefined): TradeVerdictArtifactPayload | null {
+  if (typeof entry.legal !== "boolean") return null;
+  if (typeof entry.sourceRef !== "string" || !entry.sourceRef) return null;
+  if (!Array.isArray(entry.teams) || entry.teams.length === 0) return null;
+  const teams: TradeVerdictTeamPayload[] = [];
+  for (const rawTeam of entry.teams) {
+    const team = parseVerdictTeam(rawTeam);
+    if (!team) return null;
+    teams.push(team);
+  }
+  const issues = Array.isArray(entry.issues)
+    ? entry.issues.filter((issue): issue is string => typeof issue === "string" && issue !== "")
+    : [];
+  const checks: { rule: string; note?: string }[] = [];
+  if (Array.isArray(entry.checks)) {
+    for (const rawCheck of entry.checks) {
+      if (!rawCheck || typeof rawCheck !== "object") continue;
+      const check = rawCheck as Record<string, unknown>;
+      if (typeof check.rule !== "string" || !check.rule) continue;
+      checks.push({ rule: check.rule, ...(typeof check.note === "string" && check.note ? { note: check.note } : {}) });
+    }
+  }
+  return {
+    kind: "trade_verdict", title, legal: entry.legal, teams,
+    ...(issues.length ? { issues } : {}),
+    ...(checks.length ? { checks } : {}),
+    ...(typeof entry.evaluationTool === "string" && entry.evaluationTool ? { evaluationTool: entry.evaluationTool } : {}),
+    sourceRef: entry.sourceRef,
+    source: provenanceSource(provenance), provenance,
+  };
+}
+
+function resolveCapSummary(entry: Record<string, unknown>, title: string, provenance: DimeProvenance | undefined): CapSummaryArtifactPayload | null {
+  if (typeof entry.team !== "string" || !entry.team) return null;
+  if (typeof entry.sourceRef !== "string" || !entry.sourceRef) return null;
+  const payrollBefore = finiteNumber(entry.payrollBefore);
+  const payrollAfter = finiteNumber(entry.payrollAfter);
+  if (payrollBefore === undefined || payrollAfter === undefined) return null;
+  const out: CapSummaryArtifactPayload = {
+    kind: "cap_summary", title, team: entry.team, payrollBefore, payrollAfter,
+    sourceRef: entry.sourceRef,
+    source: provenanceSource(provenance), provenance,
+  };
+  for (const key of ["delta", "capRoom", "capRoomBefore", "taxRoom", "roomApron1", "roomApron2", "teamSalaryBefore", "teamSalaryAfter", "capHoldsAfter", "rosterChargesAfter", "rosterBefore", "rosterAfter"] as const) {
+    if (entry[key] === undefined) continue;
+    const value = finiteNumber(entry[key]);
+    if (value === undefined) return null;
+    out[key] = value;
+  }
+  if (typeof entry.season === "string" && entry.season) out.season = entry.season;
+  if (typeof entry.hardCap === "string" && entry.hardCap) out.hardCap = entry.hardCap;
+  if (typeof entry.evaluationTool === "string" && entry.evaluationTool) out.evaluationTool = entry.evaluationTool;
+  for (const flag of ["overTax", "overApron1", "overApron2"] as const) {
+    if (entry[flag] === true) out[flag] = true;
+  }
+  if (Array.isArray(entry.issues)) {
+    const issues = entry.issues.filter((issue): issue is string => typeof issue === "string" && issue !== "");
+    if (issues.length) out.issues = issues;
+  }
+  if (Array.isArray(entry.steps)) {
+    const steps: { kind: string; detail: string; delta?: number; payroll?: number }[] = [];
+    for (const rawStep of entry.steps) {
+      if (!rawStep || typeof rawStep !== "object") return null;
+      const step = rawStep as Record<string, unknown>;
+      if (typeof step.detail !== "string" || !step.detail) return null;
+      const kind = typeof step.kind === "string" && step.kind ? step.kind : "step";
+      const parsed: { kind: string; detail: string; delta?: number; payroll?: number } = { kind, detail: step.detail };
+      for (const key of ["delta", "payroll"] as const) {
+        if (step[key] === undefined) continue;
+        const value = finiteNumber(step[key]);
+        if (value === undefined) return null;
+        parsed[key] = value;
+      }
+      steps.push(parsed);
+    }
+    if (steps.length) out.steps = steps;
+  }
+  if (Array.isArray(entry.restrictions)) {
+    const restrictions: { threshold: string; rule: string }[] = [];
+    for (const rawRestriction of entry.restrictions) {
+      if (!rawRestriction || typeof rawRestriction !== "object") return null;
+      const restriction = rawRestriction as Record<string, unknown>;
+      if (typeof restriction.threshold !== "string" || !restriction.threshold) return null;
+      if (typeof restriction.rule !== "string" || !restriction.rule) return null;
+      restrictions.push({ threshold: restriction.threshold, rule: restriction.rule });
+    }
+    if (restrictions.length) out.restrictions = restrictions;
+  }
+  return out;
+}
+
 const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   chart: resolveChart,
   shot_chart: resolveShotChart,
@@ -433,7 +573,9 @@ const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   scatter: resolveScatter,
   player_card: resolvePlayerCard,
   team_card: resolveTeamCard,
-  memo: resolveMemo,};
+  memo: resolveMemo,
+  trade_verdict: resolveTradeVerdict,
+  cap_summary: resolveCapSummary,};
 
 export function memoToMarkdown(artifact: MemoArtifactPayload): string {
   const lines: string[] = [`# ${artifact.title}`];

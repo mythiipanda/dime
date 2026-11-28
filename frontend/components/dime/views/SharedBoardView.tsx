@@ -22,7 +22,7 @@ function PinCard({ pin }: { pin: SharedBoardPin }) {
         <h3 className="mt-1 text-[13px] font-semibold text-ink">{pin.status === "archived" ? "This pin was removed by its owner" : "This pin can't be resolved"}</h3>
         <p className="mt-1 text-[12px] leading-[1.55] text-ink-3">
           {pin.status === "archived"
-            ? "The pinned object still exists in archived form — its contents are no longer shared."
+            ? "The pinned object still exists in archived form; its contents are no longer shared."
             : "The pinned object no longer exists. The rest of the board is unaffected."}
         </p>
       </section>
@@ -44,7 +44,7 @@ function PinCard({ pin }: { pin: SharedBoardPin }) {
             {Array.isArray(pin.payload.moves) ? pin.payload.moves.length : 0} moves
           </p>
           {!pin.capEvaluation && (
-            <p className="mt-1.5 text-[12px] leading-[1.55] text-ink-3">Could not be evaluated live — the stored moves are shown without recomputed cap impact.</p>
+            <p className="mt-1.5 text-[12px] leading-[1.55] text-ink-3">Could not be evaluated live. The stored moves are shown without recomputed cap impact.</p>
           )}
           {pin.capEvaluation && pin.capEvaluation.errors.length > 0 && (
             <p className="mt-1.5 text-[12px] leading-[1.55] text-red">{typeof pin.capEvaluation.errors[0] === "string" ? pin.capEvaluation.errors[0] : pin.capEvaluation.errors[0].error}</p>
@@ -67,7 +67,7 @@ function PinCard({ pin }: { pin: SharedBoardPin }) {
             ))}
           </ol>
           {!pin.tradeEvaluation && (
-            <p className="mt-1.5 text-[12px] leading-[1.55] text-ink-3">Could not be evaluated live — the stored legs are shown without a legality verdict.</p>
+            <p className="mt-1.5 text-[12px] leading-[1.55] text-ink-3">Could not be evaluated live. The stored legs are shown without a legality verdict.</p>
           )}
           {pin.tradeEvaluation && pin.tradeEvaluation.rows && pin.tradeEvaluation.rows.length > 0 && (
             <p className="mt-1.5 text-[12.5px] font-medium text-ink">
@@ -80,12 +80,12 @@ function PinCard({ pin }: { pin: SharedBoardPin }) {
       {pin.kind === "artifact_ref" && (
         <div className="mt-2">
           {pin.artifact_unavailable || !pin.artifact ? (
-            <p className="text-[12px] leading-[1.55] text-ink-3">This artifact&apos;s underlying run is no longer available — the pin can&apos;t be rendered.</p>
+            <p className="text-[12px] leading-[1.55] text-ink-3">This artifact&apos;s underlying run is no longer available. The pin can&apos;t be rendered.</p>
           ) : (
             (() => {
               const resolved = asResolvedArtifacts([pin.artifact]);
               if (resolved.length === 0)
-                return <p className="text-[12px] leading-[1.55] text-ink-3">This artifact&apos;s shape is no longer recognized — it can&apos;t be rendered.</p>;
+                return <p className="text-[12px] leading-[1.55] text-ink-3">This artifact&apos;s shape is no longer recognized. It can&apos;t be rendered.</p>;
               return <ArtifactBody artifact={resolved[0]} />;
             })()
           )}
@@ -104,7 +104,7 @@ export function BoardPinsSection({ pins }: { pins: SharedBoardPin[] }) {
         {pins.map(pin => <PinCard key={pin.object_id} pin={pin} />)}
       </div>
       <p className="mt-3 max-w-lg text-[12px] leading-[1.6] text-ink-3">
-        Pins are references to separately shared objects — scenarios recompute live at open time and archived pins no longer expose their contents.
+        Pins are references to separately shared objects. Scenarios recompute live at open time and archived pins no longer expose their contents.
       </p>
     </div>
   );
@@ -146,7 +146,7 @@ export function SharedBoardView({ object, board, metrics, pins = [] }: { object:
           <div className="mt-6 rounded-[10px] bg-surface p-6 shadow-hairline">
             <h2 className="text-[15px] font-medium text-ink">This board can't be evaluated right now</h2>
             <p className="mt-2 max-w-[520px] text-[13px] leading-[1.6] text-ink-2">
-              The shared board is intact, but the warehouse evaluation didn't complete. This is usually temporary — reload in a moment.
+              The shared board is intact, but the warehouse evaluation didn't complete. This is usually temporary. Reload in a moment.
             </p>
           </div>
         )}

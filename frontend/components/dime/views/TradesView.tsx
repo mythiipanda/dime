@@ -1,4 +1,5 @@
 "use client";
+import { mintGroupId } from "@/lib/move-groups";
 import { writeCapHandoff, navigateToCap } from "@/lib/cap-handoff";
 import type { ScenarioMove } from "@/lib/capsheet-fixture";
 
@@ -33,6 +34,7 @@ type TradeSideRows = {
   outgoing_needed: number;
   over_apron1: boolean;
   over_apron2: boolean;
+  tpe_creation?: { amount: number; expiry: string; condition: string; copy: string } | null;
 };
 
 type TradeCheckRows = {
@@ -54,8 +56,11 @@ type LegTeamRows = {
   over_apron1?: boolean;
   over_apron2?: boolean;
   hard_cap?: string | null;
+  tpe_creation?: { amount: number; expiry: string; condition: string; copy: string } | null;
   issues?: string[];
 };
+
+type TpeRow = { team: string; amount: number; kind?: string; origin_year?: number; exactness?: string };
 
 type LegsResponse = {
   rows?: LegTeamRows[];
@@ -117,6 +122,8 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
   const [check, setCheck] = useState<CheckState>({ state: "idle" });
   const [fillers, setFillers] = useState<FillersState>({ state: "idle" });
   const [snapshot, setSnapshot] = useState<ScenarioSnapshot | null>(null);
+  const [inventory, setInventory] = useState<TpeRow[]>([]);
+  const [manualEntry, setManualEntry] = useState<{ side: number; amount: string } | null>(null);
   const [loadNote, setLoadNote] = useState<string | null>(null);
   const checkSeq = useRef(0);
 
@@ -152,7 +159,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
     }
     const seq = ++checkSeq.current;
     setCheck({ state: "loading" });
-    if (!multi) {
+    if (!multi && inventory.length === 0) {
       fetch(`${BACKEND}${apiPath("/trade/check")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -181,7 +188,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
     fetch(`${BACKEND}${apiPath("/trade/legs")}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ legs, season: TRADE_SEASON }),
+      body: JSON.stringify({ legs, season: TRADE_SEASON, tpes: inventory.length ? inventory : undefined }),
     })
       .then(response => response.json().then(data => ({ status: response.status, data })))
       .then(({ status, data }: { status: number; data: LegsResponse }) => {
@@ -205,7 +212,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       .catch(() => {
         if (checkSeq.current === seq) setCheck({ state: "error", error: "Could not reach the backend" });
       });
-  }, [pkgs, teams, multi]);
+  }, [pkgs, teams, multi, inventory]);
 
   const setPkgAt = useCallback((index: number, next: (previous: Package) => Package) => {
     setPkgs(previous => previous.map((pkg, i) => (i === index ? next(pkg) : pkg)));
@@ -370,6 +377,8 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       setTeams(artifact.teams.slice());
       setPkgs(artifact.packages.map(pkg => ({ players: (pkg.players ?? []).slice(), picks: (pkg.picks ?? []).slice() })));
       setSnapshot({ teams: artifact.teams.slice(), packages: artifact.packages, season: artifact.season, verdict: artifact.verdict ?? null });
+      const carried = (artifact as unknown as { tpes?: TpeRow[] }).tpes;
+      if (Array.isArray(carried)) setInventory(carried.filter(row => row && typeof row.team === "string" && typeof row.amount === "number"));
       setLoadNote(`loaded "${pin.artifact.title}" from "${board.title}"`);
       return;
     }
@@ -387,21 +396,25 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
       return roster?.state === "ready" ? roster.players.find((player) => player.name === name)?.salary : undefined;
     };
     const season = TRADE_SEASON;
+    const group = mintGroupId();
+    const partners = teams.filter((_, index) => index !== teamIndex).join(" ↔ ");
     const moves: ScenarioMove[] = [
       ...outgoing.map((name) => {
         const amount = salaryOf(name, teamIndex);
-        return { kind: "trade_out" as const, player: name, ...(amount ? { amount } : {}) };
+        return { kind: "trade_out" as const, player: name, group, ...(amount ? { amount } : {}) };
       }),
       ...incoming.map((name) => {
         const amount = salaryOf(name, incomingIndex);
-        return { kind: "trade_in" as const, player: name, ...(amount ? { amount } : {}) };
+        return { kind: "trade_in" as const, player: name, group, ...(amount ? { amount } : {}) };
       }),
     ];
+    const verdict = check.state === "ok" ? check.rows.legal : check.state === "ok-legs" ? check.legal : null;
     writeCapHandoff({
       team,
       season,
       moves,
       source: `${teams.join(" ↔ ")} · ${pkgs.reduce((total, pkg) => total + pkg.players.length, 0)} players in the trade`,
+      groups: { [group]: { partner: partners, verdict, evaluated_at: new Date().toISOString() } },
     });
     navigateToCap();
   }
@@ -416,7 +429,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
     const other = side === 0 ? rows.team_b : rows.team_a;
     const before = self.payroll / 1_000_000;
     const after = (self.payroll - self.out + other.out) / 1_000_000;
-    return { before, after, out: self.out / 1_000_000, allowed: self.allowed_in / 1_000_000, rule: self.match_rule, needed: self.outgoing_needed, apron1: self.over_apron1, apron2: self.over_apron2 };
+    return { before, after, out: self.out / 1_000_000, allowed: self.allowed_in / 1_000_000, rule: self.match_rule, needed: self.outgoing_needed, apron1: self.over_apron1, apron2: self.over_apron2, tpeCreation: self.tpe_creation ?? null };
   };
 
   const legRow = (side: number): LegTeamRows | null => {
@@ -563,6 +576,18 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
               {payroll.apron2 && <span className="text-red">over apron 2</span>}
             </div>
             <div className="mt-0.5 text-[11px] text-ink-2">{payroll.rule}</div>
+            {payroll.tpeCreation && (
+              <div className="mt-1 rounded-[6px] border border-line bg-field px-2 py-1 text-[11px] leading-snug text-ink-2">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-accent">trade exception</span>{" "}
+                {payroll.tpeCreation.copy}{" "}
+                <button
+                  className="font-mono text-[10px] text-accent underline underline-offset-2 hover:text-ink"
+                  onClick={() => setInventory(rows => [...rows, { team: abbr, amount: payroll.tpeCreation!.amount, kind: "ordinary", exactness: "scenario_derived" }])}
+                >
+                  carry into inventory
+                </button>
+              </div>
+            )}
           </div>
         )}
         {leg && (
@@ -579,14 +604,90 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
               {leg.hard_cap && <span className="text-red">hard-capped at {leg.hard_cap}</span>}
             </div>
             {leg.match_rule && <div className="mt-0.5 text-[11px] text-ink-2">{leg.match_rule}</div>}
+            {leg.tpe_creation && (
+              <div className="mt-1 rounded-[6px] border border-line bg-field px-2 py-1 text-[11px] leading-snug text-ink-2">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-accent">trade exception</span>{" "}
+                {leg.tpe_creation.copy}{" "}
+                <button
+                  className="font-mono text-[10px] text-accent underline underline-offset-2 hover:text-ink"
+                  onClick={() => setInventory(rows => [...rows, { team: abbr, amount: leg.tpe_creation!.amount, kind: "ordinary", exactness: "scenario_derived" }])}
+                >
+                  carry into inventory
+                </button>
+              </div>
+            )}
           </div>
+        )}
+        {(inventory.some(row => row.team === abbr) || manualEntry?.side === side) && (
+          <div className="rounded-card border border-line bg-surface px-3 py-2 text-xs shadow-hairline">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-3">exception inventory</span>
+              {inventory.some(row => row.team === abbr) && <span className="font-mono text-[10px] text-ink-3">applied to evaluation</span>}
+            </div>
+            <div className="mt-1 space-y-1">
+              {inventory.map((row, index) => row.team === abbr && (
+                <div key={index} className="flex items-center justify-between gap-2 text-[11px] text-ink-2">
+                  <span>
+                    {money(row.amount / 1_000_000)} {row.kind ?? "ordinary"} exception
+                    <span className="ml-1 text-ink-3">{(row.exactness ?? "user_declared").replace(/_/g, " ")}</span>
+                  </span>
+                  <button
+                    className="font-mono text-[10px] text-ink-3 hover:text-red"
+                    onClick={() => setInventory(rows => rows.filter((_, at) => at !== index))}
+                    title="Remove from inventory"
+                  >×</button>
+                </div>
+              ))}
+              {manualEntry?.side === side ? (
+                <form
+                  className="flex items-center gap-1.5"
+                  onSubmit={event => {
+                    event.preventDefault();
+                    const millions = parseFloat(manualEntry.amount);
+                    if (Number.isFinite(millions) && millions > 0) {
+                      setInventory(rows => [...rows, { team: abbr, amount: Math.round(millions * 1_000_000), kind: "ordinary", exactness: "user_declared" }]);
+                    }
+                    setManualEntry(null);
+                  }}
+                >
+                  <input
+                    autoFocus
+                    className="h-6 w-20 rounded-[6px] border border-line bg-field px-1.5 font-mono text-[11px] text-ink"
+                    placeholder="0.0"
+                    value={manualEntry.amount}
+                    onChange={event => setManualEntry({ side, amount: event.target.value })}
+                    aria-label={`${abbr} exception amount in millions`}
+                  />
+                  <span className="text-[10px] text-ink-3">$M</span>
+                  <button type="submit" className="font-mono text-[10px] text-accent underline underline-offset-2">add</button>
+                  <button type="button" className="font-mono text-[10px] text-ink-3" onClick={() => setManualEntry(null)}>cancel</button>
+                </form>
+              ) : (
+                <button
+                  className="font-mono text-[10px] text-ink-3 underline underline-offset-2 hover:text-accent"
+                  onClick={() => setManualEntry({ side, amount: "" })}
+                >
+                  add manually
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {!inventory.some(row => row.team === abbr) && manualEntry?.side !== side && (
+          <button
+            className="w-full text-left font-mono text-[10px] text-ink-3 underline underline-offset-2 hover:text-accent px-1"
+            onClick={() => setManualEntry({ side, amount: "" })}
+            title="Exceptions come from your own prior constructions or manual entry; real-world inventory is not derivable from the warehouse"
+          >
+            no exceptions on file · add manually
+          </button>
         )}
         {(leg || check.state === "ok") && (
           <button
             className="w-full rounded-[7px] border border-line bg-surface px-3 py-1.5 text-left text-[11.5px] text-ink-2 shadow-hairline hover:bg-field"
             onClick={() => sendToCapSheet(side)}
           >
-            Open {abbr} in the cap sheet → post-trade roster as scenario moves
+            Send {abbr} to the working scenario → cap sheet & planner
           </button>
         )}
       </div>
@@ -632,7 +733,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
 
   return (
     <div className="mx-auto w-full max-w-[1100px] space-y-3 px-4 py-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <div>
           <div className="text-sm font-semibold text-ink">Trade builder</div>
           <div className="text-[11px] text-ink-2">
@@ -640,7 +741,7 @@ export default function TradesView({ onAsk }: { onAsk?: (text: string, context?:
             {multi ? " · rotational construction: each team's outgoing goes to the next team" : ""}
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {teams.length < 4 && (
             <button
               className="h-7 rounded-[7px] border border-line bg-surface px-2.5 text-xs font-medium text-ink-2 hover:bg-hover"

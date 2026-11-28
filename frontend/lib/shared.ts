@@ -1,5 +1,6 @@
 import { cache } from "react";
-import type { ScenarioMove, ScenarioResponse } from "./capsheet-fixture";
+import type { ScenarioMove } from "./capsheet-fixture";
+import type { ProjectionResponse } from "./planner";
 import type { Board, BoardMetric, BoardFill } from "./boards";
 
 export type SharedObject = {
@@ -29,6 +30,7 @@ export type SharedTradeObject = {
   payload: {
     legs: SharedTradeLeg[];
     season: string;
+    tpes?: { team: string; amount: number; kind?: string; origin_year?: number; exactness?: string }[];
   };
   schema_version: number;
   updated_at: string;
@@ -64,7 +66,7 @@ export type SharedBoardPin = {
   payload?: Record<string, unknown>;
   artifact?: Record<string, unknown> | null;
   artifact_unavailable?: boolean;
-  capEvaluation?: ScenarioResponse | null;
+  capEvaluation?: ProjectionResponse | null;
   tradeEvaluation?: TradeLegsEvaluation | null;
 };
 
@@ -103,7 +105,7 @@ function isMetricList(value: unknown): value is { ok: true; metrics: BoardMetric
 }
 
 export type SharedScenarioState =
-  | { status: "ok"; object: SharedObject; evaluation: ScenarioResponse | null }
+  | { status: "ok"; object: SharedObject; evaluation: ProjectionResponse | null }
   | { status: "ok-trade"; object: SharedTradeObject; evaluation: TradeLegsEvaluation | null }
   | { status: "ok-thread"; object: SharedThreadObject; transcript: TranscriptEntry[] }
   | { status: "ok-board"; object: SharedBoardObject; board: Board | null; metrics: BoardMetric[]; pins: SharedBoardPin[] }
@@ -192,8 +194,8 @@ function isTranscriptEntry(value: unknown): value is TranscriptEntry {
   return typeof entry.question === "string" && typeof entry.answer === "string";
 }
 
-function isScenarioResponse(value: unknown): value is ScenarioResponse {
-  return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).errors);
+function isProjectionResponse(value: unknown): value is ProjectionResponse {
+  return !!value && typeof value === "object" && Array.isArray((value as Record<string, unknown>).seasons);
 }
 
 export const loadSharedScenario = cache(async function loadSharedScenario(
@@ -223,7 +225,7 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
       const response = await fetchImpl(`${backend}/api/trade/legs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ legs: object.payload.legs, season: object.payload.season }),
+        body: JSON.stringify({ legs: object.payload.legs, season: object.payload.season, tpes: object.payload.tpes }),
         cache: "no-store",
       });
       const body: unknown = await response.json().catch(() => null);
@@ -306,19 +308,19 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
       if (pin.status !== "ok" || !pin.payload) return pin;
       if (pin.kind === "cap_scenario") {
         try {
-          const response = await fetchImpl(`${backend}/api/cap/scenario`, {
+          const response = await fetchImpl(`${backend}/api/cap/projection`, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               team: pin.payload.team,
               season: pin.payload.season,
-              waiver_date: pin.payload.waiver_date ?? "",
               moves: pin.payload.moves,
+              tpes: (pin.payload as { tpes?: unknown[] }).tpes,
             }),
             cache: "no-store",
           });
           const body: unknown = await response.json().catch(() => null);
-          pin.capEvaluation = isScenarioResponse(body) ? body : null;
+          pin.capEvaluation = isProjectionResponse(body) ? body : null;
         } catch {
           pin.capEvaluation = null;
         }
@@ -367,21 +369,21 @@ export const loadSharedScenario = cache(async function loadSharedScenario(
   if (!isCapObject(envelope)) return { status: "unavailable" };
   const object = envelope;
 
-  let evaluation: ScenarioResponse | null = null;
+  let evaluation: ProjectionResponse | null = null;
   try {
-    const response = await fetchImpl(`${backend}/api/cap/scenario`, {
+    const response = await fetchImpl(`${backend}/api/cap/projection`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         team: object.payload.team,
         season: object.payload.season,
-        waiver_date: object.payload.waiver_date ?? "",
         moves: object.payload.moves,
+        tpes: (object.payload as { tpes?: unknown[] }).tpes,
       }),
       cache: "no-store",
     });
     const body: unknown = await response.json().catch(() => null);
-    if (isScenarioResponse(body)) evaluation = body;
+    if (isProjectionResponse(body)) evaluation = body;
   } catch {
     evaluation = null;
   }

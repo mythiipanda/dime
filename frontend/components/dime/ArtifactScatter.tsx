@@ -232,7 +232,7 @@ export default function ArtifactScatter({
               >
                 <title>{`${p.label}: (${p.x}, ${p.y})`}</title>
               </circle>
-              {isHighlight && (
+              {(isHighlight || points.length <= 8) && (
                 <text
                   x={textX}
                   y={cy + 3.5}

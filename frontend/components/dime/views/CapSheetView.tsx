@@ -9,6 +9,9 @@ import { listBoards, pinArtifact, saveBoard } from "@/lib/boards";
 import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
 import { consumeCapHandoff } from "@/lib/cap-handoff";
 import { syncCapDraft, loadCapDraft } from "@/lib/cap-draft";
+import { toast } from "sonner";
+import { pruneGroups, type MoveGroupsMap } from "@/lib/move-groups";
+import ScenarioMoveList from "@/components/dime/ScenarioMoveList";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import { BACKEND } from "@/lib/chat";
 import {
@@ -59,6 +62,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
   const [includePending, setIncludePending] = useState(false);
   const [handoffNote, setHandoffNote] = useState<string | null>(null);
   const [moves, setMoves] = useState<ScenarioMove[]>([]);
+  const [groups, setGroups] = useState<MoveGroupsMap>({});
   const [scenario, setScenario] = useState<ScenarioResponse | null>(null);
   const [scenarioError, setScenarioError] = useState<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
@@ -76,7 +80,8 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     handoffConsumed.current = true;
     setTeam(handoff.team);
     setMoves(handoff.moves);
-    setHandoffNote(handoff.source ? `Imported from the trade machine — ${handoff.source}. The trade is a one-way copy: edits here don't affect it.` : null);
+    if (handoff.groups) setGroups(handoff.groups);
+    setHandoffNote(handoff.source ? `Imported from the trade machine (${handoff.source}). The trade is a one-way copy: edits here don't affect it.` : null);
   }, []);
 
   const draftKey = `${team}:${scenarioSeason ?? DEFAULT_SCENARIO_SEASON}`;
@@ -101,7 +106,8 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
       settledDrafts.current.add(draftKey);
       setDraftSettled((count) => count + 1);
       if (!restored) return;
-      setMoves((current) => current.length === 0 ? restored : current);
+      if (restored.groups) setGroups(restored.groups);
+      setMoves((current) => current.length === 0 ? restored.moves : current);
     });
     return () => { active = false; };
   }, [draftKey, team, scenarioSeason]);
@@ -110,10 +116,17 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     if (!settledDrafts.current.has(draftKey)) return;
     const currentSeason = scenarioSeason ?? DEFAULT_SCENARIO_SEASON;
     const timer = setTimeout(() => {
-      void syncCapDraft(team, currentSeason, moves);
+      void syncCapDraft(team, currentSeason, moves, pruneGroups(moves, groups)).then((ok) => {
+        if (!ok) {
+          toast.error("Scenario changes aren't saving", {
+            id: `cap-sync-${draftKey}`,
+            description: "The working scenario could not be written to the object store. It retries as you keep editing.",
+          });
+        }
+      });
     }, 800);
     return () => clearTimeout(timer);
-  }, [draftKey, draftSettled, team, scenarioSeason, moves]);
+  }, [draftKey, draftSettled, team, scenarioSeason, moves, groups]);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -217,6 +230,15 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     return moves.some((m) => m.kind === "option_decision" && m.player === player.player && m.season === season);
   }
 
+  function removedFromSeason(player: CapPlayer): string | null {
+    const removal = moves
+      .filter((m) => (m.kind === "waive" || m.kind === "trade_out") && m.player === player.player)
+      .map((m) => m.season ?? seasons[0])
+      .filter((s): s is string => typeof s === "string")
+      .sort()[0];
+    return removal ?? null;
+  }
+
   function yearTotals(season: string) {
     if (!sheet) return null;
     const base = sheet.totals[season];
@@ -284,7 +306,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
     const boards = listBoards();
     const board = boards[0];
     if (!board) {
-      setSaveState("no board exists yet — create one in Boards first");
+      setSaveState("no board exists yet; create one in Boards first");
       return;
     }
     const artifact = {
@@ -406,19 +428,35 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                         const year = player.years.find((y) => y.season === season);
                         if (!year) return <td key={season} className="border-t border-line px-2 py-1.5 text-right font-mono tabular-nums text-ink-3">–</td>;
                         const declined = toggledOption(player, year.season);
-                        const clickable = !!year.option && year.salary != null;
+                        const removal = removedFromSeason(player);
+                        const removed = removal != null && year.season >= removal;
+                        const clickable = !!year.option && year.salary != null && !removed;
                         return (
                           <td
                             key={season}
                             className={`border-t border-line px-2 py-1.5 text-right font-mono tabular-nums ${
                               !year.guaranteed ? "text-ink-3" : "text-ink-2"
-                            } ${declined ? "line-through opacity-40" : ""} ${clickable ? "cursor-pointer transition-colors hover:bg-field" : ""}`}
-                            title={clickable ? `${year.option} option — click to mark ${declined ? "exercised" : "declined"} in the scenario` : undefined}
-                            onClick={clickable ? () => optionToggled(player, year.season) : undefined}
+                            } ${declined || removed ? "line-through opacity-40" : ""} ${clickable ? "p-0" : ""}`}
+                            title={removed ? `${player.player} is removed by a scenario move in ${removal}; this season and forward are struck` : undefined}
                           >
-                            {money(year.salary)}
-                            {year.option && year.salary != null && (
-                              <span className={`ml-1 rounded-sm border px-0.5 text-[8.5px] uppercase ${clickable ? "border-accent/50 text-accent" : "border-line"}`}>{year.option[0]}</span>
+                            {clickable ? (
+                              <button
+                                type="button"
+                                className="block w-full cursor-pointer px-2 py-1.5 text-right font-mono tabular-nums transition-colors hover:bg-field"
+                                title={`${year.option} option: activate to mark ${declined ? "exercised" : "declined"} in the scenario`}
+                                aria-pressed={declined}
+                                onClick={() => optionToggled(player, year.season)}
+                              >
+                                {money(year.salary)}
+                                <span className="ml-1 text-[9px] uppercase text-ink-3">{year.option?.[0]}</span>
+                              </button>
+                            ) : (
+                              <>
+                                {money(year.salary)}
+                                {year.option && year.salary != null && (
+                                  <span className="ml-1 rounded-sm border border-line px-0.5 text-[8.5px] uppercase">{year.option[0]}</span>
+                                )}
+                              </>
                             )}
                           </td>
                         );
@@ -481,35 +519,21 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
               )}
               {moves.length === 0 ? (
                 <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-3">
-                  No moves yet. Toggle an option cell or add a signing below — the grid re-prices instantly.
+                  No moves yet. Toggle an option cell or add a signing below. The grid re-prices instantly.
                 </p>
               ) : (
                 <div className="mt-2 space-y-1.5">
-                  {moves.map((move, i) => {
-                    const waiverStep = move.kind === "waive"
-                      ? scenario?.steps.find((step) => step.kind === "waive" && step.player === move.player)
-                      : undefined;
-                    return (
-                      <div key={i} className="flex items-baseline justify-between gap-2 text-[12px]">
-                        <div className="min-w-0">
-                          <span className="text-ink-2">
-                            {describeScenarioMove(move)}
-                          </span>
-                          {waiverStep?.estimate_basis && (
-                            <span className="mt-0.5 block text-[11px] leading-[1.45] text-ink-2">
-                              {waiverStep.estimate_basis}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          className="shrink-0 text-[11px] text-ink-2 underline-offset-2 hover:underline"
-                          onClick={() => setMoves((current) => current.filter((_, j) => j !== i))}
-                        >
-                          remove
-                        </button>
-                      </div>
-                    );
-                  })}
+                  <ScenarioMoveList
+                    moves={moves}
+                    groups={groups}
+                    labels={{
+                      describe: describeScenarioMove,
+                      waiverBasis: (move) => move.kind === "waive"
+                        ? scenario?.steps.find((step) => step.kind === "waive" && step.player === move.player)?.estimate_basis
+                        : undefined,
+                    }}
+                    onChange={setMoves}
+                  />
                   {evaluating && <p className="text-[11.5px] text-ink-3">evaluating…</p>}
                   {handoffNote && <p className="text-[11px] leading-[1.45] text-ink-3">{handoffNote}</p>}
                   {scenarioError && <p className="text-[11.5px] text-red">{scenarioError}</p>}
@@ -524,7 +548,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                 <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
                   {onAsk && (
                     <button
-                      className="h-7 rounded-[7px] bg-[var(--accent)] px-2.5 text-[11.5px] font-medium text-white hover:opacity-90"
+                      className="h-7 rounded-[7px] border border-line px-2 text-[11.5px] text-ink-2 hover:bg-field"
                       onClick={() => onAsk(serializeScenario(), scenarioContext())}
                     >
                       Ask about this scenario
@@ -559,9 +583,9 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                       onCopy={copyShareLink}
                       note={
                         <>
-                          Snapshot link minted — recipients see those moves evaluated live.
+                          Snapshot link minted. Recipients see those moves evaluated live.
                           {JSON.stringify(moves) !== JSON.stringify(share.moves)
-                            ? " The scenario has changed since this link was minted — the link still holds the earlier moves; use Share updated for a new link."
+                            ? " The scenario has changed since this link was minted; the link still holds the earlier moves; use Share updated for a new link."
                             : " Editing the scenario here won't change it; share again for a new link."}
                         </>
                       }
@@ -569,7 +593,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                   )}
                   {share.phase === "error" && (
                     <p className="w-full text-[11px] leading-[1.45] text-red">
-                      The scenario couldn't be shared — the backend didn't accept the mint. Your moves are untouched; try again.
+                      The scenario couldn't be shared. The backend didn't accept the mint. Your moves are untouched; try again.
                     </p>
                   )}
                 </div>
@@ -635,7 +659,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                   {scenario.restrictions.map((r, i) => (
                     <div key={i}>
                       <div className="flex items-baseline gap-1.5">
-                        <span className={`rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide ${r.status === "active" ? "border-red text-red" : r.status === "trigger" ? "border-line text-ink" : "border-line text-ink-3"}`}>
+                        <span className={`text-[10px] font-medium uppercase tracking-wide ${r.status === "active" ? "text-red" : r.status === "trigger" ? "text-ink" : "text-ink-3"}`}>
                           {r.status}
                         </span>
                         <span className="text-[11px] text-ink-3">{r.threshold}</span>
@@ -646,7 +670,7 @@ export default function CapSheetView({ onAsk }: { onAsk?: (text: string, context
                 </div>
               ) : (
                 <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-3">
-                  CBA restriction triggers appear here once a scenario is evaluated — hard caps, frozen picks, matching limits.
+                  CBA restriction triggers appear here once a scenario is evaluated: hard caps, frozen picks, matching limits.
                 </p>
               )}
               {scenario?.errors?.length ? (

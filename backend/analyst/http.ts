@@ -19,11 +19,11 @@ const workspaceCreate = Type.Object({ name: Type.String({ minLength: 1, maxLengt
 const members = Type.Optional(Type.Union([Type.Array(Type.String(), { maxItems: 1024 }), Type.Null()]));
 const workspaceUpdate = Type.Object({ name: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 256 }), Type.Null()])), add_thread_ids: members, remove_thread_ids: members, add_brief_ids: members, remove_brief_ids: members }, { additionalProperties: false });
 const branchCreate = Type.Object({ thread: text(80), client: text(80), parent_sequence: Type.Integer({ minimum: 1 }), branch_id: Type.Optional(Type.Union([text(64), Type.Null()])) }, { additionalProperties: false });
-const tradeLegsSchema = Type.Object({ legs: Type.Array(Type.Object({ from: Type.String({ minLength: 2, maxLength: 4 }), to: Type.String({ minLength: 2, maxLength: 4 }), players: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 })) }, { additionalProperties: true }), { minItems: 1, maxItems: 8 }), season: Type.Optional(Type.String()) }, { additionalProperties: false });
+const tradeLegsSchema = Type.Object({ legs: Type.Array(Type.Object({ from: Type.String({ minLength: 2, maxLength: 4 }), to: Type.String({ minLength: 2, maxLength: 4 }), players: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 })) }, { additionalProperties: true }), { minItems: 1, maxItems: 8 }), season: Type.Optional(Type.String()), tpes: Type.Optional(Type.Array(Type.Object({ team: Type.String({ minLength: 2, maxLength: 4 }), amount: Type.Integer({ minimum: 1 }), kind: Type.Optional(Type.String({ maxLength: 24 })), origin_year: Type.Optional(Type.Integer()), exactness: Type.Optional(Type.String({ maxLength: 32 })) }, { additionalProperties: false }), { maxItems: 30 })) }, { additionalProperties: false });
 const tradeSchema = Type.Object({ team_a: Type.Optional(Type.String()), team_b: Type.Optional(Type.String()), players_a: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), players_b: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), season: Type.Optional(Type.String()) }, { additionalProperties: false });
 const capScenarioSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), exception_state: Type.Optional(signingExceptionStateSchema), moves: Type.Array(capScenarioMoveSchema, { minItems: 1, maxItems: 40 }) }, { additionalProperties: false });
-const capProjectionMoveSchema = Type.Object({ kind: Type.String(), label: Type.Optional(Type.String()), amount: Type.Optional(Type.Number()), player: Type.Optional(Type.String()), exercise: Type.Optional(Type.Boolean()), stretch: Type.Optional(Type.Boolean()), season: Type.Optional(Type.String()), exception: Type.Optional(Type.String()), years: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })), first_year_amount: Type.Optional(Type.Number()) }, { additionalProperties: false });
-const capProjectionSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), horizon: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })), moves: Type.Array(capProjectionMoveSchema, { minItems: 0, maxItems: 40 }) }, { additionalProperties: false });
+const capProjectionMoveSchema = Type.Object({ kind: Type.String(), label: Type.Optional(Type.String()), amount: Type.Optional(Type.Number()), player: Type.Optional(Type.String()), exercise: Type.Optional(Type.Boolean()), stretch: Type.Optional(Type.Boolean()), season: Type.Optional(Type.String()), exception: Type.Optional(Type.String()), years: Type.Optional(Type.Integer({ minimum: 1, maximum: 5 })), first_year_amount: Type.Optional(Type.Number()), group: Type.Optional(Type.String({ maxLength: 48 })) }, { additionalProperties: false });
+const capProjectionSchema = Type.Object({ team: Type.Optional(Type.String()), season: Type.Optional(Type.String()), waiver_date: Type.Optional(Type.String()), horizon: Type.Optional(Type.Integer({ minimum: 1, maximum: 3 })), moves: Type.Array(capProjectionMoveSchema, { minItems: 0, maxItems: 40 }), tpes: Type.Optional(Type.Array(Type.Object({ team: Type.String({ minLength: 2, maxLength: 4 }), amount: Type.Integer({ minimum: 1 }), kind: Type.Optional(Type.String({ maxLength: 24 })), origin_year: Type.Optional(Type.Integer()), exactness: Type.Optional(Type.String({ maxLength: 32 })) }, { additionalProperties: false }), { maxItems: 30 })) }, { additionalProperties: false });
 const partnersSchema = Type.Object({ player: Type.Optional(Type.String()), season: Type.Optional(Type.String()), teams: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])), max_packages: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }, { additionalProperties: false });
 const watchSchema = Type.Object({ entity_type: Type.String(), entity_id: Type.String(), season: Type.Optional(Type.String()) });
 const boardSeason = Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}$" }));
@@ -353,6 +353,17 @@ export function createProductServer(options: {
         const value = objects.get(created.object_id);
         if (!value)
             throw new Error("object create lost");
+        if (value.kind === "artifact_ref") {
+            const resolvedRef = resolveArtifactRef(value.payload);
+            if (!resolvedRef.unavailable && resolvedRef.artifact) {
+                try {
+                    objects.writeArtifactSnapshot(value.object_id, { artifact: resolvedRef.artifact, evidence: resolvedRef.evidence, captured_at: value.created_at });
+                }
+                catch (error) {
+                    console.warn("artifact snapshot write failed; link falls back to live resolution", error);
+                }
+            }
+        }
         json(res, { ...ownedObject(value), owner_token: created.owner_token }, 201);
     });
     route("GET", /^\/api\/objects$/, async ({ req, res, url }) => {
@@ -468,6 +479,9 @@ export function createProductServer(options: {
                     return { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "archived" };
                 const base = { kind: pin.kind, object_id: pin.object_id, ...(pin.note ? { note: pin.note } : {}), status: "ok", title: target.title, payload: target.payload };
                 if (pin.kind === "artifact_ref") {
+                    const snapshot = objects.readArtifactSnapshot(target.object_id);
+                    if (snapshot)
+                        return { ...base, artifact: snapshot.artifact, artifact_unavailable: false };
                     const resolvedRef = resolveArtifactRef(target.payload);
                     return { ...base, artifact: resolvedRef.artifact, artifact_unavailable: resolvedRef.unavailable };
                 }
@@ -484,6 +498,17 @@ export function createProductServer(options: {
         if (value.kind === "artifact_ref" && !value.archived) {
             const shape = value.payload && typeof value.payload === "object" ? value.payload as Record<string, unknown> : {};
             const index = typeof shape.artifact_index === "number" ? shape.artifact_index : -1;
+            const snapshot = objects.readArtifactSnapshot(value.object_id);
+            if (snapshot) {
+                json(res, {
+                    ...shared,
+                    payload: { artifact_index: index },
+                    artifact: snapshot.artifact,
+                    evidence: snapshot.evidence,
+                    captured_at: snapshot.captured_at || value.created_at
+                });
+                return;
+            }
             const resolvedRef = resolveArtifactRef(value.payload);
             if (resolvedRef.unavailable) {
                 json(res, { ...shared, payload: { artifact_index: index }, artifact: null, evidence: [], unavailable: true });
@@ -521,7 +546,7 @@ export function createProductServer(options: {
     });
     route("POST", /^\/api\/cap\/projection$/, async ({ req, res }) => {
         const input = parseBody(capProjectionSchema, await body(req));
-        const result = await data.call("product_cap_projection", { payload: { team: input.team ?? "", season: input.season ?? "2026-27", moves: input.moves ?? [], horizon: input.horizon } });
+        const result = await data.call("product_cap_projection", { payload: { team: input.team ?? "", season: input.season ?? "2026-27", moves: input.moves ?? [], horizon: input.horizon, tpes: input.tpes } });
         json(res, result, result.ok === false ? 422 : 200);
     });
     route("POST", /^\/api\/cap\/scenario$/, async ({ req, res }) => {
@@ -539,7 +564,7 @@ export function createProductServer(options: {
         const result = await data.call("product_trade_partners", { player: input.player ?? "", season: input.season ?? "2026-27", teams: teams(input.teams), max_packages: input.max_packages ?? 3 });
         json(res, result, result.ok === false ? 422 : 200);
     });
-    route("POST", /^\/api\/trade\/legs$/, async ({ req, res }) => { const input = parseBody(tradeLegsSchema, await body(req)); const result = await data.call("product_trade_legs", { legs: JSON.stringify(input.legs), season: input.season ?? "2026-27" }); json(res, result, result.ok === false ? 422 : 200); });
+    route("POST", /^\/api\/trade\/legs$/, async ({ req, res }) => { const input = parseBody(tradeLegsSchema, await body(req)); const result = await data.call("product_trade_legs", { legs: JSON.stringify(input.legs), season: input.season ?? "2026-27", tpes: input.tpes ? JSON.stringify(input.tpes) : "" }); json(res, result, result.ok === false ? 422 : 200); });
     route("GET", /^\/api\/history\/career$/, async ({ res, url }) => { const result = await data.call("product_history_career", { player: (url.searchParams.get("player") ?? "").slice(0, 80) }); json(res, result, result.ok === false ? 422 : 200); });
     route("GET", /^\/api\/history\/era-comps$/, async ({ res, url }) => { const result = await data.call("product_history_era_comps", { player_id: Number(url.searchParams.get("player_id") ?? 0), season: url.searchParams.get("season") ?? "", k: Number(url.searchParams.get("k") ?? 8), player: url.searchParams.get("player") ?? "", start_season: url.searchParams.get("start") ?? "", end_season: url.searchParams.get("end") ?? "" }); json(res, result, result.ok === false ? 422 : 200); });
     route("GET", /^\/api\/history\/leaders$/, async ({ res, url }) => { const result = await data.call("product_history_leaders", { season: url.searchParams.get("season") ?? "", category: url.searchParams.get("category") ?? "pts" }); json(res, result, result.ok === false ? 422 : 200); });

@@ -353,7 +353,7 @@ export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: st
             </div>
           </Section>
 
-          <Section title="Age curve — points per game" cite={arcCite} wide>
+          <Section title="Age curve: points per game" cite={arcCite} wide>
             {arcSeries.some(series => series.values.some(value => value != null))
               ? <ArtifactChart title="Points per game by age" series={arcSeries} xLabels={ageLabels.map(String)} unit="pts" footnote="Career points per game at each age." />
               : <p className="py-6 text-center text-[12px] text-ink-3">No career rows in the warehouse.</p>}

@@ -1,5 +1,6 @@
 import os
 import random
+from itertools import combinations
 from collections import Counter
 from itertools import product
 
@@ -441,6 +442,18 @@ def test_expanded_matching_standard_cushion_exact_boundaries():
             f"cushion={cushion!r} actual={actual!r} expected={expected!r}")
 
 
+def _elective_oracle(salaries, first_capacity, capacities):
+    if _assignment_oracle(salaries, [first_capacity], 0):
+        return (), True
+    for size in range(1, len(capacities) + 1):
+        for combo in combinations(range(len(capacities)), size):
+            bins = [capacities[index] for index in combo]
+            required = sum(1 << (position + 1) for position in range(len(bins)))
+            if _assignment_oracle(salaries, [first_capacity] + bins, required):
+                return combo, True
+    return None, False
+
+
 def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
     rng = random.Random(SEED + 3)
     distribution = Counter()
@@ -473,23 +486,36 @@ def test_evaluate_team_generated_inputs_keep_matching_and_hard_caps_in_sync():
             side["out_total"], expected_over_apron1, room_before)
         first_capacity = _oracle_first_capacity(
             side["out_total"], expected_allow, room_before)
-        expected_fit = _assignment_oracle(
-            salaries, [first_capacity] + expected_capacities, required_bins)
+        combo, elected_fit = _elective_oracle(
+            salaries, first_capacity, expected_capacities)
+        expected_fit = elected_fit
+        elected_capacities = ([expected_capacities[index] for index in combo]
+                              if combo else [])
+        if combo is None and expected_capacities:
+            oracle_capacities = expected_capacities
+        else:
+            oracle_capacities = elected_capacities
+        oracle_required = sum(
+            1 << (index + 1) for index in range(len(oracle_capacities)))
         cushion = 0 if expected_over_apron1 else MATCHING_CUSHION
         expected_expanded = _expected_expanded_matching(
             salaries, side["in_total"], side["out_total"], room_before,
-            expected_capacities, required_bins, cushion)
+            oracle_capacities, oracle_required, cushion)
+        tpe_in_structure = (bool(combo)
+                            or (combo is None and bool(expected_capacities)))
         expected_election = _expected_matching_election(
             side["in_total"], side["out_total"], room_before, cushion,
-            len(side["out_names"]), expected_expanded, bool(team_tpes))
+            len(side["out_names"]), expected_expanded, tpe_in_structure)
         expected_match_rule = _expected_operative_match_rule(
             expected_band_rule, expected_election)
+        elected_rows = ([team_tpes[index] for index in combo]
+                        if combo else [])
         expected_aprons = set()
         if len(side["out_names"]) > 1 or cash_out or any(
-                item["kind"] == "sign_and_trade" for item in team_tpes):
+                item["kind"] == "sign_and_trade" for item in elected_rows):
             expected_aprons.add("second apron")
         if expected_expanded or any(
-                item["status"] == "prior_year" for item in team_tpes):
+                item["status"] == "prior_year" for item in elected_rows):
             expected_aprons.add("first apron")
         actual_aprons = set(filter(None, row["hard_cap"].split("+")))
         joined_issues = "\n".join(issues)

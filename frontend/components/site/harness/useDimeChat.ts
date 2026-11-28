@@ -7,7 +7,9 @@ import { getModels } from "@/lib/api";
 import { cacheChatRun, loadChatRuns } from "@/lib/chat-persistence";
 import { modelDisplayName } from "@/lib/modelNames";
 import { streamDimeChat } from "@/lib/dime-stream";
-import { serializeViewContext } from "@/lib/view-context";
+import { serializeViewContext, splitViewContext } from "@/lib/view-context";
+import { clearChatDraft, loadChatDraft, saveChatDraft } from "@/lib/chat-drafts";
+import { isAtBottom, scrolledUp } from "@/lib/scroll";
 import {
   assistantMessageFromSnapshot,
   REFERENCE_TAB,
@@ -42,7 +44,11 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
   const [modelsAttempt, setModelsAttempt] = useState(0);
   const showReference = activeTab === REFERENCE_TAB && messages.length === 0;
   const [live, setLive] = useState<LiveRun | null>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftState] = useState(() => loadChatDraft(options?.thread ?? "") ?? "");
+  const setDraft = (text: string) => {
+    setDraftState(text);
+    saveChatDraft(options?.thread ?? "", text);
+  };
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileNavShown, setMobileNavShown] = useState(false);
@@ -94,11 +100,7 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     setMessagesByTab((m) => ({ ...m, [tabId]: [...(m[tabId] ?? []), message] }));
   };
 
-  const submit = (raw?: string, context?: import("@/lib/view-context").ViewContext) => {
-    const q = (raw ?? draft).trim();
-    if (!q || live || historyLoading || (!options?.replay && !modelOptions.some(item => item.id === model && item.available !== false))) return;
-    options?.onSubmit?.();
-    const tabId = thread ?? activeTab;
+  const runSubmission = (q: string, context: import("@/lib/view-context").ViewContext | undefined, tabId: string) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -107,8 +109,6 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     const startedAt = Date.now();
     liveQuestion.current = q;
     const turnText = context ? serializeViewContext(context, q) : q;
-    appendMessage(tabId, { role: "user", text: turnText });
-    setDraft("");
     setLive({
       id,
       startedAt,
@@ -144,6 +144,36 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
       },
       { signal: ctrl.signal, model, thread, replay: options?.replay, ...(context ? { context } : {}) },
     );
+  };
+
+  const canSubmit = () => !live && !historyLoading && (options?.replay || modelOptions.some(item => item.id === model && item.available !== false));
+
+  const submit = (raw?: string, context?: import("@/lib/view-context").ViewContext) => {
+    const q = (raw ?? draft).trim();
+    if (!q || !canSubmit()) return;
+    options?.onSubmit?.();
+    const tabId = thread ?? activeTab;
+    const turnText = context ? serializeViewContext(context, q) : q;
+    followingRef.current = true;
+    appendMessage(tabId, { role: "user", text: turnText });
+    setDraftState("");
+    clearChatDraft(options?.thread ?? "");
+    runSubmission(q, context, tabId);
+  };
+
+  const retry = (index: number) => {
+    const tabId = thread ?? activeTab;
+    const msgs = messagesByTab[tabId] ?? [];
+    const failedMsg = msgs[index];
+    if (!failedMsg || failedMsg.role !== "assistant" || !failedMsg.failure || !canSubmit()) return;
+    let userText: string | null = null;
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (msgs[i].role === "user") { userText = msgs[i].text; break; }
+    }
+    if (!userText) return;
+    const { context, text } = splitViewContext(userText);
+    setMessagesByTab((m) => ({ ...m, [tabId]: (m[tabId] ?? []).filter((_, i) => i !== index) }));
+    runSubmission(text, context ?? undefined, tabId);
   };
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -218,11 +248,22 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileNavOpen]);
 
-  useEffect(() => {
+  const followingRef = useRef(true);
+  const lastScrollTop = useRef(0);
+
+  const onConversationScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollTo({ top: el.scrollHeight, behavior: reduce ? "auto" : "smooth" });
+    if (scrolledUp(lastScrollTop.current, el.scrollTop)) followingRef.current = false;
+    if (isAtBottom(el)) followingRef.current = true;
+    lastScrollTop.current = el.scrollTop;
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !followingRef.current) return;
+    const running = live != null && !live.done;
+    el.scrollTo({ top: el.scrollHeight, behavior: running ? "auto" : (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth") });
   }, [messages, live]);
 
   const paletteEntries: PaletteEntry[] = useMemo(
@@ -304,10 +345,12 @@ export function useDimeChat(options?: { thread: string; replay?: string | null; 
     closeMobileNav,
     inputRef,
     scrollRef,
+    onConversationScroll,
     menuBtnRef,
     sheetRef,
     addTab,
     closeTab,
     submit,
+    retry,
   };
 }

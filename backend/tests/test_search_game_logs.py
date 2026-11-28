@@ -192,8 +192,13 @@ def _rs_only_player():
                 LIMIT 25""").fetchall()
         for (pid,) in rows:
             name = _rname(pid, "")
-            if name and _coerce(name) == pid:
-                return name, pid
+            if not name:
+                continue
+            try:
+                if _coerce(name) == pid:
+                    return name, pid
+            except Exception:
+                continue
     finally:
         con.close()
     return None

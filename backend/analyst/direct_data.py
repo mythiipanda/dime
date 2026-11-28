@@ -170,7 +170,7 @@ def product_history_leaders(season: str, category: str = 'pts') -> dict:
                      'normalization': 'z = (value - pool mean) / pool stdev within the season'}}
 
 @tool(description='Evaluate a multi-team trade construction through the CBA legality engine.')
-def product_trade_legs(legs: str, season: str = '2026-27') -> dict:
+def product_trade_legs(legs: str, season: str = '2026-27', tpes: str = '') -> dict:
     import json as _json
     from shared.tools import get_trade_legality
     if not legs:
@@ -185,7 +185,10 @@ def product_trade_legs(legs: str, season: str = '2026-27') -> dict:
         if not isinstance(leg, dict) or not leg.get('from') or not leg.get('to'):
             return {'ok': False, 'error': 'each leg needs from/to teams'}
     try:
-        return get_trade_legality.invoke({'legs': _json.dumps(parsed), 'season': season})
+        args = {'legs': _json.dumps(parsed), 'season': season}
+        if tpes:
+            args['tpe'] = tpes if isinstance(tpes, str) else _json.dumps(tpes)
+        return get_trade_legality.invoke(args)
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
 
@@ -815,7 +818,7 @@ def _hist_year(season: str) -> int:
 def _compare_season_line(con, pid: int, season: str) -> dict:
     if "silver_hist_player_seasons" not in _compare_tables(con):
         return {"ok": False, "error": "silver_hist_player_seasons not in warehouse"}
-    year = _hist_year(season)
+    year = _hist_year(season) + 1
     row = con.execute(
         """SELECT season, age, team_abbreviation, gp, min, pts, reb, ast, stl, blk,
                   fg_pct, fg3_pct, ft_pct, ts_pct, efg_pct, usg_pct, off_rating, def_rating, net_rating
@@ -826,20 +829,23 @@ def _compare_season_line(con, pid: int, season: str) -> dict:
     keys = ["season", "age", "team", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg", "fg_pct", "fg3_pct", "ft_pct", "ts_pct", "efg_pct", "usg_pct", "off_rating", "def_rating", "net_rating"]
     return {"ok": True, "row": dict(zip(keys, row)), "provenance": {"table": "silver_hist_player_seasons", "as_of": _compare_as_of(con, "silver_hist_player_seasons")}}
 
-def _compare_impact(con, pid: int, season: str) -> dict:
+def _compare_impact(con, pid: int, season: str, name: str = "") -> dict:
     if "silver_raptor_player" not in _compare_tables(con):
         return {"ok": False, "error": "silver_raptor_player not in warehouse"}
+    from shared.contracts import player_name_key_sql
     cite = {"table": "silver_raptor_player", "as_of": _compare_as_of(con, "silver_raptor_player")}
+    end_year = _hist_year(season) + 1
+    key = player_name_key_sql("PLAYER_NAME")
     row = con.execute(
-        "SELECT RAPTOR_TOTAL, WAR_TOTAL, MP FROM silver_raptor_player WHERE PLAYER_ID = ? AND _season = ? LIMIT 1",
-        [pid, season]).fetchone()
+        f"SELECT RAPTOR_TOTAL, WAR_TOTAL, MP FROM silver_raptor_player WHERE {key} = {player_name_key_sql('?')} AND SEASON = ? LIMIT 1",
+        [name, end_year]).fetchone()
     if not row:
         return {"ok": False, "error": f"no impact row for {season}", "provenance": cite}
     total = float(row[0])
     rank = con.execute(
-        "SELECT COUNT(*) + 1 FROM silver_raptor_player WHERE _season = ? AND RAPTOR_TOTAL > ?",
-        [season, row[0]]).fetchone()[0]
-    of = con.execute("SELECT COUNT(*) FROM silver_raptor_player WHERE _season = ?", [season]).fetchone()[0]
+        "SELECT COUNT(*) + 1 FROM silver_raptor_player WHERE SEASON = ? AND RAPTOR_TOTAL > ?",
+        [end_year, row[0]]).fetchone()[0]
+    of = con.execute("SELECT COUNT(*) FROM silver_raptor_player WHERE SEASON = ?", [end_year]).fetchone()[0]
     return {"ok": True, "raptor_total": total, "war_total": float(row[1]), "mp": float(row[2]), "rank": int(rank), "of": int(of), "provenance": cite}
 
 def _compare_zones(con, pid: int, season: str) -> dict:
@@ -916,13 +922,21 @@ def product_compare(players: str = '', season: str = '2025-26') -> dict:
         out = []
         for pid, useason in parsed:
             name = _compare_name(con, pid)
+            blocks = {}
+            for label, builder in (
+                ("season_line", lambda: _compare_season_line(con, pid, useason)),
+                ("impact", lambda: _compare_impact(con, pid, useason, name)),
+                ("zones", lambda: _compare_zones(con, pid, useason)),
+                ("contract", lambda: _compare_contract(con, pid, name)),
+                ("arc", lambda: _compare_arc(con, pid)),
+            ):
+                try:
+                    blocks[label] = builder()
+                except Exception as error:
+                    blocks[label] = {"ok": False, "error": f"{label} unavailable: {str(error)[:120]}"}
             out.append({
                 "player_id": pid, "name": name, "season": useason,
-                "season_line": _compare_season_line(con, pid, useason),
-                "impact": _compare_impact(con, pid, useason),
-                "zones": _compare_zones(con, pid, useason),
-                "contract": _compare_contract(con, pid, name),
-                "arc": _compare_arc(con, pid),
+                **blocks,
             })
     finally:
         con.close()

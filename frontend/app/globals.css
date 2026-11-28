@@ -6,25 +6,25 @@
 
 :root {
   
-  --page: oklch(0.985 0.001 286.376);
-  --canvas: oklch(0.961 0.002 247.84);
+  --page: oklch(0.985 0 0);
+  --canvas: oklch(0.961 0 0);
   --surface: oklch(1 0 0);
-  --inset: oklch(0.979 0.002 247.839);
-  --hover: oklch(0.97 0.002 247.839);
-  --hover-2: oklch(0.933 0.003 247.86);
+  --inset: oklch(0.979 0 0);
+  --hover: oklch(0.97 0 0);
+  --hover-2: oklch(0.933 0 0);
 
   
-  --ink: oklch(0.247 0.006 258.361);
-  --ink-2: oklch(0.506 0.01 264.477);
-  --ink-3: oklch(0.52 0.009 264.505);
+  --ink: oklch(0.247 0 0);
+  --ink-2: oklch(0.506 0 0);
+  --ink-3: oklch(0.52 0 0);
 
   
-  --line: oklch(0.946 0.003 264.542);
-  --line-strong: oklch(0.912 0.005 258.326);
-  --line-soft: oklch(0.966 0.002 264.542);
+  --line: oklch(0.946 0 0);
+  --line-strong: oklch(0.912 0 0);
+  --line-soft: oklch(0.966 0 0);
   --grid-line: color-mix(in srgb, var(--line) 78%, transparent);
-  --field: oklch(0.961 0.001 286.375);
-  --control-edge: oklch(0.64 0.01 264.477);
+  --field: oklch(0.961 0 0);
+  --control-edge: oklch(0.64 0 0);
   --stripe: oklch(0.405 0 0 / 0.075);
   --stripe-bg: oklch(0.97 0 0);
 
@@ -42,10 +42,10 @@
   --red-tint: oklch(0.956 0.017 17.462);
 
   
-  --tooltip-bg: oklch(0.272 0.008 264.435);
-  --tooltip-fg: oklch(0.976 0.002 247.839);
-  --tooltip-muted: oklch(0.731 0.008 260.731);
-  --tooltip-border: oklch(0.356 0.007 264.474);
+  --tooltip-bg: oklch(0.272 0 0);
+  --tooltip-fg: oklch(0.976 0 0);
+  --tooltip-muted: oklch(0.731 0 0);
+  --tooltip-border: oklch(0.356 0 0);
 
   
   --shadow-hairline: 0 0 0 1px var(--line);
@@ -57,22 +57,22 @@
 }
 
 .dark {
-  --page: oklch(0.209 0.004 264.477);
-  --canvas: oklch(0.231 0.004 264.487);
-  --surface: oklch(0.26 0.006 271.191);
-  --inset: oklch(0.243 0.004 264.492);
-  --hover: oklch(0.289 0.006 271.22);
-  --hover-2: oklch(0.318 0.007 274.747);
+  --page: oklch(0.209 0 0);
+  --canvas: oklch(0.231 0 0);
+  --surface: oklch(0.26 0 0);
+  --inset: oklch(0.243 0 0);
+  --hover: oklch(0.289 0 0);
+  --hover-2: oklch(0.318 0 0);
 
-  --ink: oklch(0.964 0.002 247.839);
-  --ink-2: oklch(0.731 0.008 260.731);
-  --ink-3: oklch(0.67 0.01 264.484);
+  --ink: oklch(0.964 0 0);
+  --ink-2: oklch(0.731 0 0);
+  --ink-3: oklch(0.67 0 0);
 
-  --line: oklch(0.308 0.006 258.354);
-  --line-strong: oklch(0.356 0.007 264.474);
-  --line-soft: oklch(0.278 0.006 258.354);
-  --field: oklch(0.293 0.006 271.223);
-  --control-edge: oklch(0.56 0.01 264.477);
+  --line: oklch(0.308 0 0);
+  --line-strong: oklch(0.356 0 0);
+  --line-soft: oklch(0.278 0 0);
+  --field: oklch(0.293 0 0);
+  --control-edge: oklch(0.56 0 0);
   --stripe: oklch(1 0 0 / 0.055);
   --stripe-bg: oklch(0.226 0.004 264.485);
 
@@ -87,10 +87,10 @@
   --red: oklch(0.72 0.16 21.433);
   --red-tint: oklch(0.666 0.18 21.433 / 0.14);
 
-  --tooltip-bg: oklch(0.182 0.004 264.459);
-  --tooltip-fg: oklch(0.964 0.002 247.839);
-  --tooltip-muted: oklch(0.731 0.008 260.731);
-  --tooltip-border: oklch(0.308 0.006 258.354);
+  --tooltip-bg: oklch(0.182 0 0);
+  --tooltip-fg: oklch(0.964 0 0);
+  --tooltip-muted: oklch(0.731 0 0);
+  --tooltip-border: oklch(0.308 0 0);
 
   --shadow-hairline: 0 0 0 1px var(--line);
   
@@ -163,7 +163,6 @@ html {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 }
 
@@ -188,6 +187,10 @@ body {
 ::selection {
   background: var(--accent-tint);
   color: var(--ink);
+}
+
+body:has(.share-frame) {
+  background-image: none;
 }
 
 * {
@@ -325,7 +328,6 @@ a {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 input:focus-visible,
@@ -350,7 +352,7 @@ select:focus-visible,
   background: currentColor;
   transform: scaleX(0);
   transform-origin: left center;
-  transition: transform 280ms var(--ease-link);
+  transition: none;
 }
 
 a:hover .animated-underline::after,
@@ -545,7 +547,7 @@ a:focus-visible .animated-underline::after {
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
-  transition: background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong), transform 140ms var(--ease-out-strong), box-shadow 140ms var(--ease-out-strong);
+  transition: background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong), box-shadow 140ms var(--ease-out-strong);
 }
 
 .records-select-button {
@@ -747,7 +749,7 @@ a:focus-visible .animated-underline::after {
   content: "";
   opacity: 0;
   transform: scaleY(0.65);
-  transition: opacity 120ms ease-out, transform 150ms var(--ease-out-strong);
+  transition: opacity 120ms ease-out;
 }
 
 .records-resize-handle:hover::after,
@@ -796,7 +798,7 @@ a:focus-visible .animated-underline::after {
   flex-shrink: 0;
   margin-left: auto;
   opacity: 0;
-  transition: opacity 120ms ease-out, transform 160ms var(--ease-out-strong);
+  transition: opacity 120ms ease-out;
 }
 
 .records-header-button:hover .records-sort,
@@ -857,7 +859,7 @@ a:focus-visible .animated-underline::after {
   border-radius: 6px;
   color: oklch(0.446 0.018 251.343);
   background: oklch(1 0 0);
-  transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out, transform 140ms var(--ease-out-strong);
+  transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out;
 }
 
 .records-checkbox:hover .records-checkbox-box {
@@ -1212,7 +1214,7 @@ th.is-colsel .records-header-icon {
   font-size: 14px;
   font-weight: 500;
   line-height: 1;
-  transition: color 120ms ease-out, transform 140ms var(--ease-out-strong);
+  transition: color 120ms ease-out;
 }
 
 .records-add-calculation:hover {
@@ -1425,6 +1427,55 @@ th.is-colsel .records-header-icon {
   }
 }
 
+@keyframes artifact-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes artifact-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes view-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.artifact-enter {
+  animation: artifact-fade var(--motion-fast) ease-out both;
+}
+
+.view-fade {
+  animation: view-fade-in var(--motion-fast) ease-out both;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .artifact-enter {
+    animation: artifact-enter var(--motion-normal) var(--ease-out-strong) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-enter, .view-fade {
+    animation-duration: var(--motion-fast) !important;
+  }
+}
+
 @keyframes pop-in {
   from {
     opacity: 0;
@@ -1454,12 +1505,57 @@ th.is-colsel .records-header-icon {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+
+@media (prefers-reduced-motion: no-preference) {
+  .records-resize-handle::after {
+    transition: opacity 120ms ease-out, transform 150ms var(--ease-out-strong);
   }
+
+  .records-sort {
+    transition: opacity 120ms ease-out, transform 160ms var(--ease-out-strong);
+  }
+
+  .records-primary-button {
+    transition: background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong), transform 140ms var(--ease-out-strong), box-shadow 140ms var(--ease-out-strong);
+  }
+
+  .records-checkbox-box {
+    transition: border-color 140ms ease-out, background-color 140ms ease-out, box-shadow 140ms ease-out, transform 140ms var(--ease-out-strong);
+  }
+
+  .records-add-calculation {
+    transition: color 120ms ease-out, transform 140ms var(--ease-out-strong);
+  }
+
+  .animated-underline::after {
+    transition: transform 280ms var(--ease-link);
+  }
+}
+
+.dime-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+  color: var(--ink);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+
+.dime-toast[data-type="error"] {
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line-strong));
+}
+
+.dime-toast-title {
+  font-weight: 500;
+}
+
+.dime-toast-description {
+  color: var(--ink-2);
 }

@@ -114,6 +114,16 @@ test("evidence tables distinguish zero from missing values and keep numeric alig
   assert.doesNotMatch(empty, /<table/);
 });
 
+test("evidence tables render long floats at four significant digits without touching integers", () => {
+  const dom = new JSDOM(renderToStaticMarkup(<RecordsTable title="Float evidence" rows={[{ player: "Guard A", pts: 32.68421052631579, rate: 0.0045671, games: 82 }]} />));
+  const text = dom.window.document.body.textContent!;
+  assert.match(text, /32\.68/);
+  assert.doesNotMatch(text, /32\.684210526/);
+  assert.match(text, /0\.004567/);
+  assert.match(text, /82/);
+  dom.window.close();
+});
+
 test("native field validation supplies associated feedback without an explicit error", async () => {
   const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost", pretendToBeVisual: true });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, HTMLInputElement: dom.window.HTMLInputElement, Element: dom.window.Element, Node: dom.window.Node, Event: dom.window.Event, FormData: dom.window.FormData, IS_REACT_ACT_ENVIRONMENT: true });
@@ -227,3 +237,112 @@ for (const [theme, palette] of [["light", light], ["dark", dark]] as const) {
     });
   }
 }
+
+test("entrances keep opacity fades under reduced motion and layer movement behind no-preference", () => {
+  const globals = readFileSync(new URL("./app/globals.css", import.meta.url), "utf8");
+  assert.ok(globals.includes("@keyframes artifact-fade"), "opacity-only artifact fade keyframes exist");
+  assert.ok(globals.includes("@keyframes artifact-enter"), "movement-bearing artifact entrance keyframes exist");
+  const noPreference = [...globals.matchAll(/@media \(prefers-reduced-motion: no-preference\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join("\n");
+  assert.ok(noPreference.includes(".artifact-enter"), "the translate-bearing entrance applies only when motion is allowed");
+  const reduceBlocks = [...globals.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join("\n");
+  assert.ok(reduceBlocks.includes(".artifact-enter"), "reduced motion re-enables the opacity fade duration for entrances");
+  const base = globals.match(/\.artifact-enter \{\n\s+animation: artifact-fade/);
+  assert.ok(base, "the base artifact entrance is the opacity-only fade");
+});
+
+test("reduced motion keeps opacity fades while movement transitions are opt-in gated", () => {
+  const globals = readFileSync(new URL("./app/globals.css", import.meta.url), "utf8");
+  const reduceBlocks = [...globals.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map(m => m[1]);
+  const blanket = reduceBlocks.find(b => b.includes("animation-duration"));
+  assert.ok(blanket, "a reduced-motion animation override exists");
+  assert.ok(!blanket!.includes("transition-duration"), "the blanket override must not kill opacity/color transitions");
+  const noPreference = [...globals.matchAll(/@media \(prefers-reduced-motion: no-preference\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join("\n");
+  for (const sel of [".records-resize-handle::after", ".records-sort", ".records-primary-button", ".records-checkbox-box", ".records-add-calculation", ".animated-underline::after"]) {
+    assert.ok(noPreference.includes(sel), `${sel} transform transition is gated behind no-preference`);
+  }
+  const sortBase = globals.match(/\.records-sort \{(?!.*transform)[\s\S]*?transition: opacity 120ms ease-out;/);
+  assert.ok(sortBase, "the base rule keeps the opacity fade without the transform");
+});
+
+
+test("chart threshold marks label in the legend strip, never inside the plot where bars collide", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactChart.tsx", import.meta.url), "utf8");
+  assert.ok(!source.includes("position: \"insideTopLeft\"") && !source.includes("position: \"insideTopRight\""), "reference-line labels must not render inside the plot area");
+  assert.ok(source.includes("mark-legend"), "mark labels ride in the legend strip");
+});
+
+test("shot chart court strokes use a legible mid-tone, not a hairline token", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactShotChart.tsx", import.meta.url), "utf8");
+  assert.ok(!source.includes('const LINE = "var(--line-strong)"'), "court geometry must not render in the hairline token — illegible in light mode");
+  assert.ok(source.includes("var(--ink-3)"), "court strokes use the mid-tone ink token");
+});
+
+test("card bodies do not repeat the kind label the shell already carries", () => {
+  for (const file of ["./components/dime/ArtifactPlayerCard.tsx", "./components/dime/ArtifactTeamCard.tsx"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(!source.includes("Player snapshot</p>") && !source.includes("Team snapshot</p>"), `${file} re-labels the kind inside the body — redundant with the shell header`);
+  }
+});
+
+test("card sections dedupe a citation shared by every section to one line", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactCardSections.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("sharedCitation"), "sections accept the card-level shared citation");
+  assert.ok(source.includes("citation !== sharedCitation"), "a section repeats its citation only when it differs from the shared one");
+  for (const file of ["./components/dime/ArtifactPlayerCard.tsx", "./components/dime/ArtifactTeamCard.tsx"]) {
+    const card = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(!card.includes("Scope not declared"), `${file} must not headline missing scope in the subtitle — the quiet provenance row carries it`);
+  }
+});
+
+test("the shell never renders undeclared provenance as a headline subtitle", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactShell.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes('source === "source not declared"'), "the shell drops the undeclared-provenance string from the subtitle slot");
+});
+
+test("scatter labels every point at low density and stays hover-only beyond it", () => {
+  const source = readFileSync(new URL("./components/dime/ArtifactScatter.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("points.length <= 8"), "static labels for all points when density is 8 or fewer");
+  assert.ok(source.includes("<title>"), "hover titles carry identity beyond that density");
+});
+
+test("currency-shorthand units compose inline with the number, not as a detached caption", () => {
+  const format = readFileSync(new URL("./lib/metric-format.ts", import.meta.url), "utf8");
+  assert.ok(format.includes('unit.startsWith("$")'), "shorthand currency units compose inline ($172M not 172 + $M beneath)");
+  const card = readFileSync(new URL("./components/dime/ArtifactTeamCard.tsx", import.meta.url), "utf8");
+  assert.ok(card.includes("unitEmbeddedInline(metric.unit)"), "the detached caption drops when the unit already rides inline");
+});
+
+test("an empty verification verdict compresses to one quiet line", () => {
+  const source = readFileSync(new URL("./components/site/harness/AnswerView.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("emptyCase"), "no-verified-claims renders as one quiet line, not a heavy card");
+});
+
+test("section metrics use the headline formatter and inline units never double as captions", () => {
+  const sections = readFileSync(new URL("./components/dime/ArtifactCardSections.tsx", import.meta.url), "utf8");
+  assert.ok(sections.includes("formatHeadlineMetric(metric.value, metric.unit)") || sections.includes("formatHeadlineMetric(metric.value,"), "section metrics compose through the shared formatter — no String(value) bypass");
+  const format = readFileSync(new URL("./lib/metric-format.ts", import.meta.url), "utf8");
+  assert.ok(format.includes('unit === "usd_dollars"'), "the canonical currency token counts as inline-embedded — no machine-token caption");
+});
+
+test("compressed empty verdict does not duplicate the zero-claims fact", () => {
+  const source = readFileSync(new URL("./components/site/harness/AnswerView.tsx", import.meta.url), "utf8");
+  assert.ok(source.includes("replace(/^0 verified claims?"), "the detail's duplicate claim-count prefix strips in the compressed line");
+});
+
+test("table artifact rows type admits null, matching the renderer and real data", () => {
+  const source = readFileSync(new URL("./lib/stream/types.ts", import.meta.url), "utf8");
+  assert.ok(source.includes("rows: (string | number | null)[][]"), "the row type widened to reality");
+});
+
+test("the shell exposes a skip-to-content link as the first focusable stop", () => {
+  const shell = readFileSync(new URL("./components/shell/DimeShell.tsx", import.meta.url), "utf8");
+  const anchor = shell.indexOf('href="#dime-main-content"');
+  const sidebar = shell.indexOf("<SidebarNav");
+  assert.ok(anchor > -1, "skip link present");
+  assert.ok(anchor < sidebar, "skip link precedes the sidebar in tab order");
+  assert.match(shell, /id="dime-main-content"[^>]*tabIndex=\{-1\}/);
+  const css = readFileSync(new URL("./app/dime.css", import.meta.url), "utf8");
+  const hidden = css.match(/\.skip-to-content\s*\{([^}]+)\}/)![1];
+  assert.match(hidden, /left:\s*-9999px/);
+  assert.match(css, /\.skip-to-content:focus-visible\s*\{[^}]*left:\s*\d/);
+});

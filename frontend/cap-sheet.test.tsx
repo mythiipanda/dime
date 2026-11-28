@@ -122,8 +122,11 @@ async function clickOption(host: ParentNode, playerName: string, season: string)
   const row = [...host.querySelectorAll("tr")].find((entry) => entry.textContent?.includes(playerName))!;
   const cell = row.querySelectorAll("td")[yearIndex + 1];
   assert.ok(cell);
-  assert.match(cell.getAttribute("title") ?? "", /option/);
-  await click(cell);
+  const toggle = cell.querySelector("button");
+  assert.ok(toggle, "option cells are native buttons — keyboard-operable without a key handler shim");
+  assert.match(toggle.getAttribute("title") ?? "", /option/);
+  assert.equal(toggle.getAttribute("aria-pressed") !== null, true, "toggle state is exposed to assistive tech");
+  await click(toggle);
 }
 
 test("mixed signing and future option stays in the current season and surfaces the backend rejection", async () => {
@@ -228,6 +231,25 @@ test("post-mint edits surface Share updated instead of a dead end", async () => 
   }
 });
 
+test("waived players strike through in the waive season and all forward cells", async () => {
+  const mounted = await mountCapSheet([{ kind: "waive", player: "Jayson Tatum" }]);
+  try {
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    const loadSaved = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Load saved");
+    assert.ok(loadSaved, "Load saved button present");
+    await click(loadSaved);
+    const rows = [...mounted.host.querySelectorAll("tbody tr")];
+    const row = rows.find((tr) => (tr.textContent ?? "").includes("Jayson Tatum"));
+    assert.ok(row, "player row renders");
+    const cells = [...row.querySelectorAll("td")].slice(1);
+    assert.ok(cells.length > 1, "year cells render");
+    const struck = cells.filter((cell) => cell.className.includes("line-through"));
+    assert.equal(struck.length, cells.length, `every year cell strikes from the waive season forward, got ${struck.length} of ${cells.length}`);
+  } finally {
+    await mounted.cleanup();
+  }
+});
+
 test("roster rows without player_ids render distinctly — no key collapse for unsigned camp players", async () => {
   const errors: string[] = [];
   const originalError = console.error;
@@ -244,3 +266,26 @@ test("roster rows without player_ids render distinctly — no key collapse for u
   }
 });
 
+
+test("draft sync failure surfaces a sonner toast instead of dying silently", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    const { default: DimeToaster } = await import("./components/dime/DimeToaster");
+    const toasterHost = mounted.host.ownerDocument.createElement("div");
+    mounted.host.ownerDocument.body.appendChild(toasterHost);
+    const toasterRoot = createRoot(toasterHost);
+    await act(async () => toasterRoot.render(<DimeToaster />));
+    forceObjectError.value = true;
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    });
+    const toastText = mounted.host.ownerDocument.body.textContent ?? "";
+    assert.match(toastText, /aren't saving/i, "the sync failure surfaces as a toast");
+    assert.match(toastText, /retries as you keep editing/i, "the toast states the honest recovery behavior");
+    await act(async () => toasterRoot.unmount());
+  } finally {
+    forceObjectError.value = false;
+    await mounted.cleanup();
+  }
+});

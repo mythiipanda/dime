@@ -1061,7 +1061,15 @@
                   },
                   "exception_state": {
                     "type": "object",
-                    "additionalProperties": true
+                    "properties": {
+                      "ntmle_used": { "type": "number" },
+                      "tmle_used": { "type": "number" },
+                      "bae_used": { "type": "number" },
+                      "room_used": { "type": "number" },
+                      "bae_used_prior_cap_year": { "type": "boolean" },
+                      "operating_mode": { "type": "string" }
+                    },
+                    "additionalProperties": false
                   },
                   "moves": {
                     "type": "array",
@@ -1069,7 +1077,46 @@
                     "maxItems": 40,
                     "items": {
                       "type": "object",
-                      "additionalProperties": true
+                      "required": ["kind"],
+                      "properties": {
+                        "kind": { "type": "string" },
+                        "label": { "type": "string" },
+                        "amount": { "type": "number" },
+                        "player": { "type": "string" },
+                        "exercise": { "type": "boolean" },
+                        "stretch": { "type": "boolean" },
+                        "season": { "type": "string" },
+                        "exception": { "type": "string", "maxLength": 24 },
+                        "years": { "type": "number" },
+                        "first_year_amount": { "type": "number" },
+                        "mechanism": { "type": "string" },
+                        "unlikely_bonus": { "type": "number" },
+                        "years_of_service": { "type": "number" },
+                        "prior_salary": { "type": "number" },
+                        "signing_date": { "type": "string" },
+                        "prior_team": { "type": "string" },
+                        "free_agent_status": { "type": "string" },
+                        "replaces_cap_hold": { "type": "boolean" },
+                        "salary_schedule": {
+                          "type": "array",
+                          "maxItems": 8,
+                          "items": { "type": "number" }
+                        },
+                        "exception_state": {
+                          "type": "object",
+                          "properties": {
+                            "ntmle_used": { "type": "number" },
+                            "tmle_used": { "type": "number" },
+                            "bae_used": { "type": "number" },
+                            "room_used": { "type": "number" },
+                            "bae_used_prior_cap_year": { "type": "boolean" },
+                            "operating_mode": { "type": "string" }
+                          },
+                          "additionalProperties": false
+                        },
+                        "group": { "type": "string", "maxLength": 48 }
+                      },
+                      "additionalProperties": false
                     }
                   }
                 },
@@ -1137,6 +1184,121 @@
           },
           "422": {
             "description": "Invalid scenario request or domain error"
+          }
+        }
+      }
+    },
+    "/api/cap/projection": {
+      "post": {
+        "tags": [
+          "cap"
+        ],
+        "operationId": "cap_projection",
+        "summary": "Project a cap scenario across available seasons",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "team": { "type": "string" },
+                  "season": { "type": "string" },
+                  "waiver_date": { "type": "string" },
+                  "horizon": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3
+                  },
+                  "moves": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 40,
+                    "items": {
+                      "type": "object",
+                      "required": ["kind"],
+                      "properties": {
+                        "kind": { "type": "string" },
+                        "label": { "type": "string" },
+                        "amount": { "type": "number" },
+                        "player": { "type": "string" },
+                        "exercise": { "type": "boolean" },
+                        "stretch": { "type": "boolean" },
+                        "season": { "type": "string" },
+                        "exception": { "type": "string" },
+                        "years": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 5
+                        },
+                        "first_year_amount": { "type": "number" },
+                        "group": { "type": "string", "maxLength": 48 }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "tpes": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "items": {
+                      "type": "object",
+                      "required": ["team", "amount"],
+                      "properties": {
+                        "team": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 4
+                        },
+                        "amount": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "kind": { "type": "string", "maxLength": 24 },
+                        "origin_year": { "type": "integer" },
+                        "exactness": { "type": "string", "maxLength": 32 }
+                      },
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response. Season rows disclose exact, derived, proxy, unresolved, or unvalidated move effects.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "seasons": {
+                      "type": "array",
+                      "items": { "type": "object", "additionalProperties": true }
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": { "type": "object", "additionalProperties": true }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    },
+                    "disclosures": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid projection request or domain error"
           }
         }
       }

@@ -69,7 +69,15 @@ test("objects route contract: trade_scenario kind validates legs payload", async
       const response = await post("/api/objects", bad, { "x-dime-owner": owner });
       assert.equal(response.status, 422, JSON.stringify(bad));
     }
-    const created = await post("/api/objects", { kind: "trade_scenario", title: "DAL/NYK construction", payload: trade }, { "x-dime-owner": owner });
+    for (const badTpe of [
+      { kind: "trade_scenario", title: "t", payload: { ...trade, tpes: [{ team: "DAL" }] } },
+      { kind: "trade_scenario", title: "t", payload: { ...trade, tpes: [{ team: "DAL", amount: 0 }] } },
+      { kind: "trade_scenario", title: "t", payload: { ...trade, tpes: [{ team: "DAL", amount: 1000, bogus: 1 }] } },
+    ]) {
+      const response = await post("/api/objects", badTpe, { "x-dime-owner": owner });
+      assert.equal(response.status, 422, JSON.stringify(badTpe));
+    }
+    const created = await post("/api/objects", { kind: "trade_scenario", title: "DAL/NYK construction", payload: { ...trade, tpes: [{ team: "DAL", amount: 10_000_000, kind: "ordinary", exactness: "scenario_derived" }] } }, { "x-dime-owner": owner });
     assert.equal(created.status, 201);
     const object = await created.json();
     assert.ok(object.object_id);
@@ -79,6 +87,9 @@ test("objects route contract: trade_scenario kind validates legs payload", async
     assert.equal(shared.kind, "trade_scenario");
     assert.equal(shared.payload.legs.length, 2);
     assert.equal(shared.payload.season, "2026-27");
+    assert.equal(shared.payload.tpes.length, 1);
+    assert.equal(shared.payload.tpes[0].amount, 10_000_000);
+    assert.equal(shared.payload.tpes[0].exactness, "scenario_derived");
   }
   finally {
     server.close();
@@ -110,6 +121,16 @@ test("objects route contract: create, ownership, update, share rotation, public 
       const response = await post("/api/objects", bad, { "x-dime-owner": owner });
       assert.equal(response.status, 422, JSON.stringify(bad));
     }
+
+    const grouped = {
+      ...scenario,
+      moves: scenario.moves.map((move, index) => ({ ...move, ...(index === 0 ? { group: "trade-abc123" } : {}) })),
+      groups: { "trade-abc123": { partner: "NYK", verdict: true, evaluated_at: "2026-11-27T00:00:00.000Z" } },
+    };
+    const groupedMint = await post("/api/objects", { kind: "cap_scenario", title: "g", payload: grouped }, { "x-dime-owner": owner + "-grouped" });
+    assert.equal(groupedMint.status, 201, "group-tagged moves + groups metadata validate");
+    const groupedObject = await groupedMint.json();
+    assert.deepEqual(groupedObject.payload.groups, grouped.groups, "groups metadata round-trips verbatim");
 
     const created = await post("/api/objects", { kind: "cap_scenario", title: "Waiver wire plan", payload: scenario }, { "x-dime-owner": owner });
     assert.equal(created.status, 201);
@@ -458,5 +479,70 @@ test("objects route contract: archived pin targets resolve honestly in the share
   finally {
     server.close();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("artifact_ref mint captures a snapshot that survives run-store loss", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dime-objects-"));
+  const env = {
+    ...process.env,
+    DIME_CONVERSATION_STORE: join(root, "chat.sqlite"),
+    DIME_PROJECT_STORE: join(root, "projects.sqlite"),
+    DIME_WORKSPACE_STORE: join(root, "workspaces.sqlite"),
+    DIME_OBJECT_STORE: join(root, "objects.sqlite"),
+    DIME_PI_SOURCES_DIR: join(root, "pi-sources"),
+  };
+  const runId = "run-" + "d".repeat(32);
+  const owner = "client-snap-owner";
+  const thread = "thread-snap";
+  const { ProductStore } = await import("./dist/product-store.js");
+  const store = new ProductStore(env.DIME_CONVERSATION_STORE, env.DIME_PI_SOURCES_DIR);
+  store.append({ owner, thread }, "q", "a", runId);
+  store.saveSources(runId, [{
+    ref: "ref-1",
+    callId: "call-1",
+    tool: "sql_exec",
+    response: {
+      content: [],
+      structuredContent: { rows: [{ player: "Snap Player", pts: 31 }], meta: { season: "2025-26" } },
+    },
+  }], [{
+    ref: "ref-1",
+    callId: "call-1",
+    tool: "sql_exec",
+    response: {
+      content: [],
+      structuredContent: { rows: [{ player: "Snap Player", pts: 31 }], meta: { season: "2025-26" } },
+    },
+  }], {
+    blocks: [{ text: "answer" }],
+    artifacts: [{ kind: "player_card", title: "Snap Player card", sources: [{ ref: "ref-1", rows: [0] }] }],
+  });
+  const data = { close: async () => {}, call: async () => ({ ok: true, runs: [] }) };
+  const analyst = createAnalyst({ env, resolveModel: () => { throw new Error("No provider required"); }, saveChat: async () => {}, saveRun: async () => {} });
+  const server = createProductServer({ env, data, analyst, manifest: {} });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const { rmSync: rm, unlinkSync } = await import("node:fs");
+  try {
+    const created = await fetch(`${url}/api/objects`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-dime-owner": owner },
+      body: JSON.stringify({ kind: "artifact_ref", title: "snap card", payload: { run_id: runId, thread, artifact_index: 0 } }),
+    });
+    assert.equal(created.status, 201, await created.clone().text());
+    const object = await created.json();
+    const first = await (await fetch(`${url}/s/${object.read_token}`)).json();
+    assert.equal(first.artifact.title, "Snap Player card");
+    assert.equal(first.evidence.length, 1);
+    assert.equal(first.evidence[0].rows[0].player, "Snap Player");
+    unlinkSync(join(env.DIME_PI_SOURCES_DIR, runId + ".json"));
+    const second = await (await fetch(`${url}/s/${object.read_token}`)).json();
+    assert.equal(second.unavailable, undefined);
+    assert.equal(second.artifact.title, "Snap Player card");
+    assert.equal(second.evidence[0].rows[0].player, "Snap Player");
+  } finally {
+    server.close();
+    rm(root, { recursive: true, force: true });
   }
 });

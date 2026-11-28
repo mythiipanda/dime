@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr, contract_details, match_record, normalize_name, salary_records
-from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money, declare_units
 from .cba_cap import (
     CAP,
     SalaryColumnError,
@@ -109,8 +109,16 @@ def _trade_guard_team_error(con, team: str, players: str,
     for player in [x.strip() for x in str(players).split(",") if x.strip()]:
         actual = _season_player_team(con, player, season) if season else None
         if not actual:
+            kind_filter = ""
+            try:
+                scols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+                if "ROW_KIND" in scols:
+                    kind_filter = "AND ROW_KIND = 'roster'"
+            except Exception:
+                pass
             row = con.execute(
-                "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
+                "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) "
+                + kind_filter + " ORDER BY TEAM LIMIT 1",
                 [player]).fetchone()
             actual = canonical_team_abbr(row[0]) if row and row[0] else ""
         if actual and actual != team_code:
@@ -221,7 +229,24 @@ def _trade_check_checks(team_a: str, rule_a: str, team_b: str,
     ]
 
 
+def _tpe_creation_block(outgoing: int, incoming: int, pay_before: int,
+                        pay_after: int, over_apron1: bool) -> dict[str, Any] | None:
+    if not (outgoing > incoming and pay_before > CAP["cap"]
+            and pay_after > CAP["cap"] and not over_apron1):
+        return None
+    amount = outgoing - incoming
+    return {
+        "amount": amount,
+        "expiry": "one year from the trade execution date",
+        "condition": ("would generate only if this construction is executed as a "
+                      "non-simultaneous trade — a simultaneous execution forfeits the exception"),
+        "copy": (f"If executed as a non-simultaneous trade, this construction would generate "
+                 f"a ${amount / 1_000_000:.1f}M trade exception expiring one year from the "
+                 f"execution date. Executed simultaneously, it generates nothing."),
+    }
+
 @tool(description='Trade legality check. Player names comma separated per side.\n\n2023 CBA matching for 2026-27 below the first apron: 200 percent plus\n250k when outgoing is up to 8.846M, outgoing plus 9.096M up to 35.384M,\n125 percent plus 250k above that. 100 percent above the first apron, no\naggregation above the second apron. Expanded matching use hard-caps at the\nfirst apron; cap-room absorption does not. Cash and exceptions stay out.')
+
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
     season: str | None = None,
@@ -273,8 +298,8 @@ def get_trade_check(
                               f"not grading a one-sided 'trade'. If you "
                               f"meant a past real-world trade, say which "
                               f"teams and players were in it.")}
-        pay_a, _ = _payroll(team_a, con, season)
-        pay_b, _ = _payroll(team_b, con, season)
+        pay_a, _roster_a, _dead_a = _payroll(team_a, con, season)
+        pay_b, _roster_b, _dead_b = _payroll(team_b, con, season)
         salary_date = _salary_date(con)
         source = _payroll_source(con)
     pay_after_a = pay_a - out_a + out_b
@@ -309,13 +334,19 @@ def get_trade_check(
                                  names_b, out_a, allow_a, out_b, allow_b)
     issues.extend(hard_cap_a["issues"])
     issues.extend(hard_cap_b["issues"])
-    return {"tool": "get_trade_check", "ok": True,
-            "rows": {"team_a": _trade_side_rows(
-                         team_a, side_a, pay_a, state_a, allow_a, rule_a,
-                         need_a, hard_cap_a["hard_cap"], election_a),
-                     "team_b": _trade_side_rows(
-                         team_b, side_b, pay_b, state_b, allow_b, rule_b,
-                         need_b, hard_cap_b["hard_cap"], election_b),
+    rows_a = _trade_side_rows(
+        team_a, side_a, pay_a, state_a, allow_a, rule_a,
+        need_a, hard_cap_a["hard_cap"], election_a)
+    rows_b = _trade_side_rows(
+        team_b, side_b, pay_b, state_b, allow_b, rule_b,
+        need_b, hard_cap_b["hard_cap"], election_b)
+    rows_a["tpe_creation"] = _tpe_creation_block(
+        out_a, out_b, pay_a, pay_after_a, bool(state_a["over_apron1"]))
+    rows_b["tpe_creation"] = _tpe_creation_block(
+        out_b, out_a, pay_b, pay_after_b, bool(state_b["over_apron1"]))
+    out = {"tool": "get_trade_check", "ok": True,
+            "rows": {"team_a": rows_a,
+                     "team_b": rows_b,
                      "legal": not issues, "issues": issues,
                      "checks": _trade_check_checks(team_a, rule_a, team_b,
                                                    rule_b),
@@ -329,6 +360,7 @@ def get_trade_check(
             "meta": {"source": source, "rules": "v1-simplified",
                      "salary_date": salary_date, "season": season,
                      **_payroll_proxy_meta()}}
+    return declare_money(out, ["amount", "salary", "incoming", "outgoing", "allowed_incoming", "capacity", "payroll", "cap_room", "player_salary", "max_return_salary"])
 
 
 _TRADE_PARTNER_PACKAGE_MAX = 3
@@ -408,7 +440,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
         name = str(record["PLAYER_NAME"])
         team_a = canonical_team_abbr(record["TEAM"])
         incoming = int(record["salary"])
-        pay_a, _ = _payroll(team_a, con, season)
+        pay_a, _roster_a, _dead_a = _payroll(team_a, con, season)
         room_a = max(0, CAP["cap"] - pay_a)
         expanded_a, rule_expanded_a = _allowed_incoming(incoming, False, room_a)
         strict_a, rule_strict_a = _allowed_incoming(incoming, True, room_a)
@@ -425,7 +457,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
         for team in partners:
             if restrict and team not in restrict:
                 continue
-            pay_b, roster = _payroll(team, con, season)
+            pay_b, roster, _dead = _payroll(team, con, season)
             room_b = max(0, CAP["cap"] - pay_b)
             packages = _partner_package_rows(
                 team, roster, incoming, pay_a, room_a, pay_b, room_b, limit)
@@ -435,7 +467,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
                 no_fit.append(team)
         source = _payroll_source(con)
         salary_date = _salary_date(con)
-    return {"tool": "get_trade_partners", "ok": True,
+    out = {"tool": "get_trade_partners", "ok": True,
             "rows": rows,
             "meta": {"source": source, "salary_date": salary_date,
                      "season": season, "rules": "v1-simplified",
@@ -445,6 +477,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
                      "match_rule_in": rule_a,
                      "teams_without_fit": no_fit,
                      "disclaimer": _TRADE_PARTNER_DISCLAIMER}}
+    return declare_money(out, ["amount", "salary", "incoming", "outgoing", "allowed_incoming", "capacity", "payroll", "cap_room", "player_salary", "max_return_salary"])
 
 
 _TRADE_VALUE_WEIGHTS = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
@@ -1005,7 +1038,7 @@ def get_trade_value(
           f"versus {sal_season} salaries, so this is not cap-legality advice: "
           "pair it with get_trade_check.")
 
-    return {"tool": "get_trade_value", "ok": True,
+    return declare_units({"tool": "get_trade_value", "ok": True,
             "rows": {"team_a": {"team": abbr_a, "players": players_a,
                                 "picks": picks_list_a, "side_total_m": total_a},
                      "team_b": {"team": abbr_b, "players": players_b,
@@ -1024,4 +1057,7 @@ def get_trade_value(
             "meta": {"source": payroll_source,
                      "production_season": prod_season,
                      "salary_season": sal_season,
-                     "estimates": True}}
+                     "estimates": True}},
+            {"salary": "usd_dollars", "side_total_m": "usd_millions",
+             "delta_m": "usd_millions", "residual_m": "usd_millions",
+             "value_m": "usd_millions"})

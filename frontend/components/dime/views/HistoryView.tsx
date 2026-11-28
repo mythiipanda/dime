@@ -32,6 +32,7 @@ type CareerResponse = {
 type CompDriver = { stat: string; target: number | null; comp: number | null };
 
 type CompRow = {
+  z?: Record<string, number>;
   PLAYER: string;
   PLAYER_ID: number;
   TEAM: string;
@@ -43,9 +44,21 @@ type CompRow = {
   shared_archetype?: boolean;
 };
 
+type CompsQualification = {
+  gp: number;
+  min_pg: number;
+  total_min: number | null;
+  rule: string;
+};
+
 type CompsResponse = {
   ok: boolean;
+  qualified?: boolean;
   rows?: CompRow[];
+  player?: { name?: string; z?: Record<string, number> };
+  qualification?: CompsQualification;
+  qualifying_seasons?: string[];
+  meta?: { features?: string[]; feature_labels?: Record<string, string> };
   error?: string;
 };
 
@@ -86,20 +99,78 @@ function fmtDriver(stat: string, value: number | null): string {
   return String(value);
 }
 
-function qualifies(row: ArcSeason): boolean {
-  return (row.gp ?? 0) >= 25 && (row.min ?? 0) >= 500;
+
+function ShapeChart({ target, comp, features, labels, compName, mode }: {
+  target: Record<string, number>;
+  comp: Record<string, number>;
+  features: string[];
+  labels: Record<string, string>;
+  compName: string;
+  mode?: string;
+}) {
+  const CLAMP = 3;
+  const width = (z: number) => `${Math.min(Math.abs(z), CLAMP) / CLAMP * 50}%`;
+  return (
+    <div data-testid="shape-chart" data-mode={mode ?? "comp"} className="rounded-[8px] bg-field p-3">
+      <p className="font-mono text-[10px] text-ink-3">{`shape profile vs ${compName}: within-season z-scores from center zero; overlap is the match, clamped at ±3`}</p>
+      <div className="mt-2 space-y-1">
+        {features.map((feat) => {
+          const tz = target[feat] ?? 0;
+          const cz = comp[feat] ?? 0;
+          return (
+            <div key={feat} className="grid grid-cols-[170px_minmax(0,1fr)] items-center gap-2">
+              <span className="truncate text-right text-[10.5px] text-ink-3">{labels[feat] ?? feat}</span>
+              <div className="relative h-[10px]">
+                <div className="absolute left-1/2 top-0 h-full w-px bg-line" />
+                <div
+                  data-z={tz.toFixed(1)}
+                  data-side="target"
+                  className="absolute top-[1px] h-[8px] rounded-[2px] bg-ink-3/50"
+                  style={{ width: width(tz), ...(tz >= 0 ? { left: "50%" } : { right: "50%" }) }}
+                  title={`target z ${tz.toFixed(1)}`}
+                />
+                <div
+                  data-z={cz.toFixed(1)}
+                  data-side="comp"
+                  className="absolute top-[1px] h-[8px] rounded-[2px] bg-accent/70"
+                  style={{ width: width(cz), ...(cz >= 0 ? { left: "50%" } : { right: "50%" }), opacity: 0.75 }}
+                  title={`comp z ${cz.toFixed(1)}`}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
-  const [query, setQuery] = useState("Jayson Tatum");
-  const [player, setPlayer] = useState("Jayson Tatum");
+  const initialParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const initialPlayer = initialParams?.get("player") || "Jayson Tatum";
+  const [query, setQuery] = useState(initialPlayer);
+  const [player, setPlayer] = useState(initialPlayer);
   const [career, setCareer] = useState<CareerResponse | null>(null);
   const [careerError, setCareerError] = useState<string | null>(null);
   const [careerLoading, setCareerLoading] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
+  const [pendingSeason, setPendingSeason] = useState<{ player: string; season: string } | null>(() => {
+    const season = initialParams?.get("season");
+    return season ? { player: initialPlayer, season } : null;
+  });
   const [comps, setComps] = useState<CompsResponse | null>(null);
   const [compsError, setCompsError] = useState<string | null>(null);
   const [compsLoading, setCompsLoading] = useState(false);
+  const [selectedComp, setSelectedComp] = useState(0);
+  const [pin, setPin] = useState<{ player: string; season: string } | null>(() => {
+    const pp = initialParams?.get("pin_player");
+    const ps = initialParams?.get("pin_season");
+    return pp && ps ? { player: pp, season: ps } : null;
+  });
+  const [pinZ, setPinZ] = useState<Record<string, number> | null>(null);
+  const [pinId, setPinId] = useState<number | null>(null);
+  const [winStart, setWinStart] = useState<string>(() => initialParams?.get("window")?.split("..")[0] ?? "");
+  const [winEnd, setWinEnd] = useState<string>(() => initialParams?.get("window")?.split("..")[1] ?? "");
   const [leaderSeason, setLeaderSeason] = useState("1996-97");
   const [category, setCategory] = useState<string>("pts");
   const [leaders, setLeaders] = useState<LeadersResponse | null>(null);
@@ -124,7 +195,8 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           setCareer(null);
         } else {
           setCareer(value);
-          setSelectedSeason(null);
+          setSelectedSeason(pendingSeason?.player === player ? pendingSeason.season : null);
+          setPendingSeason(null);
           setComps(null);
         }
         setCareerLoading(false);
@@ -145,7 +217,8 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     let cancelled = false;
     setCompsLoading(true);
     setCompsError(null);
-    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=12`)}`)
+    const windowParams = `${winStart ? `&start=${encodeURIComponent(winStart)}` : ""}${winEnd ? `&end=${encodeURIComponent(winEnd)}` : ""}`;
+    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(player)}&season=${encodeURIComponent(selectedSeason)}&k=12${windowParams}`)}`)
       .then(async (response) => {
         const body = await response.json().catch(() => null);
         if (!response.ok) throw new Error(body?.error || `era comps request failed (${response.status})`);
@@ -158,6 +231,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
           setComps(null);
         } else {
           setComps(value);
+          setSelectedComp(0);
         }
         setCompsLoading(false);
       })
@@ -170,7 +244,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     return () => {
       cancelled = true;
     };
-  }, [selectedSeason, player]);
+  }, [selectedSeason, player, winStart, winEnd]);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,6 +277,91 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
     };
   }, [leaderSeason, category]);
 
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("player", player);
+    if (selectedSeason) params.set("season", selectedSeason);
+    else params.delete("season");
+    if (pin) {
+      params.set("pin_player", pin.player);
+      params.set("pin_season", pin.season);
+    } else {
+      params.delete("pin_player");
+      params.delete("pin_season");
+    }
+    if (winStart || winEnd) params.set("window", `${winStart}..${winEnd}`);
+    else params.delete("window");
+    const url = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, "", url);
+  }, [player, selectedSeason, pin, winStart, winEnd]);
+
+  const walkTo = (name: string, season: string) => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      params.set("player", name);
+      params.set("season", season);
+      window.history.pushState(null, "", `${window.location.pathname}?${params.toString()}`);
+    }
+    setQuery(name);
+    setPendingSeason({ player: name, season });
+    setPlayer(name);
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = () => {
+      const params = new URLSearchParams(window.location.search);
+      const urlPlayer = params.get("player");
+      const urlSeason = params.get("season");
+      const pp = params.get("pin_player");
+      const ps = params.get("pin_season");
+      setPin(pp && ps ? { player: pp, season: ps } : null);
+      const w = params.get("window")?.split("..") ?? [];
+      setWinStart(w[0] ?? "");
+      setWinEnd(w[1] ?? "");
+      if (urlPlayer && urlPlayer !== player) {
+        setQuery(urlPlayer);
+        setPendingSeason(urlSeason ? { player: urlPlayer, season: urlSeason } : null);
+        setPlayer(urlPlayer);
+      } else if (urlSeason && urlSeason !== selectedSeason) {
+        setSelectedSeason(urlSeason);
+        setComps(null);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [player, selectedSeason]);
+
+  const pinDiffers = pin != null && (pin.player !== player || pin.season !== selectedSeason);
+
+  useEffect(() => {
+    if (!pin || !pinDiffers) {
+      setPinZ(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${BACKEND}${apiPath(`/history/era-comps?player=${encodeURIComponent(pin.player)}&season=${encodeURIComponent(pin.season)}&k=1`)}`)
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok) return null;
+        return body as CompsResponse;
+      })
+      .then((value) => {
+        if (cancelled) return;
+        setPinZ(value?.player?.z ?? null);
+        const pid = (value?.player as { id?: number } | undefined)?.id;
+        setPinId(typeof pid === "number" ? pid : null);
+      })
+      .catch(() => {
+        if (!cancelled) setPinZ(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pin, pinDiffers]);
+
   const arc = career?.rows ?? [];
   const chartSeasons = arc.map((s) => s.season);
   const series = [
@@ -221,7 +380,7 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
               size="sm"
               variant="secondary"
               onClick={() => onAsk(
-                `Break down ${player}'s career arc — the peak, the trajectory, and how the era-relative profile compares.${selectedSeason ? ` Focus on the ${selectedSeason} season.` : ""}`,
+                `Break down ${player}'s career arc: the peak, the trajectory, and how the era-relative profile compares.${selectedSeason ? ` Focus on the ${selectedSeason} season.` : ""}`,
                 {
                   kind: "career_arc",
                   summary: `${player} career arc${selectedSeason ? ` · ${selectedSeason}` : ""}`,
@@ -280,14 +439,14 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                 series={series.slice(0, 1)}
                 xLabels={chartSeasons}
                 title={`${player} scoring trajectory`}
-                subtitle="points per game by season — open 'view chart data' for exact figures"
+                subtitle="points per game by season; open 'view chart data' for exact figures"
                 height={130}
               />
               <ArtifactChart
                 series={series.slice(1)}
                 xLabels={chartSeasons}
                 title={`${player} impact trajectory`}
-                subtitle="RAPTOR impact by season — open 'view chart data' for exact figures"
+                subtitle="RAPTOR impact by season; open 'view chart data' for exact figures"
                 height={130}
               />
             </div>
@@ -308,7 +467,17 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                       onClick={() => setSelectedSeason(row.season)}
                       title="click for era comps of this season"
                     >
-                      <td className="border-t border-line px-2 py-1 font-mono text-ink">{row.season}</td>
+                      <td className="border-t border-line px-2 py-1 font-mono text-ink">
+                        <button
+                          type="button"
+                          className="font-mono text-ink underline-offset-2 hover:underline"
+                          aria-pressed={selectedSeason === row.season}
+                          title="activate for era comps of this season"
+                          onClick={() => setSelectedSeason(row.season)}
+                        >
+                          {row.season}
+                        </button>
+                      </td>
                       <td className="border-t border-line px-2 py-1 text-right font-mono tabular-nums text-ink-2">{row.gp ?? "–"}</td>
                       <td className="border-t border-line px-2 py-1 text-right font-mono tabular-nums text-ink-2">{fmt(row.min)}</td>
                       <td className="border-t border-line px-2 py-1 text-right font-mono tabular-nums text-ink">{fmt(row.pts)}</td>
@@ -336,57 +505,154 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
 
       {selectedSeason && (
         <section className="mt-3 rounded-[10px] bg-surface p-4 shadow-hairline sm:p-5">
-          <h3 className="text-[13px] font-semibold text-ink">
-            Era-relative neighbors — {player} {selectedSeason}
-          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[13px] font-semibold text-ink">
+              Era-relative neighbors — {player} {selectedSeason}
+            </h3>
+            {pin == null ? (
+              <button
+                type="button"
+                data-testid="pin-season"
+                className="ml-auto font-mono text-[10.5px] text-accent underline-offset-2 hover:underline"
+                onClick={() => setPin({ player, season: selectedSeason })}
+                title="pin this player-season as the shape anchor while walking"
+              >
+                pin
+              </button>
+            ) : (
+              <span className="ml-auto flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 font-mono text-[10px] text-ink-2">
+                pinned: {pin.player} {pin.season}
+                {pinId != null && pinDiffers && (comps?.player as { id?: number } | undefined)?.id != null && (
+                  <button
+                    type="button"
+                    data-testid="compare-pair"
+                    className="text-accent underline-offset-2 hover:underline"
+                    title="open this pair in the compare surface"
+                    onClick={() => {
+                      const targetId = (comps?.player as { id?: number } | undefined)?.id;
+                      if (targetId == null || pinId == null || !pin) return;
+                      try {
+                        window.localStorage.setItem("dime_compare_v1", JSON.stringify([
+                          { id: targetId, name: player, season: selectedSeason },
+                          { id: pinId, name: pin.player, season: pin.season },
+                        ]));
+                      } catch {}
+                      window.dispatchEvent(new CustomEvent("dime:navigate", { detail: { tab: "compare" } }));
+                    }}
+                  >
+                    compare →
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-testid="unpin"
+                  aria-label="unpin"
+                  className="text-ink-3 hover:text-ink"
+                  onClick={() => setPin(null)}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </div>
           {compsLoading && (
             <div className="mt-2 space-y-2" aria-label="loading era comps">
               {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[52px] rounded-[8px]" />)}
             </div>
           )}
-          {compsError && !compsLoading && (() => {
-            const arcRow = arc.find((row) => row.season === selectedSeason);
-            const qualifying = arc.filter(qualifies).map((row) => row.season);
-            if (arcRow && !qualifies(arcRow)) {
-              return (
-                <div className="mt-2 rounded-[8px] bg-field p-3 text-[12.5px] text-ink-2">
-                  <p>
-                    {player}&apos;s {selectedSeason} does not meet the era comps qualification
-                    minimum (25 games, 500 minutes — {arcRow.gp ?? 0} gp, {Math.round(arcRow.min ?? 0)} min).
-                  </p>
-                  {qualifying.length > 0 && (
-                    <p className="mt-1.5">
-                      qualifying seasons:{" "}
-                      {qualifying.map((season, i) => (
-                        <span key={season}>
-                          {i > 0 && " · "}
-                          <button
-                            type="button"
-                            className="font-mono text-[11.5px] text-accent underline-offset-2 hover:underline"
-                            onClick={() => setSelectedSeason(season)}
-                          >
-                            {season}
-                          </button>
-                        </span>
-                      ))}
-                    </p>
-                  )}
+          {compsError && !compsLoading && (
+            <DataState tone="error" label={compsError} detail="No substitute data is shown." className="mt-2" />
+          )}
+          {!compsLoading && !compsError && comps?.qualified === false && comps.qualification && (
+            <div className="mt-2 rounded-[8px] bg-field p-3 text-[12.5px] text-ink-2">
+              <p>
+                {`${player}'s ${selectedSeason} does not meet the era comps qualification minimum (${comps.qualification.rule} — this season: ${comps.qualification.gp} gp, ${comps.qualification.total_min != null ? `${Math.round(comps.qualification.total_min)} total minutes` : "minutes unavailable"}).`}
+              </p>
+              {comps.qualifying_seasons && comps.qualifying_seasons.length > 0 && (
+                <p className="mt-1.5">
+                  qualifying seasons:{" "}
+                  {comps.qualifying_seasons.map((season, i) => (
+                    <span key={season}>
+                      {i > 0 && " · "}
+                      <button
+                        type="button"
+                        className="font-mono text-[11.5px] text-accent underline-offset-2 hover:underline"
+                        onClick={() => setSelectedSeason(season)}
+                      >
+                        {season}
+                      </button>
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
+          )}
+          {!compsLoading && !compsError && comps?.qualified !== false && comps?.rows && comps.rows.length > 0 && (
+            <div key={`${player}-${selectedSeason}-${winStart}-${winEnd}`} className="view-fade mt-2">
+              {(() => {
+                const features = comps.meta?.features ?? [];
+                const labels = comps.meta?.feature_labels ?? {};
+                const tz = comps.player?.z;
+                const active = comps.rows[Math.min(selectedComp, comps.rows.length - 1)];
+                if (!tz || features.length === 0) return null;
+                if (pin && pinDiffers && pinZ) {
+                  return <ShapeChart target={tz} comp={pinZ} features={features} labels={labels} compName={`pinned ${pin.player} ${pin.season}`} mode="pin" />;
+                }
+                if (!active?.z) return null;
+                return <ShapeChart target={tz} comp={active.z} features={features} labels={labels} compName={`${active.PLAYER} ${active.season}`} />;
+              })()}
+              <p className="mt-2 font-mono text-[10px] text-ink-3">driver values: target season vs comp · click a comp to overlay its shape</p>
+              {onAsk && (
+                <div className="mt-1.5">
+                  <button
+                    type="button"
+                    data-testid="ask-match"
+                    className="font-mono text-[10.5px] text-accent underline-offset-2 hover:underline"
+                    onClick={() => {
+                      const active = comps.rows?.[Math.min(selectedComp, (comps.rows?.length ?? 1) - 1)];
+                      if (!active) return;
+                      const pair = pin && pinDiffers
+                        ? { comp: `${pin.player} ${pin.season}`, compPlayer: pin.player, compSeason: pin.season }
+                        : { comp: `${active.PLAYER} ${active.season}`, compPlayer: active.PLAYER, compSeason: active.season };
+                      onAsk(
+                        `Why do ${player} ${selectedSeason} and ${pair.comp} match statistically — break down the shared shape, which features drive the similarity, and where they diverge.`,
+                        {
+                          kind: "era_comps",
+                          summary: `era match: ${player} ${selectedSeason} vs ${pair.comp}`,
+                          entities: {
+                            player,
+                            season: selectedSeason,
+                            comp: pair.comp,
+                            compPlayer: pair.compPlayer,
+                            compSeason: pair.compSeason,
+                            similarity: active.similarity,
+                            drivers: (active.drivers ?? []).map((d) => ({ stat: d.stat, target: d.target, comp: d.comp })),
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    ask why they match
+                  </button>
                 </div>
-              );
-            }
-            return <DataState tone="error" label={compsError} detail="No substitute data is shown." className="mt-2" />;
-          })()}
-          {!compsLoading && !compsError && comps?.rows && (
-            <div className="mt-2">
-              <p className="font-mono text-[10px] text-ink-3">driver values: target season vs comp</p>
+              )}
               {comps.rows.length === 0 && (
                 <p className="mt-1.5 text-[12.5px] text-ink-2">no era neighbors found within the pool window — widen the window or pick another season.</p>
               )}
               <div className="mt-1.5 divide-y divide-line">
                 {comps.rows.map((comp, i) => (
-                  <div key={`${comp.PLAYER_ID}-${comp.season}-${i}`} className="py-2.5">
+                  <div
+                    key={`${comp.PLAYER_ID}-${comp.season}-${i}`}
+                    className={`py-2.5 ${i === selectedComp ? "bg-field" : ""} rounded-[6px] px-2 -mx-2`}
+                  >
                     <div className="flex items-baseline justify-between gap-2 text-[12.5px]">
-                      <span className="text-ink">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 cursor-pointer text-left text-ink"
+                        onClick={() => setSelectedComp(i)}
+                        aria-pressed={i === selectedComp}
+                        title="overlay this comp's shape profile"
+                      >
                         {comp.PLAYER}
                         <span className="ml-1.5 font-mono text-[10px] text-ink-3">
                           {comp.season} {comp.TEAM}{comp.age != null ? ` · age ${comp.age}` : ""}
@@ -394,8 +660,17 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
                         {comp.shared_archetype && comp.archetype && (
                           <span className="ml-1.5 rounded-full border border-line px-1.5 font-mono text-[9px] text-ink-3">{comp.archetype}</span>
                         )}
-                      </span>
+                      </button>
                       <span className="font-mono tabular-nums text-ink">{comp.similarity?.toFixed(1)}</span>
+                      <button
+                        type="button"
+                        data-testid={i === 0 ? "walk-comp" : undefined}
+                        className="font-mono text-[10.5px] text-accent underline-offset-2 hover:underline"
+                        onClick={() => walkTo(comp.PLAYER, comp.season)}
+                        title="recenter the surface on this player-season"
+                      >
+                        walk →
+                      </button>
                     </div>
                     {comp.drivers && comp.drivers.length > 0 && (
                       <div className="mt-1 space-y-0.5">
@@ -416,6 +691,39 @@ export default function HistoryView({ onAsk }: { onAsk?: (text: string, context?
               </div>
             </div>
           )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-3">
+            <span className="font-mono text-[10px]">pool window{winStart || winEnd ? ` ${winStart || "…"}..${winEnd || "…"}` : ""}:</span>
+            <select
+              value={winStart}
+              data-testid="window-start"
+              aria-label="pool window start season"
+              onChange={(e) => setWinStart(e.target.value)}
+              className="h-6 rounded-[6px] border border-line bg-surface px-1 font-mono text-[10.5px] text-ink-2"
+            >
+              <option value="">from 1996-97</option>
+              {SEASONS.map((season) => <option key={season} value={season}>{season}</option>)}
+            </select>
+            <select
+              value={winEnd}
+              data-testid="window-end"
+              aria-label="pool window end season"
+              onChange={(e) => setWinEnd(e.target.value)}
+              className="h-6 rounded-[6px] border border-line bg-surface px-1 font-mono text-[10.5px] text-ink-2"
+            >
+              <option value="">to present</option>
+              {SEASONS.map((season) => <option key={season} value={season}>{season}</option>)}
+            </select>
+            {(winStart || winEnd) && (
+              <button
+                type="button"
+                data-testid="window-clear"
+                className="font-mono text-[10px] text-accent underline-offset-2 hover:underline"
+                onClick={() => { setWinStart(""); setWinEnd(""); }}
+              >
+                clear
+              </button>
+            )}
+          </div>
           <p className="mt-2 font-mono text-[10px] leading-[1.6] text-ink-3">
             similarity = 100/(1+d/20) over within-season z-scores — each feature standardized inside its own season's qualified pool, so the match is era-relative shape, not raw level
           </p>

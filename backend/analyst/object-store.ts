@@ -1,4 +1,6 @@
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { openProductDatabase } from "./product-store.js";
@@ -23,7 +25,9 @@ export const capScenarioMoveSchema = Type.Object({
     exercise: Type.Optional(Type.Boolean()),
     stretch: Type.Optional(Type.Boolean()),
     season: Type.Optional(Type.String()),
+    exception: Type.Optional(Type.String({ maxLength: 24 })),
     years: Type.Optional(Type.Number()),
+    first_year_amount: Type.Optional(Type.Number()),
     mechanism: Type.Optional(Type.String()),
     unlikely_bonus: Type.Optional(Type.Number()),
     years_of_service: Type.Optional(Type.Number()),
@@ -33,7 +37,8 @@ export const capScenarioMoveSchema = Type.Object({
     free_agent_status: Type.Optional(Type.String()),
     replaces_cap_hold: Type.Optional(Type.Boolean()),
     salary_schedule: Type.Optional(Type.Array(Type.Number(), { maxItems: 8 })),
-    exception_state: Type.Optional(signingExceptionStateSchema)
+    exception_state: Type.Optional(signingExceptionStateSchema),
+    group: Type.Optional(Type.String({ maxLength: 48 }))
 }, { additionalProperties: false });
 
 export const capScenarioPayloadSchema = Type.Object({
@@ -41,7 +46,19 @@ export const capScenarioPayloadSchema = Type.Object({
     season: Type.String({ minLength: 1, maxLength: 12 }),
     waiver_date: Type.Optional(Type.String({ maxLength: 16 })),
     exception_state: Type.Optional(signingExceptionStateSchema),
-    moves: Type.Array(capScenarioMoveSchema, { minItems: 1, maxItems: 40 })
+    moves: Type.Array(capScenarioMoveSchema, { minItems: 1, maxItems: 40 }),
+    groups: Type.Optional(Type.Record(Type.String(), Type.Object({
+        partner: Type.Optional(Type.String({ maxLength: 120 })),
+        verdict: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
+        evaluated_at: Type.Optional(Type.String({ maxLength: 40 }))
+    }, { additionalProperties: false }), { maxProperties: 20 })),
+    tpes: Type.Optional(Type.Array(Type.Object({
+        team: Type.String({ minLength: 2, maxLength: 4 }),
+        amount: Type.Integer({ minimum: 1 }),
+        kind: Type.Optional(Type.String({ maxLength: 24 })),
+        origin_year: Type.Optional(Type.Integer({ minimum: 2000, maximum: 2100 })),
+        exactness: Type.Optional(Type.String({ maxLength: 32 }))
+    }, { additionalProperties: false }), { maxItems: 30 }))
 }, { additionalProperties: false });
 
 export const tradeScenarioPayloadSchema = Type.Object({
@@ -51,7 +68,14 @@ export const tradeScenarioPayloadSchema = Type.Object({
         players: Type.Optional(Type.Union([Type.String({ maxLength: 600 }), Type.Array(Type.String({ minLength: 1, maxLength: 120 }), { maxItems: 12 })])),
         picks: Type.Optional(Type.Array(Type.Record(Type.String(), Type.Unknown()), { maxItems: 12 }))
     }, { additionalProperties: false }), { minItems: 1, maxItems: 8 }),
-    season: Type.String({ minLength: 1, maxLength: 12 })
+    season: Type.String({ minLength: 1, maxLength: 12 }),
+    tpes: Type.Optional(Type.Array(Type.Object({
+        team: Type.String({ minLength: 2, maxLength: 4 }),
+        amount: Type.Integer({ minimum: 1 }),
+        kind: Type.Optional(Type.String({ maxLength: 24 })),
+        origin_year: Type.Optional(Type.Integer({ minimum: 2000, maximum: 2100 })),
+        exactness: Type.Optional(Type.String({ maxLength: 32 }))
+    }, { additionalProperties: false }), { maxItems: 30 }))
 }, { additionalProperties: false });
 
 export const artifactRefPayloadSchema = Type.Object({
@@ -222,6 +246,34 @@ export class ObjectStore {
         }
         finally {
             db.close();
+        }
+    }
+    private snapshotDir() {
+        return join(dirname(this.path), "artifact-snapshots");
+    }
+    writeArtifactSnapshot(objectId: string, snapshot: unknown) {
+        if (!/^obj-[a-f0-9]{32}$/.test(objectId))
+            throw new Error("invalid object id for artifact snapshot");
+        const serialized = JSON.stringify(snapshot);
+        if (serialized.length > 4 * 1024 * 1024)
+            throw new Error("artifact snapshot too large");
+        mkdirSync(this.snapshotDir(), { recursive: true });
+        writeFileSync(join(this.snapshotDir(), objectId + ".json"), serialized, { flag: "wx" });
+    }
+    readArtifactSnapshot(objectId: string): { artifact: unknown; evidence: unknown[]; captured_at: string } | undefined {
+        if (!/^obj-[a-f0-9]{32}$/.test(objectId))
+            return undefined;
+        const file = join(this.snapshotDir(), objectId + ".json");
+        if (!existsSync(file))
+            return undefined;
+        try {
+            const data = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+            if (!data || typeof data !== "object" || !Array.isArray(data.evidence))
+                return undefined;
+            return { artifact: data.artifact ?? null, evidence: data.evidence, captured_at: typeof data.captured_at === "string" ? data.captured_at : "" };
+        }
+        catch {
+            return undefined;
         }
     }
 }

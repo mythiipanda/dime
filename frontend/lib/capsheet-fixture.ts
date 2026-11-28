@@ -54,7 +54,7 @@ export type SigningExceptionState = {
 };
 
 export type ScenarioMove = {
-  kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision";
+  kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision" | "extend" | "renounce";
   label?: string;
   amount?: number;
   player?: string;
@@ -73,6 +73,9 @@ export type ScenarioMove = {
   salary_schedule?: number[];
   exception_state?: SigningExceptionState;
   from?: string;
+  exception?: "cap_room" | "mle" | "bae" | "minimum" | "bird";
+  first_year_amount?: number;
+  group?: string;
 };
 
 export type ScenarioResponse = {

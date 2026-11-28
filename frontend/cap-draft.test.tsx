@@ -30,7 +30,8 @@ test("first sync mints a draft object keyed per team+season; reload restores the
     assert.equal(calls[0].method, "POST", "first sync mints");
     assert.equal(window.localStorage.getItem("dime_cap_draft:DAL:2026-27"), "obj-draft-1");
     const restored = await loadCapDraft("DAL", "2026-27");
-    assert.deepEqual(restored, moves, "reload recovery restores the working draft exactly");
+    assert.deepEqual(restored?.moves, moves, "reload recovery restores the working draft exactly");
+    assert.equal(restored?.groups, undefined, "no groups minted for ungrouped moves");
     assert.equal(await loadCapDraft("NYK", "2026-27"), null, "identity is per team — no clobbering across teams");
     assert.equal(await loadCapDraft("DAL", "2027-28"), null, "identity is per season too");
   } finally {
@@ -86,6 +87,34 @@ test("sync failures never throw into the UI — the session-state draft keeps wo
     const { syncCapDraft, loadCapDraft } = await import("./lib/cap-draft");
     await syncCapDraft("DAL", "2026-27", moves);
     assert.equal(await loadCapDraft("DAL", "2026-27"), null);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("groups metadata round-trips through sync and reload", async () => {
+  freshDom();
+  const previousFetch = globalThis.fetch;
+  const stored = { payload: null as unknown };
+  globalThis.fetch = async (input, init) => {
+    if (init?.method === "POST") {
+      stored.payload = JSON.parse(String(init.body)).payload;
+      return Response.json({ object_id: "obj-draft-g", read_token: "rt", owner_token: "ot" }, { status: 201 });
+    }
+    if ((init?.method ?? "GET") === "GET") return Response.json({ object_id: "obj-draft-g", payload: stored.payload, archived: false, read_token: "rt" });
+    return Response.json({ ok: true });
+  };
+  try {
+    const { syncCapDraft, loadCapDraft } = await import("./lib/cap-draft");
+    const grouped = [
+      { kind: "trade_out" as const, player: "Player One", group: "trade-test-1" },
+      { kind: "trade_in" as const, player: "Player Two", group: "trade-test-1" },
+    ];
+    const groups = { "trade-test-1": { partner: "NYK", verdict: true, evaluated_at: "2026-11-27T00:00:00.000Z" } };
+    await syncCapDraft("MIA", "2026-27", grouped, groups);
+    const restored = await loadCapDraft("MIA", "2026-27");
+    assert.deepEqual(restored?.moves, grouped, "group-tagged moves survive the round trip");
+    assert.deepEqual(restored?.groups, groups, "group metadata survives the round trip");
   } finally {
     globalThis.fetch = previousFetch;
   }

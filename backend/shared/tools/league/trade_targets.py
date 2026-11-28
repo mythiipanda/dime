@@ -3,7 +3,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ...contracts import canonical_team_abbr
-from ._helpers import _owned_connection
+from ._helpers import _owned_connection, declare_money
 from .cba_cap import CAP, _payroll_source, _salary_date, _resolve_team_abbr
 from .draft_contracts import _contract_norm
 from .._core import team_error_message
@@ -276,7 +276,7 @@ def get_trade_targets(need: str = "", team: str = "", position: str = "",
                  "production season may lag - production_team marks "
                  "moved players"},
     ]
-    return {"tool": "get_trade_targets", "ok": True,
+    out = {"tool": "get_trade_targets", "ok": True,
             "rows": rows,
             "need": str(need or ""),
             "acquiring_team": acquirer or None,
@@ -297,6 +297,7 @@ def get_trade_targets(need: str = "", team: str = "", position: str = "",
                      "cohort + production ranking inputs. Fit and "
                      "acquisition cost beyond salary share are the "
                      "analyst's call."}}
+    return declare_money(out, ["salary"])
 
 
 _COLUMNS = ["player", "team", "position", "age", "salary", "cap_share",

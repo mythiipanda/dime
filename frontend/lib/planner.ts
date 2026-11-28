@@ -14,6 +14,22 @@ export type ProjectionEffect = {
 
 export type ProjectionPlayer = { player: string; salary: number; option?: string };
 
+export type ProjectionCapHold = {
+  player: string;
+  amount: number | null;
+  fa_type: string;
+};
+
+export type ProjectionException = {
+  exception: string;
+  amount: number;
+  used: number;
+  remaining: number;
+  hard_caps: boolean;
+  exceeds: number | null;
+  unavailable: boolean;
+};
+
 export type ProjectionSeason = {
   season: string;
   pay_before: number;
@@ -26,11 +42,16 @@ export type ProjectionSeason = {
   hard_cap: string;
   hard_cap_violation: string;
   exception_usage: string[];
+  trade_exceptions?: { amount: number; kind: string; exactness: string; status: string; note: string }[];
   effects: ProjectionEffect[];
   moves_in_season: number;
   ordering_notes: string[];
   lines: { cap: number; tax: number; apron1: number; apron2: number };
   lines_projected: boolean;
+  exceptions?: ProjectionException[];
+  cap_holds?: number;
+  cap_holds_exactness?: string;
+  cap_hold_details?: ProjectionCapHold[];
 };
 
 export type ProjectionResponse = {
@@ -44,12 +65,12 @@ export type ProjectionResponse = {
   disclosures: string[];
 };
 
-export async function fetchProjection(team: string, season: string, moves: ScenarioMove[]): Promise<ProjectionResponse | null> {
+export async function fetchProjection(team: string, season: string, moves: ScenarioMove[], tpes?: unknown[]): Promise<ProjectionResponse | null> {
   try {
     const response = await fetch(`${BACKEND}${apiPath("/cap/projection")}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ team, season, moves }),
+      body: JSON.stringify({ team, season, moves, tpes }),
     });
     const body: unknown = await response.json().catch(() => null);
     if (!body || typeof body !== "object" || (body as ProjectionResponse).ok !== true) return null;

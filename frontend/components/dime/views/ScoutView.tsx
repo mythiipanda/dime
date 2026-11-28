@@ -43,7 +43,7 @@ function SectionShell({ title, source, error, children }: { title: string; sourc
         <Source name={source} />
       </div>
       {error ? (
-        <DataState tone="error" label={error} detail="This section is unavailable — no substitute data is shown." className="mt-3" />
+        <DataState tone="error" label={error} detail="This section is unavailable; no substitute data is shown." className="mt-3" />
       ) : (
         <div className="mt-3">{children}</div>
       )}

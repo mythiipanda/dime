@@ -1,9 +1,13 @@
 import type { ReactNode } from "react";
 import { describeScenarioMove } from "@/lib/capsheet-fixture";
+import type { MoveGroupsMap } from "@/lib/move-groups";
+import { ReadOnlyMoveList } from "@/components/dime/ScenarioMoveList";
 import type { SharedArtifactEvidence, SharedArtifactObject, SharedObject, SharedThreadObject, SharedTradeLeg, SharedTradeObject, TradeLegsEvaluation, TranscriptEntry } from "@/lib/shared";
-import { ArtifactBody } from "@/components/site/harness/ArtifactsView";
+import { ArtifactBody, ProvenancePanel } from "@/components/site/harness/ArtifactsView";
+import { undeclaredProvenance } from "@/lib/stream/provenance";
+import { RecordsTable } from "@/components/ds/RecordsTable";
 import { asResolvedArtifacts } from "@/lib/stream/artifacts";
-import type { ScenarioResponse } from "@/lib/capsheet-fixture";
+import type { ProjectionResponse } from "@/lib/planner";
 
 function money(value: number | null | undefined): string {
   if (value == null) return "–";
@@ -19,7 +23,7 @@ function sharedDate(iso: string): string {
 
 export function SharedFrame({ children, label }: { children: ReactNode; label?: string }) {
   return (
-    <main className="mx-auto min-h-screen w-full max-w-[860px] px-5 py-10 sm:px-8">
+    <main className="share-frame mx-auto min-h-screen w-full max-w-[860px] px-5 py-10 sm:px-8">
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <a href="/" className="text-[15px] font-semibold tracking-tight text-ink">dime</a>
         <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3">{label ?? "shared cap scenario"}</span>
@@ -63,7 +67,7 @@ export function SharedScenarioNotice({ tone, kind }: { tone: "archived" | "not_f
     },
     unavailable: {
       title: `This ${noun} can't be loaded right now`,
-      body: "The workbench backend isn't reachable. This is usually temporary — try again in a moment.",
+      body: "The workbench backend isn't reachable. This is usually temporary; try again in a moment.",
     },
   };
   const { title, body } = copy[tone];
@@ -82,13 +86,14 @@ export function SharedScenarioView({
   evaluation,
 }: {
   object: SharedObject;
-  evaluation: ScenarioResponse | null;
+  evaluation: ProjectionResponse | null;
 }) {
   const moves = object.payload.moves;
-  const steps = evaluation?.steps ?? [];
-  const stepForMove = (index: number) => steps.find((step) => step.step === index + 1 && step.kind !== "payroll" && step.kind !== "post_move");
+  const groupsMeta = (object.payload as { groups?: MoveGroupsMap }).groups ?? {};
   const errors = (evaluation?.errors ?? []).filter(Boolean);
   const evaluationFailed = evaluation !== null && (evaluation.ok === false || errors.length > 0);
+  const seasons = evaluation?.seasons ?? [];
+  const baseSeason = seasons[0];
 
   return (
     <SharedFrame>
@@ -103,36 +108,12 @@ export function SharedScenarioView({
         <div className="space-y-4">
           <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
             <h2 className="text-[13px] font-semibold text-ink">Moves</h2>
-            <ol className="mt-2 space-y-2">
-              {moves.map((move, i) => {
-                const step = stepForMove(i);
-                return (
-                  <li key={i} className="flex items-baseline justify-between gap-3 text-[12.5px]">
-                    <span className="min-w-0 text-ink-2">
-                      <span className="mr-1.5 font-mono text-[10.5px] text-ink-3">{i + 1}.</span>
-                      {describeScenarioMove(move)}
-                      {step?.estimate_basis && (
-                        <span className="mt-0.5 block pl-5 text-[11px] leading-[1.45] text-ink-3">{step.estimate_basis}</span>
-                      )}
-                    </span>
-                    {step && (
-                      <span className={`shrink-0 font-mono text-[11px] tabular-nums ${step.delta !== 0 ? "text-ink-2" : "text-ink-3"}`}>
-                        {step.delta > 0 ? "+" : ""}{money(step.delta)}
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
+            <div className="mt-2 space-y-1.5">
+              <ReadOnlyMoveList moves={moves} groups={groupsMeta} />
+            </div>
             {evaluation === null && (
               <p className="mt-3 border-t border-line pt-2 text-[12px] leading-[1.55] text-ink-3">
                 This scenario could not be evaluated live — the stored moves are shown as shared, without computed cap impact.
-              </p>
-            )}
-            {evaluation !== null && !evaluationFailed && (
-              <p className="mt-3 border-t border-line pt-2 font-mono text-[12px] tabular-nums text-ink">
-                payroll after: {money(evaluation.pay_after)}
-                <span className="ml-2 font-sans text-[11px] text-ink-3">in {evaluation.season}</span>
               </p>
             )}
             {evaluationFailed && (
@@ -147,46 +128,100 @@ export function SharedScenarioView({
             )}
           </section>
 
-          {evaluation?.restrictions?.length ? (
-            <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h2 className="text-[13px] font-semibold text-ink">CBA restrictions in play</h2>
-              <div className="mt-2 space-y-2.5">
-                {evaluation.restrictions.map((r, i) => (
-                  <div key={i}>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className={`rounded-full border px-1.5 py-px font-mono text-[9px] uppercase tracking-wide ${r.status === "active" ? "border-red text-red" : "border-line text-ink-3"}`}>
-                        {r.status}
-                      </span>
-                      <span className="text-[11px] text-ink-3">{r.threshold}</span>
-                    </div>
-                    <p className="mt-0.5 text-[12px] leading-[1.55] text-ink-2">{r.rule}</p>
+          {seasons.map((season) => (
+            <section key={season.season} className="rounded-[10px] bg-surface p-4 shadow-hairline">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-[13px] font-semibold text-ink">{season.season}</h2>
+                <span className="font-mono text-[12px] tabular-nums text-ink">
+                  payroll {money(season.pay_after)}
+                </span>
+              </div>
+              <div className="mt-2 space-y-1 font-mono text-[11px] tabular-nums text-ink-3">
+                <div className="flex justify-between"><span>cap room</span><span className={season.cap_room < 0 ? "text-red" : ""}>{money(season.cap_room)}</span></div>
+                <div className="flex justify-between"><span>cap</span><span>{money(season.lines.cap)}</span></div>
+                <div className="flex justify-between"><span>tax line</span><span>{money(season.lines.tax)}</span></div>
+                <div className="flex justify-between"><span>first apron</span><span>{money(season.lines.apron1)}</span></div>
+                <div className="flex justify-between"><span>second apron</span><span>{money(season.lines.apron2)}</span></div>
+                {(season.cap_holds ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span>cap holds{season.cap_holds_exactness ? ` (${season.cap_holds_exactness})` : ""}</span>
+                    <span>{money(season.cap_holds)}</span>
                   </div>
-                ))}
+                )}
               </div>
+              {season.effects.length > 0 && (
+                <ol className="mt-2 space-y-1 border-t border-line pt-2">
+                  {season.effects.map((effect, i) => (
+                    <li key={i} className="flex items-baseline justify-between gap-3 text-[12px]">
+                      <span className="min-w-0 text-ink-2">
+                        {effect.detail}
+                        {effect.exactness !== "exact" && (
+                          <span className="ml-1.5 rounded-full border border-line px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-ink-3">{effect.exactness}</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-3">
+                        {effect.delta > 0 ? "+" : ""}{money(effect.delta)}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {(season.exceptions ?? []).length > 0 && (
+                <div className="mt-2 space-y-1 border-t border-line pt-2">
+                  {(season.exceptions ?? []).map((ex) => (
+                    <div key={ex.exception} className="flex items-baseline justify-between gap-3 text-[11.5px]">
+                      <span className="text-ink-2">
+                        {ex.exception.toUpperCase()}
+                        {ex.hard_caps && <span className="ml-1.5 rounded-full border border-red px-1.5 py-px font-mono text-[9px] uppercase tracking-wide text-red">hard-caps</span>}
+                        {ex.unavailable && <span className="ml-1.5 font-mono text-[9.5px] uppercase tracking-wide text-ink-3">unavailable</span>}
+                      </span>
+                      <span className="font-mono text-[10.5px] tabular-nums text-ink-3">
+                        {ex.used > 0 ? `${money(ex.used)} used · ` : ""}{money(ex.remaining)} left
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {((season as { trade_exceptions?: { amount: number; kind: string; exactness: string; status: string; note: string }[] }).trade_exceptions ?? []).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5 border-t border-line pt-2">
+                  {((season as { trade_exceptions?: { amount: number; kind: string; exactness: string; status: string; note: string }[] }).trade_exceptions ?? []).map((tpe, i) => (
+                    <span
+                      key={i}
+                      title={tpe.note}
+                      className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${tpe.status === "active" ? "bg-field text-ink-2" : "bg-field/50 text-ink-3 line-through"}`}
+                    >
+                      TPE {money(tpe.amount)} · {tpe.exactness.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {season.roster_issues.length > 0 && (
+                <div className="mt-2 border-t border-line pt-2">
+                  {season.roster_issues.map((issue, i) => (
+                    <p key={i} className="text-[11.5px] leading-[1.5] text-ink-3">{issue}</p>
+                  ))}
+                </div>
+              )}
+              {season.ordering_notes.length > 0 && (
+                <div className="mt-2 border-t border-line pt-2">
+                  {season.ordering_notes.map((note, i) => (
+                    <p key={i} className="text-[11.5px] leading-[1.5] text-ink-3">{note}</p>
+                  ))}
+                </div>
+              )}
             </section>
-          ) : null}
-
-          {evaluation?.roster_issues?.length ? (
-            <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-              <h2 className="text-[13px] font-semibold text-ink">Roster issues</h2>
-              <div className="mt-2 space-y-1">
-                {evaluation.roster_issues.map((issue, i) => (
-                  <p key={i} className="text-[12px] leading-[1.55] text-ink-2">{issue}</p>
-                ))}
-              </div>
-            </section>
-          ) : null}
+          ))}
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-          {evaluation !== null && !evaluationFailed && (
+          {baseSeason && !evaluationFailed && (
             <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
               <h2 className="text-[13px] font-semibold text-ink">Apron state after moves</h2>
               <div className="mt-2 space-y-1.5 text-[12px]">
                 {([
-                  ["tax", evaluation.state.over_tax],
-                  ["first apron", evaluation.state.over_apron1],
-                  ["second apron", evaluation.state.over_apron2],
+                  ["tax", baseSeason.pay_after > baseSeason.lines.tax],
+                  ["first apron", baseSeason.pay_after > baseSeason.lines.apron1],
+                  ["second apron", baseSeason.pay_after > baseSeason.lines.apron2],
                 ] as const).map(([label, over]) => (
                   <div key={label} className="flex items-baseline justify-between">
                     <span className="text-ink-2">{label}</span>
@@ -194,6 +229,16 @@ export function SharedScenarioView({
                       {over ? "over" : "under"}
                     </span>
                   </div>
+                ))}
+              </div>
+            </section>
+          )}
+          {(evaluation?.disclosures?.length ?? 0) > 0 && (
+            <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+              <h2 className="text-[13px] font-semibold text-ink">Method disclosures</h2>
+              <div className="mt-2 space-y-1.5">
+                {(evaluation?.disclosures ?? []).map((disclosure, i) => (
+                  <p key={i} className="text-[11.5px] leading-[1.55] text-ink-3">{disclosure}</p>
                 ))}
               </div>
             </section>
@@ -457,7 +502,6 @@ export function SharedArtifactView({
   capturedAt: string | null;
   unavailable: boolean;
 }) {
-  const provenance = artifact && typeof artifact.provenance === "object" && artifact.provenance !== null ? artifact.provenance as Record<string, unknown> : null;
   const resolved = artifact ? asResolvedArtifacts([artifact]) : [];
   const resolvedArtifact = resolved.length > 0 ? resolved[0] : null;
   return (
@@ -483,27 +527,34 @@ export function SharedArtifactView({
               <ArtifactBody artifact={resolvedArtifact} />
             </section>
 
-            {provenance && (
-              <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
-                <h2 className="text-[13px] font-semibold text-ink">Provenance</h2>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-ink-2">
-                  {typeof provenance.capability === "string" && <span>{provenance.capability}</span>}
-                  {typeof provenance.dataset === "string" && <span>{provenance.dataset}</span>}
-                  {typeof provenance.season === "string" && <span>{provenance.season}</span>}
-                  {typeof provenance.as_of === "string" && <span>as of {provenance.as_of.slice(0, 10)}</span>}
-                </div>
-              </section>
-            )}
+            <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
+              <h2 className="text-[13px] font-semibold text-ink">Provenance</h2>
+              <ProvenancePanel provenance={resolvedArtifact.provenance ?? undeclaredProvenance()} />
+            </section>
 
             {evidence.length > 0 && (
               <section className="rounded-[10px] bg-surface p-4 shadow-hairline">
                 <h2 className="text-[13px] font-semibold text-ink">Pinned evidence</h2>
-                <div className="mt-2 space-y-1">
-                  {evidence.map((ev, i) => (
-                    <p key={i} className="font-mono text-[10.5px] leading-[1.6] text-ink-3">
-                      {ev.missing ? `${ev.ref} — source record no longer resolvable` : evidenceMetaLine(ev)}
-                    </p>
-                  ))}
+                <div className="mt-2 space-y-2">
+                  {evidence.map((ev, i) => {
+                    const rows = Array.isArray(ev.rows) ? ev.rows : [];
+                    const line = ev.missing ? `${ev.ref} — source record no longer resolvable` : evidenceMetaLine(ev);
+                    if (ev.missing || rows.length === 0) {
+                      return (
+                        <p key={i} className="font-mono text-[10.5px] leading-[1.6] text-ink-3">{line}</p>
+                      );
+                    }
+                    return (
+                      <details key={i} className="group">
+                        <summary className="cursor-pointer font-mono text-[10.5px] leading-[1.6] text-ink-3 underline decoration-line underline-offset-2 hover:text-ink-2">
+                          {line} · {rows.length} {rows.length === 1 ? "row" : "rows"}
+                        </summary>
+                        <div className="mt-2">
+                          <RecordsTable rows={rows} title={ev.tool ?? ev.ref ?? "evidence"} />
+                        </div>
+                      </details>
+                    );
+                  })}
                 </div>
               </section>
             )}

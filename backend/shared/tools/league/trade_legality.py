@@ -1,6 +1,7 @@
 import json as _json
 import re as _re
 from calendar import monthrange
+from itertools import combinations
 from datetime import date, timedelta
 from functools import lru_cache
 from typing import Any
@@ -12,7 +13,7 @@ from ..cap_rules import (
     matching_election as _matching_election,
     payroll_proxy_meta as _payroll_proxy_meta,
 )
-from ._helpers import _owned_connection, _pkg
+from ._helpers import _owned_connection, _pkg, declare_money
 from .cba_cap import (
     CAP,
     SalaryColumnError,
@@ -667,7 +668,7 @@ def _team_side(team: str, moves: list[dict[str, Any]], con: Any,
         return None, _trade_error(
             f"{team_code}: unknown outgoing players {'; '.join(out_unk)}")
     try:
-        pay_before, _payroll_rows = _payroll(team_code, con, season)
+        pay_before, _payroll_rows, _dead_rows = _payroll(team_code, con, season)
     except SalaryColumnError as exc:
         return None, _trade_error(str(exc), exc.reason)
     in_rows, in_names, in_total, err = _incoming_rows(
@@ -746,6 +747,21 @@ def _tpe_usage(team_tpes: list[dict[str, Any]],
             "prior": any(item["status"] == "prior_year" for item in active),
             "snt": any(item["kind"] == "sign_and_trade" for item in active),
             "capacities": [item["amount"] + cushion for item in active]}
+
+
+def _elect_tpe_subset(incoming_salaries: list[int], allow: int,
+                      capacities: list[int]) -> tuple[int, ...] | None:
+    if _placement_fits(incoming_salaries, [allow], 0):
+        return ()
+    if not capacities:
+        return None
+    for size in range(1, len(capacities) + 1):
+        for combo in combinations(range(len(capacities)), size):
+            bins = [capacities[index] for index in combo]
+            required = sum(1 << (position + 1) for position in range(len(bins)))
+            if _placement_fits(incoming_salaries, [allow] + bins, required):
+                return combo
+    return None
 
 
 def _inactive_tpe_issue(team: str, item: dict[str, Any]) -> str:
@@ -836,10 +852,19 @@ def _evaluate_team(team: str, side: dict[str, Any],
         out_eff, bool(state_after["over_apron1"]), room_before)
     usage = _tpe_usage(team_tpes, bool(state_after["over_apron1"]))
     incoming_salaries = [row["salary"] for row in side["in_rows"]]
+    elected = _elect_tpe_subset(incoming_salaries, allow, usage["capacities"])
+    elected_active = [usage["active"][index] for index in elected] if elected else []
+    usage["used"] = sum(item["amount"] for item in elected_active)
+    usage["prior"] = any(item["status"] == "prior_year" for item in elected_active)
+    usage["snt"] = any(item["kind"] == "sign_and_trade" for item in elected_active)
+    elected_capacities = ([usage["capacities"][index] for index in elected]
+                          if elected else [])
+    if elected is None and usage["capacities"]:
+        elected_capacities = usage["capacities"]
     required_tpe_bins = sum(1 << (index + 1)
-                            for index in range(len(usage["capacities"])))
-    salary_fit = _placement_fits(
-        incoming_salaries, [allow] + usage["capacities"], required_tpe_bins)
+                            for index in range(len(elected_capacities)))
+    salary_fit = (elected is not None) and _placement_fits(
+        incoming_salaries, [allow] + elected_capacities, required_tpe_bins)
     aggregates = len(side["out_names"]) > 1
     cash_out = sum(cash["amount"] for cash in cash_moves
                    if canonical_team_abbr(cash["from"]) == team)
@@ -855,16 +880,34 @@ def _evaluate_team(team: str, side: dict[str, Any],
     cushion = 0 if state_after["over_apron1"] else _TPE_CUSHION
     expanded_matching = _expanded_matching_use(
         incoming_salaries, side["in_total"], out_eff, room_before,
-        usage["capacities"], required_tpe_bins, cushion)
+        elected_capacities, required_tpe_bins, cushion)
+    tpe_in_structure = (bool(elected_active)
+                        or (elected is None and bool(usage["capacities"])))
     election = _matching_election(
         side["in_total"], out_eff, room_before, cushion,
         len(side["out_names"]), expanded_matching,
-        bool(usage["active"]))
+        tpe_in_structure)
     rule = _operative_match_rule(rule, election)
     hard_cap = _hard_cap_consequences(
         team, pay_after, aggregates=aggregates, cash_out=cash_out,
         prior_tpe=usage["prior"], snt_tpe=usage["snt"],
         is_snt_receiver=is_snt_receiver, expanded_matching=expanded_matching)
+    tpe_creation = None
+    if (out_eff > side["in_total"]
+            and side["pay_before"] > CAP["cap"]
+            and pay_after > CAP["cap"]
+            and not state_after["over_apron1"]):
+        amount = out_eff - side["in_total"]
+        tpe_creation = {
+            "amount": amount,
+            "expiry": "one year from the trade execution date",
+            "condition": ("would generate only if this construction is executed as a "
+                          "non-simultaneous trade — a simultaneous execution forfeits the exception"),
+            "copy": (f"If executed as a non-simultaneous trade, this construction would generate "
+                     f"a ${amount / 1_000_000:.1f}M trade exception expiring one year from the "
+                     f"execution date. Executed simultaneously, it generates nothing."),
+        }
+
     issues = _inactive_tpe_issues(team, usage["inactive"])
     if state_after["over_apron2"]:
         issues.extend(_apron2_issues(team, side["out_names"], cash_out,
@@ -886,6 +929,7 @@ def _evaluate_team(team: str, side: dict[str, Any],
         "picks_in": picks_in,
         "cash_out": cash_out, "cash_in": cash_in,
         "tpe_used": usage["used"],
+        "tpe_creation": tpe_creation,
         "tpe_details": [_public_tpe(item, bool(state_after["over_apron1"]))
                         for item in team_tpes],
         "allowed_incoming": allow, "match_rule": rule,
@@ -1147,10 +1191,11 @@ def get_trade_legality(legs: str = "", sign_and_trade: str = "",
         meta["pick_vintage_basis"] = state["pick_vintage"]["basis"]
         if state["pick_vintage"]["season"]:
             meta["pick_vintage_season"] = state["pick_vintage"]["season"]
-    return {"tool": "get_trade_legality", "ok": True,
+    out = {"tool": "get_trade_legality", "ok": True,
             "rows": [team_rows[team] for team in sorted(team_rows)],
             "legal": not issues,
             "issues": issues,
             "checks": checks,
             "salary_date": state["salary_date"],
             "meta": meta}
+    return declare_money(out, ["amount", "salary", "incoming", "outgoing", "allowed_incoming", "capacity", "payroll", "cap_room", "room_apron2"])

@@ -13,9 +13,19 @@ export function cacheChatRun(thread: string, question: string, snapshot: StreamS
   appendCachedRun(thread, run);
 }
 
+
+export function reconcileRetryRuns<T extends { question: string; snapshot: StreamSnapshot }>(runs: T[]): T[] {
+  return runs.filter((run, index) => {
+    const next = runs[index + 1];
+    if (!next) return true;
+    if (!run.snapshot.failed) return true;
+    return next.question !== run.question;
+  });
+}
+
 export async function loadChatRuns(thread: string): Promise<{ question: string; snapshot: StreamSnapshot }[]> {
   const runs = await getRuns(thread);
-  return Promise.all(runs.map(async (run: PersistedRun) => {
+  return reconcileRetryRuns(await Promise.all(runs.map(async (run: PersistedRun) => {
     if (run.snapshot) return { question: run.question, snapshot: run.snapshot };
     let carry: unknown;
     if (run.id) {
@@ -36,5 +46,5 @@ export async function loadChatRuns(thread: string): Promise<{ question: string; 
     stream.handle("suggestions", { items: run.suggestions });
     stream.finish();
     return { question: run.question, snapshot: stream.snapshot() };
-  }));
+  })));
 }

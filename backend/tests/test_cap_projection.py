@@ -59,6 +59,110 @@ def test_one_year_signing_affects_only_its_target_season():
     assert any("one-year" in d for d in out["disclosures"])
 
 
+def test_multi_year_signing_carries_salary_across_the_term():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 12_000_000, "years": 2,
+                             "exception": "mle", "season": "2026-27"}])
+    finally:
+        con.close()
+    assert block(out, "2026-27")["pay_after"] == 30_000_000 + 12_000_000
+    assert block(out, "2027-28")["pay_after"] == 30_000_000 + 12_000_000
+    assert block(out, "2028-29")["pay_after"] == 30_000_000
+    first_year = block(out, "2026-27")
+    second_year = block(out, "2027-28")
+    mle_first = next(e for e in first_year["exceptions"] if e["exception"] == "mle")
+    mle_second = next(e for e in second_year["exceptions"] if e["exception"] == "mle")
+    assert mle_first["used"] == 12_000_000
+    assert mle_second["used"] == 0
+    assert first_year["roster_after"] == first_year["roster_before"] + 1
+    assert second_year["roster_after"] == second_year["roster_before"]
+    assert any("flat" in d for d in out["disclosures"])
+
+
+def test_multi_year_signing_beyond_horizon_discloses_truncation():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 5_000_000, "years": 5,
+                             "season": "2028-29"}])
+    finally:
+        con.close()
+    assert block(out, "2028-29")["pay_after"] == 30_000_000 + 5_000_000
+    assert block(out, "2029-30")["pay_after"] == 5_000_000
+    assert any("horizon" in w for w in out["warnings"])
+
+
+def rows_of(out, season):
+    return {r["player"]: r for r in block(out, season)["players"]}
+
+
+def test_trade_out_row_leaves_all_forward_seasons():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "trade_out", "player": "Alpha", "season": "2026-27"}])
+    finally:
+        con.close()
+    for season in ("2026-27", "2027-28", "2028-29"):
+        assert "Alpha" not in rows_of(out, season), f"Alpha row still present in {season}"
+        assert "Bravo" in rows_of(out, season)
+
+
+def test_trade_in_row_arrives_with_exact_salary_schedule():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "trade_in", "player": "Charlie", "season": "2026-27"}])
+    finally:
+        con.close()
+    for season in ("2026-27", "2027-28", "2028-29", "2029-30"):
+        row = rows_of(out, season).get("Charlie")
+        assert row is not None, f"Charlie missing in {season}"
+        assert row["salary"] == 12_000_000
+
+
+def test_signing_row_carries_full_shape_across_the_term():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "label": "Demo Wing", "amount": 12_000_000,
+                             "years": 2, "season": "2026-27"}])
+    finally:
+        con.close()
+    row1 = rows_of(out, "2026-27").get("Demo Wing")
+    row2 = rows_of(out, "2027-28").get("Demo Wing")
+    assert row1 and row1["salary"] == 12_000_000
+    assert row2 and row2["salary"] == 12_000_000
+    assert "Demo Wing" not in rows_of(out, "2028-29")
+
+
+def test_waive_removes_row_and_dead_money_never_appears_as_row():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "waive", "player": "Alpha", "season": "2026-27"}])
+    finally:
+        con.close()
+    for season in ("2026-27", "2027-28", "2028-29"):
+        rows = rows_of(out, season)
+        assert "Alpha" not in rows, f"waived Alpha row present in {season}"
+        assert all("dead" not in name.lower() for name in rows)
+
+
+def test_declined_option_removes_row_from_that_season_forward():
+    rows = [
+        ("Alpha", "TST", 1, 60_000_000,
+         20_000_000, 20_000_000, 20_000_000, None, None, "player", None, None),
+        ("Bravo", "TST", 2, 30_000_000,
+         10_000_000, 10_000_000, 10_000_000, None, None, None, None, None),
+    ]
+    con = memory_con(rows)
+    try:
+        out = project(con, [{"kind": "option_decision", "player": "Alpha", "exercise": False,
+                             "season": "2027-28"}])
+    finally:
+        con.close()
+    assert "Alpha" in rows_of(out, "2026-27")
+    assert "Alpha" not in rows_of(out, "2027-28")
+    assert "Alpha" not in rows_of(out, "2028-29")
+
+
 def test_trade_out_removes_player_in_trade_season_and_forward():
     con = memory_con()
     try:
@@ -289,3 +393,184 @@ def test_hard_cap_violation_fires_over_first_apron():
     y1 = block(out, "2026-27")
     assert y1["pay_after"] == 233_000_000
     assert "hard-capped at the first apron" in y1["hard_cap_violation"]
+
+
+def memory_con_with_holds(fa_rows):
+    con = memory_con()
+    con.execute(
+        "CREATE TABLE silver_free_agents ("
+        "PLAYER_NAME VARCHAR, TEAM VARCHAR, BREF_SLUG VARCHAR, FA_YEAR BIGINT, "
+        "FA_TYPE VARCHAR, PRIOR_SALARY BIGINT, CAP_HOLD_EST BIGINT)")
+    con.executemany("INSERT INTO silver_free_agents VALUES (?, ?, ?, ?, ?, ?, ?)", fa_rows)
+    return con
+
+
+def test_cap_holds_enter_base_season_payroll_only():
+    con = memory_con_with_holds([("Departed", "TST", "depart01", 2026, "ufa", 15_000_000, 20_000_000)])
+    try:
+        out = project(con, [])
+    finally:
+        con.close()
+    assert out["ok"] is True
+    base = block(out, "2026-27")
+    assert base["pay_before"] == 50_000_000
+    assert base["cap_holds"] == 20_000_000
+    assert base["cap_hold_details"][0]["player"] == "Departed"
+    assert base["cap_hold_details"][0]["amount"] == 20_000_000
+    assert block(out, "2027-28")["pay_before"] == 30_000_000
+    assert "cap_holds" not in block(out, "2027-28")
+    assert any("cap holds are included" in d for d in out["disclosures"])
+
+
+def test_renounce_releases_hold_and_ordering_is_sensitive():
+    con = memory_con_with_holds([("Departed", "TST", "depart01", 2026, "ufa", 15_000_000, 20_000_000)])
+    try:
+        room_before = 164_961_000 - 50_000_000
+        signing = room_before + 10_000_000
+        out = project(con, [
+            {"kind": "renounce", "player": "Departed"},
+            {"kind": "signing", "amount": signing},
+        ])
+        out_reversed = project(con, [
+            {"kind": "signing", "amount": signing},
+            {"kind": "renounce", "player": "Departed"},
+        ])
+    finally:
+        con.close()
+    base = block(out, "2026-27")
+    renounce_effect = next(e for e in base["effects"] if e["kind"] == "renounce")
+    assert renounce_effect["delta"] == -20_000_000
+    assert base["ordering_notes"] == []
+    reversed_base = block(out_reversed, "2026-27")
+    assert len(reversed_base["ordering_notes"]) == 1
+    assert "order-dependent" in reversed_base["ordering_notes"][0]
+
+
+def test_renounce_without_hold_errors_honestly():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "renounce", "player": "Alpha"}])
+    finally:
+        con.close()
+    assert any("no active cap hold" in e["error"] for e in out["errors"])
+
+
+def test_renounce_in_forward_season_applies_where_the_hold_lives():
+    con = memory_con_with_holds([("Departing", "TST", "depart02", 2027, "ufa", 15_000_000, 18_000_000)])
+    try:
+        out = project(con, [{"kind": "renounce", "player": "Departing", "season": "2027-28"}])
+    finally:
+        con.close()
+    forward = block(out, "2027-28")
+    assert forward["pay_before"] == 48_000_000
+    assert forward["cap_holds"] == 18_000_000
+    renounce_effect = next(e for e in forward["effects"] if e["kind"] == "renounce")
+    assert renounce_effect["delta"] == -18_000_000
+    assert forward["pay_after"] == 30_000_000
+    assert out["errors"] == []
+
+
+def test_renounce_in_season_without_a_hold_errors_honestly():
+    con = memory_con_with_holds([("Departed", "TST", "depart01", 2026, "ufa", 15_000_000, 20_000_000)])
+    try:
+        out = project(con, [{"kind": "renounce", "player": "Departed", "season": "2027-28"}])
+    finally:
+        con.close()
+    assert any("no active cap hold" in e["error"] for e in out["errors"])
+
+
+def test_double_renounce_errors():
+    con = memory_con_with_holds([("Departed", "TST", "depart01", 2026, "ufa", 15_000_000, 20_000_000)])
+    try:
+        out = project(con, [
+            {"kind": "renounce", "player": "Departed"},
+            {"kind": "renounce", "player": "Departed"},
+        ])
+    finally:
+        con.close()
+    assert any("already renounced" in e["error"] for e in out["errors"])
+
+
+def test_exceptions_block_tracks_usage_and_remaining():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 10_000_000, "exception": "mle"}])
+    finally:
+        con.close()
+    rows = {r["exception"]: r for r in block(out, "2026-27")["exceptions"]}
+    assert rows["mle"]["amount"] == 15_044_000
+    assert rows["mle"]["used"] == 10_000_000
+    assert rows["mle"]["remaining"] == 5_044_000
+    assert rows["mle"]["hard_caps"] is True
+    assert rows["bae"]["used"] == 0
+    assert rows["bae"]["hard_caps"] is False
+    assert any("scenario moves only" in d for d in out["disclosures"])
+
+
+def test_signing_above_exception_amount_is_flagged_not_spilled():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 20_000_000, "exception": "mle"}])
+    finally:
+        con.close()
+    rows = {r["exception"]: r for r in block(out, "2026-27")["exceptions"]}
+    assert rows["mle"]["exceeds"] == 20_000_000
+    assert rows["mle"]["remaining"] == 0
+
+
+def test_exceptions_scale_with_forward_cap_growth():
+    con = memory_con()
+    try:
+        out = project(con, [])
+    finally:
+        con.close()
+    base_rows = {r["exception"]: r for r in block(out, "2026-27")["exceptions"]}
+    forward_rows = {r["exception"]: r for r in block(out, "2027-28")["exceptions"]}
+    base = block(out, "2026-27")
+    forward = block(out, "2027-28")
+    ratio = forward["lines"]["cap"] / base["lines"]["cap"]
+    assert abs(forward_rows["mle"]["amount"] - round(base_rows["mle"]["amount"] * ratio, -3)) <= 1000
+
+
+def test_over_apron_marks_ntmle_unavailable():
+    con = memory_con()
+    try:
+        out = project(con, [{"kind": "signing", "amount": 220_000_000, "exception": "bird"}])
+    finally:
+        con.close()
+    rows = {r["exception"]: r for r in block(out, "2026-27")["exceptions"]}
+    assert rows["mle"]["unavailable"] is True
+    assert rows["bae"]["unavailable"] is True
+    assert rows["room"]["unavailable"] is False
+
+def test_trade_exceptions_disclosed_per_season_with_no_payroll_effect():
+    con = memory_con()
+    try:
+        from shared.tools.league.cap_projection import project_cap_scenario
+        tpes = [
+            {"team": "TST", "amount": 10_534_956, "kind": "ordinary",
+             "origin_year": 2026, "exactness": "scenario_derived"},
+            {"team": "TST", "amount": 5_000_000, "kind": "ordinary",
+             "origin_year": 2024, "exactness": "user_declared"},
+            {"team": "OTH", "amount": 9_000_000, "kind": "ordinary",
+             "origin_year": 2026, "exactness": "user_declared"},
+        ]
+        out = project_cap_scenario(con, {"team": "TST", "season": "2026-27", "moves": [], "tpes": tpes})
+        first = block(out, "2026-27")
+        disclosed = first.get("trade_exceptions") or []
+        assert len(disclosed) == 2
+        amounts = sorted(row["amount"] for row in disclosed)
+        assert amounts == [5_000_000, 10_534_956]
+        active = next(row for row in disclosed if row["amount"] == 10_534_956)
+        assert active["status"] == "active"
+        assert active["exactness"] == "scenario_derived"
+        assert "no payroll effect" in active["note"]
+        expired = next(row for row in disclosed if row["amount"] == 5_000_000)
+        assert expired["status"] == "expired"
+        plain = project(con, [])
+        assert first["pay_after"] == block(plain, "2026-27")["pay_after"]
+        later = block(out, "2028-29")
+        later_amounts = sorted(row["amount"] for row in (later.get("trade_exceptions") or []))
+        assert later_amounts == sorted(row["amount"] for row in disclosed)
+    finally:
+        con.close()

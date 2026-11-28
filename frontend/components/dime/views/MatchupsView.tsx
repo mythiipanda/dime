@@ -126,7 +126,7 @@ function InjuryNotes({ game }: { game: MatchupGame }) {
     return (
       <div className="mt-3 border-t border-line pt-3 text-[12.5px] text-ink-3">
         {unavailable.length === sides.length
-          ? "Injury report unavailable — no substitute data is shown."
+          ? "Injury report unavailable; no substitute data is shown."
           : "No out or doubtful players listed for either team."}
         {unavailable.length > 0 && unavailable.length < sides.length &&
           ` Injury report unavailable for ${unavailable.map((s) => s.team.abbr).join(", ")}.`}
@@ -146,7 +146,7 @@ function InjuryNotes({ game }: { game: MatchupGame }) {
       ))}
       {unavailable.map((s) => (
         <div key={s.team.abbr} className="py-2.5 text-[12.5px] text-ink-3">
-          {s.team.abbr} injury report unavailable — no substitute data is shown.
+          {s.team.abbr} injury report unavailable; no substitute data is shown.
         </div>
       ))}
     </div>

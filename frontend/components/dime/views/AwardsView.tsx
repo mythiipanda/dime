@@ -94,7 +94,7 @@ function Board({ board }: { board: AwardBoard }) {
         ))}
       </div>
       <p className="mt-2 px-1 text-[11px] text-ink-2">
-        Warehouse z-score projection over the qualified pool — score is the weighted composite, not betting odds.
+        Warehouse z-score projection over the qualified pool. Score is the weighted composite, not betting odds.
         {board.caveat ? ` ${board.caveat}.` : ""}
       </p>
     </div>
@@ -164,8 +164,8 @@ export default function AwardsView({ onAsk }: { onAsk?: (text: string, context?:
               variant="secondary"
               onClick={() => onAsk(
                 active.candidates.length > 0
-                  ? `Break down the ${data?.season ?? ""} ${active.award} race — who leads, who is closing, and what the case against the favorite is.`
-                  : `The ${data?.season ?? ""} ${active.award} race has no qualified candidates in the warehouse yet — when do players typically become eligible, and who would be the early favorites from last season\'s form?`,
+                  ? `Break down the ${data?.season ?? ""} ${active.award} race: who leads, who is closing, and what the case against the favorite is.`
+                  : `The ${data?.season ?? ""} ${active.award} race has no qualified candidates in the warehouse yet. When do players typically become eligible, and who would be the early favorites from last season\'s form?`,
                 {
                   kind: "awards_race",
                   summary: `${active.award} race · ${data?.season ?? ""}`,

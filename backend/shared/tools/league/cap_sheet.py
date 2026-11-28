@@ -1000,7 +1000,7 @@ def evaluate_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": waiver_timing_error}
     lines, lines_projected = cap_lines_for_season(con, season)
     try:
-        pay_before, roster = _payroll(team, con, season)
+        pay_before, roster, _dead = _payroll(team, con, season)
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:200]}
     hold_payload = _cap_hold_payload(con, team, season)

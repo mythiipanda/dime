@@ -106,6 +106,7 @@ export type DirectOperations = {
     product_trade_legs: {
         legs: string;
         season: string;
+        tpes: string;
     };
     product_history_career: {
         player: string;

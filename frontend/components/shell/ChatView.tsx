@@ -3,18 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowRight, Basketball, Copy, Database, User } from "iconoir-react";
+import { Check, Copy } from "lucide-react";
 import { PromptBar } from "../ds/PromptBar";
 import { CitationChip } from "../ds/CitationChip";
-import { ThinkingState } from "../ds/ThinkingState";
-import { ToolChips } from "../ds/ToolChips";
+import { EvidenceTrace } from "../ds/EvidenceTrace";
 import { StreamingText } from "../ds/StreamingText";
 import { AnswerVerification, OmittedNote, StoppedNote } from "../site/harness/AnswerView";
 import { StreamArtifacts } from "../site/harness/ArtifactsView";
 import { useDimeChat } from "../site/harness/useDimeChat";
 import type { ChatMsg } from "../site/harness/types";
-import type { VerificationCarry } from "../../lib/dime-stream";
+import type { DimeArtifact, ToolState, VerificationCarry } from "../../lib/dime-stream";
 import { citationDetails } from "../../lib/citation-details";
+import { failureCopy } from "../../lib/stream/labels";
 import { clearWorkflowDraft, createWorkflowDraft, loadWorkflowDraft, saveWorkflowDraft, workflowDraftWasSent, type WorkflowDraft } from "../../lib/workflow-drafts";
 import { splitViewContext } from "../../lib/view-context";
 
@@ -44,18 +44,63 @@ export function PiAnswer({ text, carry, prefix }: { text: string; carry: Verific
   </div>)}</>;
 }
 
-export function AssistantTurn({ message, prefix, thread, onFollowUp }: { message: Extract<ChatMsg, { role: "assistant" }>; prefix: string; thread?: string; onFollowUp: (text: string) => void }) {
+export function FailureNotice({ failure, onRetry }: { failure: { kind: string; message: string }; onRetry?: () => void }) {
+  const copy = failureCopy(failure.kind);
+  return (
+    <div role="alert" className="my-4 flex items-center gap-3 rounded-lg border border-red/25 bg-red-tint px-4 py-3 text-[12px]">
+      <div className="flex-1">
+        <div className="font-medium text-ink">{copy.title}</div>
+        <p className="mt-0.5 leading-relaxed text-ink-2">{copy.body}</p>
+      </div>
+      {onRetry && <button className="failure-retry" onClick={onRetry}>Try again</button>}
+    </div>
+  );
+}
+
+export function CopyAnswerButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <div className="mt-1 flex items-center">
+      <button
+        className="icon-button -ml-1.5 text-ink-3"
+        aria-label={copied ? "Copied" : "Copy answer"}
+        onClick={() => {
+          void navigator.clipboard.writeText(text).then(() => setCopied(true));
+        }}
+      >
+        {copied ? <Check width={13} height={13} /> : <Copy width={13} height={13} />}
+      </button>
+    </div>
+  );
+}
+
+export function AssistantTurn({ message, prefix, thread, onFollowUp, onRetry }: { message: Extract<ChatMsg, { role: "assistant" }>; prefix: string; thread?: string; onFollowUp: (text: string) => void; onRetry?: () => void }) {
   return <article className="assistant-turn">
-    <div className="mb-3 flex items-center gap-2 text-[11px] text-ink-3"><Basketball width={14} height={14} /><span>Dime</span></div>
+    <EvidenceTrace busy={false} thinking={message.thinking ?? []} tools={message.tools ?? []} />
     <PiAnswer text={message.text} carry={message.carry} prefix={prefix} />
     {message.carry?.submission?.omitted?.length ? <OmittedNote omitted={message.carry.submission.omitted} /> : null}
     {message.stopped ? <StoppedNote /> : null}
     <StreamArtifacts artifacts={message.artifacts} shareContext={message.carry?.runId && thread ? { run_id: message.carry.runId, thread } : undefined} />
     <AnswerVerification carry={message.carry} artifacts={message.artifacts} prefix={prefix} />
-    {message.failure && <div role="alert" className="my-4 rounded-lg border border-red/25 bg-red-tint px-4 py-3 text-[12px] text-red">{message.failure.message}</div>}
-    {message.text && <button className="icon-button" aria-label="Copy answer" onClick={() => { void navigator.clipboard.writeText(message.text); }}><Copy width={13} height={13} /></button>}
-    {message.suggestions.map(suggestion => <button key={suggestion} className="suggestion-row text-[12px]" onClick={() => onFollowUp(suggestion)}><ArrowRight width={13} height={13} />{suggestion}</button>)}
+    {message.failure && <FailureNotice failure={message.failure} onRetry={onRetry} />}
+    {message.text && <CopyAnswerButton text={message.text} />}
+    {message.suggestions.map(suggestion => <button key={suggestion} className="suggestion-row text-[12px]" onClick={() => onFollowUp(suggestion)}>{suggestion}</button>)}
   </article>;
+}
+
+export function LiveTurn({ live, thread }: { live: { thinking: { label: string }[]; tools: ToolState[]; text: string; carry: VerificationCarry | null; artifacts: DimeArtifact[] }; thread: string }) {
+  return (
+    <article className="assistant-turn" aria-label="Dime response">
+      <EvidenceTrace busy thinking={live.thinking} tools={live.tools} />
+      <StreamingText streaming><PiAnswer text={live.text} carry={live.carry} prefix={`${thread}-live-`} /></StreamingText>
+      <StreamArtifacts artifacts={live.artifacts} shareContext={live.carry?.runId ? { run_id: live.carry.runId, thread } : undefined} />
+    </article>
+  );
 }
 
 export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflowConsumed }: { thread: string; replay: string | null; onRunDone: (question: string) => void; workflowRequest?: { thread: string; text: string } | null; onWorkflowConsumed?: () => void }) {
@@ -111,18 +156,13 @@ export function ChatView({ thread, replay, onRunDone, workflowRequest, onWorkflo
     {empty ? <section className="chat-empty">
       <h1><span>Your front office, on demand.</span>What are we looking into?</h1>
       {composer}
-      <div className="mt-6 space-y-0.5">{suggestedPrompts.map((prompt, index) => <button key={prompt} className="suggestion-row" disabled={chat.historyLoading} onClick={() => changeDraft(prompt)}>{index === 0 ? <User width={16} height={16} /> : index === 1 ? <Basketball width={16} height={16} /> : <Database width={16} height={16} />}<span>{prompt}</span><ArrowRight width={14} height={14} className="ml-auto" /></button>)}</div>
+      <div className="mt-6 space-y-0.5">{suggestedPrompts.map((prompt, index) => <button key={prompt} className="suggestion-row" disabled={chat.historyLoading} onClick={() => changeDraft(prompt)}><span>{prompt}</span></button>)}</div>
       {chat.historyLoading && <p role="status" className="mt-4 text-[12px] text-ink-3">Loading conversation…</p>}
       {chat.historyError && <p role="alert" className="mt-4 text-[12px] text-red">{chat.historyError}</p>}
     </section> : <>
-      <div className="conversation" ref={chat.scrollRef} aria-label="Conversation">
-        {chat.messages.map((message, index) => message.role === "user" ? <UserTurn key={index} text={message.text} /> : <AssistantTurn key={index} message={message} prefix={`${thread}-${index}-`} thread={thread} onFollowUp={chat.submit} />)}
-        {chat.live && <article className="assistant-turn" aria-label="Dime response">
-          <ThinkingState busy steps={chat.live.thinking.map((step, index, steps) => ({ label: step.label, state: index === steps.length - 1 ? "running" : "done" }))} />
-          <ToolChips tools={chat.live.tools.map(tool => ({ id: tool.key, label: tool.label, status: tool.status === "fail" ? "error" : tool.status === "running" ? "running" : "done", detail: tool.error ?? tool.name }))} />
-          <StreamingText streaming><PiAnswer text={chat.live.text} carry={chat.live.carry} prefix={`${thread}-live-`} /></StreamingText>
-          <StreamArtifacts artifacts={chat.live.artifacts} shareContext={chat.live.carry?.runId ? { run_id: chat.live.carry.runId, thread } : undefined} />
-        </article>}
+      <div className="conversation" ref={chat.scrollRef} aria-label="Conversation" onScroll={chat.onConversationScroll}>
+        {chat.messages.map((message, index) => message.role === "user" ? <UserTurn key={index} text={message.text} /> : <AssistantTurn key={index} message={message} prefix={`${thread}-${index}-`} thread={thread} onFollowUp={chat.submit} onRetry={() => chat.retry(index)} />)}
+        {chat.live && <LiveTurn live={chat.live} thread={thread} />}
       </div>
       <div className="composer-dock">{composer}<p className="mt-2 text-center text-[10px] text-ink-3">Dime can make mistakes. Check the evidence before making a decision.</p></div>
     </>}
