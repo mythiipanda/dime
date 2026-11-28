@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Basketball, Check, Copy } from "iconoir-react";
+import { Check, Copy } from "iconoir-react";
 import { PromptBar } from "../ds/PromptBar";
 import { CitationChip } from "../ds/CitationChip";
 import { EvidenceTrace } from "../ds/EvidenceTrace";
@@ -68,7 +68,6 @@ export function CopyAnswerButton({ text }: { text: string }) {
 
 export function AssistantTurn({ message, prefix, thread, onFollowUp, onRetry }: { message: Extract<ChatMsg, { role: "assistant" }>; prefix: string; thread?: string; onFollowUp: (text: string) => void; onRetry?: () => void }) {
   return <article className="assistant-turn">
-    <div className="mb-3 flex items-center gap-2 text-[11px] text-ink-3"><Basketball width={14} height={14} /><span>Dime</span></div>
     <EvidenceTrace busy={false} thinking={message.thinking ?? []} tools={message.tools ?? []} />
     <PiAnswer text={message.text} carry={message.carry} prefix={prefix} />
     {message.carry?.submission?.omitted?.length ? <OmittedNote omitted={message.carry.submission.omitted} /> : null}
