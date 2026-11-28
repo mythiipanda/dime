@@ -52,6 +52,8 @@ export type ProjectionSeason = {
   cap_holds?: number;
   cap_holds_exactness?: string;
   cap_hold_details?: ProjectionCapHold[];
+  dead_money?: number;
+  dead_money_players?: { player: string; salary: number }[];
 };
 
 export type ProjectionResponse = {

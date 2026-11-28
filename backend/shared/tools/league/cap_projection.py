@@ -94,6 +94,44 @@ def _team_baseline(con, team: str, schedules: dict[str, dict[str, Any]], seasons
     return baseline
 
 
+def _dead_money_by_season(con, team: str, seasons: list[str]) -> dict[str, dict[str, Any]]:
+    empty = {season: {"total": 0, "players": []} for season in seasons}
+    team_code = canonical_team_abbr(team)
+    try:
+        cols = [r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()]
+    except Exception:
+        return empty
+    if "ROW_KIND" not in cols:
+        return empty
+    salary_col_by_season = {}
+    for col in cols:
+        m = _re.fullmatch(r"SALARY_(\d{4})_(\d{2})", str(col))
+        if m:
+            salary_col_by_season[f"{m.group(1)}-{m.group(2)}"] = col
+    try:
+        cursor = con.execute(
+            "SELECT * FROM silver_salaries WHERE ROW_KIND = 'dead_money'")
+        names = [d[0] for d in cursor.description]
+        records = [dict(zip(names, row)) for row in cursor.fetchall()]
+    except Exception:
+        return empty
+    out = {season: {"total": 0, "players": []} for season in seasons}
+    for row in records:
+        if canonical_team_abbr(str(row.get("TEAM") or "")) != team_code:
+            continue
+        player = str(row.get("PLAYER_NAME") or "")
+        for season in seasons:
+            col = salary_col_by_season.get(season)
+            if not col:
+                continue
+            amount = row.get(col)
+            if not amount:
+                continue
+            out[season]["total"] += int(amount)
+            out[season]["players"].append({"player": player, "salary": int(amount)})
+    return out
+
+
 def _signing_effect(raw: dict[str, Any], index: int, target: str) -> tuple[dict[str, Any] | None, str | None]:
     amount = raw.get("amount")
     if not isinstance(amount, (int, float)) or amount <= 0:
@@ -346,6 +384,13 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
 
     schedules = _player_schedules(con, base_season)
     baseline = _team_baseline(con, team, schedules, seasons)
+    dead_by_season = _dead_money_by_season(con, team, seasons)
+    for season, dead in dead_by_season.items():
+        entry = baseline.get(season)
+        if entry is not None and dead["total"]:
+            entry["payroll"] = int(entry["payroll"]) + dead["total"]
+            entry["dead_money"] = dead["total"]
+            entry["dead_players"] = dead["players"]
     holds_by_season = {season: _season_holds(con, team, season) for season in seasons}
     for season, holds in holds_by_season.items():
         if holds["total"]:
@@ -559,6 +604,10 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
             "season": season,
             "pay_before": int(base["payroll"]),
             "pay_after": pay_after,
+            **({"dead_money": int(base["dead_money"]),
+                "dead_money_players": [{"player": p["player"], "salary": p["salary"]}
+                                       for p in base.get("dead_players", [])]}
+               if base.get("dead_money") else {}),
             "cap_room": lines["cap"] - pay_after,
             "state": state,
             "lines": lines,
@@ -594,6 +643,12 @@ def project_cap_scenario(con, payload: dict[str, Any]) -> dict[str, Any]:
         "signings without a stated term project as one-year deals; multi-year signings carry flat annual salary across the term. Raise structure is not modeled",
         "apron and tax comparisons use committed-payroll proxies per the cap-rules derivation contract, not full CBA Apron Team Salary",
     ]
+    dead_seasons = [s for s in seasons if baseline.get(s, {}).get("dead_money")]
+    if dead_seasons:
+        disclosures.insert(0,
+            "payroll is committed payroll including dead-money obligations — waived players' "
+            "guaranteed money counts against team salary per CBA rules. Each season row carries "
+            "the dead-money component separately as dead_money with per-player detail in dead_money_players")
     hold_seasons = [s for s in seasons if holds_by_season[s]["rows"]]
     if hold_seasons:
         unknown_total = sum(holds_by_season[s]["unknown_count"] for s in hold_seasons)

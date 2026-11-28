@@ -152,6 +152,14 @@ export function SharedScenarioView({
                     <span>{money(season.cap_holds)}</span>
                   </div>
                 )}
+                {(season.dead_money ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span title={(season.dead_money_players ?? []).map((d) => `${d.player} ${money(d.salary)}`).join(" · ")}>
+                      dead money{(season.dead_money_players ?? []).length > 0 ? ` (${(season.dead_money_players ?? []).map((d) => d.player.split(" ").slice(-1)[0]).join(", ")})` : ""}
+                    </span>
+                    <span>{money(season.dead_money)}</span>
+                  </div>
+                )}
               </div>
               {season.effects.length > 0 && (
                 <ol className="mt-2 space-y-1 border-t border-line pt-2">
