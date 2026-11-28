@@ -43,25 +43,6 @@ const CODEMODE_STORE_ENTRY_TYPE = "codemode-store";
 const CODEMODE_STORE_FILE = "codemode-store.json";
 const CODEMODE_STORE_MAX_BYTES = 512 * 1024;
 
-const DISCOVERY_GLOBAL_NAME_RE = /^(all_tools|search_?tools|describe_?tool|describe_?namespace)$/i;
-const UNCERTAIN_SILENT_NAME_RE = /^read_source$/i;
-
-export function notFoundCorrectionCopy(malformed: string): { kind: "discovery_global" | "generic" | "silent"; copy: string | null } {
-    if (DISCOVERY_GLOBAL_NAME_RE.test(malformed)) {
-        return {
-            kind: "discovery_global",
-            copy: `Correction: ${malformed} is real but it is not a tool in the tools namespace — it is a bare global available inside codemode scripts. Call it with no prefix: await searchTools("the capability you need") returns ranked tool names and descriptions; await describeTool(name) returns one tool's declaration. These globals exist only inside codemode — they are not direct tool_calls either. Retry inside your codemode script now.`,
-        };
-    }
-    if (UNCERTAIN_SILENT_NAME_RE.test(malformed)) {
-        return { kind: "silent", copy: null };
-    }
-    return {
-        kind: "generic",
-        copy: `Correction: nothing is missing — the error you saw means only the invocation form was wrong, not that any tool is unavailable. submit_answer is a direct tool you invoke as a tool_call in your response — never JavaScript, never inside codemode — and there is no tools.xxx invocation form for it. The failing call used a malformed name (${malformed}). The same holds for sql_exec, verify_answer_numbers and the warehouse tools: invoke them as direct tool_calls by bare name. If you are looking for a tool whose exact name you don't know: inside codemode, await searchTools("capability words") is the real discovery primitive — bare global, no tools. prefix — and it returns the exact registered names. Retry what you were doing right now.`,
-    };
-}
-
 export function codemodeStoreSnapshot(branch: ReadonlyArray<{ type: string }>): Record<string, unknown> {
     const store = new Map<string, unknown>();
     for (const entry of branch) {
@@ -1426,16 +1407,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 if (notFound && !correctedNotFoundNames.has(notFound[1])) {
                                     correctedNotFoundNames.add(notFound[1]);
                                     notFoundCorrections++;
-                                    const correction = notFoundCorrectionCopy(notFound[1]);
                                     emit({ type: "tool_call", name: "tool_not_found_correction", args: { malformed: notFound[1] } });
-                                    emit({ type: "tool_result", name: "tool_not_found_correction", status: "ok", result: correction.copy === null ? `silenced malformed tool name (uncertain sub-case): ${notFound[1]}` : `corrected malformed tool name: ${notFound[1]}` });
-                                    if (correction.copy !== null) {
-                                        session?.agent.steer({
-                                            role: "user",
-                                            content: correction.copy,
-                                            timestamp: Date.now()
-                                        });
-                                    }
+                                    emit({ type: "tool_result", name: "tool_not_found_correction", status: "ok", result: `corrected malformed tool name: ${notFound[1]}` });
+                                    session?.agent.steer({
+                                        role: "user",
+                                        content: `Correction: nothing is missing — the error you saw means only the invocation form was wrong, not that any tool is unavailable. submit_answer is a direct tool you invoke as a tool_call in your response — never JavaScript, never inside codemode — and there is no tools.xxx invocation form for it. The failing call used a malformed name (${notFound[1]}). The same holds for sql_exec, verify_answer_numbers and the warehouse tools: invoke them as direct tool_calls by bare name. Retry what you were doing right now.`,
+                                        timestamp: Date.now()
+                                    });
                                     break;
                                 }
                             }
