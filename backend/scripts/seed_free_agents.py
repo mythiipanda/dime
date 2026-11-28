@@ -187,7 +187,55 @@ def load(dry_run: bool) -> int:
     print(f"silver_free_agents: {n_fa} rows "
           f"(fa_season {fa_key}, cap_season {cap_key})")
     print(f"silver_cap_room: {n_room} rows")
+    n_fa = _enrich_derived_holds(n_fa)
     return n_fa + n_room
+
+
+def _enrich_derived_holds(n_fa: int) -> int:
+    from shared.tools.league.cap_hold_derivation import derive_cap_holds
+    try:
+        with store.connect(read_only=True) as con:
+            derived = derive_cap_holds(con, FA_YEAR)
+    except Exception as exc:
+        print(f"cap-hold derivation skipped: {str(exc)[:120]}")
+        return n_fa
+    rows = derived.get("rows") or []
+    if not rows:
+        print("cap-hold derivation produced no rows")
+        return n_fa
+    by_key = {(str(r.get("PLAYER_NAME") or ""), str(r.get("TEAM") or "")): r
+              for r in rows}
+    try:
+        with store.connect(read_only=True) as con:
+            cols = [r[1] for r in con.execute(
+                "PRAGMA table_info(silver_free_agents)").fetchall()]
+            data_cols = [c for c in cols if not c.startswith("_")]
+            sel = ", ".join(chr(34) + c + chr(34) for c in data_cols)
+            current = [dict(zip(data_cols, r)) for r in con.execute(
+                f"SELECT {sel} FROM silver_free_agents").fetchall()]
+    except Exception as exc:
+        print(f"cap-hold enrichment read failed: {str(exc)[:120]}")
+        return n_fa
+    enriched = 0
+    for row in current:
+        hit = by_key.get((str(row.get("PLAYER_NAME") or ""), str(row.get("TEAM") or "")))
+        if hit is not None and hit.get("cap_hold") is not None:
+            row["CAP_HOLD"] = int(hit["cap_hold"])
+            row["CAP_HOLD_EXACTNESS"] = str(hit.get("hold_exactness") or "unknown")
+            row["CAP_HOLD_RULE"] = str(hit.get("hold_rule") or "")
+            enriched += 1
+        else:
+            row["CAP_HOLD"] = None
+            row["CAP_HOLD_EXACTNESS"] = None
+            row["CAP_HOLD_RULE"] = None
+    frame = pl.DataFrame(current)
+    res = FetchResult(frame=frame,
+                      meta=FetchMeta(source="derived:bref_contracts",
+                                     season=FA_SEASON))
+    n = store.save_frame("silver_free_agents", res, entity="league")
+    print(f"silver_free_agents: {enriched} derived cap holds written "
+          f"({derived.get('meta', {}).get('derivation_status', '')})")
+    return n
 
 
 def main(argv: list[str] | None = None) -> int:
