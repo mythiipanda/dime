@@ -5,12 +5,12 @@ export function replayName(search: string, environment: string = process.env.NOD
   return environment === "development" && (name === "scouting" || name === "generative" || name === "worstcase") ? name : null;
 }
 
-export async function replayStream(name: string, handlers: Parameters<typeof postChatStream>[2], signal?: AbortSignal): Promise<void> {
+export async function replayStream(name: string, handlers: Parameters<typeof postChatStream>[2], signal?: AbortSignal, turn: number = 0): Promise<void> {
   if (process.env.NODE_ENV !== "development" || (name !== "scouting" && name !== "generative" && name !== "worstcase")) {
     handlers.onError("Replay is unavailable.");
     return;
   }
-  const events = name === "generative" ? (await import("./generative-fixture")).generativeEvents : name === "worstcase" ? (await import("./worstcase-fixture")).worstcaseEvents : (await import("./replay-fixture")).scoutingEvents;
+  const events = name === "generative" ? (await import("./generative-fixture")).generativeTurns[turn % (await import("./generative-fixture")).generativeTurns.length] : name === "worstcase" ? (await import("./worstcase-fixture")).worstcaseEvents : (await import("./replay-fixture")).scoutingEvents;
   for (const [type, data] of events) {
     if (signal?.aborted) return;
     handlers.onEvent(type, data);

@@ -65,9 +65,9 @@ export function CopyAnswerButton({ text }: { text: string }) {
     return () => clearTimeout(timer);
   }, [copied]);
   return (
-    <div className="mt-1 flex items-center">
+    <div className="flex shrink-0 items-center">
       <button
-        className="icon-button -ml-1.5 text-ink-3"
+        className="icon-button text-ink-3"
         aria-label={copied ? "Copied" : "Copy answer"}
         onClick={() => {
           void navigator.clipboard.writeText(text).then(() => setCopied(true));
@@ -86,9 +86,11 @@ export function AssistantTurn({ message, prefix, thread, onFollowUp, onRetry }: 
     {message.carry?.submission?.omitted?.length ? <OmittedNote omitted={message.carry.submission.omitted} /> : null}
     {message.stopped ? <StoppedNote /> : null}
     <StreamArtifacts artifacts={message.artifacts} shareContext={message.carry?.runId && thread ? { run_id: message.carry.runId, thread } : undefined} />
-    <AnswerVerification carry={message.carry} artifacts={message.artifacts} prefix={prefix} />
+    <div className="flex items-baseline justify-between gap-3">
+      <div className="min-w-0 grow"><AnswerVerification carry={message.carry} artifacts={message.artifacts} prefix={prefix} /></div>
+      {message.text && <CopyAnswerButton text={message.text} />}
+    </div>
     {message.failure && <FailureNotice failure={message.failure} onRetry={onRetry} />}
-    {message.text && <CopyAnswerButton text={message.text} />}
     {message.suggestions.map(suggestion => <button key={suggestion} className="suggestion-row text-[12px]" onClick={() => onFollowUp(suggestion)}>{suggestion}</button>)}
   </article>;
 }

@@ -20,7 +20,10 @@ def test_correction_names_direct_tool_call_channel():
 def test_correction_drops_full_tool_list():
     seg_start = SRC.index("Correction: nothing is missing")
     seg = SRC[seg_start:seg_start + 900]
-    assert "The same holds for sql_exec, verify_answer_numbers and the warehouse tools" in seg
+    assert "The same holds for sql_exec and verify_answer_numbers" in seg
+    assert "they are never direct tool_calls" in seg, "warehouse tools must not be instructed as direct calls — they are codemode-exposure only"
+    assert "await tools.<name>" in seg, "the correction names the real codemode invocation form"
+    assert "invoke them as direct tool_calls by bare name. Retry" not in seg, "the old impossible-instruction form must be gone"
     assert "Available right now:" not in seg, "no full bridge tool enumeration in the correction"
 
 
