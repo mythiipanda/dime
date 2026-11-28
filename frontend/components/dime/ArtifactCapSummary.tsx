@@ -73,7 +73,7 @@ export default function ArtifactCapSummary({ artifact }: { artifact: CapSummaryA
         <RoomRow label="Room under second apron" after={artifact.roomApron2} />
       </dl>
       {artifact.issues && artifact.issues.length > 0 && (
-        <ul className="mt-4 space-y-1.5 rounded-lg border border-red-tint bg-red-tint/40 p-3">
+        <ul className="mt-4 space-y-1.5 border-t border-line pt-3">
           {artifact.issues.map((issue, index) => (
             <li key={index} className="flex items-start gap-2 text-[13px] leading-relaxed text-ink">
               <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-red" />
