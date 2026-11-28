@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   validateAnswerSubmission,
   createSubmitAnswerTool,
+  resolveSalvagedArtifacts,
 } from "./dist/submit-tool.js";
 import { ProductStore } from "./dist/product-store.js";
 import { Type } from "typebox";
@@ -18,12 +19,12 @@ import { createAnalyst } from "./dist/analyst.js";
 import { priorSourceTool } from "./dist/pi-context.js";
 import { sourceResult } from "./dist/python-tools.js";
 
-function makeSourceRecord(ref, { rows = [], isError = false, error } = {}) {
-  const result = error !== undefined ? { rows, error } : { rows };
+function makeSourceRecord(ref, { rows = [], isError = false, error, tool = "sql_exec", meta } = {}) {
+  const result = error !== undefined ? { rows, error } : meta !== undefined ? { rows, meta } : { rows };
   return {
     ref,
     callId: "call-" + ref,
-    tool: "sql_exec",
+    tool,
     response: {
       content: [{ type: "text", text: JSON.stringify(result) }],
       structuredContent: result,
@@ -2302,4 +2303,491 @@ test("nondelivery interception counter is independent of turn_end_steer and give
   const giveUps = events.filter((e) => e.type === "tool_call" && e.name === "give_up_correction_steer");
   assert.equal(giveUps.length, 1, "give_up_correction_steer still fires its own shot after interceptions");
   await rm(cwd, { recursive: true, force: true });
+});
+
+test("artifact sources: single-tool selector attaches capability provenance", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ player: "Luka", pts: 33.9 }], meta: { source: "silver_player_stats", season: "2025-26" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "Luka leads scoring." }],
+    artifacts: [{
+      kind: "table",
+      title: "Scoring leaders",
+      columns: [{ key: "player", label: "Player" }, { key: "pts", label: "PTS" }],
+      rows: [["Luka", 33.9]],
+      sources: [{ ref: "src-1", rows: [0], columns: ["player", "pts"] }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  const artifact = validated.artifacts[0];
+  assert.equal(artifact.provenance.capability, "sql_exec");
+  assert.equal(artifact.provenance.dataset, "silver_player_stats");
+  assert.equal(artifact.provenance.season, "2025-26");
+  assert.deepEqual(artifact.sources, [{ ref: "src-1", rows: [0], columns: ["player", "pts"] }]);
+});
+
+test("artifact sources: multi-tool merge omits capability but keeps uniform fields", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }], tool: "sql_exec", meta: { season: "2025-26" } })],
+    ["src-2", makeSourceRecord("src-2", { rows: [{ b: 2 }], tool: "get_standings", meta: { season: "2025-26" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "Combined." }],
+    artifacts: [{
+      kind: "table",
+      title: "Combined",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "src-1" }, { ref: "src-2" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  const artifact = validated.artifacts[0];
+  assert.equal(artifact.provenance.capability, undefined);
+  assert.equal(artifact.provenance.season, "2025-26");
+});
+
+test("artifact sources: divergent seasons drop the merged field", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }], meta: { season: "2025-26" } })],
+    ["src-2", makeSourceRecord("src-2", { rows: [{ b: 2 }], meta: { season: "2024-25" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "Two eras." }],
+    artifacts: [{
+      kind: "table",
+      title: "Eras",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "src-1" }, { ref: "src-2" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance.season, undefined);
+  assert.equal(validated.artifacts[0].provenance.capability, "sql_exec");
+});
+
+test("artifact sources: unknown ref rejected", () => {
+  const sources = new Map();
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "table",
+      title: "t",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "missing" }],
+    }],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Unknown artifact source ref: missing/
+  );
+});
+
+test("artifact sources: out-of-bounds row and missing column rejected", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }] })],
+  ]);
+  const base = {
+    kind: "table",
+    title: "t",
+    columns: [{ key: "a", label: "A" }],
+    rows: [[1]],
+  };
+  assert.throws(
+    () => validateAnswerSubmission({ blocks: [{ text: "x" }], artifacts: [{ ...base, sources: [{ ref: "src-1", rows: [5] }] }] }, ref => sources.get(ref)),
+    /out of bounds/
+  );
+  assert.throws(
+    () => validateAnswerSubmission({ blocks: [{ text: "x" }], artifacts: [{ ...base, sources: [{ ref: "src-1", rows: [0], columns: ["nope"] }] }] }, ref => sources.get(ref)),
+    /does not exist on row 0/
+  );
+  assert.throws(
+    () => validateAnswerSubmission({ blocks: [{ text: "x" }], artifacts: [{ ...base, sources: [{ ref: "src-1", columns: ["nope"] }] }] }, ref => sources.get(ref)),
+    /does not exist on row 0/
+  );
+});
+
+test("artifact sources: ref-level selector without rows validates", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }] })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "compare",
+      title: "t",
+      aName: "A",
+      bName: "B",
+      rows: [{ label: "pts", a: 1, b: 2 }],
+      sources: [{ ref: "src-1" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance.capability, "sql_exec");
+});
+
+test("artifact sources: malformed selector shape rejected at wire level for typed kinds", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }] })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "table",
+      title: "t",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "src-1", rows: "not-an-array" }],
+    }],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Invalid table artifact/
+  );
+});
+
+test("artifact sources: malformed selector shape rejected semantically for memo", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }] })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "memo",
+      title: "m",
+      sections: [{ heading: "h", body: "b" }],
+      sources: [{ rows: [0] }],
+    }],
+  };
+  assert.throws(
+    () => validateAnswerSubmission(submission, ref => sources.get(ref)),
+    /Invalid artifact sources/
+  );
+});
+
+test("artifact sources: memo carries merged provenance", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }], meta: { source: "silver_x" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "memo",
+      title: "m",
+      sections: [{ heading: "h", body: "b" }],
+      sources: [{ ref: "src-1" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance.capability, "sql_exec");
+  assert.equal(validated.artifacts[0].provenance.dataset, "silver_x");
+});
+
+test("artifact sources: single record keeps sql in provenance", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ a: 1 }], meta: { sql: "select 1" } })],
+  ]);
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "table",
+      title: "t",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+      sources: [{ ref: "src-1" }],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance.sql, "select 1");
+});
+
+test("artifacts without sources carry no provenance", () => {
+  const sources = new Map();
+  const submission = {
+    blocks: [{ text: "x" }],
+    artifacts: [{
+      kind: "table",
+      title: "t",
+      columns: [{ key: "a", label: "A" }],
+      rows: [[1]],
+    }],
+  };
+  const validated = validateAnswerSubmission(submission, ref => sources.get(ref));
+  assert.equal(validated.artifacts[0].provenance, undefined);
+});
+
+test("validateAnswerSubmission strips leaked function-call markup from block text", () => {
+  const sources = new Map([
+    ["src-1", makeSourceRecord("src-1", { rows: [{ player: "Luka Doncic", pts: 33.9 }] })],
+  ]);
+  const leaked = {
+    blocks: [
+      {
+        text: 'Luka Doncic led the league in scoring at 33.9 points per game.\n<function_calls>\n<invoke name="submit_answer">\n<parameter name="blocks">[{"text":"..."}]</parameter>\n</invoke>\n</function_calls>',
+        anchors: [{ ref: "src-1", row: 0, columns: ["player", "pts"] }],
+      },
+      {
+        text: '<invoke name="submit_answer"><parameter name="x">1</parameter></invoke>\nDallas played fast.',
+      },
+    ],
+  };
+  const validated = validateAnswerSubmission(leaked, ref => sources.get(ref));
+  assert.equal(validated.blocks.length, 2);
+  assert.equal(validated.blocks[0].text, "Luka Doncic led the league in scoring at 33.9 points per game.");
+  assert.equal(validated.blocks[1].text, "Dallas played fast.");
+  for (const block of validated.blocks) {
+    assert.ok(!block.text.includes("function_calls"), "no tool-call envelope survives");
+    assert.ok(!block.text.includes("<invoke"), "no invoke markup survives");
+  }
+  assert.equal(validated.blocks[0].anchors[0].ref, "src-1", "anchors survive the strip");
+});
+
+test("validateAnswerSubmission keeps legitimate prose mentioning tools intact", () => {
+  const submission = {
+    blocks: [{ text: "The submission salvaged from the final narration covers the partial answer." }],
+  };
+  const validated = validateAnswerSubmission(submission, () => undefined);
+  assert.equal(validated.blocks[0].text, submission.blocks[0].text, "ordinary prose is never touched");
+});
+
+function tradeCheckSource(overrides = {}) {
+  const legal = overrides.legal ?? true;
+  const issues = overrides.issues ?? [];
+  const checks = overrides.checks ?? [{ rule: "salary matching", note: "both sides within band" }];
+  const rows = [
+    { side: "team_a", team: "DAL", outgoing: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_incoming: 28909044, match_rule: "standard TPE matching: 100% of outgoing salary plus applicable cushion", hard_cap: "", over_apron1: false, over_apron2: false, tpe_creation: { amount: 313044, condition: "would generate only if this construction is executed as a non-simultaneous trade" }, legal, issues },
+    { side: "team_b", team: "TOR", outgoing: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_incoming: 28596000, match_rule: "outgoing salary plus $9.096M (below the first apron)", hard_cap: "first apron", over_apron1: false, over_apron2: false, legal, issues }
+  ];
+  const source = makeSourceRecord("trade-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
+  source.response.structuredContent.legal = legal;
+  source.response.structuredContent.issues = issues;
+  source.response.structuredContent.checks = checks;
+  return source;
+}
+
+function tradeCheckDictSource() {
+  const rows = {
+    team_a: { team: "DAL", out: 19813044, players: ["P.J. Washington"], payroll: 183593937, allowed_in: 28909044, match_rule: "standard TPE matching", hard_cap: "", tpe_creation: { amount: 313044, condition: "non-simultaneous" } },
+    team_b: { team: "TOR", out: 19500000, players: ["Jakob Poeltl"], payroll: 201188888, allowed_in: 28596000, match_rule: "outgoing plus $9.096M", hard_cap: "first apron" },
+    legal: true, issues: [], checks: [{ rule: "salary matching", note: "fits" }]
+  };
+  return makeSourceRecord("trade-dict-src", { rows, tool: "get_trade_check", meta: { season: "2026-27", source: "fixture-cap" } });
+}
+
+function tradeLegalitySource() {
+  const rows = [
+    { team: "DAL", payroll_before: 183593937, payroll_after: 179322417, outgoing: 34270627, incoming: 30000000, players_out: ["Daniel Gafford", "Santi Aldama"], players_in: ["Jalen Johnson"], picks_out: [{ year: 2028, round: 1, protection: "top-3" }, { year: 2029, round: 2, swap: true }], allowed_incoming: 43522627, match_rule: "outgoing plus $9.096M", matching_ok: true, aggregates: true, hard_cap: "second apron", tpe_creation: { amount: 4270627, condition: "non-simultaneous only" } },
+    { team: "ATL", payroll_before: 150000000, payroll_after: 154270627, outgoing: 30000000, incoming: 34270627, players_out: ["Jalen Johnson"], players_in: ["Daniel Gafford", "Santi Aldama"], allowed_incoming: 40000000, match_rule: "cap room", matching_ok: true, hard_cap: "first apron" }
+  ];
+  const source = makeSourceRecord("legality-src", { rows, tool: "get_trade_legality", meta: { season: "2026-27" } });
+  source.response.structuredContent.legal = true;
+  source.response.structuredContent.issues = [];
+  source.response.structuredContent.checks = [{ rule: "salary matching", note: "fits" }];
+  return source;
+}
+
+test("trade_verdict resolves the evaluator verdict, never model-written outcomes", () => {
+  const source = tradeCheckSource();
+  const input = { kind: "trade_verdict", title: "Washington-for-Poeltl works", ref: "trade-src" };
+  const original = structuredClone(input);
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => ref === source.ref ? source : undefined);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.kind, "trade_verdict");
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.evaluationTool, "get_trade_check");
+  assert.equal(verdict.teams.length, 2);
+  const [dal, tor] = verdict.teams;
+  assert.equal(dal.team, "DAL");
+  assert.deepEqual(dal.playersOut, ["P.J. Washington"]);
+  assert.deepEqual(dal.playersIn, ["Jakob Poeltl"]);
+  assert.equal(dal.outgoing, 19813044);
+  assert.equal(dal.incoming, 19500000);
+  assert.equal(dal.tpeCreation.amount, 313044);
+  assert.equal(tor.team, "TOR");
+  assert.equal(tor.hardCap, "first apron");
+  assert.equal(verdict.checks[0].rule, "salary matching");
+  assert.equal(verdict.provenance.season, "2026-27");
+  assert.equal(verdict.sourceRef, "trade-src");
+  assert.deepEqual(input, original);
+});
+
+test("trade_verdict still resolves the legacy dict-shaped rows", () => {
+  const source = tradeCheckDictSource();
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "Legacy", ref: "trade-dict-src" }] }, () => source);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.teams.length, 2);
+  assert.equal(verdict.teams[0].team, "DAL");
+  assert.deepEqual(verdict.teams[0].playersOut, ["P.J. Washington"]);
+  assert.equal(verdict.teams[0].outgoing, 19813044);
+  assert.equal(verdict.teams[0].tpeCreation.amount, 313044);
+});
+
+test("trade_verdict resolves the multi-team get_trade_legality shape", () => {
+  const source = tradeLegalitySource();
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "Aggregation works", ref: "legality-src" }] }, () => source);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.teams.length, 2);
+  assert.equal(verdict.teams[0].payrollAfter, 179322417);
+  assert.equal(verdict.teams[0].aggregates, true);
+  assert.equal(verdict.teams[0].tpeCreation.amount, 4270627);
+  assert.deepEqual(verdict.teams[0].picksOut, [{ year: 2028, round: 1, protection: "top-3" }, { year: 2029, round: 2, swap: true }]);
+  assert.equal(verdict.teams[1].picksOut, undefined);
+  assert.equal(verdict.teams[1].hardCap, "first apron");
+});
+
+test("trade_verdict rejects illegal verdicts structure intact, not silently legal", () => {
+  const source = tradeCheckSource({ legal: false, issues: ["CHA takes back too much"] });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: " Booker-for-Allen fails ", ref: "trade-src" }] }, () => source);
+  const verdict = result.artifacts[0];
+  assert.equal(verdict.legal, false);
+  assert.deepEqual(verdict.issues, ["CHA takes back too much"]);
+});
+
+test("trade_verdict gate: rejects unknown refs, non-evaluation tools, forged outcomes and malformed sources", () => {
+  const source = tradeCheckSource();
+  const input = { kind: "trade_verdict", title: "x", ref: "trade-src" };
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => undefined), /not part of this run/);
+  const wrongTool = makeSourceRecord("sql-src", { rows: [{ legal: true }], tool: "sql_exec" });
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "x", ref: "sql-src" }] }, () => wrongTool), /not a trade evaluation/);
+  for (const forged of [
+    { ...input, legal: true },
+    { ...input, teams: [] },
+    { ...input, issues: ["invented"] },
+    { ...input, outcome: "legal" },
+    { kind: "trade_verdict", ref: "trade-src" },
+    { kind: "trade_verdict", title: "x" },
+  ]) assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [forged] }, () => source));
+  const missingStructure = makeSourceRecord("bare-src", { rows: [{ a: 1 }], tool: "get_trade_check" });
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "trade_verdict", title: "x", ref: "bare-src" }] }, () => missingStructure), /verdict structure/);
+  const errored = tradeCheckSource();
+  errored.response.isError = true;
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => errored), /errored/);
+});
+
+test("resolveSalvagedArtifacts resolves ref-only verdicts against run sources", () => {
+  const source = tradeCheckSource();
+  const sourceMap = new Map([[source.ref, source]]);
+  const raw = [
+    { kind: "trade_verdict", title: "Washington-for-Poeltl works", ref: "trade-src" },
+    { kind: "table", title: "Numbers", columns: [{ key: "a", label: "A" }], rows: [["x"]] }
+  ];
+  const { artifacts, dropped } = resolveSalvagedArtifacts(raw, ref => sourceMap.get(ref), [...sourceMap.keys()]);
+  assert.equal(dropped, 0);
+  assert.equal(artifacts.length, 2);
+  const verdict = artifacts[0];
+  assert.equal(verdict.kind, "trade_verdict");
+  assert.equal(verdict.legal, true);
+  assert.equal(verdict.teams.length, 2);
+  assert.equal(verdict.teams[0].team, "DAL");
+  assert.deepEqual(verdict.teams[0].playersOut, ["P.J. Washington"]);
+  assert.equal(artifacts[1].kind, "table", "self-contained artifacts survive untouched");
+});
+
+function capScenarioSource(overrides = {}) {
+  const summary = {
+    team: "MEM", season: "2031-32",
+    payroll_before: 140089456, payroll_after: 152089456, delta: 12000000,
+    team_salary_before: 140089456, team_salary_after: 152089456, team_salary_unit: "usd_dollars",
+    cap_holds_before: 0, cap_holds_after: 0, roster_charges_before: 0, roster_charges_after: 0,
+    cap_room: 85763787, cap_room_before: 97763787, committed_payroll_cap_room: 85763787,
+    tax_room: 136902789, room_apron1: 149284175, room_apron2: 167554181,
+    over_tax: false, over_apron1: false, over_apron2: false, hard_cap: "",
+    roster_before: 16, roster_after: 17,
+    ...(overrides.summary ?? {})
+  };
+  const rows = [
+    { step: 0, kind: "payroll", detail: "MEM committed payroll", delta: 0, payroll: 140089456 },
+    { step: 1, kind: "signing", detail: "sign Nikola Vucevic", delta: 12000000, payroll: 152089456 },
+    { step: 2, kind: "post_move", detail: "post-move payroll", delta: 0, payroll: 152089456 }
+  ];
+  const source = makeSourceRecord("cap-src", { rows, tool: "get_cap_scenario", meta: { season: "2031-32", source: "fixture-cap" } });
+  source.response.structuredContent.summary = summary;
+  source.response.structuredContent.issues = overrides.issues ?? ["roster would be 17 players - must trim to 15"];
+  source.response.structuredContent.restrictions = [
+    { threshold: "second apron", status: "trigger", rule: "aggregating salaries, sending cash, or using a sign-and-trade generated exception in a deal hard-caps the team at the second apron" },
+    { threshold: "first apron", status: "trigger", rule: "acquiring a sign-and-traded player hard-caps the team at the first apron" }
+  ];
+  return source;
+}
+
+test("cap_summary resolves the evaluator cap position, never model-written numbers", () => {
+  const source = capScenarioSource();
+  const input = { kind: "cap_summary", title: "Vucevic signing fits with room to spare", ref: "cap-src" };
+  const original = structuredClone(input);
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, ref => ref === source.ref ? source : undefined);
+  const card = result.artifacts[0];
+  assert.equal(card.kind, "cap_summary");
+  assert.equal(card.team, "MEM");
+  assert.equal(card.season, "2031-32");
+  assert.equal(card.payrollBefore, 140089456);
+  assert.equal(card.payrollAfter, 152089456);
+  assert.equal(card.delta, 12000000);
+  assert.equal(card.capRoom, 85763787);
+  assert.equal(card.capRoomBefore, 97763787);
+  assert.equal(card.roomApron1, 149284175);
+  assert.equal(card.roomApron2, 167554181);
+  assert.equal(card.taxRoom, 136902789);
+  assert.equal(card.rosterBefore, 16);
+  assert.equal(card.rosterAfter, 17);
+  assert.equal(card.overTax, undefined);
+  assert.equal(card.hardCap, undefined);
+  assert.deepEqual(card.issues, ["roster would be 17 players - must trim to 15"]);
+  assert.equal(card.steps.length, 3);
+  assert.equal(card.steps[1].detail, "sign Nikola Vucevic");
+  assert.equal(card.steps[1].delta, 12000000);
+  assert.equal(card.restrictions.length, 2);
+  assert.equal(card.evaluationTool, "get_cap_scenario");
+  assert.equal(card.sourceRef, "cap-src");
+  assert.equal(card.provenance.season, "2031-32");
+  assert.deepEqual(input, original);
+});
+
+test("cap_summary surfaces apron flags and hard-cap when the evaluator sets them", () => {
+  const source = capScenarioSource({ summary: { over_apron1: true, over_tax: true, hard_cap: "first apron" } });
+  const result = validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "cap_summary", title: "Tight", ref: "cap-src" }] }, () => source);
+  const card = result.artifacts[0];
+  assert.equal(card.overApron1, true);
+  assert.equal(card.overTax, true);
+  assert.equal(card.hardCap, "first apron");
+  assert.equal(card.overApron2, undefined);
+});
+
+test("cap_summary gate: rejects unknown refs, non-evaluation tools, forged numbers and malformed sources", () => {
+  const source = capScenarioSource();
+  const input = { kind: "cap_summary", title: "x", ref: "cap-src" };
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => undefined), /not part of this run/);
+  const wrongTool = makeSourceRecord("sql-src", { rows: [{ payroll: 1 }], tool: "sql_exec" });
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "cap_summary", title: "x", ref: "sql-src" }] }, () => wrongTool), /not a cap scenario evaluation/);
+  for (const forged of [
+    { ...input, payrollAfter: 1 },
+    { ...input, capRoom: 2 },
+    { ...input, overApron1: true },
+    { ...input, issues: ["invented"] },
+    { kind: "cap_summary", ref: "cap-src" },
+    { kind: "cap_summary", title: "x" },
+  ]) assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [forged] }, () => source));
+  const bare = makeSourceRecord("bare-cap-src", { rows: [{ a: 1 }], tool: "get_cap_scenario" });
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [{ kind: "cap_summary", title: "x", ref: "bare-cap-src" }] }, () => bare), /summary structure/);
+  const errored = capScenarioSource();
+  errored.response.isError = true;
+  assert.throws(() => validateAnswerSubmission({ blocks: [{ text: "Fixture" }], artifacts: [input] }, () => errored), /errored/);
+});
+
+test("resolveSalvagedArtifacts drops unresolvable ref artifacts instead of emitting raw refs", () => {
+  const sourceMap = new Map();
+  const raw = [
+    { kind: "trade_verdict", title: "x", ref: "missing-src" },
+    { kind: "player_card", title: "y", ref: "missing-src", row: 0, nameColumn: "player", metrics: [{ column: "pts", label: "PTS" }] },
+    { kind: "table", title: "Numbers", columns: [{ key: "a", label: "A" }], rows: [["x"]] }
+  ];
+  const { artifacts, dropped } = resolveSalvagedArtifacts(raw, ref => sourceMap.get(ref), []);
+  assert.equal(dropped, 2);
+  assert.equal(artifacts.length, 1);
+  assert.equal(artifacts[0].kind, "table");
+  assert.ok(!artifacts.some(a => a.kind === "trade_verdict"), "no raw ref-only verdict survives salvage");
 });

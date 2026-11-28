@@ -36,18 +36,14 @@ def _trade_check_rows(raw_rows: Any) -> list[dict[str, Any]]:
         for side_key in ("team_a", "team_b"):
             side_data = raw_rows.get(side_key)
             if isinstance(side_data, dict):
-                rows.append({
-                    "side": side_key,
-                    "team": side_data.get("team", ""),
-                    "payroll": side_data.get("payroll"),
-                    "outgoing": side_data.get("out") if "out" in side_data else side_data.get("outgoing"),
-                    "allowed_incoming": side_data.get("allowed_in") if "allowed_in" in side_data else side_data.get("allowed_incoming"),
-                    "match_rule": side_data.get("match_rule"),
-                    "outgoing_needed": side_data.get("outgoing_needed"),
-                    "hard_cap": side_data.get("hard_cap", ""),
-                    "legal": legal_val,
-                    "issues": issues_val,
-                })
+                row = {k: v for k, v in side_data.items() if k not in ("out", "allowed_in")}
+                row["side"] = side_key
+                row["team"] = side_data.get("team", "")
+                row["outgoing"] = side_data.get("out") if "out" in side_data else side_data.get("outgoing")
+                row["allowed_incoming"] = side_data.get("allowed_in") if "allowed_in" in side_data else side_data.get("allowed_incoming")
+                row["legal"] = legal_val
+                row["issues"] = issues_val
+                rows.append(row)
     elif isinstance(raw_rows, list):
         rows = [r for r in raw_rows if isinstance(r, dict)]
     return rows
@@ -173,9 +169,14 @@ def register() -> dict[str, Any]:
             "team_a": team_a, "players_a": players_a, "team_b": team_b, "players_b": players_b, "season": season,
         })
         default_cols = ["side", "team", "payroll", "outgoing", "allowed_incoming", "match_rule", "outgoing_needed", "hard_cap", "legal", "issues"]
-        rows = _trade_check_rows(res.get("rows")) if res.get("ok") else []
+        raw_rows = res.get("rows")
+        rows = _trade_check_rows(raw_rows) if res.get("ok") else []
         res["rows"] = rows
         res["columns"] = list(rows[0].keys()) if rows else default_cols
+        if isinstance(raw_rows, dict):
+            for key in ("legal", "issues", "checks", "salary_date"):
+                if key in raw_rows:
+                    res[key] = raw_rows[key]
         res["ok"] = bool(res.get("ok", False))
         if not res["ok"]:
             enrich_error("get_trade_check", res)

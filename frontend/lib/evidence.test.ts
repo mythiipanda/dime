@@ -282,7 +282,7 @@ test("total failure states one plain sentence", () => {
     { verification: "partial", verified_claims: 0, gaps: [{ kind: "run_timeout" }] },
     [],
   );
-  assert.equal(unverifiedSummary(ai), "Dime couldn't check this answer — the run ran out of time.");
+  assert.equal(unverifiedSummary(ai), "Dime couldn't check this answer; the run ran out of time.");
 });
 
 test("multiple unchecked stats are counted, not listed", () => {
@@ -459,7 +459,7 @@ test("new capability tools keep their truthful evidence note", () => {
   const sources = evidenceSources(aiWith({}, [live, unlisted]));
   assert.equal(sources[0].stat, "Transactions");
   assert.equal(sources[0].origin, "Transactions, 2024-25 season");
-  assert.equal(sources[0].note, "ESPN live data — couldn't be traced to source data.");
+  assert.equal(sources[0].note, "ESPN live data; couldn't be traced to source data.");
   assert.equal(sources[1].stat, "Play types");
   assert.equal(sources[1].origin, "Play types, 2024-25 season");
   assert.equal(sources[1].note, "Couldn't be traced to source data.");
@@ -502,7 +502,7 @@ test("espn capabilities have plain-word display names", () => {
 });
 
 test("ineligible evidence carries a plain-words note", () => {
-  assert.equal(evidenceNote(ESPN_META), "ESPN live data — couldn't be traced to source data.");
+  assert.equal(evidenceNote(ESPN_META), "ESPN live data; couldn't be traced to source data.");
   assert.equal(evidenceNote({ evidence_status: "ok" }), null);
   assert.equal(evidenceNote({}), null);
   assert.equal(evidenceNote(null), null);

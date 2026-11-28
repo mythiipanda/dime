@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 from ...contracts import canonical_team_abbr, contract_details, resolve_salary_column, salary_records
 from .._core import coerce_team_id, team_error_message, warehouse_identity_meta
 from ..competitive import _resolve_team_abbr
-from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
 
 from ..cap_rules import (
     CAP,
@@ -16,6 +16,9 @@ from ..cap_rules import (
     allowed_incoming as _allowed_incoming,
     apron_state as _apron_state,
     hard_cap_consequences as _hard_cap_consequences,
+    matching_election as _matching_election,
+    operative_match_rule as _operative_match_rule,
+    payroll_proxy_meta as _payroll_proxy_meta,
     used_expanded_matching as _used_expanded_matching,
 )
 
@@ -33,9 +36,11 @@ def _team_salary_lookup(con, name: str) -> str | None:
             and "silver_salaries" in _warehouse_tables(con)):
         return None
     try:
+        scols = {r[1] for r in con.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+        order = " ORDER BY CASE WHEN ROW_KIND = 'roster' THEN 0 ELSE 1 END" if "ROW_KIND" in scols else ""
         row = con.execute(
             "SELECT TEAM FROM silver_salaries "
-            "WHERE LOWER(PLAYER_NAME) = LOWER(?) LIMIT 1", [name]).fetchone()
+            "WHERE LOWER(PLAYER_NAME) = LOWER(?)" + order + " LIMIT 1", [name]).fetchone()
     except Exception:
         return None
     return str(row[0]) if row and row[0] else None
@@ -248,7 +253,7 @@ def _resolve_salary_column(scols: set[str], season: str | None) -> str:
 
 
 def _payroll(team: str, con: object = None,
-             season: str | None = None) -> tuple[int, list[dict]]:
+             season: str | None = None) -> tuple[int, list[dict], list[dict]]:
     own = con is None
     if own:
         con = _pkg().store.connect(read_only=True)
@@ -287,7 +292,19 @@ def _payroll(team: str, con: object = None,
                 players.append({"player": r['PLAYER_NAME'], "salary": salary,
                                 "team": record_team, **contract_details(r)})
             if rows:
-                return sum(r[1] or 0 for r in rows), players
+                dead = []
+                if "ROW_KIND" in scols:
+                    try:
+                        dcur = con.execute(
+                            "SELECT PLAYER_NAME, TEAM, " + scol + " FROM silver_salaries "
+                            "WHERE ROW_KIND = 'dead_money' AND UPPER(TEAM) = UPPER(?)",
+                            [team_code]).fetchall()
+                        dead = [{"player": str(d[0]), "salary": d[2], "team": str(d[1])}
+                                for d in dcur if d[2] is not None]
+                    except Exception:
+                        dead = []
+                dead_total = sum(d["salary"] or 0 for d in dead)
+                return sum(r[1] or 0 for r in rows) + dead_total, players, dead
         if "silver_cap_players" in tables:
             cap_rows = con.execute(
                 "SELECT player, salary, team FROM silver_cap_players").fetchall()
@@ -299,16 +316,20 @@ def _payroll(team: str, con: object = None,
         if own:
             con.close()
     players = [{"player": r[0], "salary": r[1], **contract_details(None)} for r in rows]
-    return sum(r[1] or 0 for r in rows), players
+    return sum(r[1] or 0 for r in rows), players, []
 
 
 def _outgoing_needed(incoming: int, over_apron1: bool,
                      cap_room: int = 0) -> int:
+    if incoming <= 0:
+        return 0
     if over_apron1:
         return incoming
+    if cap_room > 0 and incoming <= cap_room + 250_000:
+        return 0
     candidates: list[int] = []
-    tier1 = -(-(incoming - 250_000) // 2)
-    if 0 < tier1 <= _EXPANDED_TPE_LOW_MAX:
+    tier1 = max(1, -(-(incoming - 250_000) // 2))
+    if tier1 <= _EXPANDED_TPE_LOW_MAX:
         candidates.append(tier1)
     tier2 = incoming - _EXPANDED_TPE_CUSHION
     if _EXPANDED_TPE_LOW_MAX < tier2 <= _EXPANDED_TPE_MID_MAX:
@@ -318,8 +339,9 @@ def _outgoing_needed(incoming: int, over_apron1: bool,
         candidates.append(tier3)
     needed = min(candidates) if candidates else 0
     if cap_room > 0:
-        needed = min(needed, incoming - cap_room - 250_000)
-    return max(0, needed)
+        room_needed = max(1, incoming - cap_room - 250_000)
+        needed = min(needed, room_needed) if needed else room_needed
+    return needed
 
 
 def _season_player_team(con: object, name: str, season: str,
@@ -428,7 +450,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
     con = _pkg().store.connect(read_only=True)
     try:
         try:
-            total, players = _payroll(team, con)
+            total, players, dead = _payroll(team, con)
         except SalaryColumnError as exc:
             return {"tool": "get_cap_ledger", "ok": False,
                     "reason": exc.reason, "error": str(exc)}
@@ -437,8 +459,12 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         season, _, _ = _salary_vintage(con)
     finally:
         con.close()
-    return {"tool": "get_cap_ledger", "ok": True,
+    dead_total = sum(d["salary"] or 0 for d in dead)
+    result = {"tool": "get_cap_ledger", "ok": True,
             "rows": {"team": team.upper(), "payroll": total,
+                     "roster_payroll": total - dead_total,
+                     "dead_money": dead_total,
+                     "dead_money_detail": sorted(dead, key=lambda d: d["salary"] or 0, reverse=True),
                      "players": sorted(players, key=lambda p: p["salary"] or 0,
                                        reverse=True),
                      "room_under_apron2": CAP["apron2"] - total,
@@ -447,7 +473,9 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
             "meta": {"source": source, "season": season or "2026-27",
                      **warehouse_identity_meta(),
                      "salary_date": salary_date,
+                     **_payroll_proxy_meta(),
                      **{k: v for k, v in CAP.items()}}}
+    return declare_money(result, ["payroll", "room_under_apron2", "salary", "remaining_guaranteed"])
 
 
 @tool(description='League-wide payroll, tax position, and apron room for all 30 teams, ranked by payroll, on the salary-ledger basis. 2026-27 thresholds. For committed-salary audits or over-the-line scans against the projected cap/tax/apron lines, use silver_cap_room via sql_exec instead — its COMMITTED_SALARY basis differs from this payroll total. Requested-season payroll must use salary coverage for that exact season; when coverage is absent, report that season unavailable or surface salary_column_unmatched instead of substituting another year. Team-level only, no player salaries: an individual player salary lives in silver_salaries, and trade legality or matching-band math goes to get_trade_check.')
@@ -460,14 +488,17 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
         for item in _teams.get_teams():
             abbr = str(item["abbreviation"]).upper()
             try:
-                total, _players = _payroll(abbr, con, season)
+                total, _players, dead = _payroll(abbr, con, season)
             except SalaryColumnError as exc:
                 return {"tool": "get_cap_table", "ok": False,
                         "reason": exc.reason, "error": str(exc)}
             except Exception as exc:
                 missing.append({"team": abbr, "error": str(exc)[:200]})
                 continue
+            dead_total = sum(d["salary"] or 0 for d in dead)
             rows.append({"team": abbr, "payroll": total,
+                         "roster_payroll": total - dead_total,
+                         "dead_money": dead_total,
                          "cap_room": CAP["cap"] - total,
                          "room_under_apron2": CAP["apron2"] - total,
                          "over_tax": total > CAP["tax"],
@@ -485,10 +516,11 @@ def get_cap_table(season: str | None = None) -> dict[str, Any]:
            "meta": {"source": source, "season": season or season_used or "2026-27",
                     **warehouse_identity_meta(),
                     "salary_date": salary_date,
+                    **_payroll_proxy_meta(),
                     **{k: v for k, v in CAP.items()}}}
     if missing:
         res["meta"]["missing_teams"] = missing
-    return res
+    return declare_money(res, ["payroll", "cap_room", "room_under_apron2"])
 
 
 class _RosterIndex:
@@ -533,7 +565,7 @@ def _match_trade_players(team: str, names: str,
                          con: object = None,
                          season: str | None = None) -> tuple[int, list[str], list[str]]:
     with _owned_connection(con) as live:
-        _, roster = _payroll(team, live, season)
+        _, roster, _dead = _payroll(team, live, season)
         index = _RosterIndex(roster)
         matched: list[str] = []
         unknown: list[str] = []
@@ -558,9 +590,14 @@ def _unknown_player_hints(unknown: list[str], con: object = None) -> list[str]:
                 base = u.split(" (suggestions")[0].strip()
                 bits = [b for b in base.split() if len(b) > 1]
                 like = "%" + "%".join(bits[:2]) + "%" if bits else base
+                try:
+                    scols2 = {r[1] for r in con2.execute("PRAGMA table_info(silver_salaries)").fetchall()}
+                except Exception:
+                    scols2 = set()
+                order2 = " ORDER BY CASE WHEN ROW_KIND = 'roster' THEN 0 ELSE 1 END" if "ROW_KIND" in scols2 else ""
                 hit = con2.execute(
                     """SELECT TEAM, PLAYER_NAME FROM silver_salaries
-                    WHERE PLAYER_NAME LIKE ? LIMIT 1""",
+                    WHERE PLAYER_NAME LIKE ?""" + order2 + " LIMIT 1",
                     [like],
                 ).fetchone()
                 if hit:

@@ -62,7 +62,7 @@ def _describe_warehouse_schema(cols: dict[str, dict]) -> str:
         if table == 'silver_hist_draft':
             line += (". Raw draft rows only: value-curve, median-career-WAR-by-slot,"
                      " and pick-value-index asks belong to silver_draft_value_curve"
-                     " (SLOT, MEDIAN_CAREER_WAR, VALUE_INDEX — one row per slot 1-60)"
+                     " (SLOT, MEDIAN_CAREER_WAR, VALUE_INDEX; one row per slot 1-60)"
                      " via sql_exec, not to aggregating this table.")
         if table == 'silver_hist_lineups':
             line += (". Variant rows: MUST filter season_type ('regular-season', 'playoffs'),"
@@ -220,6 +220,7 @@ _COLUMN_UNITS: dict[str, tuple[str, str]] = {
     "PENDING_OPTION_SALARY": ("usd_dollars", "salary in US dollars pending player/team option decisions"),
     "FA_HOLDS_EST": ("usd_dollars", "estimated free-agent cap holds in US dollars"),
     "INCOMPLETE_ROSTER_CHARGES": ("usd_dollars", "roster charges in US dollars for incomplete rosters"),
+    "ROSTER_CHARGE_MINIMUM": ("usd_dollars", "minimum salary used for incomplete-roster charges in US dollars"),
     "PROJECTED_ROOM": ("usd_dollars", "projected cap room in US dollars"),
     "MAX_ROOM": ("usd_dollars", "maximum achievable cap room in US dollars"),
     "PROJECTED_CAP": ("usd_dollars", "projected salary cap in US dollars"),
@@ -227,6 +228,9 @@ _COLUMN_UNITS: dict[str, tuple[str, str]] = {
     "PROJECTED_APRON1": ("usd_dollars", "projected first apron in US dollars"),
     "PROJECTED_APRON2": ("usd_dollars", "projected second apron in US dollars"),
     "ROOM_EST": ("usd_dollars", "estimated cap room in US dollars"),
+    "NTMLE_EST": ("usd_dollars", "estimated non-taxpayer mid-level exception in US dollars"),
+    "BAE_EST": ("usd_dollars", "estimated bi-annual exception in US dollars"),
+    "TMLE_EST": ("usd_dollars", "estimated taxpayer mid-level exception in US dollars"),
     "PRIOR_SALARY": ("usd_dollars", "prior-season salary in US dollars"),
     "CAP_HOLD_EST": ("usd_dollars", "estimated cap hold in US dollars"),
     "SALARY_CAP": ("usd_dollars", "salary cap in US dollars for the season"),
@@ -256,6 +260,11 @@ def _column_semantics(table: str, name: str) -> tuple[str, str]:
                 "cap hit for the row's _season; payroll sums this after "
                 "filtering rows to the requested _season",
             )
+        if upper == "GUARANTEED":
+            return (
+                "usd_dollars",
+                "remaining guaranteed salary in US dollars",
+            )
         if _re_mod.fullmatch(r"SALARY_\d{4}_\d{2}", upper):
             label = f"{upper[7:11]}-{upper[12:14]}"
             return (
@@ -277,6 +286,11 @@ def _column_semantics(table: str, name: str) -> tuple[str, str]:
                 "per_mode48 to PerMode48.default='Totals'"
             )
             return unit, note
+    if table_key == "silver_prospect_stats" and upper == "USG":
+        return (
+            "pct",
+            "usage rate in percentage points on a 0-100 scale, not a 0-1 fraction",
+        )
     if table_key == "silver_hist_player_seasons":
         totals_units = {
             "PTS_TOTAL": (

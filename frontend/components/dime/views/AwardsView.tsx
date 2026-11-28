@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ds/Skeleton";
+import { Button } from "@/components/ds/Button";
 import { DataState } from "@/components/ds/DataState";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
@@ -20,6 +21,7 @@ type AwardBoard = {
   award: string;
   ok: boolean;
   error?: string | null;
+  state?: string | null;
   season?: string | null;
   caveat?: string | null;
   candidates: Candidate[];
@@ -39,18 +41,22 @@ const AWARD_LABELS: Record<string, string> = {
   MIP: "Most Improved",
 };
 
+function driverValue(driver: Driver): string {
+  const value = driver.stat.trimEnd().endsWith("%") && driver.value <= 1
+    ? (driver.value * 100).toFixed(1)
+    : String(driver.value);
+  return `${value} ${driver.stat.toLowerCase()}`;
+}
+
 function driverLine(drivers: Driver[]): string {
-  return drivers
-    .slice(0, 3)
-    .map((d) => `${d.stat.trimEnd().endsWith("%") && d.value <= 1 ? (d.value * 100).toFixed(1) : d.value} ${d.stat.toLowerCase()}`)
-    .join(" · ");
+  return drivers.slice(0, 3).map(driverValue).join(" · ");
 }
 
 function Board({ board }: { board: AwardBoard }) {
   if (!board.ok || board.candidates.length === 0) {
     return (
       <div className="rounded-card bg-surface px-5 py-8 text-center shadow-hairline">
-        <DataState tone={board.error ? "error" : "absent"} label={board.error || "No projection available for this award yet."} detail="No substitute data is shown." />
+        <DataState tone={board.error && board.state !== "empty" ? "error" : "absent"} label={board.error || "No projection available for this award yet."} detail="No substitute data is shown." />
       </div>
     );
   }
@@ -89,14 +95,14 @@ function Board({ board }: { board: AwardBoard }) {
         ))}
       </div>
       <p className="mt-2 px-1 text-[11px] text-ink-2">
-        Warehouse z-score projection over the qualified pool — score is the weighted composite, not betting odds.
+        Warehouse z-score projection over the qualified pool. Score is the weighted composite, not betting odds.
         {board.caveat ? ` ${board.caveat}.` : ""}
       </p>
     </div>
   );
 }
 
-export default function AwardsView() {
+export default function AwardsView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [data, setData] = useState<AwardsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -152,6 +158,30 @@ export default function AwardsView() {
             </span>
           )}
         </span>
+        {onAsk && active && (
+          <span className="ml-auto">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => onAsk(
+                active.candidates.length > 0
+                  ? `Break down the ${data?.season ?? ""} ${active.award} race: who leads, who is closing, and what the case against the favorite is.`
+                  : `The ${data?.season ?? ""} ${active.award} race has no qualified candidates in the warehouse yet. When do players typically become eligible, and who would be the early favorites from last season\'s form?`,
+                {
+                  kind: "awards_race",
+                  summary: `${active.award} race · ${data?.season ?? ""}`,
+                  entities: {
+                    award: active.award,
+                    season: data?.season,
+                    candidates: active.candidates.slice(0, 8).map((c) => ({ rank: c.rank, player: c.player, team: c.team, score: c.score })),
+                  },
+                },
+              )}
+            >
+              Ask Dime about this race
+            </Button>
+          </span>
+        )}
       </div>
 
       {loading && (

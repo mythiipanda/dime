@@ -6,6 +6,8 @@ from shared.tools.cap_rules import (
     frozen_pick_year,
     hard_cap_consequences,
     matching_band,
+    matching_election,
+    operative_match_rule,
     roster_issues,
     scenario_trace,
     used_expanded_matching,
@@ -52,12 +54,84 @@ def test_allowed_incoming_cap_room_upgrade():
     assert "cap room" in rule
 
 
+def test_allowed_incoming_zero_outgoing_has_no_simultaneous_capacity():
+    unavailable, rule = allowed_incoming(0, False)
+    assert unavailable == 0
+    assert rule == ("no available salary-matching structure "
+                    "(no outgoing player salary)")
+    assert allowed_incoming(0, False, cap_room=1)[0] == 250_001
+    assert allowed_incoming(1, False)[0] == 250_002
+
+
 def test_used_expanded_matching():
     assert used_expanded_matching(30_000_000, 20_000_000) is True
     assert used_expanded_matching(20_000_000, 20_000_000) is False
     assert used_expanded_matching(10_000_000, 20_000_000) is False
+    assert used_expanded_matching(20_100_000, 20_000_000) is False
+    assert used_expanded_matching(20_250_000, 20_000_000) is False
+    assert used_expanded_matching(20_250_001, 20_000_000) is True
+    assert used_expanded_matching(
+        20_100_000, 20_000_000, cushion=0) is True
+    assert used_expanded_matching(
+        20_000_000, 20_000_000, cushion=0) is False
     assert used_expanded_matching(35_000_000, 20_000_000, cap_room=15_000_000) is False
     assert used_expanded_matching(36_000_000, 20_000_000, cap_room=15_000_000) is True
+
+
+def test_matching_election_cap_room_precedes_standard_band():
+    election = matching_election(
+        20_100_000, 20_000_000, cap_room=14_961_000)
+    assert election["matching_structure"] == "cap_room"
+    assert election["matching_mechanisms"] == ["cap_room"]
+    assert election["expanded_required"] is False
+
+    standard = matching_election(20_100_000, 20_000_000)
+    assert standard["matching_structure"] == "standard_simultaneous"
+
+
+def test_operative_match_rule_follows_selected_mechanism():
+    expanded_rule = "outgoing salary plus $9.096M (below the first apron)"
+    standard = matching_election(20_100_000, 20_000_000)
+    aggregated = matching_election(
+        30_100_000, 30_000_000, outgoing_count=2)
+    cap_room = matching_election(
+        20_100_000, 20_000_000, cap_room=14_961_000)
+    expanded = matching_election(
+        20_250_001, 20_000_000, expanded_matching=True)
+    assert operative_match_rule(expanded_rule, standard) == (
+        "standard TPE matching: 100% of outgoing salary plus "
+        "applicable cushion")
+    assert operative_match_rule(expanded_rule, aggregated) == (
+        "aggregated standard TPE matching: 100% of aggregated "
+        "outgoing salary plus applicable cushion")
+    assert operative_match_rule(expanded_rule, cap_room) == (
+        "cap room plus outgoing salary plus $250k (under the cap)")
+    assert operative_match_rule(expanded_rule, expanded) == expanded_rule
+
+
+def test_operative_match_rule_non_expanded_fallback_shapes_are_coherent():
+    expanded_rule = "outgoing salary plus $9.096M (below the first apron)"
+    declared_only = matching_election(
+        8_200_000, 0, uses_declared_tpe=True)
+    combined = matching_election(
+        15_000_000, 14_000_000, uses_declared_tpe=True)
+    no_salary = matching_election(0, 20_000_000)
+    unavailable = matching_election(1_000_000, 0)
+    assert declared_only["matching_structure"] == "declared_tpe"
+    assert combined["matching_structure"] == "standard_simultaneous+declared_tpe"
+    assert operative_match_rule(expanded_rule, declared_only) == (
+        "declared TPE capacity: separate non-combined exception bin")
+    assert operative_match_rule(expanded_rule, combined) == (
+        "standard TPE matching: 100% of outgoing salary plus "
+        "applicable cushion")
+    assert operative_match_rule(expanded_rule, no_salary) == (
+        "no salary matching required (no incoming player salary)")
+    assert operative_match_rule(expanded_rule, unavailable) == (
+        "no available salary-matching structure (no outgoing player salary)")
+    for election in (declared_only, combined, no_salary, unavailable):
+        rule = operative_match_rule(expanded_rule, election)
+        assert "$9.096M" not in rule
+        assert "expanded" not in rule.lower()
 
 
 def test_hard_cap_consequences_cover_both_triggers_post_trade():
@@ -73,7 +147,8 @@ def test_hard_cap_consequences_cover_both_triggers_post_trade():
         aggregates=True, expanded_matching=True)
     assert over_first["violations"] == ["first apron"]
     assert len(over_first["issues"]) == 1
-    assert "expanded salary matching" in over_first["issues"][0]
+    assert "Expanded Traded Player Exception" in over_first["issues"][0]
+    assert "transaction is prohibited" in over_first["issues"][0]
 
     over_second = hard_cap_consequences(
         "BOS", CAP["apron2"] + 1,
@@ -81,6 +156,30 @@ def test_hard_cap_consequences_cover_both_triggers_post_trade():
     assert over_second["violations"] == ["second apron", "first apron"]
     assert len(over_second["issues"]) == 2
     assert "second apron" in over_second["issues"][0]
+
+
+def test_hard_cap_consequences_cover_signing_triggers():
+    ntmle = hard_cap_consequences(
+        "BOS", CAP["apron1"], used_ntmle=True)
+    assert ntmle["hard_cap"] == "first apron"
+    assert ntmle["causes"]["first apron"] == ["the non-taxpayer mid-level exception"]
+    assert ntmle["violations"] == []
+
+    bae = hard_cap_consequences(
+        "BOS", CAP["apron1"] + 1, used_bae=True)
+    assert bae["violations"] == ["first apron"]
+    assert "bi-annual exception" in bae["issues"][0]
+
+    tmle = hard_cap_consequences(
+        "BOS", CAP["apron2"], used_tmle=True)
+    assert tmle["hard_cap"] == "second apron"
+    assert tmle["causes"]["second apron"] == ["the taxpayer mid-level exception"]
+    assert tmle["violations"] == []
+
+    waived = hard_cap_consequences(
+        "BOS", CAP["apron1"], signed_high_salary_waived_player=True)
+    assert waived["hard_cap"] == "first apron"
+    assert waived["causes"]["first apron"] == ["the high-salary waived-player signing"]
 
 
 def test_matching_band_shape():

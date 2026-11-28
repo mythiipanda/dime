@@ -85,6 +85,40 @@ def test_trade_legality_two_team_balanced(monkeypatch, tmp_path):
     assert len(out["rows"]) == 2
 
 
+def test_trade_legality_surfaces_conditional_tpe_creation(monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 200_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 130_000_000, [("Beta Two", 20_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    bos = next(r for r in out["rows"] if r["team"] == "BOS")
+    creation = bos.get("tpe_creation")
+    assert creation is not None, "BOS sends out 30M and takes back 20M — creation must surface"
+    assert creation["amount"] == 10_000_000
+    assert "non-simultaneous" in creation["condition"]
+    assert "forfeit" in creation["condition"]
+    mia = next(r for r in out["rows"] if r["team"] == "MIA")
+    assert mia.get("tpe_creation") is None
+
+
+def test_trade_legality_no_creation_when_balanced_or_under_cap(monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 28_000_000)]))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    for row in out["rows"]:
+        assert row.get("tpe_creation") is None
+
+
 def test_trade_legality_rejects_unmatched_takeback(monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
     _seed(monkeypatch, tmp_path,
@@ -397,6 +431,39 @@ def test_trade_legality_bad_legs_json():
     out = get_trade_legality.invoke({"legs": "not json"})
     assert out["ok"] is False
     assert "JSON" in out["error"]
+
+
+def test_stepien_zero_pick_trade_passes_for_previolating_team(monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    bos_inventory = [(y, 1, "BOS", "own", "BOS") for y in range(2030, 2034)]
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=bos_inventory + _all_firsts("MIA"))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert not any("Stepien" in i for i in out["issues"]), out["issues"]
+
+
+def test_stepien_firsts_trade_fails_for_previolating_team(monkeypatch, tmp_path):
+    from shared.tools import get_trade_legality
+    bos_inventory = [(y, 1, "BOS", "own", "BOS") for y in range(2030, 2034)]
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 30_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 30_000_000)]),
+          picks=bos_inventory + _all_firsts("MIA"))
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One",'
+                '"picks":[{"year":2030,"round":1}]},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert any("Stepien" in i for i in out["issues"])
 
 
 def test_stepien_issue_windows():

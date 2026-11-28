@@ -39,17 +39,28 @@ def _season_label(draft_years: list[int]) -> str:
     start = min(draft_years) - 1
     return f"{start}-{str(start + 1)[2:]}"
 
+CHAIN_VERIFIED_SWAPS = {
+    ("MIL", 2028, 1): "realgm:mil-outgoing-2028 — Portland receives the more favorable of its pick and Milwaukee's, Milwaukee receives the less favorable back through the Washington swap chain, so Milwaukee retains a first in all scenarios",
+    ("MIN", 2030, 1): "realgm:min-outgoing-2030 — San Antonio's swap right and Charlotte's swap right both return a first to Minnesota in all scenarios, outright conveyance never occurs",
+}
+
+
 def _parse(payload: dict) -> pl.DataFrame:
     rows: list[dict] = []
     for team in payload.get("teams") or []:
         orig = _abbr(team.get("team"))
         for pick in team.get("picks") or []:
             holders = [_abbr(h) for h in (pick.get("held_by") or [])]
+            status = pick.get("status") or ""
+            override = CHAIN_VERIFIED_SWAPS.get(
+                (orig, int(pick["draft_year"]), int(pick["round"])))
+            if override and status == "traded":
+                status = "swap"
             rows.append({
                 "DRAFT_YEAR": int(pick["draft_year"]),
                 "ROUND": int(pick["round"]),
                 "ORIG_TEAM": orig,
-                "STATUS": pick.get("status") or "",
+                "STATUS": status,
                 "HELD_BY": ";".join(holders),
                 "PROTECTION": pick.get("protection"),
                 "POOLED": bool(pick.get("pooled")),

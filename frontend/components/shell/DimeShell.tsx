@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Award, BookOpen, ClipboardList, Columns3, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, Target, Landmark, History, ArrowLeftRight, Workflow, Table2 } from "lucide-react";
+import { Award, BookOpen, ClipboardList, Columns3, Command, Database, Home, MessageCircle, Moon, NotebookText, Search, Sun, Swords, Target, Landmark, History, ArrowLeftRight, Workflow, Table2, CalendarRange } from "lucide-react";
 import { SidebarNav } from "../ds/SidebarNav";
 import DimeCommandPalette, { type PaletteEntry } from "../site/DimeCommandPalette";
 import TradesView from "../dime/views/TradesView";
@@ -10,6 +10,7 @@ import DraftView from "../dime/views/DraftView";
 import MatchupsView from "../dime/views/MatchupsView";
 import ScoutView from "../dime/views/ScoutView";
 import CapSheetView from "../dime/views/CapSheetView";
+import PlannerView from "../dime/views/PlannerView";
 import HistoryView from "../dime/views/HistoryView";
 import AwardsView from "../dime/views/AwardsView";
 import { ChatView } from "./ChatView";
@@ -23,7 +24,7 @@ import { replayName } from "../../lib/replay";
 import { createWorkflowDraft, saveWorkflowDraft } from "../../lib/workflow-drafts";
 
 export { parseShellTab, shellNavigation } from "../../lib/shell-navigation";
-const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, compare: Columns3, draft: ClipboardList, matchups: Swords, scout: Target, cap: Landmark, history: History, awards: Award };
+const icons = { today: Home, chat: MessageCircle, workflows: Workflow, boards: Table2, notebooks: NotebookText, briefs: BookOpen, data: Database, trades: ArrowLeftRight, compare: Columns3, draft: ClipboardList, matchups: Swords, scout: Target, cap: Landmark, planner: CalendarRange, history: History, awards: Award };
 const navigation = shellNavigation.map(item => { const Icon = icons[item.id]; return { ...item, icon: <Icon size={17} strokeWidth={1.5} /> }; });
 
 export function DimeShell() {
@@ -34,6 +35,7 @@ export function DimeShell() {
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
   const [replay, setReplay] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
+  const navigateRef = useRef<(nextTab: ShellTab) => void>(() => {});
   const [dark, setDark] = useState(true);
   const [workflowRequest, setWorkflowRequest] = useState<{ thread: string; text: string } | null>(null);
   const workflowStarting = useRef(false);
@@ -53,10 +55,16 @@ export function DimeShell() {
     window.addEventListener("popstate", read);
     const key = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setPalette(true); } };
     window.addEventListener("keydown", key);
-    return () => { window.removeEventListener("popstate", read); window.removeEventListener("keydown", key); };
+    const external = (event: Event) => {
+      const detail = (event as CustomEvent<{ tab?: string }>).detail;
+      if (detail?.tab) navigateRef.current(parseShellTab(detail.tab));
+    };
+    window.addEventListener("dime:navigate", external);
+    return () => { window.removeEventListener("popstate", read); window.removeEventListener("keydown", key); window.removeEventListener("dime:navigate", external); };
   }, []);
   const reload = useCallback(() => { void getThreads().then(items => setThreads(items.sort((a, b) => b.updated.localeCompare(a.updated)))); }, []);
   useEffect(() => { reload(); }, [reload]);
+  navigateRef.current = (nextTab: ShellTab) => navigate(nextTab);
   const navigate = (nextTab: ShellTab, nextThread = thread) => {
     setTab(nextTab); setThread(nextThread); setReplay(null);
     if (nextTab !== "boards") setBoardId(null);
@@ -76,9 +84,9 @@ export function DimeShell() {
     if (id) url.searchParams.set("nb", id); else url.searchParams.delete("nb");
     window.history.replaceState({}, "", url);
   };
-  const askBoard = (text: string) => {
+  const askBoard = (text: string, context?: import("../../lib/view-context").ViewContext) => {
     const id = crypto.randomUUID();
-    saveWorkflowDraft({ ...createWorkflowDraft(id, text), edited: true });
+    saveWorkflowDraft({ ...createWorkflowDraft(id, text, context), edited: true });
     setWorkflowRequest(null); navigate("chat", id);
   };
   const runWorkflow = (text: string) => {
@@ -108,25 +116,27 @@ export function DimeShell() {
   ];
   const label = shellNavigation.find(item => item.id === tab)?.label;
   return <div className="dime-shell">
-    <SidebarNav workspace="Dime" items={navigation} activeNav={tab} recents={threads.map(item => ({ id: item.id, label: item.title || "Untitled conversation" }))} activeThread={tab === "chat" ? thread : null} onNavigate={id => navigate(parseShellTab(id))} onNewChat={newChat} onPick={pick} footer={<div className="sidebar-copy mt-4 px-2 pb-2 text-[10px] leading-relaxed text-ink-3"><p className="mb-1 text-ink-2">Your front office, on demand.</p><p>NBA intelligence · Dime</p><button className="mt-3 flex items-center gap-2 hover:text-ink" onClick={() => setPalette(true)}><Command size={12} />Command menu <kbd className="ml-auto">⌘ K</kbd></button></div>} />
-    <main className="dime-main">
+    <a href="#dime-main-content" className="skip-to-content">Skip to content</a>
+    <SidebarNav workspace="Dime" items={navigation} activeNav={tab} recents={threads.map(item => ({ id: item.id, label: item.title || "Untitled conversation" }))} activeThread={tab === "chat" ? thread : null} onNavigate={id => navigate(parseShellTab(id))} onNewChat={newChat} onPick={pick} footer={<div className="sidebar-copy mt-4 px-2 pb-2 text-[10px] leading-relaxed text-ink-3"><p>NBA intelligence · Dime</p><button className="mt-3 flex items-center gap-2 hover:text-ink" onClick={() => setPalette(true)}><Command size={12} />Command menu <kbd className="ml-auto">⌘ K</kbd></button></div>} />
+    <main className="dime-main" id="dime-main-content" tabIndex={-1}>
       <header className="dime-header"><div className="dime-top-tab"><span>{label}</span>{tab === "chat" && <span className="max-w-48 truncate text-ink-3">{threads.find(item => item.id === thread)?.title || "New conversation"}</span>}</div><div className="flex items-center gap-1"><button className="icon-button" aria-label="Open command palette" onClick={() => setPalette(true)}><Search size={15} /></button><button className="icon-button" aria-label="Toggle theme" onClick={toggleTheme}>{dark ? <Sun size={15} /> : <Moon size={15} />}</button></div></header>
       <div className="dime-content">
         {tab === "chat" && thread && <ChatView key={`${thread}-${replay ?? "live"}`} thread={thread} replay={replay} onRunDone={onRunDone} workflowRequest={workflowRequest?.thread === thread ? workflowRequest : null} onWorkflowConsumed={() => { workflowStarting.current = false; setWorkflowRequest(null); }} />}
         {tab === "workflows" && <WorkflowsPanel onRun={runWorkflow} />}
         {tab === "boards" && <BoardsPanel boardId={boardId} onOpen={openBoard} onAsk={askBoard} />}
         {tab === "notebooks" && <NotebooksPanel notebookId={notebookId} onOpen={openNotebook} />}
-        {tab === "today" && <HomeView onAsk={() => navigate("workflows")} />}
+        {tab === "today" && <HomeView onAsk={() => navigate("workflows")} onMorningAsk={askBoard} />}
         {tab === "briefs" && <LibraryView onThread={pick} onBoard={openBoard} />}
         {tab === "data" && <DataView />}
         {tab === "trades" && <div className="tools-view"><TradesView onAsk={askBoard} /></div>}
         {tab === "compare" && <div className="tools-view"><CompareView onAsk={askBoard} /></div>}
         {tab === "draft" && <div className="tools-view"><DraftView onAsk={askBoard} /></div>}
-        {tab === "matchups" && <div className="tools-view"><MatchupsView /></div>}
-        {tab === "scout" && <div className="tools-view"><ScoutView /></div>}
+        {tab === "matchups" && <div className="tools-view"><MatchupsView onAsk={askBoard} /></div>}
+        {tab === "scout" && <div className="tools-view"><ScoutView onAsk={askBoard} /></div>}
         {tab === "cap" && <div className="tools-view"><CapSheetView onAsk={askBoard} /></div>}
-        {tab === "history" && <div className="tools-view"><HistoryView /></div>}
-        {tab === "awards" && <div className="tools-view"><AwardsView /></div>}
+        {tab === "planner" && <div className="tools-view"><PlannerView /></div>}
+        {tab === "history" && <div className="tools-view"><HistoryView onAsk={askBoard} /></div>}
+        {tab === "awards" && <div className="tools-view"><AwardsView onAsk={askBoard} /></div>}
       </div>
     </main>
     <DimeCommandPalette open={palette} entries={entries} onClose={() => setPalette(false)} />

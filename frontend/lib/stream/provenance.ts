@@ -35,10 +35,10 @@ function compactProvenance(fields: DimeProvenance): DimeProvenance {
   if (fields.capability) provenance.capability = fields.capability;
   if (fields.warehouseId) provenance.warehouseId = fields.warehouseId;
   if (fields.dataset) provenance.dataset = fields.dataset;
+  if (fields.sql) provenance.sql = fields.sql;
   if (fields.season) provenance.season = fields.season;
   if (fields.asOf) provenance.asOf = fields.asOf;
   if (fields.as_of) provenance.as_of = fields.as_of;
-  if (fields.sql) provenance.sql = fields.sql;
   if (fields.liveSourceIds && fields.liveSourceIds.length > 0) {
     provenance.liveSourceIds = fields.liveSourceIds;
   }
@@ -96,10 +96,10 @@ export function parseProvenance(raw: unknown): DimeProvenance {
     capability: trimmedString(record.capability),
     warehouseId,
     dataset: trimmedString(record.dataset),
+    sql: trimmedString(record.sql),
     season: trimmedString(record.season),
     asOf,
     ...(asOf ? { as_of: asOf } : {}),
-    sql: trimmedString(record.sql),
     liveSources,
     liveSourceIds,
   });

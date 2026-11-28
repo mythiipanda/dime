@@ -116,7 +116,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 function sourceLabel(source?: string) {
-  if (!source) return null;
+  if (!source || source === "source not declared") return null;
   const head = source.split("·")[0].trim();
   return SOURCE_LABELS[head] ?? source.trim();
 }
@@ -156,9 +156,9 @@ export default function ArtifactShell({
   };
 
   return (
-    <Surface className="relative min-w-0 overflow-hidden">
+    <Surface className="artifact-enter relative min-w-0 overflow-hidden">
       <header className="flex flex-wrap items-start justify-between gap-2 border-b border-line px-4 py-3">
-        <div className="min-w-0 flex-1"><h3 className="break-words text-[13px] font-medium text-ink">{title}</h3>{label && <p className="mt-1 break-words text-xs text-ink-3">{label}</p>}</div>
+        <div className="min-w-0 flex-1"><h3 className="break-words text-[15px] font-medium tracking-tight text-ink">{title}</h3>{label && <p className="mt-1 break-words text-xs text-ink-3">{label}</p>}</div>
         <div className="flex items-center gap-1">{actions}<Button size="icon" variant="quiet" aria-label={copied ? "Copied" : copyText ? "Copy data" : "Copy"} title={copied ? "Copied" : copyText ? "Copy data" : "Copy"} onClick={copy}>{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</Button></div>
       </header>
       <div className="min-w-0">{children}</div>

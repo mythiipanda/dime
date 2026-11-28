@@ -3,6 +3,7 @@
 import { SourceLine } from "@/components/ds/SourceLine";
 import { useEffect, useState } from "react";
 import { apiPath } from "@/lib/api";
+import { Button } from "@/components/ds/Button";
 import { BACKEND } from "@/lib/chat";
 import type { DimeArtifact } from "@/lib/dime-stream";
 import { nbaTeams } from "../../../lib/teams";
@@ -64,10 +65,10 @@ function staleness(dateText: string | undefined): string | null {
   if (Number.isNaN(when)) return null;
   const days = Math.floor((Date.now() - when) / 86400000);
   if (days <= 5) return null;
-  return `warehouse snapshot — the latest result in the data is ${days} days behind today; this is a historical read, not this morning's`;
+  return `warehouse snapshot; the latest result in the data is ${days} days behind today; this is a historical read, not this morning's`;
 }
 
-export default function MorningPage() {
+export default function MorningPage({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [team, setTeam] = useState("NYK");
   const [data, setData] = useState<Morning | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +167,32 @@ export default function MorningPage() {
             <p className="mt-0.5 text-[12px] text-orange">{staleness(blocks?.last_result.game?.date)}</p>
           )}
         </div>
+        <div className="flex items-center gap-2">
+        {onAsk && data && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onAsk(
+              `Walk me through ${team}'s morning read: what matters most from the last result, the next opponent, the health picture, and where the team stands?`,
+              {
+                kind: "morning_briefing",
+                summary: `${team} morning page${data.season ? ` · ${data.season}` : ""}`,
+                entities: {
+                  team,
+                  season: data.season,
+                  last_result: blocks?.last_result.game ?? null,
+                  next_game: blocks?.next_game.game ?? null,
+                  opponent_form: blocks?.opponent.row ?? null,
+                  standings: { row: blocks?.standings.row ?? null, projection: blocks?.standings.projection ?? null },
+                  injuries: (blocks?.injuries.rows ?? []).slice(0, 8),
+                  cap: blocks?.cap.row ?? null,
+                },
+              },
+            )}
+          >
+            Ask Dime about this morning
+          </Button>
+        )}
         <select
           aria-label="Morning page team"
           value={team}
@@ -174,6 +201,7 @@ export default function MorningPage() {
         >
           {nbaTeams.map(item => <option key={item.abbr} value={item.abbr}>{item.abbr} · {item.name}</option>)}
         </select>
+        </div>
       </div>
       {loading && <p role="status" className="py-8 text-[13px] text-ink-3">Loading the morning page…</p>}
       {error && !loading && <div role="alert" className="rounded-xl border border-line p-5"><p className="text-[13px] text-red">{error}. No sample data is substituted.</p></div>}
@@ -196,7 +224,7 @@ export default function MorningPage() {
               ? <BlockError block={blocks.injuries} empty="" />
               : blocks.injuries.rows.length
                 ? <ul className="space-y-1.5">{blocks.injuries.rows.slice(0, 6).map((row, index) => <li key={index} className="text-[12px]"><span className="text-ink">{String(row.player ?? row.PLAYER ?? row.name ?? "player")}</span><span className="ml-2 text-ink-3">{String(row.status ?? row.STATUS ?? row.injury ?? row.detail ?? "listed")}</span></li>)}</ul>
-                : <p className="py-2 text-[12px] text-ink-3">No listed injury rows at source vintage — availability unknown.</p>}
+                : <p className="py-2 text-[12px] text-ink-3">No listed injury rows at source vintage; availability unknown.</p>}
           </Card>
           <Card title="News" cite={blocks.news.provenance} artifact={table(`${team} news`, newsRows(), blocks.news.provenance)}>
             {blocks.news.error

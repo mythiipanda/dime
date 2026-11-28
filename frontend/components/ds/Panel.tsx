@@ -12,6 +12,6 @@ export function Panel({ title, description, actions, children, className }: { ti
   </Surface>;
 }
 
-export function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) {
-  return <header className="ds-page-header"><div className="min-w-0"><p className="ds-eyebrow">{eyebrow}</p><h1 className="ds-page-title">{title}</h1><p className="ds-page-description">{description}</p></div>{actions}</header>;
+export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: ReactNode }) {
+  return <header className="ds-page-header"><div className="min-w-0">{eyebrow ? <p className="ds-eyebrow">{eyebrow}</p> : null}<h1 className="ds-page-title">{title}</h1>{description ? <p className="ds-page-description">{description}</p> : null}</div>{actions}</header>;
 }

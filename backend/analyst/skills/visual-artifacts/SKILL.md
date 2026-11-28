@@ -17,6 +17,8 @@ Dime empowers analysts to generate rich, interactive visual artifacts directly r
 | **Head-to-Head Showdowns** (2 players or 2 teams) | `compare` | Visual bars comparing normalized metrics between entity `a` and entity `b`. |
 | **Rankings, Rosters, Ledgers, Multi-Metric Lists** | `table` | Sortable columns with typed numeric formatting, source footnotes, CSV copy. |
 | **Time-Series, Trajectories, Multi-Game Trends** | `chart` | Line/bar series over ordered games, months, or seasons with `unit`, `xLabels`, and semantic `tone`. `variant:"bar"` renders a ranked leaderboard; `marks`, `annotations`, `labelValues`, `xLabel`/`yLabel`, `subtitle` cover threshold lines, callouts and axis labels. |
+| **Trade Legality Verdicts** (does-this-deal-work, matching math, apron consequences) | `trade_verdict` | Ref-only emission: `title` + the evaluation result's `ref`; the host resolves verdict, salary math, issues and TPE from the evaluator — never model-written. |
+| **Cap Scenario Positions** (can-they-afford, signing/trade cap impact, room-under-apron asks) | `cap_summary` | Ref-only emission: `title` + the scenario result's `ref`; the host resolves payroll movement, cap room, apron distances, roster counts and issues from the evaluator — never model-written. |
 | **Executive Briefings, GM/Owner Deliverables, Multi-Section Reports** | `memo` | Titled document with headed `sections`, per-section citation `anchors`, and markdown export. |
 
 ---
@@ -298,6 +300,60 @@ caption; `delta` colors each region vs the league average.
   footnote: "Source: silver_shots via get_shot_chart. Dot size is attempts; color is FG% vs league."
 }
 ```
+
+
+### `trade_verdict`
+
+Use after any trade-legality evaluation — the verdict IS the answer to a
+does-this-deal-work ask, and it belongs in an artifact, not just prose. The
+contract is the sharpest in the catalog: you supply exactly `title` and `ref`,
+where `ref` is the source reference of THIS run's `get_trade_check` or
+`get_trade_legality` result. The host resolves the verdict, per-team salary
+math, apron status, hard-cap consequences, TPE creation, issues and checks
+from the evaluator's actual output — never write outcomes, salaries, issues or
+a `legal` field yourself; the schema rejects them. If no evaluation ran, the
+artifact cannot exist: do not emit one from memory, from sql_exec salary rows,
+or as a paraphrase of an earlier run — the submission is rejected and you must
+run the evaluation first.
+
+```typescript
+{
+  kind: "trade_verdict",
+  title: "Washington-for-Poeltl works — and barely costs Dallas anything",
+  ref: "ref-of-the-trade-check-result"
+}
+```
+
+The title is your one authored element — make it the take, not the mechanics.
+Multi-team packages evaluated through `get_trade_legality` resolve the same
+way, including picks. An illegal verdict is a good artifact: the issues are
+the why, and showing them is the point.
+
+### `cap_summary`
+
+Use after any `get_cap_scenario` evaluation — the cap position IS the answer
+to a can-they-afford-it ask, and it belongs in an artifact, not just prose.
+The contract matches `trade_verdict`: you supply exactly `title` and `ref`,
+where `ref` is the source reference of THIS run's `get_cap_scenario` result.
+The host resolves payroll before/after, cap room, tax room, room under each
+apron, roster counts, apron flags, hard-cap status, issues, scenario steps
+and triggered restrictions from the evaluator's actual output — never write
+payrolls, room figures, apron distances or flags yourself; the schema rejects
+them. If no scenario evaluation ran, the artifact cannot exist: do not emit
+one from memory, from cap-ledger rows, or as a paraphrase of an earlier run —
+the submission is rejected and you must run the evaluation first.
+
+```typescript
+{
+  kind: "cap_summary",
+  title: "Vucevic at $12M leaves Memphis $85.8M in room — but 17 deep",
+  ref: "ref-of-the-cap-scenario-result"
+}
+```
+
+The title is your one authored element — make it the take, not the mechanics.
+A scenario that breaks rules is a good artifact: the issues are the why, and
+showing them is the point.
 
 ### `memo`
 ```typescript

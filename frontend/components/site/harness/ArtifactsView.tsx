@@ -1,8 +1,15 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { QuietDetails } from "@/components/ds/QuietDetails";
+import { useState } from "react";
+import { Share2 } from "lucide-react";
+import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
+import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import ArtifactChart, { type ChartSeries } from "@/components/dime/ArtifactChart";
 import ArtifactCompare from "@/components/dime/ArtifactCompare";
+import ArtifactTradeVerdict from "@/components/dime/ArtifactTradeVerdict";
+import ArtifactCapSummary from "@/components/dime/ArtifactCapSummary";
 import ArtifactScatter from "@/components/dime/ArtifactScatter";
 import ArtifactShell from "@/components/dime/ArtifactShell";
 import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
@@ -36,6 +43,8 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
   if (artifact.kind === "memo") return artifact.sections ? <ArtifactMemo artifact={artifact} /> : <div className="p-4"><p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{artifact.text}</p></div>;
   if (artifact.kind === "player_card") return <ArtifactPlayerCard artifact={artifact} />;
   if (artifact.kind === "team_card") return <ArtifactTeamCard artifact={artifact} />;
+  if (artifact.kind === "trade_verdict") return <ArtifactTradeVerdict artifact={artifact} />;
+  if (artifact.kind === "cap_summary") return <ArtifactCapSummary artifact={artifact} />;
   if (artifact.kind === "table") {
     return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} footnote={artifact.footnote} />;
   }
@@ -112,6 +121,12 @@ function ProvenanceFields({ provenance }: { provenance: DimeProvenance }) {
       {provenance.warehouseId && (
         <ProvenanceRow label="Warehouse">{provenance.warehouseId}</ProvenanceRow>
       )}
+      {provenance.dataset && (
+        <ProvenanceRow label="Dataset">{provenance.dataset}</ProvenanceRow>
+      )}
+      {provenance.sql && (
+        <ProvenanceRow label="SQL"><span className="break-all font-mono text-[11px]">{provenance.sql}</span></ProvenanceRow>
+      )}
       <ProvenanceRow label="Season">{provenance.season ?? "not provided"}</ProvenanceRow>
       <ProvenanceRow label="As of">{provenance.asOf ?? "not provided"}</ProvenanceRow>
       <ProvenanceRow label="Live sources">
@@ -147,10 +162,7 @@ export function ProvenancePanel({ provenance }: { provenance: DimeProvenance }) 
     ? provenance.evidence
     : [{ label: "", provenance }];
   return (
-    <details className="mt-3 rounded-[10px] border border-line bg-field px-3 py-2">
-      <summary className="cursor-pointer text-[12px] font-medium text-ink-2">
-        Sources &amp; provenance
-      </summary>
+    <QuietDetails label={<>Provenance</>}>
       <dl className="mt-2 flex flex-col gap-2.5 text-[12px] leading-relaxed">
         {evidence.map((entry, i) => (
           <div key={i} className="flex flex-col gap-1">
@@ -159,7 +171,7 @@ export function ProvenancePanel({ provenance }: { provenance: DimeProvenance }) 
           </div>
         ))}
       </dl>
-    </details>
+    </QuietDetails>
   );
 }
 
@@ -173,6 +185,46 @@ function escapeCsvCell(val: unknown): string {
 }
 
 export function artifactToCopyText(artifact: DimeArtifact): string {
+  if (artifact.kind === "trade_verdict") {
+    const lines = [`Verdict,${artifact.legal ? "Legal" : "Illegal"}`];
+    lines.push("Team,Players Out,Outgoing,Players In,Incoming,Payroll Before,Payroll After,Allowed Incoming,Match Rule,Hard Cap");
+    for (const team of artifact.teams) {
+      const pickCell = (picks: { year: number; round: number; swap?: boolean; protection?: string }[] | undefined) =>
+        (picks ?? []).map(p => `${p.year} ${p.round === 1 ? "1st" : p.round === 2 ? "2nd" : `R${p.round}`}${p.swap ? " swap" : ""}${p.protection ? ` (${p.protection})` : ""}`).join("; ");
+      const outAssets = [team.playersOut.join("; "), pickCell(team.picksOut)].filter(Boolean).join("; ");
+      const inAssets = [team.playersIn.join("; "), pickCell(team.picksIn)].filter(Boolean).join("; ");
+      lines.push([
+        team.team,
+        outAssets,
+        team.outgoing,
+        inAssets,
+        team.incoming,
+        team.payrollBefore,
+        team.payrollAfter,
+        team.allowedIncoming,
+        team.matchRule,
+        team.hardCap,
+      ].map(escapeCsvCell).join(","));
+    }
+    for (const issue of artifact.issues ?? []) lines.push(["Issue", issue].map(escapeCsvCell).join(","));
+    for (const check of artifact.checks ?? []) lines.push(["Check", check.rule, check.note ?? ""].map(escapeCsvCell).join(","));
+    return lines.join("\n");
+  }
+  if (artifact.kind === "cap_summary") {
+    const lines: string[] = [`Team,${artifact.team}${artifact.season ? ` (${artifact.season})` : ""}`];
+    lines.push(["Payroll Before", artifact.payrollBefore, "Payroll After", artifact.payrollAfter, "Delta", artifact.delta ?? artifact.payrollAfter - artifact.payrollBefore].map(escapeCsvCell).join(","));
+    const rooms: (string | number)[] = [];
+    for (const [label, value] of [["Cap Room", artifact.capRoom], ["Cap Room Before", artifact.capRoomBefore], ["Tax Room", artifact.taxRoom], ["Room Under Apron 1", artifact.roomApron1], ["Room Under Apron 2", artifact.roomApron2]] as const) {
+      if (value !== undefined) rooms.push(label, value);
+    }
+    if (rooms.length) lines.push(rooms.map(escapeCsvCell).join(","));
+    const flags = [artifact.overTax ? "over tax" : "", artifact.overApron1 ? "over first apron" : "", artifact.overApron2 ? "over second apron" : "", artifact.hardCap ? `hard-cap: ${artifact.hardCap}` : ""].filter(Boolean);
+    if (flags.length) lines.push(["Flags", flags.join("; ")].map(escapeCsvCell).join(","));
+    for (const step of artifact.steps ?? []) lines.push(["Step", step.detail, step.delta ?? "", step.payroll ?? ""].map(escapeCsvCell).join(","));
+    for (const issue of artifact.issues ?? []) lines.push(["Issue", issue].map(escapeCsvCell).join(","));
+    for (const restriction of artifact.restrictions ?? []) lines.push(["Restriction", restriction.threshold, restriction.rule].map(escapeCsvCell).join(","));
+    return lines.join("\n");
+  }
   if (artifact.kind === "memo") return memoToMarkdown(artifact);
   if (artifact.kind === "player_card" || artifact.kind === "team_card") {
     const name = artifact.kind === "player_card" ? artifact.playerName : artifact.teamName;
@@ -227,21 +279,78 @@ export function artifactToCopyText(artifact: DimeArtifact): string {
   return "";
 }
 
-export function StreamArtifacts({ artifacts }: { artifacts: DimeArtifact[] }) {
+type SharePhase =
+  | { phase: "idle" }
+  | { phase: "minting" }
+  | { phase: "minted"; link: string; copied: boolean }
+  | { phase: "error" };
+
+function ShareableArtifact({ artifact, shareContext }: { artifact: DimeArtifact; shareContext?: { run_id: string; thread: string; index: number } }) {
+  const [share, setShare] = useState<SharePhase>({ phase: "idle" });
+  const mint = () => {
+    if (!shareContext || share.phase === "minting") return;
+    setShare({ phase: "minting" });
+    mintObject("artifact_ref", artifact.title || "shared artifact", {
+      run_id: shareContext.run_id,
+      thread: shareContext.thread,
+      artifact_index: shareContext.index,
+    })
+      .then((created) => setShare({ phase: "minted", link: objectShareLink(created.read_token), copied: false }))
+      .catch(() => setShare({ phase: "error" }));
+  };
+  const copyLink = (link: string) => {
+    copyToClipboard(link, () => setShare((current) => current.phase === "minted" ? { ...current, copied: true } : current));
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <ArtifactShell
+        title={artifact.title}
+        source={artifact.source}
+        copyText={artifactToCopyText(artifact)}
+        actions={<>
+          <OpenInViewButton artifact={artifact} />
+          <PinButton artifact={artifact} />
+          {shareContext && (
+            <button
+              className="icon-button"
+              aria-label={share.phase === "minting" ? "Creating share link" : "Share artifact"}
+              title={share.phase === "error" ? "Could not create share link; try again" : "Share artifact"}
+              disabled={share.phase === "minting"}
+              onClick={mint}
+            >
+              <Share2 width={13} height={13} aria-hidden="true" />
+            </button>
+          )}
+        </>}
+      >
+        <ArtifactBody artifact={artifact} />
+        <ProvenancePanel provenance={artifact.provenance ?? undeclaredProvenance()} />
+      </ArtifactShell>
+      {share.phase === "minted" && (
+        <MintedLink
+          link={share.link}
+          copied={share.copied}
+          onCopy={copyLink}
+          note="Anyone with this link can view this artifact and its pinned evidence; read-only. Numbers are the capture-time snapshot."
+        />
+      )}
+      {share.phase === "error" && (
+        <p role="status" className="text-[11.5px] text-red">Could not create the share link. Try again.</p>
+      )}
+    </div>
+  );
+}
+
+export function StreamArtifacts({ artifacts, shareContext }: { artifacts: DimeArtifact[]; shareContext?: { run_id: string; thread: string } }) {
   if (artifacts.length === 0) return null;
   return (
     <div className="mt-5 flex flex-col gap-4">
       {artifacts.map((artifact, i) => (
-        <ArtifactShell
+        <ShareableArtifact
           key={i}
-          title={artifact.title}
-          source={artifact.source}
-          copyText={artifactToCopyText(artifact)}
-          actions={<><OpenInViewButton artifact={artifact} /><PinButton artifact={artifact} /></>}
-        >
-          <ArtifactBody artifact={artifact} />
-          <ProvenancePanel provenance={artifact.provenance ?? undeclaredProvenance()} />
-        </ArtifactShell>
+          artifact={artifact}
+          shareContext={shareContext ? { ...shareContext, index: i } : undefined}
+        />
       ))}
     </div>
   );

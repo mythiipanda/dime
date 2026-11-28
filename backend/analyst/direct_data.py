@@ -4,27 +4,27 @@ from langchain_core.tools import tool
 @tool(description='List the supported warehouse-backed board metrics.')
 def product_board_metrics() -> dict:
     from analyst.boards import metrics
-    return metrics()
+    return _stamp_ok(metrics())
 
 @tool(description='Fill a bounded player board with read-only warehouse values and citations.')
 def product_board_fill(payload: dict) -> dict:
     from analyst.boards import fill
-    return fill(payload)
+    return _stamp_ok(fill(payload))
 
 @tool(description='Seed a player board deterministically from one warehouse metric.')
 def product_board_seed(payload: dict) -> dict:
     from analyst.boards import seed
-    return seed(payload)
+    return _stamp_ok(seed(payload))
 
 @tool(description='Read a bounded public warehouse table schema and sample.')
 def product_table_detail(table: str, season: str = '') -> dict:
     from analyst.dataset_engine import warehouse_table
-    return warehouse_table(table, season)
+    return _stamp_ok(warehouse_table(table, season))
 
 @tool(description='Read the cached schedule and warehouse team ratings snapshot.')
 def product_home() -> dict:
     from analyst.dataset_engine import home_snapshot
-    return home_snapshot()
+    return _stamp_ok(home_snapshot())
 
 @tool(description='Append an existing product chat row to the state database.')
 def product_save_chat(thread: str, role: str, content: str, owner: str) -> dict:
@@ -41,19 +41,19 @@ def product_save_run(thread: str, question: str, answer: str, owner: str, run_id
 @tool(description='List existing product state threads for one owner.')
 def product_threads(owner: str) -> dict:
     from shared import store
-    return {"threads": store.list_threads(owner=owner)}
+    return {"ok": True, "threads": store.list_threads(owner=owner)}
 
 @tool(description='List existing product state runs for one owner and thread.')
 def product_runs(thread: str, owner: str) -> dict:
     from shared import store
-    return {"runs": store.list_runs(thread, owner=owner)}
+    return {"ok": True, "runs": store.list_runs(thread, owner=owner)}
 
 @tool(description='Read the data engine warehouse identity and semantic baseline.')
 def product_warehouse_identity() -> dict:
     from shared import store
     from shared.semantic_baseline import SEMANTIC_BASELINE
     identity = store.warehouse_identity()
-    return {"warehouse": {"warehouse_id": identity["warehouse_id"], "sha256": identity["warehouse_sha256"], "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}, "semantic_baseline": dict(SEMANTIC_BASELINE)}
+    return {"ok": True, "warehouse": {"warehouse_id": identity["warehouse_id"], "sha256": identity["warehouse_sha256"], "sha256_derivation": store.WAREHOUSE_SHA256_DERIVATION}, "semantic_baseline": dict(SEMANTIC_BASELINE)}
 
 @tool(description='Check the existing ratings readiness contract.')
 def product_warehouse_health() -> dict:
@@ -75,22 +75,22 @@ def product_warehouse_health() -> dict:
 @tool(description='Read or fetch a dataset using the existing Python season and source semantics.')
 def product_dataset(name: str, season: str = '2025-26', player_id: int = 0, team_id: int = 0, game_id: str = '', game_date: str = '', stat: str = 'PTS', ids: str = '', player_a: str = '', player_b: str = '', fmt: str = 'json') -> dict:
     from analyst.dataset_engine import dataset
-    return dataset(name, season, player_id, team_id, game_id, game_date, stat, ids, player_a, player_b, fmt)
+    return _stamp_ok(dataset(name, season, player_id, team_id, game_id, game_date, stat, ids, player_a, player_b, fmt))
 
 @tool(description='Read the cached existing dataset freshness report.')
 def product_freshness() -> dict:
     from analyst.dataset_engine import datasets_freshness
-    return datasets_freshness()
+    return _stamp_ok(datasets_freshness())
 
 @tool(description='Run the existing read-only SQL rerun operation.')
 async def product_rerun(sql: str) -> dict:
     from shared.tools.league import rerun_sql
-    return await rerun_sql(sql)
+    return _stamp_ok(await rerun_sql(sql))
 
 @tool(description='Resolve NBA entities using the existing resolver.')
 def product_resolve(query: str) -> dict:
     from shared.tools import resolve_entity
-    return resolve_entity.invoke({'query': query})
+    return _stamp_ok(resolve_entity.invoke({'query': query}))
 
 @tool(description='Check a trade using the existing Python domain implementation.')
 def product_trade(team_a: str, players_a: str, team_b: str, players_b: str, season: str = '2025-26') -> dict:
@@ -170,7 +170,7 @@ def product_history_leaders(season: str, category: str = 'pts') -> dict:
                      'normalization': 'z = (value - pool mean) / pool stdev within the season'}}
 
 @tool(description='Evaluate a multi-team trade construction through the CBA legality engine.')
-def product_trade_legs(legs: str, season: str = '2026-27') -> dict:
+def product_trade_legs(legs: str, season: str = '2026-27', tpes: str = '') -> dict:
     import json as _json
     from shared.tools import get_trade_legality
     if not legs:
@@ -185,7 +185,10 @@ def product_trade_legs(legs: str, season: str = '2026-27') -> dict:
         if not isinstance(leg, dict) or not leg.get('from') or not leg.get('to'):
             return {'ok': False, 'error': 'each leg needs from/to teams'}
     try:
-        return get_trade_legality.invoke({'legs': _json.dumps(parsed), 'season': season})
+        args = {'legs': _json.dumps(parsed), 'season': season}
+        if tpes:
+            args['tpe'] = tpes if isinstance(tpes, str) else _json.dumps(tpes)
+        return get_trade_legality.invoke(args)
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
 
@@ -217,7 +220,29 @@ def product_cap_sheet(team: str, season: str = '2026-27') -> dict:
     finally:
         con.close()
 
-@tool(description='Evaluate a typed cap scenario (signings, trades, waives, option decisions) for one team and season.')
+@tool(description='Project a typed cap scenario across multiple seasons with carry-forward move effects.')
+def product_cap_projection(payload: dict) -> dict:
+    from shared import store
+    from shared.contracts import canonical_team_abbr
+    if not isinstance(payload, dict):
+        return {'ok': False, 'error': 'payload must be an object'}
+    abbr = canonical_team_abbr(str(payload.get('team') or ''))
+    if not abbr:
+        return {'ok': False, 'error': 'team needed'}
+    payload = {**payload, 'team': abbr}
+    try:
+        con = store.connect(read_only=True)
+    except Exception:
+        return {'ok': False, 'error': 'warehouse unreachable'}
+    try:
+        from shared.tools.league.cap_projection import project_cap_scenario
+        return project_cap_scenario(con, payload)
+    except Exception as error:
+        return {'ok': False, 'error': str(error)[:200]}
+    finally:
+        con.close()
+
+@tool(description='Evaluate a typed cap scenario (mechanism-aware signings, trades, waives, option decisions) for one team and season; signing validation is a salary-ledger approximation, not exact CBA legality. Output discloses when final payroll/roster/cap-room state includes moves not validated as legal; trade_out of a player signed earlier in the same scenario is rejected because atomic sign-and-trade/BYC treatment is outside validation v1.')
 def product_cap_scenario_eval(payload: dict) -> dict:
     from shared import store
     from shared.contracts import canonical_team_abbr
@@ -470,10 +495,16 @@ def product_debate(a: str, b: str, season: str = '2025-26') -> dict:
 def _decoded(result):
     return json.loads(result) if isinstance(result, str) else result
 
+def _stamp_ok(result):
+    if isinstance(result, dict):
+        result.setdefault("ok", True)
+    return result
+
+
 @tool(description='Read the current today data.')
 def product_today(season: str = '2025-26') -> dict:
     from shared.tools.today import get_today
-    return _decoded(get_today.invoke({'season':season}))
+    return _stamp_ok(_decoded(get_today.invoke({'season':season})))
 
 
 def _live_scoreboard_games(timeout: float = 8.0) -> tuple[list, str | None]:
@@ -664,6 +695,7 @@ def product_awards(season: str = '') -> dict:
             'award': key,
             'ok': bool(result.get('ok')) and candidates is not None,
             'error': result.get('error'),
+            'state': result.get('state'),
             'season': (result.get('meta') or {}).get('season'),
             'caveat': PROJECTION_SPECS[key].get('proxy_caveat'),
             'candidates': (candidates or [])[:10],
@@ -723,23 +755,23 @@ def product_scout_dossier(team: str, opponent: str, season: str = '') -> dict:
 @tool(description='Read the current watchlist data.')
 def product_watchlist(season: str = '2025-26') -> dict:
     from shared.tools.watchlist import get_watchlist
-    return _decoded(get_watchlist.invoke({'season':season}))
+    return _stamp_ok(_decoded(get_watchlist.invoke({'season':season})))
 
 @tool(description='Apply the current direct product watchlist addition.')
 def product_watchlist_add(entity_type: str, entity_id: str, season: str = '2025-26') -> dict:
     from shared.tools.watchlist import add_watchlist_item
-    return _decoded(add_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id,season=season)))
+    return _stamp_ok(_decoded(add_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id,season=season))))
 
 @tool(description='Apply the current direct product watchlist removal.')
 def product_watchlist_remove(entity_type: str, entity_id: str) -> dict:
     from shared.tools.watchlist import remove_watchlist_item
-    return _decoded(remove_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id)))
+    return _stamp_ok(_decoded(remove_watchlist_item.invoke(dict(entity_type=entity_type,entity_id=entity_id))))
 
 @tool(description='Read and normalize current leaderboard deltas.')
 def product_movers(season: str = '2025-26', days: int = 7) -> dict:
     from shared.tools.league import get_leaderboard_deltas
     from shared.tools.today import normalize_movers
-    return normalize_movers(_decoded(get_leaderboard_deltas.invoke(dict(season=season,days=days))), season)
+    return _stamp_ok(normalize_movers(_decoded(get_leaderboard_deltas.invoke(dict(season=season,days=days))), season))
 
 @tool(description='Read the existing morning briefing.')
 def product_briefing(season: str = '2025-26') -> dict:
@@ -787,7 +819,7 @@ def _hist_year(season: str) -> int:
 def _compare_season_line(con, pid: int, season: str) -> dict:
     if "silver_hist_player_seasons" not in _compare_tables(con):
         return {"ok": False, "error": "silver_hist_player_seasons not in warehouse"}
-    year = _hist_year(season)
+    year = _hist_year(season) + 1
     row = con.execute(
         """SELECT season, age, team_abbreviation, gp, min, pts, reb, ast, stl, blk,
                   fg_pct, fg3_pct, ft_pct, ts_pct, efg_pct, usg_pct, off_rating, def_rating, net_rating
@@ -798,20 +830,23 @@ def _compare_season_line(con, pid: int, season: str) -> dict:
     keys = ["season", "age", "team", "gp", "mpg", "ppg", "rpg", "apg", "spg", "bpg", "fg_pct", "fg3_pct", "ft_pct", "ts_pct", "efg_pct", "usg_pct", "off_rating", "def_rating", "net_rating"]
     return {"ok": True, "row": dict(zip(keys, row)), "provenance": {"table": "silver_hist_player_seasons", "as_of": _compare_as_of(con, "silver_hist_player_seasons")}}
 
-def _compare_impact(con, pid: int, season: str) -> dict:
+def _compare_impact(con, pid: int, season: str, name: str = "") -> dict:
     if "silver_raptor_player" not in _compare_tables(con):
         return {"ok": False, "error": "silver_raptor_player not in warehouse"}
+    from shared.contracts import player_name_key_sql
     cite = {"table": "silver_raptor_player", "as_of": _compare_as_of(con, "silver_raptor_player")}
+    end_year = _hist_year(season) + 1
+    key = player_name_key_sql("PLAYER_NAME")
     row = con.execute(
-        "SELECT RAPTOR_TOTAL, WAR_TOTAL, MP FROM silver_raptor_player WHERE PLAYER_ID = ? AND _season = ? LIMIT 1",
-        [pid, season]).fetchone()
+        f"SELECT RAPTOR_TOTAL, WAR_TOTAL, MP FROM silver_raptor_player WHERE {key} = {player_name_key_sql('?')} AND SEASON = ? LIMIT 1",
+        [name, end_year]).fetchone()
     if not row:
         return {"ok": False, "error": f"no impact row for {season}", "provenance": cite}
     total = float(row[0])
     rank = con.execute(
-        "SELECT COUNT(*) + 1 FROM silver_raptor_player WHERE _season = ? AND RAPTOR_TOTAL > ?",
-        [season, row[0]]).fetchone()[0]
-    of = con.execute("SELECT COUNT(*) FROM silver_raptor_player WHERE _season = ?", [season]).fetchone()[0]
+        "SELECT COUNT(*) + 1 FROM silver_raptor_player WHERE SEASON = ? AND RAPTOR_TOTAL > ?",
+        [end_year, row[0]]).fetchone()[0]
+    of = con.execute("SELECT COUNT(*) FROM silver_raptor_player WHERE SEASON = ?", [end_year]).fetchone()[0]
     return {"ok": True, "raptor_total": total, "war_total": float(row[1]), "mp": float(row[2]), "rank": int(rank), "of": int(of), "provenance": cite}
 
 def _compare_zones(con, pid: int, season: str) -> dict:
@@ -888,13 +923,21 @@ def product_compare(players: str = '', season: str = '2025-26') -> dict:
         out = []
         for pid, useason in parsed:
             name = _compare_name(con, pid)
+            blocks = {}
+            for label, builder in (
+                ("season_line", lambda: _compare_season_line(con, pid, useason)),
+                ("impact", lambda: _compare_impact(con, pid, useason, name)),
+                ("zones", lambda: _compare_zones(con, pid, useason)),
+                ("contract", lambda: _compare_contract(con, pid, name)),
+                ("arc", lambda: _compare_arc(con, pid)),
+            ):
+                try:
+                    blocks[label] = builder()
+                except Exception as error:
+                    blocks[label] = {"ok": False, "error": f"{label} unavailable: {str(error)[:120]}"}
             out.append({
                 "player_id": pid, "name": name, "season": useason,
-                "season_line": _compare_season_line(con, pid, useason),
-                "impact": _compare_impact(con, pid, useason),
-                "zones": _compare_zones(con, pid, useason),
-                "contract": _compare_contract(con, pid, name),
-                "arc": _compare_arc(con, pid),
+                **blocks,
             })
     finally:
         con.close()
@@ -921,8 +964,19 @@ def _draft_board(con, tables: set, season: str) -> dict:
         "SELECT CASE WHEN COUNT(*) FILTER (BOARD = 'big_board') > 0 THEN 'big_board' ELSE 'mock_draft' END "
         "FROM silver_draft_boards WHERE _season = ?", [use]).fetchone()[0]
     base_rows = con.execute(
-        'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL FROM silver_draft_boards '
-        'WHERE _season = ? AND BOARD = ? ORDER BY "ORDER" LIMIT 60', [use, board_kind]).fetchall()
+        'SELECT "ORDER", PLAYER_NAME, POSITION, SCHOOL, PLAYER_SLUG FROM silver_draft_boards '
+        'WHERE _season = ? AND BOARD = ? ORDER BY "ORDER"', [use, board_kind]).fetchall()
+    deduped_rows = []
+    seen_keys = set()
+    for index, row in enumerate(base_rows):
+        slug = str(row[4] or "")
+        key = slug if slug else f"row:{index}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped_rows.append(row[:4])
+        if len(deduped_rows) == 60:
+            break
     stats_by_name: dict = {}
     if "silver_prospect_stats" in tables:
         for s in con.execute(
@@ -936,43 +990,135 @@ def _draft_board(con, tables: set, season: str) -> dict:
         if len(candidates) == 1:
             return candidates[0]
         school_key = str(school or '').lower()
-        for c in candidates:
-            if school_key and str(c[1] or '').lower() == school_key:
-                return c
+        matches = [c for c in candidates if school_key and str(c[1] or '').lower() == school_key]
+        if matches:
+            return max(matches, key=lambda c: float(c[2] or 0))
         return None
     rows = []
-    for r in base_rows:
+    for r in deduped_rows:
         s = _match_stats(r[1], r[3])
-        rows.append(tuple(r) + ((s[2], s[3], s[4], s[5], s[6], (s[7] or 0) / 100.0 if s and s[7] is not None else None) if s else (None,) * 6))
-    board = [{"pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
+        stat_values = (s[2], s[3], s[4], s[5], s[6], s[7]) if s else (None,) * 6
+        rows.append(tuple(r) + stat_values)
+    board = [{"board_order": int(r[0]), "pick": int(r[0]), "name": str(r[1]), "position": r[2], "school": r[3],
               "gp": r[4], "pts": r[5], "reb": r[6], "ast": r[7], "ts_pct": r[8], "usg": r[9]}
              for r in rows]
-    return {"ok": bool(board), "season": use, "rows": board, "provenance": cite,
+    order_semantics = "rank" if board_kind == "big_board" else "pick"
+    return {"ok": bool(board), "season": use, "board": board_kind, "order_semantics": order_semantics,
+            "rows": board, "provenance": cite,
             **({"error": "no board rows for season"} if not board else {})}
 
-def _draft_free_agents(con, tables: set) -> dict:
+def _draft_hold_payload(con):
+    try:
+        row = con.execute("SELECT MAX(FA_YEAR) FROM silver_free_agents").fetchone()
+        if not row or row[0] is None:
+            return None
+        from shared.tools.league.cap_hold_derivation import derive_cap_holds
+        return derive_cap_holds(con, int(row[0]), "")
+    except Exception:
+        return None
+
+
+def _draft_holds_by_team(payload: dict | None) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
+    for row in (payload or {}).get("rows") or []:
+        team = str(row.get("TEAM") or "").upper()
+        entry = out.setdefault(team, {"total": 0, "active": 0, "active_count": 0})
+        amount = row.get("cap_hold")
+        if amount is None:
+            continue
+        entry["total"] += int(amount)
+        if row.get("active_in_baseline"):
+            entry["active"] += int(amount)
+            if int(amount) > 0:
+                entry["active_count"] += 1
+    return out
+
+
+def _draft_free_agents(con, tables: set, payload=None) -> dict:
     if "silver_free_agents" not in tables:
         return {"ok": False, "error": "silver_free_agents not in warehouse",
                 "provenance": {"table": "silver_free_agents", "as_of": None}}
-    rows = con.execute(
-        "SELECT PLAYER_NAME, TEAM, FA_TYPE, PRIOR_SALARY, CAP_HOLD_EST FROM silver_free_agents "
-        "ORDER BY PRIOR_SALARY DESC LIMIT 40").fetchall()
-    agents = [{"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3], "cap_hold": r[4]}
-              for r in rows]
+    payload = payload if payload is not None else _draft_hold_payload(con)
+    hold_rows = sorted(list((payload or {}).get("rows") or []),
+                       key=lambda row: int(row.get("PRIOR_SALARY") or 0), reverse=True)[:40]
+    if hold_rows:
+        agents = [{"name": str(r.get("PLAYER_NAME")), "team": r.get("TEAM"),
+                   "fa_type": r.get("FA_TYPE"), "prior_salary": r.get("PRIOR_SALARY"),
+                   "cap_hold": r.get("cap_hold"),
+                   "legacy_cap_hold_est": r.get("legacy_cap_hold_est"),
+                   "money_unit": "usd_dollars",
+                   "provenance_class": r.get("provenance_class"),
+                   "scenario_dependency": r.get("scenario_dependency"),
+                   "active_in_baseline": r.get("active_in_baseline"),
+                   "hold_exactness": r.get("hold_exactness")}
+                  for r in hold_rows]
+    else:
+        rows = con.execute(
+            "SELECT PLAYER_NAME, TEAM, FA_TYPE, PRIOR_SALARY, CAP_HOLD_EST FROM silver_free_agents "
+            "ORDER BY PRIOR_SALARY DESC LIMIT 40").fetchall()
+        agents = [{"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3], "cap_hold": r[4],
+                   "money_unit": "usd_dollars", "provenance_class": "legacy_seed_estimate"}
+                  for r in rows]
     return {"ok": bool(agents), "rows": agents,
             "provenance": {"table": "silver_free_agents", "as_of": _draft_as_of(con, "silver_free_agents")},
+            "cap_hold_derivation": (payload or {}).get("meta") or {},
             **({"error": "no free agent rows"} if not agents else {})}
 
-def _draft_cap_room(con, tables: set) -> dict:
+def _draft_cap_room_rows(con, team: str = "") -> list[dict]:
+    have = {r[1] for r in con.execute("PRAGMA table_info(silver_cap_room)").fetchall()}
+    wanted = ["TEAM", "COMMITTED_SALARY", "PENDING_OPTION_SALARY", "FA_HOLDS_EST",
+              "INCOMPLETE_ROSTER_CHARGES", "PROJECTED_ROOM", "PROJECTED_CAP",
+              "PLAYERS_UNDER_CONTRACT", "ROSTER_CHARGE_MINIMUM"]
+    pick = [c for c in wanted if c in have]
+    sql = "SELECT " + ", ".join(pick) + " FROM silver_cap_room"
+    params = []
+    if team:
+        sql += " WHERE TEAM = ?"
+        params.append(team)
+    elif "PROJECTED_ROOM" in pick:
+        sql += " ORDER BY PROJECTED_ROOM DESC"
+    rows = con.execute(sql, params).fetchall()
+    return [dict(zip(pick, row)) for row in rows]
+
+
+def _corrected_room_values(row: dict, derived: dict, has_derived: bool) -> tuple[int, int]:
+    if not has_derived:
+        return int(row.get("INCOMPLETE_ROSTER_CHARGES") or 0), int(row.get("PROJECTED_ROOM") or 0)
+    minimum = int(row.get("ROSTER_CHARGE_MINIMUM") or 1_493_539)
+    players = int(row.get("PLAYERS_UNDER_CONTRACT") or 0)
+    active_count = int(derived.get("active_count", 0))
+    charges = max(0, 12 - players - active_count) * minimum
+    room = (int(row.get("PROJECTED_CAP") or 0) - int(row.get("COMMITTED_SALARY") or 0)
+            - int(row.get("PENDING_OPTION_SALARY") or 0) - charges)
+    return charges, room
+
+
+def _draft_cap_room(con, tables: set, payload=None) -> dict:
     if "silver_cap_room" not in tables:
         return {"ok": False, "error": "silver_cap_room not in warehouse",
                 "provenance": {"table": "silver_cap_room", "as_of": None}}
-    rows = con.execute(
-        "SELECT TEAM, COMMITTED_SALARY, PENDING_OPTION_SALARY, FA_HOLDS_EST, "
-        "INCOMPLETE_ROSTER_CHARGES, PROJECTED_ROOM FROM silver_cap_room ORDER BY PROJECTED_ROOM DESC").fetchall()
-    room = [{"team": str(r[0]), "committed": r[1], "option_salary": r[2],
-             "fa_holds": r[3], "roster_charges": r[4], "projected_room": r[5]}
-            for r in rows]
+    rows = _draft_cap_room_rows(con)
+    payload = payload if payload is not None else _draft_hold_payload(con)
+    hold_totals = _draft_holds_by_team(payload)
+    has_derived = bool((payload or {}).get("rows"))
+    room = []
+    for row in rows:
+        team = str(row.get("TEAM") or "")
+        derived = hold_totals.get(team.upper(), {})
+        roster_charges, projected_room = _corrected_room_values(row, derived, has_derived)
+        legacy_holds = int(row.get("FA_HOLDS_EST") or 0)
+        room.append({"team": team, "committed": row.get("COMMITTED_SALARY"),
+                     "option_salary": row.get("PENDING_OPTION_SALARY"),
+                     "fa_holds": derived.get("active", legacy_holds),
+                     "fa_holds_potential": derived.get("total", legacy_holds),
+                     "legacy_fa_holds_est": row.get("FA_HOLDS_EST"),
+                     "money_unit": "usd_dollars",
+                     "roster_charges": roster_charges,
+                     "legacy_roster_charges": row.get("INCOMPLETE_ROSTER_CHARGES"),
+                     "projected_room": projected_room,
+                     "legacy_projected_room": row.get("PROJECTED_ROOM"),
+                     "projected_room_semantics": "before_active_cap_holds"})
+    room.sort(key=lambda row: int(row["projected_room"]), reverse=True)
     return {"ok": bool(room), "rows": room,
             "provenance": {"table": "silver_cap_room", "as_of": _draft_as_of(con, "silver_cap_room")},
             **({"error": "no cap room rows"} if not room else {})}
@@ -989,7 +1135,7 @@ _DRAFT_GAP_STAT = {
     "shooting": "s.FG3_PCT", "ball_security": "s.APG",
 }
 
-def _draft_fit(con, tables: set, abbr: str) -> dict:
+def _draft_fit(con, tables: set, abbr: str, hold_payload=None) -> dict:
     errors = []
     gaps = []
     ratings_as_of = None
@@ -1017,11 +1163,24 @@ def _draft_fit(con, tables: set, abbr: str) -> dict:
         errors.append("silver_team_ratings not in warehouse")
     cap = None
     if "silver_cap_room" in tables:
-        crow = con.execute(
-            "SELECT COMMITTED_SALARY, PENDING_OPTION_SALARY, FA_HOLDS_EST, PROJECTED_ROOM "
-            "FROM silver_cap_room WHERE TEAM = ? LIMIT 1", [abbr]).fetchone()
+        rows = _draft_cap_room_rows(con, abbr)
+        crow = rows[0] if rows else None
         if crow:
-            cap = {"committed": crow[0], "option_salary": crow[1], "fa_holds": crow[2], "projected_room": crow[3]}
+            hold_totals = _draft_holds_by_team(hold_payload)
+            derived = hold_totals.get(abbr.upper(), {})
+            roster_charges, projected_room = _corrected_room_values(
+                crow, derived, bool((hold_payload or {}).get("rows")))
+            legacy_holds = int(crow.get("FA_HOLDS_EST") or 0)
+            cap = {"committed": crow.get("COMMITTED_SALARY"),
+                   "option_salary": crow.get("PENDING_OPTION_SALARY"),
+                   "fa_holds": derived.get("active", legacy_holds),
+                   "fa_holds_potential": derived.get("total", legacy_holds),
+                   "legacy_fa_holds_est": crow.get("FA_HOLDS_EST"),
+                   "money_unit": "usd_dollars",
+                   "roster_charges": roster_charges,
+                   "projected_room": projected_room,
+                   "legacy_projected_room": crow.get("PROJECTED_ROOM"),
+                   "projected_room_semantics": "before_active_cap_holds"}
         else:
             errors.append("no cap room row")
     else:
@@ -1036,9 +1195,20 @@ def _draft_fit(con, tables: set, abbr: str) -> dict:
             f"FROM silver_free_agents f JOIN silver_player_season s "
             f"ON lower(s.PLAYER) = lower(f.PLAYER_NAME) AND s._season = ? "
             f"ORDER BY ({metric}) DESC NULLS LAST LIMIT 12", [latest]).fetchall()
-        targets = [{"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3],
-                    "cap_hold": r[4], "ppg": r[5], "rpg": r[6], "apg": r[7],
-                    "spg": r[8], "bpg": r[9], "fg3_pct": r[10], "gp": r[11]} for r in rows]
+        payload = hold_payload if hold_payload is not None else _draft_hold_payload(con)
+        hold_rows = {str(row.get("PLAYER_NAME") or "").lower(): row
+                     for row in (payload or {}).get("rows") or []}
+        targets = []
+        for r in rows:
+            hold_row = hold_rows.get(str(r[0]).lower(), {})
+            targets.append({"name": str(r[0]), "team": r[1], "fa_type": r[2], "prior_salary": r[3],
+                            "cap_hold": hold_row.get("cap_hold", r[4]),
+                            "legacy_cap_hold_est": r[4], "money_unit": "usd_dollars",
+                            "provenance_class": hold_row.get("provenance_class", "legacy_seed_estimate"),
+                            "scenario_dependency": hold_row.get("scenario_dependency"),
+                            "active_in_baseline": hold_row.get("active_in_baseline"),
+                            "ppg": r[5], "rpg": r[6], "apg": r[7],
+                            "spg": r[8], "bpg": r[9], "fg3_pct": r[10], "gp": r[11]})
         if not targets:
             errors.append("no free agent rows joined to current season")
     elif "silver_free_agents" not in tables:
@@ -1061,11 +1231,12 @@ def product_draft(team: str, season: str = '') -> dict:
         return {"ok": False, "error": "warehouse unreachable"}
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        hold_payload = _draft_hold_payload(con) if "silver_free_agents" in tables else None
         blocks = {
             "board": _draft_board(con, tables, str(season or '').strip()),
-            "free_agents": _draft_free_agents(con, tables),
-            "cap_room": _draft_cap_room(con, tables),
-            "fit": _draft_fit(con, tables, abbr) if abbr else {"ok": False, "error": "team needed",
+            "free_agents": _draft_free_agents(con, tables, hold_payload),
+            "cap_room": _draft_cap_room(con, tables, hold_payload),
+            "fit": _draft_fit(con, tables, abbr, hold_payload) if abbr else {"ok": False, "error": "team needed",
                 "gaps": [], "cap": None, "targets": [], "errors": ["team needed"],
                 "provenance": {"table": "", "as_of": None}},
         }
@@ -1081,7 +1252,7 @@ def internal_catalogue():
         product_rerun, product_resolve, product_trade, product_trade_partners, product_trade_assets, product_morning, product_debate, product_today,
         product_watchlist, product_watchlist_add, product_watchlist_remove, product_movers, product_briefing,
         product_compare, product_draft, product_matchups, product_awards, product_scout_dossier,
-        product_cap_sheet, product_cap_scenario_eval, product_trade_legs, product_history_career, product_history_era_comps, product_history_leaders)
+        product_cap_sheet, product_cap_scenario_eval, product_cap_projection, product_trade_legs, product_history_career, product_history_era_comps, product_history_leaders)
     result = {operation.name: operation for operation in operations}
     for operation in operations:
         operation.args_schema.__doc__ = operation.description

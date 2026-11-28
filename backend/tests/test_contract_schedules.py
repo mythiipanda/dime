@@ -191,7 +191,7 @@ def test_payroll_empty_primary_uses_normalized_vendor_salary(warehouse):
         con.execute('CREATE TABLE silver_salaries (PLAYER_NAME VARCHAR, TEAM VARCHAR, SALARY_2025_26 BIGINT)')
         con.execute('CREATE TABLE silver_cap_players (player VARCHAR, team VARCHAR, salary BIGINT)')
         con.execute("INSERT INTO silver_cap_players VALUES ('Vendor Example', 'BOS', 125)")
-        total, players = league._payroll('BOS', con)
+        total, players, _dead = league._payroll('BOS', con)
         assert total == 125
         assert players[0]['salary'] == 125
     finally:
@@ -407,7 +407,7 @@ def test_primary_salary_obligations_are_not_deduplicated_by_id(warehouse):
     try:
         con.execute("INSERT INTO silver_salaries SELECT PLAYER_NAME, 'NYK', PLAYER_ID, 50, BREF_SLUG, GUARANTEED, 50, SALARY_2027_28, OPTION_2026_27, OPTION_2027_28, _season FROM silver_salaries WHERE PLAYER_ID = 1")
         assert len(salary_records(con)) == 3
-        total, players = league._payroll('NYK', con)
+        total, players, _dead = league._payroll('NYK', con)
         assert total == 250
         assert len(players) == 2
     finally:

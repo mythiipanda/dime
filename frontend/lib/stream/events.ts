@@ -254,7 +254,7 @@ export class DimeStream {
 export function streamDimeChat(
   q: string,
   callbacks: DimeStreamCallbacks,
-  opts?: { signal?: AbortSignal; model?: string | null; thread?: string; replay?: string | null },
+  opts?: { signal?: AbortSignal; model?: string | null; thread?: string; replay?: string | null; context?: unknown },
 ): void {
   const stream = new DimeStream();
   let settled = false;
@@ -290,5 +290,6 @@ export function streamDimeChat(
     handlers,
     opts?.signal,
     opts?.thread ?? null,
+    opts?.context ? { context: opts.context } : undefined,
   );
 }

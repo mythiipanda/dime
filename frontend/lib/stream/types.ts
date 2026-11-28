@@ -84,7 +84,7 @@ export interface TableArtifactPayload {
   source?: string;
   provenance?: DimeProvenance;
   columns: { key: string; label: string; numeric?: boolean }[];
-  rows: (string | number)[][];
+  rows: (string | number | null)[][];
   footnote?: string;
 }
 
@@ -216,6 +216,72 @@ export interface TeamCardArtifactPayload {
   sections?: PlayerCardSectionPayload[];
 }
 
+
+export interface TradeVerdictTeamPayload {
+  team: string;
+  playersOut: string[];
+  playersIn: string[];
+  outgoing?: number;
+  incoming?: number;
+  payrollBefore?: number;
+  payrollAfter?: number;
+  allowedIncoming?: number;
+  matchRule?: string;
+  hardCap?: string;
+  overApron1?: boolean;
+  overApron2?: boolean;
+  matchingFailed?: boolean;
+  aggregates?: boolean;
+  tpeCreation?: { amount: number; condition?: string };
+  picksOut?: { year: number; round: number; swap?: boolean; protection?: string }[];
+  picksIn?: { year: number; round: number; swap?: boolean; protection?: string }[];
+}
+
+export interface TradeVerdictArtifactPayload {
+  kind: "trade_verdict";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  legal: boolean;
+  issues?: string[];
+  teams: TradeVerdictTeamPayload[];
+  checks?: { rule: string; note?: string }[];
+  evaluationTool?: string;
+  sourceRef: string;
+}
+
+export interface CapSummaryArtifactPayload {
+  kind: "cap_summary";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  team: string;
+  season?: string;
+  payrollBefore: number;
+  payrollAfter: number;
+  delta?: number;
+  capRoom?: number;
+  capRoomBefore?: number;
+  taxRoom?: number;
+  roomApron1?: number;
+  roomApron2?: number;
+  teamSalaryBefore?: number;
+  teamSalaryAfter?: number;
+  capHoldsAfter?: number;
+  rosterChargesAfter?: number;
+  rosterBefore?: number;
+  rosterAfter?: number;
+  overTax?: boolean;
+  overApron1?: boolean;
+  overApron2?: boolean;
+  hardCap?: string;
+  issues?: string[];
+  steps?: { kind: string; detail: string; delta?: number; payroll?: number }[];
+  restrictions?: { threshold: string; rule: string }[];
+  evaluationTool?: string;
+  sourceRef: string;
+}
+
 export type DimeArtifact =
   | TableArtifactPayload
   | CompareArtifactPayload
@@ -224,7 +290,9 @@ export type DimeArtifact =
   | ScatterArtifactPayload
   | PlayerCardArtifactPayload
   | TeamCardArtifactPayload
-  | MemoArtifactPayload;
+  | MemoArtifactPayload
+  | TradeVerdictArtifactPayload
+  | CapSummaryArtifactPayload;
 
 export interface ArtifactEvent {
   type: "artifact";

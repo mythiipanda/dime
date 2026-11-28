@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverDescription, PopoverTitle, PopoverTrigg
 import DimeCommandPalette from "@/components/site/DimeCommandPalette";
 import { StreamArtifacts } from "@/components/site/harness/ArtifactsView";
 import { generativeFixtures } from "@/lib/generative-fixture";
+import { EvidenceTrace } from "@/components/ds/EvidenceTrace";
 
 const foundations = [
   { name: "Canvas", token: "canvas", className: "bg-canvas" },
@@ -115,6 +116,18 @@ export default function DesignSystemPage() {
       <section id="generative" tabIndex={-1} aria-label="Generative" className="system-section mb-12">
         <PageHeader eyebrow="04 / Generative answers" title="The right shape for the answer." description="A bounded component catalog, not arbitrary generated code. Player snapshots, interactive charts and sortable tables stay inside the conversation, with raw values and source inspection." />
         <div className="max-w-[760px]"><StatusPill dot={false}>Fictional design fixtures · no live data</StatusPill><StreamArtifacts artifacts={generativeFixtures} /></div>
+        <div className="mt-8 grid max-w-[760px] gap-5 md:grid-cols-2">
+          <Panel title="The run, while it works" description="One quiet status line. Rows appear as the evidence lands."><EvidenceTrace busy thinking={[{ label: "Reading illustrative source rows" }]} tools={[
+            { key: "ds-1", name: "get_leaders", label: "Fetching league statistical leaders", status: "ok", rows: 48, ms: 210 },
+            { key: "ds-2", name: "sql_exec", label: "Queried warehouse", status: "ok", rows: 12, ms: 88 },
+            { key: "ds-3", name: "get_shot_zones", label: "Analyzing shot distribution zones", status: "running" },
+          ]} /></Panel>
+          <Panel title="The evidence, when it settles" description="The trace stays with the answer. Red is reserved for failures."><EvidenceTrace busy={false} thinking={[]} tools={[
+            { key: "ds-4", name: "get_leaders", label: "Fetched league statistical leaders", status: "ok", rows: 48, ms: 210 },
+            { key: "ds-5", name: "sql_exec", label: "Queried warehouse", status: "ok", rows: 12, ms: 88 },
+            { key: "ds-6", name: "web_search", label: "Searched the web", status: "fail", error: "Fixture failure state" },
+          ]} /></Panel>
+        </div>
       </section>
       <section id="states" tabIndex={-1} aria-label="States" className="system-section">
         <PageHeader eyebrow="04 / States" title="Always say what happened." description="A color is not an explanation. Every status has a label, every error keeps your input, and every empty state points to a useful next step." />

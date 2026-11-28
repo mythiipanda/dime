@@ -1,6 +1,6 @@
 "use client";
 
-import type { Form } from "@/lib/dime-data-tonight";
+export type Form = ("W" | "L")[];
 
 export default function FormChips({ form }: { form: Form }) {
   return (

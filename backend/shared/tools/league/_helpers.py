@@ -33,3 +33,20 @@ def _owned_connection(con: object, *, read_only: bool = True):
             own.close()
         except Exception:
             pass
+
+
+def declare_units(result: dict, mapping: dict) -> dict:
+    if not mapping:
+        return result
+    declared = result.setdefault("declared_column_semantics", {})
+    for column, unit in mapping.items():
+        if not isinstance(column, str) or not isinstance(unit, str) or not unit.strip():
+            continue
+        entry = declared.setdefault(column, {})
+        if isinstance(entry, dict):
+            entry["unit"] = unit.strip()
+    return result
+
+
+def declare_money(result: dict, fields) -> dict:
+    return declare_units(result, {field: "usd_dollars" for field in fields})

@@ -18,7 +18,7 @@ import { getClientId, getThreads } from "./lib/api";
 import { LibraryView } from "./components/shell/WorkspaceViews";
 
 test("navigation exposes only this port's destinations, with Tools grouped", () => {
-  assert.deepEqual(shellNavigation.map(item => item.label), ["Home", "Ask", "Workflows", "Boards", "Notebooks", "Library", "Data", "Trades", "Compare", "Draft", "Cap", "History", "Matchups", "Scout", "Awards"]);
+  assert.deepEqual(shellNavigation.map(item => item.label), ["Home", "Ask", "Workflows", "Boards", "Notebooks", "Library", "Data", "Trades", "Compare", "Draft", "Cap", "Planner", "History", "Matchups", "Scout", "Awards"]);
   assert.ok(shellNavigation.slice(7).every(item => "group" in item && item.group === "Tools"));
   for (const item of shellNavigation) assert.equal(parseShellTab(item.id), item.id);
   for (const invalid of [null, "explore", "lineups", "props", "invalid"]) assert.equal(parseShellTab(invalid), "chat");
@@ -75,11 +75,26 @@ for (const mode of ["http", "network", "cached"]) test(`Library exposes ${mode} 
   } finally { await act(async () => root.unmount()); globalThis.fetch = previous; globalThis.localStorage = previousStorage; dom.window.close(); }
 });
 
-test("PromptBar has a real ellipsis, clean model labels and disabled unavailable models", () => {
+test("PromptBar has a real ellipsis, clean model labels and disabled unavailable models", async () => {
   const html = renderToStaticMarkup(<PromptBar value="" onChange={() => {}} onSend={() => {}} onStop={() => {}} busy={false} models={[{ id: "gemini:flash", label: "Gemini Flash", available: false }]} model={null} onModelChange={() => {}} onRetry={() => {}} />);
   assert.match(html, /basketball decision…/); assert.doesNotMatch(html, /\\u2026/);
-  assert.match(html, /option[^>]*disabled=""[^>]*>Gemini Flash · Unavailable/);
+  assert.match(html, /aria-label="Choose model"/);
+  assert.doesNotMatch(html, /<select/);
   assert.match(html, /disabled=""[^>]*aria-label="Send message"/);
+
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost" });
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, Element: dom.window.Element, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true });
+  const host = dom.window.document.getElementById("root")!, root = createRoot(host);
+  try {
+    await act(async () => root.render(<PromptBar value="" onChange={() => {}} onSend={() => {}} onStop={() => {}} busy={false} models={[{ id: "nvidia:bolt", label: "Nemotron Bolt", available: true }, { id: "gemini:flash", label: "Gemini Flash", available: false }]} model="nvidia:bolt" onModelChange={() => {}} onRetry={() => {}} />));
+    await act(async () => [...host.querySelectorAll("button")].find(button => button.getAttribute("aria-label") === "Choose model")!.click());
+    const rows = [...host.querySelectorAll("[role=option]")];
+    assert.equal(rows.length, 2);
+    assert.match(rows[1].textContent!, /Gemini Flash/);
+    assert.match(rows[1].textContent!, /gemini · unavailable/);
+    assert.equal(rows[1].getAttribute("aria-disabled"), "true");
+    assert.equal(rows[0].getAttribute("aria-disabled"), null);
+  } finally { await act(async () => root.unmount()); dom.window.close(); }
 });
 
 test("Pi citations retain exact rows, columns, units and prefixed expandable source targets", () => {
@@ -99,7 +114,7 @@ test("Pi citations retain exact rows, columns, units and prefixed expandable sou
   const missing = renderToStaticMarkup(<PiAnswer text="Fallback" carry={{ ...carry, sources: [] }} prefix="" />);
   assert.match(missing, /Source replay-player unavailable/);
   const failure = renderToStaticMarkup(<AssistantTurn message={{ role: "assistant", text: "", artifacts: [], carry: null, failure: { kind: "connection", message: "Connection interrupted" }, suggestions: [] }} prefix="" onFollowUp={() => {}} />);
-  assert.match(failure, /role="alert"/); assert.match(failure, /Connection interrupted/);
+  assert.match(failure, /role="alert"/); assert.match(failure, /Couldn&#x27;t reach Dime/);
 });
 
 test("shell reads URL/history, real threads, library, theme and sends the selected thread to dev's SSE transport", async () => {

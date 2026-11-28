@@ -6,7 +6,7 @@ from langchain_core.tools import tool
 
 from ...contracts import contract_details, match_record, normalize_name, salary_records
 from .._core import coerce_team_id
-from ._helpers import _owned_connection, _pkg, _warehouse_tables
+from ._helpers import _owned_connection, _pkg, _warehouse_tables, declare_money
 from .cba_cap import _salary_vintage
 
 
@@ -123,7 +123,7 @@ def get_combine(season: str = "2025") -> dict[str, Any]:
                 "error": meta.get("error") or "empty upstream response"}
     if len(rows) > 25:
         meta = dict(meta)
-        meta["truncation"] = (f"showing 25 of {len(rows)} rows — for "
+        meta["truncation"] = (f"showing 25 of {len(rows)} rows; for "
                               "cohort-wide rankings, counts or means query "
                               "silver_combine via sql_exec; the full class "
                               "is there")
@@ -421,8 +421,9 @@ def get_contract_value(season: str | None = None, min_gp: int = 20,
             + (f"; last qualified season "
                f"{estimate_meta['last_qualified_season']}"
                if estimate_meta.get('last_qualified_season') else ""))
-    return {"tool": "get_contract_value", "ok": True, "rows": rows,
+    out = {"tool": "get_contract_value", "ok": True, "rows": rows,
             "meta": meta}
+    return declare_money(out, ["SALARY", "salary"])
 
 
 @tool(description='Star-probability classifier from college production (honest proxy).')

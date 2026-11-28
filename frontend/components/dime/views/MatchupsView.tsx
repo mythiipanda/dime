@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ds/Skeleton";
 import { initialTeamParam } from "@/lib/open-in-view";
 import FormChips from "@/components/dime/views/FormChips";
 import { DataState } from "@/components/ds/DataState";
+import { Button } from "@/components/ds/Button";
 import { apiPath } from "@/lib/api";
 import { BACKEND } from "@/lib/chat";
 
@@ -95,13 +96,13 @@ function MatchupBars({ rows, aName, bName }: { rows: StatRow[]; aName: string; b
               <div className="mt-1.5 grid grid-cols-2 gap-1.5" aria-hidden>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-line"}`}
+                    className={`h-full rounded-full ${aLead ? "bg-ink" : "bg-ink-3"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.away) / max) * 100)}%` }}
                   />
                 </div>
                 <div className="h-1 overflow-hidden rounded-full bg-field">
                   <div
-                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-line"}`}
+                    className={`h-full rounded-full ${!aLead ? "bg-ink" : "bg-ink-3"}`}
                     style={{ width: `${Math.max(4, (Math.abs(r.home) / max) * 100)}%` }}
                   />
                 </div>
@@ -125,7 +126,7 @@ function InjuryNotes({ game }: { game: MatchupGame }) {
     return (
       <div className="mt-3 border-t border-line pt-3 text-[12.5px] text-ink-3">
         {unavailable.length === sides.length
-          ? "Injury report unavailable — no substitute data is shown."
+          ? "Injury report unavailable; no substitute data is shown."
           : "No out or doubtful players listed for either team."}
         {unavailable.length > 0 && unavailable.length < sides.length &&
           ` Injury report unavailable for ${unavailable.map((s) => s.team.abbr).join(", ")}.`}
@@ -145,7 +146,7 @@ function InjuryNotes({ game }: { game: MatchupGame }) {
       ))}
       {unavailable.map((s) => (
         <div key={s.team.abbr} className="py-2.5 text-[12.5px] text-ink-3">
-          {s.team.abbr} injury report unavailable — no substitute data is shown.
+          {s.team.abbr} injury report unavailable; no substitute data is shown.
         </div>
       ))}
     </div>
@@ -158,7 +159,7 @@ function slateStaleness(dateIso: string): string | null {
   if (Number.isNaN(slate)) return null;
   const days = Math.floor((Date.now() - slate) / 86400000);
   if (days <= 2) return null;
-  return `warehouse snapshot ${days} days behind today — a historical slate, not tonight's games`;
+  return `warehouse snapshot ${days} days behind today; a historical slate, not tonight's games`;
 }
 
 function slateState(m: MatchupGame): "live" | "final" | "upcoming" {
@@ -167,7 +168,7 @@ function slateState(m: MatchupGame): "live" | "final" | "upcoming" {
   return "upcoming";
 }
 
-function MatchupDetail({ game }: { game: MatchupGame }) {
+function MatchupDetail({ game, onAsk }: { game: MatchupGame; onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const rows = statRows(game.away, game.home);
   return (
     <div
@@ -212,11 +213,37 @@ function MatchupDetail({ game }: { game: MatchupGame }) {
       </div>
 
       <InjuryNotes game={game} />
+
+      {onAsk && (
+        <div className="mt-3 flex justify-end border-t border-line pt-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onAsk(
+              `Who has the edge in ${game.away.abbr} @ ${game.home.abbr}? Break down the matchup: ratings, form, pace and the injury picture.`,
+              {
+                kind: "matchup",
+                summary: `${game.away.abbr} @ ${game.home.abbr} · ${game.date}`,
+                entities: {
+                  teams: [game.away.abbr, game.home.abbr],
+                  away: { abbr: game.away.abbr, name: game.away.name, record: game.away.record, net_rating: game.away.net_rating, off_rating: game.away.off_rating, def_rating: game.away.def_rating, pace: game.away.pace, form: game.away.form, injuries: game.away.injuries },
+                  home: { abbr: game.home.abbr, name: game.home.name, record: game.home.record, net_rating: game.home.net_rating, off_rating: game.home.off_rating, def_rating: game.home.def_rating, pace: game.home.pace, form: game.home.form, injuries: game.home.injuries },
+                  date: game.date,
+                  time: game.time,
+                  ...(game.away_score != null && game.home_score != null ? { score: { away: game.away_score, home: game.home_score } } : {}),
+                },
+              },
+            )}
+          >
+            Ask Dime about this matchup
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-export default function MatchupsView() {
+export default function MatchupsView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [data, setData] = useState<MatchupsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -283,7 +310,7 @@ export default function MatchupsView() {
         <h1 className="text-[15px] font-semibold text-ink">
           Matchups
           {data?.season && (
-            <span className="ml-2 shrink-0 rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[10.5px] font-normal uppercase tracking-wide text-ink-3">
+            <span className="ml-2 align-middle font-mono text-[10.5px] font-normal text-ink-3">
               {data.season}
             </span>
           )}
@@ -368,7 +395,7 @@ export default function MatchupsView() {
               })}
             </div>
             <div className="xl:sticky xl:top-6">
-              <MatchupDetail key={active.id} game={active} />
+              <MatchupDetail key={active.id} game={active} onAsk={onAsk} />
             </div>
           </div>
         </>

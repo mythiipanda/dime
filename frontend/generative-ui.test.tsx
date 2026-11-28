@@ -210,6 +210,13 @@ test("empty evidence tables retain their title and recovery", () => {
   dom.window.close();
 });
 
+test("table cells wrap at word boundaries rather than breaking names mid-word", () => {
+  const dom = new JSDOM(renderToStaticMarkup(<ArtifactTable title="Wrap fixture" columns={[{ key: "player", label: "Player" }]} rows={[["Jonas Valančiūnas"]]} />));
+  const cell = dom.window.document.querySelector("tbody td")! as HTMLElement;
+  assert.equal(cell.style.overflowWrap, "break-word");
+  dom.window.close();
+});
+
 test("visually hidden artifact announcements stay anchored to their local surface", () => {
   const dom = new JSDOM(renderToStaticMarkup(<ArtifactShell title="Fixture"><ArtifactTable title="Fixture records" columns={[{ key: "player", label: "Player" }]} rows={[["Player"]]} /></ArtifactShell>));
   const status = dom.window.document.querySelector('[role="status"]')!;
@@ -217,4 +224,180 @@ test("visually hidden artifact announcements stay anchored to their local surfac
   assert.ok(status.parentElement!.classList.contains("relative"));
   assert.ok(caption.closest("table")!.parentElement!.parentElement!.classList.contains("relative"));
   dom.window.close();
+});
+
+test("trade_verdict resolver accepts evaluator-shaped payloads and rejects malformed ones", () => {
+  const valid = {
+    kind: "trade_verdict", title: "Washington-for-Poeltl works", legal: true, sourceRef: "trade-src",
+    teams: [
+      { team: "DAL", playersOut: ["P.J. Washington"], playersIn: ["Jakob Poeltl"], outgoing: 19813044, incoming: 19500000, payrollBefore: 183593937, allowedIncoming: 28909044, matchRule: "standard TPE matching", tpeCreation: { amount: 313044, condition: "non-simultaneous only" } },
+      { team: "TOR", playersOut: ["Jakob Poeltl"], playersIn: ["P.J. Washington"], outgoing: 19500000, incoming: 19813044, hardCap: "first apron" },
+    ],
+    checks: [{ rule: "salary matching", note: "both sides within band" }],
+    evaluationTool: "get_trade_check",
+  };
+  const [resolved] = asResolvedArtifacts([valid]);
+  assert.equal(resolved.kind, "trade_verdict");
+  if (resolved.kind !== "trade_verdict") return;
+  assert.equal(resolved.legal, true);
+  assert.equal(resolved.teams.length, 2);
+  assert.equal(resolved.teams[0].tpeCreation?.amount, 313044);
+  for (const malformed of [
+    { ...valid, legal: "yes" },
+    { ...valid, legal: undefined },
+    { ...valid, sourceRef: "" },
+    { ...valid, teams: [] },
+    { ...valid, teams: [{ team: "DAL" }] },
+    { ...valid, teams: [{ ...valid.teams[0], outgoing: "big" }, valid.teams[1]] },
+    { ...valid, teams: [{ ...valid.teams[0], playersOut: "P.J. Washington" }, valid.teams[1]] },
+  ]) assert.deepEqual(asResolvedArtifacts([malformed]), []);
+});
+
+test("trade_verdict markup renders the verdict, salary math, issues and evaluator framing", async () => {
+  const { default: ArtifactTradeVerdict } = await import("./components/dime/ArtifactTradeVerdict");
+  const worstcase = (await import("./lib/worstcase-fixture")).worstcaseFixtures.find(a => a.kind === "trade_verdict");
+  assert.ok(worstcase && worstcase.kind === "trade_verdict");
+  const html = renderToStaticMarkup(<ArtifactTradeVerdict artifact={worstcase} />);
+  assert.match(html, /Illegal/);
+  assert.match(html, /Dikembe Mutombo Mpolondo Mukamba Jean-Jacques Wamutombo/);
+  assert.match(html, /\$18\.1M/);
+  assert.match(html, /\$57\.1M/);
+  assert.match(html, /takes back too much/);
+  assert.match(html, /trade exception/);
+  assert.match(html, /hard-cap/);
+  assert.match(html, /evaluator/);
+  const legal = renderToStaticMarkup(<ArtifactTradeVerdict artifact={{ ...worstcase, legal: true, issues: undefined }} />);
+  assert.match(legal, /Legal/);
+});
+
+test("trade_verdict copy text carries the verdict and per-team salary rows", () => {
+  const artifact = {
+    kind: "trade_verdict" as const, title: "t", legal: false, sourceRef: "s",
+    issues: ["takes back too much"],
+    teams: [{ team: "CHA", playersOut: ["Grayson Allen"], playersIn: ["Devin Booker"], outgoing: 18125000, incoming: 57078728, matchRule: "outgoing plus $9.096M" }],
+    checks: [{ rule: "salary matching", note: "exceeds band" }],
+  };
+  const csv = artifactToCopyText(artifact);
+  assert.match(csv, /Verdict,Illegal/);
+  assert.match(csv, /CHA,Grayson Allen,18125000,Devin Booker,57078728/);
+  assert.match(csv, /Issue,takes back too much/);
+  assert.match(csv, /Check,salary matching,exceeds band/);
+});
+
+test("worst-case trade verdict survives the replay stream reducer", async () => {
+  const previous = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: "development" });
+  try {
+    const stream = new DimeStream();
+    await replayStream("worstcase", { onEvent: (type, data) => stream.handle(type, data), onDone: () => stream.finish(), onError: message => assert.fail(message) });
+    const verdict = stream.snapshot().artifacts.find(a => a.kind === "trade_verdict");
+    assert.ok(verdict && verdict.kind === "trade_verdict");
+    assert.equal(verdict.legal, false);
+    assert.equal(verdict.teams.length, 2);
+  } finally { Object.assign(process.env, { NODE_ENV: previous }); }
+});
+
+test("cap_summary resolver accepts evaluator-shaped payloads and rejects malformed ones", () => {
+  const valid = {
+    kind: "cap_summary", title: "Vucevic signing fits", sourceRef: "cap-src", team: "MEM", season: "2031-32",
+    payrollBefore: 140089456, payrollAfter: 152089456, delta: 12000000,
+    capRoom: 85763787, capRoomBefore: 97763787, taxRoom: 136902789, roomApron1: 149284175, roomApron2: 167554181,
+    rosterBefore: 16, rosterAfter: 17,
+    issues: ["roster would be 17 players - must trim to 15"],
+    steps: [
+      { kind: "payroll", detail: "MEM committed payroll", delta: 0, payroll: 140089456 },
+      { kind: "signing", detail: "sign Nikola Vucevic", delta: 12000000, payroll: 152089456 },
+    ],
+    restrictions: [{ threshold: "second apron", rule: "aggregating salaries hard-caps the team" }],
+    evaluationTool: "get_cap_scenario",
+  };
+  const [resolved] = asResolvedArtifacts([valid]);
+  assert.equal(resolved.kind, "cap_summary");
+  if (resolved.kind !== "cap_summary") return;
+  assert.equal(resolved.team, "MEM");
+  assert.equal(resolved.payrollBefore, 140089456);
+  assert.equal(resolved.capRoom, 85763787);
+  assert.equal(resolved.steps?.length, 2);
+  assert.equal(resolved.restrictions?.length, 1);
+  for (const malformed of [
+    { ...valid, payrollBefore: "big" },
+    { ...valid, payrollAfter: undefined },
+    { ...valid, sourceRef: "" },
+    { ...valid, team: "" },
+    { ...valid, capRoom: "lots" },
+    { ...valid, steps: [{ detail: 3 }] },
+    { ...valid, restrictions: [{ threshold: "x" }] },
+  ]) assert.deepEqual(asResolvedArtifacts([malformed]), []);
+});
+
+test("cap_summary markup renders payroll movement, room rows, issues and restrictions", async () => {
+  const { default: ArtifactCapSummary } = await import("./components/dime/ArtifactCapSummary");
+  const worstcase = (await import("./lib/worstcase-fixture")).worstcaseFixtures.find(a => a.kind === "cap_summary");
+  assert.ok(worstcase && worstcase.kind === "cap_summary");
+  const html = renderToStaticMarkup(<ArtifactCapSummary artifact={worstcase} />);
+  assert.match(html, /PHX/);
+  assert.match(html, /Payroll/);
+  assert.match(html, /Cap room/);
+  assert.match(html, /Room under first apron/);
+  assert.match(html, /hard-cap/);
+  assert.match(html, /must trim to 15/);
+  assert.match(html, /over second apron/);
+  assert.match(html, /sign Nikola Jokić-Valančiūnas/);
+  assert.match(html, /second apron/);
+  assert.match(html, /Resolved server-side/);
+});
+
+test("cap_summary copy text carries payroll, room rows, steps and issues", () => {
+  const artifact = {
+    kind: "cap_summary" as const, title: "t", sourceRef: "s", team: "MEM",
+    payrollBefore: 140089456, payrollAfter: 152089456, delta: 12000000,
+    capRoom: 85763787, roomApron1: 149284175,
+    issues: ["roster would be 17 players - must trim to 15"],
+    steps: [{ kind: "signing", detail: "sign Nikola Vucevic", delta: 12000000, payroll: 152089456 }],
+    restrictions: [{ threshold: "second apron", rule: "no aggregation" }],
+  };
+  const csv = artifactToCopyText(artifact);
+  assert.match(csv, /Team,MEM/);
+  assert.match(csv, /Payroll Before,140089456,Payroll After,152089456,Delta,12000000/);
+  assert.match(csv, /Cap Room,85763787/);
+  assert.match(csv, /Step,sign Nikola Vucevic,12000000,152089456/);
+  assert.match(csv, /Issue,roster would be 17/);
+  assert.match(csv, /Restriction,second apron,no aggregation/);
+});
+
+test("worst-case cap summary survives the replay stream reducer", async () => {
+  const previous = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: "development" });
+  try {
+    const stream = new DimeStream();
+    await replayStream("worstcase", { onEvent: (type, data) => stream.handle(type, data), onDone: () => stream.finish(), onError: message => assert.fail(message) });
+    const card = stream.snapshot().artifacts.find(a => a.kind === "cap_summary");
+    assert.ok(card && card.kind === "cap_summary");
+    assert.equal(card.team, "PHX");
+    assert.equal(card.overApron2, true);
+  } finally { Object.assign(process.env, { NODE_ENV: previous }); }
+});
+
+test("trade_verdict picks parse, render and copy", async () => {
+  const { default: ArtifactTradeVerdict } = await import("./components/dime/ArtifactTradeVerdict");
+  const artifact = {
+    kind: "trade_verdict" as const, title: "t", legal: true, sourceRef: "s",
+    teams: [
+      { team: "DAL", playersOut: ["Daniel Gafford"], playersIn: ["Jalen Johnson"], picksOut: [{ year: 2028, round: 1, protection: "top-3" }, { year: 2029, round: 2, swap: true }], outgoing: 17263584, incoming: 30000000 },
+      { team: "ATL", playersOut: ["Jalen Johnson"], playersIn: ["Daniel Gafford"], picksIn: [{ year: 2028, round: 1, protection: "top-3" }], outgoing: 30000000, incoming: 17263584 },
+    ],
+  };
+  const [resolved] = asResolvedArtifacts([artifact]);
+  assert.equal(resolved.kind, "trade_verdict");
+  if (resolved.kind !== "trade_verdict") return;
+  assert.equal(resolved.teams[0].picksOut?.length, 2);
+  const html = renderToStaticMarkup(<ArtifactTradeVerdict artifact={resolved} />);
+  assert.match(html, /2028 1st \(top-3\)/);
+  assert.match(html, /2029 2nd swap/);
+  const csv = artifactToCopyText(resolved);
+  assert.match(csv, /2028 1st \(top-3\)/);
+  for (const malformed of [
+    { ...artifact, teams: [{ ...artifact.teams[0], picksOut: [{ year: "2028" }] }, artifact.teams[1]] },
+    { ...artifact, teams: [{ ...artifact.teams[0], picksOut: "none" }, artifact.teams[1]] },
+  ]) assert.deepEqual(asResolvedArtifacts([malformed]), []);
 });

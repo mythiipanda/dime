@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .._core import InvalidSeasonError, resolve_season
-from ._helpers import _owned_connection, _warehouse_tables
+from ._helpers import _owned_connection, _warehouse_tables, declare_money
 
 _TABLE = "silver_hist_salaries"
 _CAP_TABLE = "silver_cap_history"
@@ -60,15 +60,18 @@ def get_salary_history(
         if _TABLE not in _warehouse_tables(con):
             return _err("salary history is not seeded in this warehouse")
         try:
+            money = ["salary", "salary_cap", "min_salary", "median_salary",
+                     "max_salary", "total_salary", "luxury_tax", "apron_1",
+                     "apron_2", "payroll", "cap_room", "room_under_cap"]
             if player:
-                return _player_mode(con, player, season)
+                return declare_money(_player_mode(con, player, season), money)
             if team:
                 if not season:
                     return _err("team payroll mode needs a season")
-                return _team_mode(con, team, _norm_season(season), top)
+                return declare_money(_team_mode(con, team, _norm_season(season), top), money)
             if season:
-                return _league_mode(con, _norm_season(season), top)
-            return _cap_table_mode(con)
+                return declare_money(_league_mode(con, _norm_season(season), top), money)
+            return declare_money(_cap_table_mode(con), money)
         except InvalidSeasonError as exc:
             return _err(str(exc))
 

@@ -1,9 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ArrowUpRight, Copy, Download, Plus, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, Copy, Download, Plus, RefreshCw, Share2, X } from "lucide-react";
 import { resolvePlayers, rerunSql, type PlayerHit } from "../lib/api";
 import { fillBoardCells, getBoardMetrics, seedBoardRows } from "../lib/boards-api";
+import { boardShareToken, startBoardSync } from "../lib/board-objects";
+import { shareLink as objectShareLink } from "../lib/objects-client";
+import { MintedLink, copyToClipboard } from "./dime/MintedLink";
 import { addColumn, addRow, boardCsv, boardPrompt, boardTemplates, boardsArePersistent, duplicateBoard, getBoard, newBoard, removeColumn, removeRow, reorderColumns, reorderRows, saveBoard, sortByColumn, type Board, type BoardMetric, type BoardTemplate } from "../lib/boards";
 import { boardReportHtml, boardReportMarkdown, buildBoardReport, refreshBoardPins } from "../lib/board-report";
 import { BoardsTable } from "./BoardsTable";
@@ -50,7 +53,7 @@ function MetricPicker({ metrics, board, onAdd }: { metrics: BoardMetric[]; board
   </Dialog>;
 }
 
-export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null; onOpen: (id: string | null) => void; onAsk: (prompt: string) => void }) {
+export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null; onOpen: (id: string | null) => void; onAsk: (prompt: string, context?: import("../lib/view-context").ViewContext) => void }) {
   const [board, setBoard] = useState<Board | null>(null);
   const [metrics, setMetrics] = useState<BoardMetric[]>([]);
   const [catalogError, setCatalogError] = useState("");
@@ -119,27 +122,55 @@ export function BoardsPanel({ boardId, onOpen, onAsk }: { boardId: string | null
       }
     } finally { setExporting(false); }
   }
+  const [share, setShare] = useState<{ phase: "idle" } | { phase: "minting" } | { phase: "minted"; link: string; copied: boolean } | { phase: "error" }>({ phase: "idle" });
+  useEffect(() => { startBoardSync(); }, []);
+  useEffect(() => { setShare({ phase: "idle" }); }, [boardId]);
+  function mintBoardShare() {
+    const current = latest.current;
+    if (!current || share.phase === "minting") return;
+    setShare({ phase: "minting" });
+    boardShareToken(current)
+      .then((result) => {
+        if (!result) throw new Error("share failed");
+        setShare({ phase: "minted", link: objectShareLink(result.readToken), copied: false });
+      })
+      .catch(() => setShare({ phase: "error" }));
+  }
+  function copyBoardShareLink(link: string) {
+    copyToClipboard(link, () => setShare((current) => current.phase === "minted" ? { ...current, copied: true } : current));
+  }
   const notice = catalogError || error;
   if (!boardId) return <div className="workspace-page">
-    <PageHeader eyebrow="Your shortlist, with evidence" title="Boards" description="Compare players, inspect every source, and keep the work that moves a decision forward." actions={<Button variant="primary" onClick={() => create(boardTemplates[4])}><Plus size={14} />New board</Button>} />
+    <PageHeader title="Boards" actions={<Button variant="primary" onClick={() => create(boardTemplates[4])}><Plus size={14} />New board</Button>} />
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-medium">Start with a template</h2><StatusPill dot={false}>Warehouse-backed · No model required</StatusPill></div>
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{boardTemplates.map(template => <Panel key={template.id} title={template.title} description={template.summary}><p className="mb-5 text-xs text-ink-3">{template.seed ? `${template.seed.n} players · ${template.columns.length} metrics` : "An open canvas"}</p><Button size="sm" onClick={() => create(template)}>Use {template.title}<ArrowUpRight size={13} /></Button></Panel>)}</div>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{boardTemplates.map(template => <Panel key={template.id} title={template.title} description={template.summary}><p className="mb-5 text-xs text-ink-3">{template.seed ? `${template.seed.n} players · ${template.columns.length} metrics` : "An open canvas"}</p><Button size="sm" onClick={() => create(template)}>Use {template.title}</Button></Panel>)}</div>
     <SavedBoards onOpen={onOpen} />
     {notice && <p role="alert" className="mt-5 text-sm text-red">{notice}<Button size="sm" className="ml-3" onClick={() => setCatalogAttempt(value => value + 1)}>Retry</Button></p>}
-    <p className="mt-6 text-xs leading-relaxed text-ink-3">Saved in this browser. Missing data stays visible. CSV exports keep the source citations.</p>
+    <p className="mt-6 text-xs leading-relaxed text-ink-3">Backed up server-side as you edit. Edit access lives in this browser. Missing data stays visible. CSV exports keep the source citations.</p>
   </div>;
   if (!board) return <div className="workspace-page"><PageHeader eyebrow="Local research" title="Board not found" description="This board may have been deleted, or saved in another browser." actions={<Button onClick={() => onOpen(null)}>All boards</Button>} /></div>;
   return <div className="workspace-page">
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><Button size="sm" variant="quiet" onClick={() => onOpen(null)}><ArrowLeft size={14} />All boards</Button><StatusPill dot={false}>{boardsArePersistent() ? "Saved on this device" : "Storage unavailable · session only"}</StatusPill></div>
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><Button size="sm" variant="quiet" onClick={() => onOpen(null)}><ArrowLeft size={14} />All boards</Button><StatusPill dot={false}>{boardsArePersistent() ? "Synced server-side" : "Storage unavailable · session only"}</StatusPill></div>
     <PageHeader eyebrow="Player board" title={board.title} description={`${board.rows.length} players · ${board.columns.length} metrics · Evidence attached to every filled value`} />
     <div className="mb-6 flex flex-wrap items-end justify-between gap-5"><div className="w-full max-w-sm"><label htmlFor="board-title" className="mb-2 block text-xs text-ink-3">Board title</label><TextField id="board-title" value={titleDraft} maxLength={160} onChange={event => setTitleDraft(event.target.value)} onBlur={() => { const title = titleDraft.trim() || "Untitled board"; setTitleDraft(title); commit({ ...board, title }); }} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /></div>
       <div><p className="mb-2 text-xs text-ink-3">Season</p><SegmentedControl label="Board season" options={[...new Set([board.season, "2025-26", "2024-25", "2023-24"])]} value={board.season} onChange={season => { seedAbort.current?.abort(); setSeeding(false); setError(""); commit({ ...board, season, cells: {} }); }} /></div>
     </div>
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2"><AddPlayer board={board} onAdd={player => commit(addRow(board, { player_id: player.id, name: player.name, team: "" }))} /><MetricPicker metrics={metrics} board={board} onAdd={id => commit(addColumn(board, id))} /></div><div className="flex flex-wrap gap-2"><Button size="sm" loading={busy || seeding} onClick={refresh}><RefreshCw size={13} />Refresh</Button><Button size="sm" onClick={exportCsv}><Download size={13} />Export CSV</Button><Button size="sm" loading={exporting} onClick={() => void exportReport(false)}>Report (.md)</Button><Button size="sm" loading={exporting} onClick={() => void exportReport(true)}>Report (PDF)</Button><Button size="sm" onClick={() => onOpen(saveBoard(duplicateBoard(board)).id)}><Copy size={13} />Duplicate</Button></div></div>
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap gap-2"><AddPlayer board={board} onAdd={player => commit(addRow(board, { player_id: player.id, name: player.name, team: "" }))} /><MetricPicker metrics={metrics} board={board} onAdd={id => commit(addColumn(board, id))} /></div><div className="flex flex-wrap gap-2">{board.rows.length > 0 && board.columns.length > 0 && share.phase !== "minted" && <Button size="sm" loading={share.phase === "minting"} onClick={mintBoardShare}><Share2 size={13} />Share</Button>}<Button size="sm" loading={busy || seeding} onClick={refresh}><RefreshCw size={13} />Refresh</Button><Button size="sm" onClick={exportCsv}><Download size={13} />Export CSV</Button><Button size="sm" loading={exporting} onClick={() => void exportReport(false)}>Report (.md)</Button><Button size="sm" loading={exporting} onClick={() => void exportReport(true)}>Report (PDF)</Button><Button size="sm" onClick={() => onOpen(saveBoard(duplicateBoard(board)).id)}><Copy size={13} />Duplicate</Button></div></div>
+    {share.phase === "minted" && (
+      <div className="mb-5 max-w-xl">
+        <MintedLink
+          link={share.link}
+          copied={share.copied}
+          onCopy={copyBoardShareLink}
+          note="Live link minted; recipients see this board re-evaluated from the warehouse at open time. Edits you make here keep flowing to the same link."
+        />
+      </div>
+    )}
+    {share.phase === "error" && <p role="alert" className="mb-5 text-sm text-red">The share link could not be created. The board itself is unchanged. Try again.</p>}
     {notice && <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-red">{notice}{board.rows.length > 0 && " Cached values have not been refreshed."}</p><Button size="sm" onClick={() => catalogError ? setCatalogAttempt(value => value + 1) : refresh()}>Retry</Button></div>}
     {(busy || seeding) && <p role="status" className="mb-4 text-xs text-ink-3">{seeding ? "Finding the starting player pool…" : "Filling from the warehouse…"}</p>}
     {board.rows.length && board.columns.length ? <BoardsTable board={board} metrics={metrics} loading={busy} sort={sort} onSort={metric => { const best = sort?.id === metric.id ? !sort.best : true; setSort({ id: metric.id, best }); commit(sortByColumn(board, metric, best)); }} onRemoveRow={id => commit(removeRow(board, id))} onRemoveColumn={id => commit(removeColumn(board, id))} onMoveRow={(from, to) => { setSort(null); commit(reorderRows(board, from, to)); }} onMoveColumn={(from, to) => commit(reorderColumns(board, from, to))} /> : <Panel title={seeding ? "Building your starting pool" : !board.rows.length ? "Make room for a better decision." : "Choose what to compare."} description={!board.rows.length ? "Add a player, then choose your metrics. Dime fills the grid from the warehouse." : "Add a metric to see warehouse-backed values."}>{!seeding && !board.rows.length && template?.seed && <Button onClick={() => void populate(board, template)}>Populate template</Button>}</Panel>}
     <BoardPins board={board} onCommit={commit} />
-    <div className="mt-5 flex flex-wrap items-start justify-between gap-4"><p className="max-w-lg text-xs leading-relaxed text-ink-3">Click a value to inspect its source. Best marks the strongest rank in this board; defensive rating and salary favor lower values. Salary uses 2026–27 data.</p><Button onClick={() => onAsk(boardPrompt(board, metrics))}>Ask Dime about this board<ArrowUpRight size={13} /></Button></div>
+    <div className="mt-5 flex flex-wrap items-start justify-between gap-4"><p className="max-w-lg text-xs leading-relaxed text-ink-3">Click a value to inspect its source. Best marks the strongest rank in this board; defensive rating and salary favor lower values. Salary uses 2026–27 data.</p><Button onClick={() => onAsk(boardPrompt(board, metrics), { kind: "board", summary: `${board.title} · ${board.rows.length} players · ${board.columns.length} metrics`, entities: { title: board.title, season: board.season, players: board.rows.map((row) => ({ player_id: row.player_id, name: row.name })), metrics: board.columns.map((column) => column.metric_id) } })}>Ask Dime about this board</Button></div>
   </div>;
 }

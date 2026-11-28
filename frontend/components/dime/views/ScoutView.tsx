@@ -5,6 +5,7 @@ import { initialTeamParam } from "@/lib/open-in-view";
 import { apiPath } from "@/lib/api";
 import { DataState } from "@/components/ds/DataState";
 import { Skeleton } from "@/components/ds/Skeleton";
+import { Button } from "@/components/ds/Button";
 import { BACKEND } from "@/lib/chat";
 
 const TEAMS = [
@@ -42,7 +43,7 @@ function SectionShell({ title, source, error, children }: { title: string; sourc
         <Source name={source} />
       </div>
       {error ? (
-        <DataState tone="error" label={error} detail="This section is unavailable — no substitute data is shown." className="mt-3" />
+        <DataState tone="error" label={error} detail="This section is unavailable; no substitute data is shown." className="mt-3" />
       ) : (
         <div className="mt-3">{children}</div>
       )}
@@ -61,7 +62,7 @@ function pct1(v: number) {
   return `${(v * 100).toFixed(1)}%`;
 }
 
-export default function ScoutView() {
+export default function ScoutView({ onAsk }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void }) {
   const [team, setTeam] = useState(() => initialTeamParam() ?? "BOS");
   const [opponent, setOpponent] = useState(() => {
     const seeded = initialTeamParam();
@@ -126,6 +127,29 @@ export default function ScoutView() {
     <div className="mx-auto w-full max-w-[1120px] px-4 py-6 sm:px-8">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-[15px] font-semibold text-ink">Opponent prep</h1>
+        {onAsk && data && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onAsk(
+              `Prep me for ${team} vs ${opponent}: where is ${opponent} dangerous, where are they vulnerable, and what should ${team}'s game plan attack?`,
+              {
+                kind: "scout_dossier",
+                summary: `${team} vs ${opponent} opponent prep`,
+                entities: {
+                  team,
+                  opponent,
+                  ...(form?.last10_record ? { opponent_last10: form.last10_record } : {}),
+                  ...(h2h?.record ? { head_to_head: h2h.record } : {}),
+                  injuries: injuries.slice(0, 8),
+                  top_lineups: lineups.slice(0, 3),
+                },
+              },
+            )}
+          >
+            Ask Dime about this prep
+          </Button>
+        )}
         <div className="ml-auto flex items-center gap-1.5 text-[12.5px]">
           <label className="text-ink-3" htmlFor="scout-team">Our team</label>
           <select

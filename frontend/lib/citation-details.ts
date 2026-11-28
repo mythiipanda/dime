@@ -10,7 +10,7 @@ export function citationDetails(source: PiSource, anchor: AnchorSelector, prefix
   return {
     label: source.label,
     table: text(meta.table, source.label, source.tool) || "Not recorded",
-    season: text(meta.season, provenance.season, data.season) || "Not recorded",
+    season: text(meta.season, provenance.season, data.season, row?._season) || "Not recorded",
     origin: text(meta.source, provenance.origin, source.tool) || "Dime evidence",
     query: text(data.sql, meta.sql, meta.query, provenance.sql),
     count: source.rows.length,

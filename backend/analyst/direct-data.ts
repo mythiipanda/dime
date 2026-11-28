@@ -95,6 +95,9 @@ export type DirectOperations = {
     product_cap_scenario_eval: {
         payload: Record<string, unknown>;
     };
+    product_cap_projection: {
+        payload: Record<string, unknown>;
+    };
     product_scout_dossier: {
         team: string;
         opponent: string;
@@ -103,6 +106,7 @@ export type DirectOperations = {
     product_trade_legs: {
         legs: string;
         season: string;
+        tpes: string;
     };
     product_history_career: {
         player: string;

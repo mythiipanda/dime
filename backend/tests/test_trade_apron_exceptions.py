@@ -3,6 +3,15 @@ import json
 import duckdb
 import pytest
 
+STANDARD_MATCH_RULE = ("standard TPE matching: 100% of outgoing salary plus "
+                       "applicable cushion")
+AGGREGATED_STANDARD_MATCH_RULE = (
+    "aggregated standard TPE matching: 100% of aggregated outgoing salary "
+    "plus applicable cushion")
+DECLARED_TPE_MATCH_RULE = (
+    "declared TPE capacity: separate non-combined exception bin")
+CAP_ROOM_MATCH_RULE = "cap room plus outgoing salary plus $250k (under the cap)"
+
 
 def _seed(monkeypatch, tmp_path, salaries):
     from shared import store
@@ -87,8 +96,7 @@ def test_trade_check_dropping_below_first_apron_uses_post_trade_band(
     assert bos["over_apron1"] is False
     assert bos["room_apron1"] == 2_015_000
     assert bos["allowed_in"] == 39_096_000
-    assert bos["match_rule"] == (
-        "outgoing salary plus $9.096M (below the first apron)")
+    assert bos["match_rule"] == STANDARD_MATCH_RULE
 
 
 def test_trade_check_dropping_below_second_apron_clears_aggregation_ban(
@@ -137,6 +145,164 @@ def test_crossing_first_apron_uses_post_trade_strict_matching(monkeypatch, tmp_p
     assert any("BOS takes back too much" in issue for issue in out["issues"])
 
 
+def _standard_band_legality(monkeypatch, tmp_path, bos_payroll, incoming):
+    from shared.tools import get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", bos_payroll, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", incoming)]))
+    return get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+
+
+@pytest.mark.parametrize("incoming", [20_100_000, 20_250_000])
+def test_standard_tpe_band_is_legal_without_hard_cap(
+        monkeypatch, tmp_path, incoming):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 195_000_000, incoming)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 195_000_000 - 20_000_000 + incoming
+    assert row["matching_structure"] == "standard_simultaneous"
+    assert row["matching_mechanisms"] == ["standard_simultaneous"]
+    assert row["expanded_required"] is False
+    assert row["hard_cap"] == ""
+    assert row["allowed_incoming"] == 29_096_000
+    assert row["match_rule"] == STANDARD_MATCH_RULE
+    assert "$9.096M" not in row["match_rule"]
+    assert "standard TPE" in row["matching_note"]
+    assert "no expanded TPE" in row["matching_note"]
+    salary_note = next(check["note"] for check in out["checks"]
+                       if check["rule"] == "salary matching")
+    assert f"BOS {STANDARD_MATCH_RULE}" in salary_note
+
+
+def test_standard_tpe_exact_boundary_plus_one_requires_expanded(
+        monkeypatch, tmp_path):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 195_000_000, 20_250_001)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 195_250_001
+    assert row["matching_structure"] == "expanded"
+    assert row["matching_mechanisms"] == ["expanded"]
+    assert row["expanded_required"] is True
+    assert row["hard_cap"] == "first apron"
+    assert row["hard_cap_violations"] == []
+
+
+def test_above_first_apron_surplus_is_prohibited_expanded_use(
+        monkeypatch, tmp_path):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 209_000_000, 20_100_000)
+    assert out["ok"] is True
+    assert out["legal"] is False
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 209_100_000
+    assert row["matching_structure"] == "expanded"
+    assert row["matching_mechanisms"] == ["expanded"]
+    assert row["expanded_required"] is True
+    assert row["matching_note"]
+    assert row["hard_cap"] == "first apron"
+    assert row["hard_cap_violations"] == ["first apron"]
+    assert any("cannot use the Expanded Traded Player Exception" in issue
+               and "transaction is prohibited" in issue
+               for issue in out["issues"])
+
+
+def test_above_first_apron_exact_standard_match_is_legal_without_hard_cap(
+        monkeypatch, tmp_path):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 209_100_000, 20_000_000)
+    assert out["ok"] is True
+    assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["payroll_after"] == 209_100_000
+    assert row["over_apron1"] is True
+    assert row["matching_structure"] == "standard_simultaneous"
+    assert row["expanded_required"] is False
+    assert row["hard_cap"] == ""
+
+
+def _standard_band_check(monkeypatch, tmp_path, bos_payroll, incoming):
+    from shared.tools import get_trade_check
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", bos_payroll, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", incoming)]))
+    return get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One",
+        "team_b": "MIA", "players_b": "Beta Two",
+        "season": "2026-27",
+    })
+
+
+@pytest.mark.parametrize(
+    "payroll,incoming,legal,structure,expanded,hard_cap",
+    [
+        (195_000_000, 20_100_000, True, "standard_simultaneous", False, ""),
+        (195_000_000, 20_250_000, True, "standard_simultaneous", False, ""),
+        (195_000_000, 20_250_001, True, "expanded", True, "first apron"),
+        (209_000_000, 20_100_000, False, "expanded", True, "first apron"),
+        (209_100_000, 20_000_000, True, "standard_simultaneous", False, ""),
+    ])
+def test_trade_check_standard_tpe_band_vectors(
+        monkeypatch, tmp_path, payroll, incoming, legal, structure,
+        expanded, hard_cap):
+    out = _standard_band_check(monkeypatch, tmp_path, payroll, incoming)
+    assert out["ok"] is True
+    assert out["rows"]["legal"] is legal, out["rows"]["issues"]
+    row = out["rows"]["team_a"]
+    assert row["payroll"] == payroll
+    assert row["matching_structure"] == structure
+    assert row["matching_mechanisms"] == [structure]
+    assert row["expanded_required"] is expanded
+    assert row["hard_cap"] == hard_cap
+    if structure == "standard_simultaneous":
+        assert row["match_rule"] == STANDARD_MATCH_RULE
+        assert "$9.096M" not in row["match_rule"]
+    if payroll == 195_000_000 and structure == "expanded":
+        assert row["match_rule"] == (
+            "outgoing salary plus $9.096M (below the first apron)")
+    assert out["meta"]["salary_basis"] == (
+        "approximate_salary_ledger_not_exact_apron_team_salary")
+
+
+def test_trade_legality_meta_discloses_payroll_proxy(monkeypatch, tmp_path):
+    out = _standard_band_legality(
+        monkeypatch, tmp_path, 195_000_000, 20_100_000)
+    assert out["ok"] is True
+    meta = out["meta"]
+    assert meta["salary_basis"] == (
+        "approximate_salary_ledger_not_exact_apron_team_salary")
+    assert meta["ats_exact"] is False
+    assert meta["ats_missing_inputs"] == [
+        "performance_bonus_amounts_and_likelihood",
+        "contract_component_and_protection_allocations",
+        "actual_dead_money_and_stretch_elections",
+        "rfa_offer_sheet_required_tender_and_free_agent_state",
+        "exception_inventory_and_usage",
+        "contract_subtype_timing_flags",
+        "official_team_salary_reconciliation",
+    ]
+    assert meta["payroll_proxy_disclosure"] == (
+        "Approximation, not exact Apron Team Salary: this result uses the "
+        "warehouse salary ledger of listed player salaries only. It does not "
+        "calculate exact ATS because performance bonuses (including unlikely "
+        "bonuses counted for apron purposes), waived/stretched dead money, "
+        "retired-player or grievance amounts, minimum-contract apron adjustments, "
+        "restricted free-agent/offer-sheet/required-tender amounts, exception "
+        "bookkeeping, two-way/conversion status, and offseason next-year "
+        "assumptions are missing or estimated. Apron room, hard-cap, and TPE "
+        "conclusions are screening estimates and can be wrong near either apron; "
+        "do not represent this as a final CBA legality determination.")
+
+
 def test_expanded_matching_below_first_apron_is_legal_hard_cap_trigger(
         monkeypatch, tmp_path):
     from shared.tools import get_trade_legality
@@ -174,8 +340,8 @@ def test_expanded_matching_cannot_finish_above_first_apron(
     row = _team_rows(out)["BOS"]
     assert row["payroll_after"] == 210_000_000
     assert row["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
-               and "expanded salary matching" in issue
+    assert any("cannot use the Expanded Traded Player Exception" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
 
 
@@ -239,8 +405,8 @@ def test_trade_check_expanded_matching_over_first_apron_issue(
     rows = out["rows"]
     assert rows["legal"] is False
     assert rows["team_a"]["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
-               and "expanded salary matching" in issue
+    assert any("cannot use the Expanded Traded Player Exception" in issue
+               and "transaction is prohibited" in issue
                for issue in rows["issues"])
 
 
@@ -260,6 +426,98 @@ def test_trade_check_cap_room_absorption_is_not_expanded_matching(
     rows = out["rows"]
     assert rows["legal"] is True, rows["issues"]
     assert rows["team_a"]["hard_cap"] == ""
+
+
+def test_below_cap_absorption_elects_cap_room_before_standard(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario, get_trade_check, get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 150_000_000, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 180_000_000, [("Beta Two", 20_100_000)]))
+    legality = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA","players":"Alpha One"},'
+                '{"from":"MIA","to":"BOS","players":"Beta Two"}]',
+        "season": "2026-27",
+    })
+    check = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One",
+        "team_b": "MIA", "players_b": "Beta Two",
+        "season": "2026-27",
+    })
+    scenario = get_cap_scenario.invoke({
+        "team": "BOS", "trade_out_players": "Alpha One",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert legality["ok"] is True
+    assert legality["legal"] is True, legality["issues"]
+    assert check["ok"] is True
+    assert check["rows"]["legal"] is True, check["rows"]["issues"]
+    assert scenario["ok"] is True
+    legality_row = _team_rows(legality)["BOS"]
+    check_row = check["rows"]["team_a"]
+    scenario_matching = scenario["matching"]
+    for elected in (legality_row, check_row, scenario_matching):
+        assert elected["matching_structure"] == "cap_room"
+        assert elected["matching_mechanisms"] == ["cap_room"]
+        assert elected["expanded_required"] is False
+        assert elected["match_rule"] == CAP_ROOM_MATCH_RULE
+    assert legality_row["allowed_incoming"] == 35_211_000
+    assert check_row["allowed_in"] == 35_211_000
+    assert scenario_matching["allowed_incoming"] == 35_211_000
+
+
+@pytest.mark.parametrize("incoming", [1, 250_000, 250_001])
+def test_trade_legality_zero_outgoing_without_room_rejects_small_incoming(
+        monkeypatch, tmp_path, incoming):
+    from shared.tools import get_trade_legality
+
+    rows = [("Tiny One", "MIA", incoming)]
+    rows += [(f"BOS Filler {index}", "BOS", 20_000_000)
+             for index in range(10)]
+    rows += [(f"MIA Filler {index}", "MIA", 15_000_000)
+             for index in range(10)]
+    _seed(monkeypatch, tmp_path, rows)
+    out = get_trade_legality.invoke({
+        "legs": '[{"from":"MIA","to":"BOS","players":"Tiny One"},'
+                '{"from":"BOS","to":"MIA",'
+                '"picks":[{"year":2028,"round":2}]}]',
+        "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["legal"] is False
+    row = _team_rows(out)["BOS"]
+    case = f"incoming={incoming!r} row={row!r} issues={out['issues']!r}"
+    assert row["payroll_before"] == 200_000_000, case
+    assert row["outgoing"] == 0, case
+    assert row["incoming"] == incoming, case
+    assert row["allowed_incoming"] == 0, case
+    assert row["matching_ok"] is False, case
+    assert row["matching_structure"] == "no_available_structure", case
+    assert any(" vs $0 allowed under " in issue
+               for issue in out["issues"]), case
+
+
+def test_cap_scenario_standard_match_rule_describes_selected_mechanism(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 195_000_000, [("Alpha One", 20_000_000)])
+          + _roster("MIA", 150_000_000, [("Beta Two", 20_100_000)]))
+    out = get_cap_scenario.invoke({
+        "team": "BOS", "trade_out_players": "Alpha One",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    matching = out["matching"]
+    assert matching["legal"] is True
+    assert matching["matching_structure"] == "standard_simultaneous"
+    assert matching["matching_mechanisms"] == ["standard_simultaneous"]
+    assert matching["expanded_required"] is False
+    assert matching["allowed_incoming"] == 29_096_000
+    assert matching["match_rule"] == STANDARD_MATCH_RULE
+    assert "$9.096M" not in matching["match_rule"]
 
 
 def test_cap_scenario_expanded_matching_surfaces_first_apron_hard_cap(
@@ -293,8 +551,8 @@ def test_cap_scenario_expanded_matching_cannot_finish_above_first_apron(
     assert out["ok"] is True
     assert out["summary"]["payroll_after"] == 210_000_000
     assert out["summary"]["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
-               and "expanded salary matching" in issue
+    assert any("cannot use the Expanded Traded Player Exception" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
 
 
@@ -359,6 +617,55 @@ def test_aggregation_below_second_apron_is_legal_hard_cap_trigger(
     assert rows["BOS"]["hard_cap"] == "second apron"
     assert rows["BOS"]["matching_ok"] is True
     assert rows["MIA"]["matching_ok"] is True
+
+
+def test_aggregated_standard_probe_match_rule_consistent_across_consumers(
+        monkeypatch, tmp_path):
+    from shared.tools import get_cap_scenario, get_trade_check, get_trade_legality
+
+    _seed(monkeypatch, tmp_path,
+          _roster("BOS", 190_000_000,
+                  [("Alpha One", 15_000_000), ("Beta Two", 15_000_000)])
+          + _roster("MIA", 150_000_000, [("Gamma Three", 30_100_000)]))
+    legality = get_trade_legality.invoke({
+        "legs": '[{"from":"BOS","to":"MIA",'
+                '"players":"Alpha One, Beta Two"},'
+                '{"from":"MIA","to":"BOS","players":"Gamma Three"}]',
+        "season": "2026-27",
+    })
+    check = get_trade_check.invoke({
+        "team_a": "BOS", "players_a": "Alpha One, Beta Two",
+        "team_b": "MIA", "players_b": "Gamma Three",
+        "season": "2026-27",
+    })
+    scenario = get_cap_scenario.invoke({
+        "team": "BOS", "trade_out_players": "Alpha One, Beta Two",
+        "in_players": "Gamma Three", "season": "2026-27",
+    })
+    assert legality["ok"] is True
+    assert legality["legal"] is True, legality["issues"]
+    assert check["ok"] is True
+    assert check["rows"]["legal"] is True, check["rows"]["issues"]
+    assert scenario["ok"] is True
+
+    legality_row = _team_rows(legality)["BOS"]
+    check_row = check["rows"]["team_a"]
+    scenario_matching = scenario["matching"]
+    for elected in (legality_row, check_row, scenario_matching):
+        assert elected["matching_structure"] == "aggregated_standard"
+        assert elected["matching_mechanisms"] == ["aggregated_standard"]
+        assert elected["match_rule"] == AGGREGATED_STANDARD_MATCH_RULE
+        assert "aggregated standard TPE" in elected["match_rule"]
+        assert "$9.096M" not in elected["match_rule"]
+        assert "expanded" not in elected["match_rule"].lower()
+    assert legality_row["allowed_incoming"] == 39_096_000
+    assert check_row["allowed_in"] == 39_096_000
+    assert scenario_matching["allowed_incoming"] == 39_096_000
+    salary_note = next(item["note"] for item in legality["checks"]
+                       if item["rule"] == "salary matching")
+    assert f"BOS {AGGREGATED_STANDARD_MATCH_RULE}" in salary_note
+    assert "$9.096M" not in salary_note
+    assert "expanded" not in salary_note.lower()
 
 
 def test_second_apron_receiver_multiple_incoming_is_not_aggregation(
@@ -456,7 +763,8 @@ def test_sign_and_trade_receiver_cannot_finish_above_first_apron(
     assert rows["MIA"]["matching_ok"] is True
     assert rows["MIA"]["payroll_after"] == 215_000_000
     assert rows["MIA"]["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
+    assert any("cannot use a sign-and-trade acquisition" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
     assert not any("takes back too much" in issue for issue in out["issues"])
 
@@ -480,7 +788,8 @@ def test_second_apron_cash_is_rejected(monkeypatch, tmp_path):
     assert rows["BOS"]["cash_out"] == 1_000_000
     assert any("cannot send cash above the second apron" in issue
                for issue in out["issues"])
-    assert any("hard-capped at the second apron" in issue
+    assert any("cannot use cash in a trade" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
 
 
@@ -527,8 +836,8 @@ def test_prior_year_ordinary_tpe_hard_caps_at_first_apron(
     assert row["over_apron1"] is True
     assert row["over_apron2"] is False
     assert row["hard_cap"] == "first apron"
-    assert any("hard-capped at the first apron" in issue
-               and "traded player exception" in issue
+    assert any("cannot use the prior-year traded player exception" in issue
+               and "transaction is prohibited" in issue
                for issue in out["issues"])
 
 
@@ -604,6 +913,13 @@ def test_tpe_absorbs_to_amount_plus_cushion(monkeypatch, tmp_path):
     })
     assert out["ok"] is True
     assert out["legal"] is True, out["issues"]
+    row = _team_rows(out)["BOS"]
+    assert row["matching_structure"] == "declared_tpe"
+    assert row["matching_mechanisms"] == ["declared_tpe"]
+    assert row["match_rule"] == DECLARED_TPE_MATCH_RULE
+    assert "$9.096M" not in row["match_rule"]
+    assert "200%" not in row["match_rule"]
+    assert "expanded" not in row["match_rule"].lower()
 
 
 def test_tpe_amount_cap_rejects_salary_above_cushion(monkeypatch, tmp_path):
@@ -732,6 +1048,13 @@ def test_matching_plus_one_tpe_covers_disjoint_review_shape(
     row = _team_rows(out)["BOS"]
     assert row["allowed_incoming"] == 14_000_000
     assert row["matching_ok"] is True
+    assert row["matching_structure"] == "standard_simultaneous+declared_tpe"
+    assert row["matching_mechanisms"] == [
+        "standard_simultaneous", "declared_tpe"]
+    assert row["match_rule"] == STANDARD_MATCH_RULE
+    assert "$9.096M" not in row["match_rule"]
+    assert "expanded" not in row["match_rule"].lower()
+    assert "separate non-combined capacity bins" in row["matching_note"]
 
 
 def test_prior_year_sign_and_trade_tpe_keeps_first_apron_timing(
@@ -1079,9 +1402,86 @@ def test_cap_scenario_dropping_below_first_apron_uses_post_move_band(
     assert out["summary"]["payroll_after"] == 207_000_000
     assert out["summary"]["over_apron1"] is False
     assert out["matching"]["allowed_incoming"] == 39_096_000
-    assert out["matching"]["match_rule"] == (
-        "outgoing salary plus $9.096M (below the first apron)")
+    assert out["matching"]["match_rule"] == STANDARD_MATCH_RULE
     assert out["matching"]["legal"] is True
+
+
+def _split_even(total):
+    high = total // 2 + total % 2
+    return high, total - high
+
+
+def _boundary_seed_rows(payroll, outgoing_stars, incoming_stars, anchor_count):
+    anchors = [(f"Anchor {index}", 1_000_000)
+               for index in range(4, 4 + anchor_count)]
+    return (_roster("PHX", payroll, outgoing_stars + anchors)
+            + _roster("MIA", 150_000_000, incoming_stars))
+
+
+@pytest.mark.parametrize("offset", [-1, 0, 1])
+def test_cap_scenario_multiple_incoming_second_apron_boundary_not_aggregation(
+        monkeypatch, tmp_path, offset):
+    from shared.tools import get_cap_scenario
+    from shared.tools.cap_rules import CAP
+
+    payroll = CAP["apron2"] + offset
+    outgoing = 30_000_000 + offset
+    first_in, second_in = _split_even(outgoing)
+    _seed(monkeypatch, tmp_path,
+          _boundary_seed_rows(
+              payroll, [("Alpha One", outgoing)],
+              [("Beta Two", first_in), ("Gamma Three", second_in)], 3))
+    out = get_cap_scenario.invoke({
+        "team": "PHX", "trade_out_players": "Alpha One",
+        "in_players": "Beta Two, Gamma Three", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == payroll
+    assert out["summary"]["room_apron2"] == -offset
+    assert out["summary"]["over_apron2"] == (offset == 1)
+    assert out["summary"]["hard_cap"] == ""
+    assert out["matching"]["incoming"] == outgoing
+    assert out["matching"]["outgoing"] == outgoing
+    assert out["matching"]["legal"] is True
+    assert not any("aggregate" in issue or "aggregation" in issue
+                   for issue in out["issues"])
+
+
+@pytest.mark.parametrize(
+    "offset,legal,match_rule",
+    [(-1, True, AGGREGATED_STANDARD_MATCH_RULE),
+     (0, True, AGGREGATED_STANDARD_MATCH_RULE),
+     (1, False, "no aggregation (above the second apron)")])
+def test_cap_scenario_multiple_outgoing_second_apron_boundary_aggregates(
+        monkeypatch, tmp_path, offset, legal, match_rule):
+    from shared.tools import get_cap_scenario
+    from shared.tools.cap_rules import CAP
+
+    payroll = CAP["apron2"] + offset
+    outgoing = 30_000_000 + offset
+    first_out, second_out = _split_even(outgoing)
+    _seed(monkeypatch, tmp_path,
+          _boundary_seed_rows(
+              payroll,
+              [("Alpha One", first_out), ("Delta Four", second_out)],
+              [("Beta Two", outgoing)], 4))
+    out = get_cap_scenario.invoke({
+        "team": "PHX", "trade_out_players": "Alpha One, Delta Four",
+        "in_players": "Beta Two", "season": "2026-27",
+    })
+    assert out["ok"] is True
+    assert out["summary"]["payroll_after"] == payroll
+    assert out["summary"]["room_apron2"] == -offset
+    assert out["summary"]["over_apron2"] == (offset == 1)
+    assert out["summary"]["hard_cap"] == "second apron"
+    assert out["matching"]["incoming"] == outgoing
+    assert out["matching"]["outgoing"] == outgoing
+    assert out["matching"]["legal"] is legal
+    assert out["matching"]["match_rule"] == match_rule
+    assert out["matching"]["allowed_incoming"] == (outgoing if legal else 0)
+    aggregation_ban = any("cannot aggregate salaries above the second apron"
+                          in issue for issue in out["issues"])
+    assert aggregation_ban is (offset == 1)
 
 
 def test_cap_scenario_second_apron_receiver_multiple_incoming_is_not_aggregation(
@@ -1104,7 +1504,7 @@ def test_cap_scenario_second_apron_receiver_multiple_incoming_is_not_aggregation
     assert out["summary"]["payroll_after"] == 230_000_000
     assert out["summary"]["over_apron2"] is True
     assert out["matching"]["allowed_incoming"] == 30_000_000
-    assert out["matching"]["match_rule"] == "100% (above the first apron)"
+    assert out["matching"]["match_rule"] == STANDARD_MATCH_RULE
     assert out["matching"]["legal"] is True
     assert not any("aggregate" in issue or "aggregation" in issue
                    for issue in out["issues"])

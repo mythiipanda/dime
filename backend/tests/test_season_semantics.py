@@ -608,3 +608,58 @@ def test_unknown_encoded_season_column_points_at_season_label_on_same_table():
     assert sem is not None
     assert sem.get("ambiguous") is True
     assert "`_season` on the same table carries the season" in sem["note"]
+
+
+def test_join_output_in_single_table_unit_propagates():
+    from shared.tools.season_semantics import annotate_result
+    result = annotate_result({
+        "sql": "SELECT s.PLAYER_NAME, s.SALARY, g.PTS FROM silver_salaries s JOIN silver_gamelogs g ON s.PLAYER_ID = g.PLAYER_ID",
+        "columns": ["PLAYER_NAME", "SALARY", "PTS"],
+        "rows": [{"PLAYER_NAME": "Alpha", "SALARY": 1000, "PTS": 20}],
+        "meta": {"tables": ["silver_salaries", "silver_gamelogs"]},
+    }, {"tables": {
+        "silver_salaries": {"PLAYER_NAME": {"unit": "", "note": ""}, "SALARY": {"unit": "usd_dollars", "note": ""}},
+        "silver_gamelogs": {"PTS": {"unit": "total_points", "note": ""}},
+    }})
+    declared = result["declared_column_semantics"]
+    assert declared.get("SALARY", {}).get("unit") == "usd_dollars"
+    assert declared.get("PTS", {}).get("unit") == "total_points"
+
+
+def test_join_output_column_in_two_tables_with_same_unit_propagates():
+    from shared.tools.season_semantics import annotate_result
+    result = annotate_result({
+        "sql": "SELECT a.SALARY FROM silver_salaries a JOIN silver_hist_salaries b ON a.PLAYER_NAME = b.PLAYER_NAME",
+        "columns": ["SALARY"],
+        "rows": [{"SALARY": 1000}],
+        "meta": {"tables": ["silver_salaries", "silver_hist_salaries"]},
+    }, {"tables": {
+        "silver_salaries": {"SALARY": {"unit": "usd_dollars", "note": ""}},
+        "silver_hist_salaries": {"SALARY": {"unit": "usd_dollars", "note": ""}},
+    }})
+    assert result["declared_column_semantics"].get("SALARY", {}).get("unit") == "usd_dollars"
+
+
+def test_join_output_column_in_two_tables_with_divergent_units_stays_undeclared():
+    from shared.tools.season_semantics import annotate_result
+    result = annotate_result({
+        "sql": "SELECT a.AMOUNT FROM offers a JOIN cap_holds b ON a.id = b.id",
+        "columns": ["AMOUNT"],
+        "rows": [{"AMOUNT": 1000}],
+        "meta": {"tables": ["offers", "cap_holds"]},
+    }, {"tables": {
+        "offers": {"AMOUNT": {"unit": "usd_dollars", "note": ""}},
+        "cap_holds": {"AMOUNT": {"unit": "usd_millions", "note": ""}},
+    }})
+    assert "AMOUNT" not in result["declared_column_semantics"]
+
+
+def test_single_table_behavior_unchanged_by_join_fallback():
+    from shared.tools.season_semantics import annotate_result
+    result = annotate_result({
+        "sql": "SELECT PTS FROM rates",
+        "columns": ["PTS"],
+        "rows": [{"PTS": 11.8}],
+        "meta": {"tables": ["rates"]},
+    }, {"tables": {"rates": {"PTS": {"unit": "points_per_game", "note": ""}}}})
+    assert result["declared_column_semantics"].get("PTS", {}).get("unit") == "points_per_game"

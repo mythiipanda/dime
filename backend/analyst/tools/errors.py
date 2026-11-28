@@ -109,6 +109,8 @@ def _recovery_guidance(tool_name: str, error_text: str) -> tuple[str, list[str]]
 def enrich_error(tool_name: str, res: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(res, dict) or res.get("ok"):
         return res
+    if res.get("ok") is not False and not res.get("error"):
+        return res
     name = str(res.get("tool") or tool_name)
     res.setdefault("tool", name)
     error_text = str(res.get("error") or f"{name} failed")

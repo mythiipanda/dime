@@ -79,7 +79,7 @@ export default function ArtifactTable<T extends (string | number | null)[]>({
         <Button size="icon" variant="quiet" aria-label="Scroll table right" disabled={!scroll.right} onClick={() => scrollColumns(1)}><ArrowRight size={14} aria-hidden="true" /></Button>
       </div>
     </div>}
-    <div ref={regionRef} onScroll={measureScroll} role="region" aria-label={`${title} records`} aria-describedby={scroll.left || scroll.right ? hintId : undefined} tabIndex={0} className="max-h-[420px] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-ink">
+    <div ref={regionRef} onScroll={measureScroll} role="region" aria-label={`${title} records`} aria-describedby={scroll.left || scroll.right ? hintId : undefined} tabIndex={0} className="max-h-[420px] overflow-auto overscroll-contain focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent">
     <table className="w-full text-[13px]">
       <caption className="sr-only">{title}</caption>
       <thead className="sticky top-0 z-10 bg-surface">
@@ -109,7 +109,7 @@ export default function ArtifactTable<T extends (string | number | null)[]>({
                 className={`${i === 0 ? "pl-4" : "pl-3"} ${i === columns.length - 1 ? "pr-4" : "pr-3"} ${
                   c.numeric ? "text-right tabular-nums" : ""
                 }`}
-                style={{ overflowWrap: "anywhere", minWidth: 64 }}
+                style={{ overflowWrap: "break-word", minWidth: 64 }}
               >
                 {cell(row, i)}
               </td>

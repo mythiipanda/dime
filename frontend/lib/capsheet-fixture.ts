@@ -7,7 +7,7 @@ export type CapYear = {
 
 export type CapPlayer = {
   player: string;
-  player_id: number;
+  player_id: number | null;
   contract_type: string;
   years: CapYear[];
 };
@@ -44,15 +44,38 @@ export type CapSheetResponse = {
   error?: string;
 };
 
+export type SigningExceptionState = {
+  ntmle_used?: number;
+  tmle_used?: number;
+  bae_used?: number;
+  room_used?: number;
+  bae_used_prior_cap_year?: boolean;
+  operating_mode?: string;
+};
+
 export type ScenarioMove = {
-  kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision";
+  kind: "signing" | "trade_in" | "trade_out" | "waive" | "option_decision" | "extend" | "renounce";
   label?: string;
   amount?: number;
   player?: string;
   season?: string;
   exercise?: boolean;
   stretch?: boolean;
+  years?: number;
+  mechanism?: string;
+  unlikely_bonus?: number;
+  years_of_service?: number;
+  prior_salary?: number;
+  signing_date?: string;
+  prior_team?: string;
+  free_agent_status?: string;
+  replaces_cap_hold?: boolean;
+  salary_schedule?: number[];
+  exception_state?: SigningExceptionState;
   from?: string;
+  exception?: "cap_room" | "mle" | "bae" | "minimum" | "bird";
+  first_year_amount?: number;
+  group?: string;
 };
 
 export type ScenarioResponse = {
@@ -79,12 +102,51 @@ export type ScenarioResponse = {
   state: { over_tax: boolean; over_apron1: boolean; over_apron2: boolean; room_under_apron2?: number };
   restrictions: { threshold: string; status: string; rule: string }[];
   roster_issues: string[];
+  lines_projected?: boolean;
+  hard_cap?: string;
+  active_hard_caps?: string[];
+  hard_cap_triggers?: { transaction: string; move_index: number; apron: string; status: "active" | "prohibited" }[];
+  would_be_hard_cap_triggers?: { transaction: string; move_index: number; apron: string; status: "active" | "prohibited" }[];
+  signing_exception_state?: SigningExceptionState;
+  includes_illegal_moves?: boolean;
+  illegal_move_indices?: number[];
+  includes_unvalidated_moves?: boolean;
+  unvalidated_move_indices?: number[];
   errors: (string | { move: string; error: string })[];
   meta?: {
     waiver_basis?: string;
     waiver_timing?: { window: "pre_sep1" | "post_sep1"; date: string | null; defaulted: boolean };
+    illegal_move_state_disclosure?: string;
+    sign_and_trade_scope?: string;
   };
 };
+
+export function shortSeason(season: string): string {
+  return `\u2019${season.slice(5)}`;
+}
+
+export function moneyMillions(value: number | null | undefined): string {
+  if (value == null) return "\u2013";
+  const sign = value < 0 ? "\u2212" : "";
+  return `${sign}$${(Math.abs(value) / 1e6).toFixed(1)}M`;
+}
+
+export function describeScenarioMove(move: ScenarioMove): string {
+  switch (move.kind) {
+    case "signing":
+      return `sign ${move.label} (${moneyMillions(move.amount)})`;
+    case "option_decision":
+      return `${move.exercise ? "exercise" : "decline"} ${move.player} ${shortSeason(move.season ?? "")} option`;
+    case "waive":
+      return `waive ${move.player}${move.stretch ? " (stretch)" : ""}`;
+    case "trade_out":
+      return `trade out ${move.player}`;
+    case "trade_in":
+      return `trade in ${move.player}`;
+    default:
+      return `${move.kind} ${move.player ?? move.label ?? ""}`.trim();
+  }
+}
 
 const SEASONS = ["2026-27", "2027-28", "2028-29", "2029-30", "2030-31", "2031-32"];
 
@@ -98,7 +160,7 @@ function linesFor(index: number): CapLines {
 
 function player(
   player: string,
-  player_id: number,
+  player_id: number | null,
   contract_type: string,
   base: number,
   options: ("player" | "team" | null)[],
@@ -127,6 +189,8 @@ export const capSheetFixture: CapSheetResponse = {
     player("Derrick White", 1628401, "Veteran Extension", 28100000, [null, null, null, null, null, null]),
     player("Sam Hauser", 1630573, "Veteran Extension", 10044772, [null, null, null, "team", null, null]),
     player("Payton Pritchard", 1630202, "Rookie Extension", 7232014, [null, null, null, null, null, null]),
+    player("Camp Signing One", null, "Exhibit 10", 1275000, [null, null, null, null, null, null]),
+    player("Camp Signing Two", null, "Exhibit 10", 1275000, [null, null, null, null, null, null]),
     player("Neemias Queta", 1629674, "Minimum", 2524525, [null, "team", null, null, null, null]),
   ],
   totals: Object.fromEntries(

@@ -3,6 +3,7 @@ import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID } from "node:crypto";
 import { Type, type Static } from "typebox";
+import { viewContextSchema, withViewContext, type ViewContext } from "./view-context.js";
 import { Value } from "typebox/value";
 import { createPiExecution, type AnalystEvent } from "./pi-execution.js";
 import { ProductStore, type Identity } from "./product-store.js";
@@ -16,7 +17,7 @@ const MAX_HISTORY_ITEMS = 24;
 const optionalText = (max: number) => Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: max, pattern: "\\S" }), Type.Null()]));
 export const analystRequestSchema = Type.Object({
     q: Type.String({ minLength: 1, maxLength: MAX_TURN_CHARS, pattern: "\\S" }), model: optionalText(256),
-    thread: optionalText(80), client: optionalText(80), diagnostics: Type.Optional(Type.Boolean()),
+    thread: optionalText(80), client: optionalText(80), diagnostics: Type.Optional(Type.Boolean()), context: Type.Optional(Type.Union([viewContextSchema, Type.Null()])),
     history: Type.Optional(Type.Array(Type.Object({ role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]), content: Type.String({ minLength: 1, maxLength: MAX_TURN_CHARS, pattern: "\\S" }) }, { additionalProperties: false }), { maxItems: MAX_HISTORY_ITEMS }))
 }, { additionalProperties: false });
 export type AnalystRequest = Static<typeof analystRequestSchema>;
@@ -264,6 +265,9 @@ export function createAnalyst(options: AnalystOptions) {
         async *stream(input: unknown, signal?: AbortSignal, run = newRunId(), streamOptions: { runTimeoutMs?: number } = {}): AsyncGenerator<ProductEvent> {
             if (!Value.Check(analystRequestSchema, input) || (input.thread && !input.client))
                 throw new Error("Invalid analyst request");
+            if (input.context && JSON.stringify(input.context.entities).length > 4000)
+                throw new Error("Invalid analyst request");
+            const turnText = withViewContext(input as { q: string; context?: ViewContext | null });
             const model = resolveAnalystModel(options.resolveModel ?? policy.resolve, input.model ?? undefined);
             if (!model) {
                 yield { type: "failure", data: { kind: "configuration", message: "Dime model configuration is unavailable." } };
@@ -278,24 +282,24 @@ export function createAnalyst(options: AnalystOptions) {
                 const workspace = await prepareRunWorkspace(paths, identity);
                 directory = workspace.directory;
                 if (identity)
-                    await options.saveChat(identity.thread, "human", input.q.slice(0, MAX_TURN_CHARS), identity.owner.slice(0, 80));
+                    await options.saveChat(identity.thread, "human", turnText.slice(0, MAX_TURN_CHARS), identity.owner.slice(0, 80));
                 const bridgeEnv = dataEnvironment(options.env, directory, workspace.workspaceDir);
-                for await (const event of execution.stream({ q: input.q, history, model, submissions: identity ? store.priorSubmissions(identity).slice(-8) : undefined, ...(streamOptions.runTimeoutMs === undefined ? {} : { runTimeoutMs: streamOptions.runTimeoutMs }), sources: state.records, cwd: directory, agentDir: workspace.agentDir, bridge: { python: options.python, cwd: workspace.workspaceDir, env: bridgeEnv } }, signal)) {
+                for await (const event of execution.stream({ q: turnText, history, model, submissions: identity ? store.priorSubmissions(identity).slice(-8) : undefined, ...(streamOptions.runTimeoutMs === undefined ? {} : { runTimeoutMs: streamOptions.runTimeoutMs }), sources: state.records, cwd: directory, agentDir: workspace.agentDir, bridge: { python: options.python, cwd: workspace.workspaceDir, env: bridgeEnv } }, signal)) {
                     const mapped = mapExecutionEvent(event, state);
                     if (mapped)
                         yield mapped;
                 }
                 if (signal?.aborted) {
                     if (state.records.length || state.answer || state.submission)
-                        await persistCompletedRun(options, store, identity, input.q, run, state).catch(() => undefined);
+                        await persistCompletedRun(options, store, identity, turnText, run, state).catch(() => undefined);
                     return;
                 }
-                await persistCompletedRun(options, store, identity, input.q, run, state);
+                await persistCompletedRun(options, store, identity, turnText, run, state);
             }
             catch {
                 if (signal?.aborted) {
                     if (state.records.length || state.answer || state.submission)
-                        await persistCompletedRun(options, store, identity, input.q, run, state).catch(() => undefined);
+                        await persistCompletedRun(options, store, identity, turnText, run, state).catch(() => undefined);
                     return;
                 }
                 state.failed = true;

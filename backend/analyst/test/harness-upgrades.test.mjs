@@ -14,7 +14,6 @@ import {
   flagAcknowledgedByOmissions,
   listWorkspaceArtifacts,
   normalizeLoopArgs,
-  notFoundCorrectionCopy,
 } from "../dist/pi-execution.js";
 import {
   createSubmitAnswerTool,
@@ -82,30 +81,6 @@ function makeFixtureRuntime(agentDir, streamHandler, compat) {
     return runtime;
   });
 }
-
-test("notFoundCorrectionCopy teaches bare-global codemode form for discovery primitives", () => {
-  for (const name of ["searchTools", "search_tools", "describeTool", "describeNamespace", "ALL_TOOLS"]) {
-    const correction = notFoundCorrectionCopy(name);
-    assert.equal(correction.kind, "discovery_global");
-    assert.ok(correction.copy.includes("bare global"));
-    assert.ok(correction.copy.includes("no prefix"));
-    assert.ok(!correction.copy.includes("direct tool you invoke"));
-  }
-});
-
-test("notFoundCorrectionCopy appends the real discovery path to the generic copy", () => {
-  const correction = notFoundCorrectionCopy("get_dataset_freshness");
-  assert.equal(correction.kind, "generic");
-  assert.ok(correction.copy.includes("malformed name (get_dataset_freshness)"));
-  assert.ok(correction.copy.includes('await searchTools("capability words")'));
-  assert.ok(correction.copy.includes("bare global, no tools. prefix"));
-});
-
-test("notFoundCorrectionCopy stays silent for the uncertain read_source sub-case", () => {
-  const correction = notFoundCorrectionCopy("read_source");
-  assert.equal(correction.kind, "silent");
-  assert.equal(correction.copy, null);
-});
 
 test("tool contract metadata covers high-risk analyst tools", () => {
   const covered = [
@@ -1715,10 +1690,10 @@ test("history replays stored reasoning for thinking-as-text models", async () =>
   assert.equal(thinking.thinking, "Checked league scoring leaders.");
 });
 
-test("cerebras kimi resolves with thinking-as-text compat, not reasoning_content replay", async () => {
+test("cerebras thinking-as-text models resolve with compat, not reasoning_content replay", async () => {
   const { providerPolicy } = await import("../dist/providers.js");
   const policy = providerPolicy({ CEREBRAS_API_KEY: "test-key" });
-  const resolved = policy.resolve("cerebras:moonshotai-kimi-k3.1-pro-trial");
+  const resolved = policy.resolve("cerebras:gpt-oss-120b");
   assert.equal(resolved.compat.requiresThinkingAsText, true);
   assert.equal(resolved.compat.requiresReasoningContentOnAssistantMessages, undefined);
 });

@@ -1,4 +1,4 @@
-import type { DimeArtifact, StreamSnapshot, VerificationCarry } from "@/lib/dime-stream";
+import type { DimeArtifact, StreamSnapshot, ThinkingRow, ToolState, VerificationCarry } from "@/lib/dime-stream";
 
 export type Tab = { id: string; label: string };
 
@@ -7,14 +7,9 @@ export const REFERENCE_TAB = "t1";
 export const FADE_UP = "fade-up 280ms cubic-bezier(0.23,1,0.32,1) both";
 
 export type ViewKey =
-  | "tonight"
-  | "explore"
   | "matchups"
-  | "lineups"
   | "trades"
   | "awards"
-  | "props"
-  | "saved"
   | "warehouse";
 
 export type AssistantFailure = { kind: string; message: string };
@@ -29,6 +24,8 @@ export type ChatMsg =
       carry: VerificationCarry | null;
       failure: AssistantFailure | null;
       stopped?: boolean;
+      thinking?: ThinkingRow[];
+      tools?: ToolState[];
     };
 
 export type LiveRun = StreamSnapshot & { id: number; startedAt: number };
@@ -45,6 +42,8 @@ export function assistantMessageFromSnapshot(
     suggestions: snap.suggestions,
     carry: snap.carry,
     failure: snap.failed ?? (message ? { kind: "connection", message } : null),
+    thinking: snap.thinking ?? [],
+    tools: snap.tools ?? [],
     ...(stopped ? { stopped } : {}),
   };
 }

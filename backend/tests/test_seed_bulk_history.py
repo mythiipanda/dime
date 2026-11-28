@@ -78,3 +78,35 @@ def test_transform_player_seasons_joins_pergame_base_and_advanced():
     assert out["player_id"].to_list() == [1]
     assert out["ts_pct"].to_list() == [0.55]
     assert "gp_total" not in out.columns
+
+
+def test_completed_end_year_boundaries():
+    import datetime
+    assert sbh.completed_end_year(datetime.date(2026, 11, 27)) == 2026
+    assert sbh.completed_end_year(datetime.date(2026, 8, 1)) == 2026
+    assert sbh.completed_end_year(datetime.date(2026, 7, 31)) == 2026
+    assert sbh.completed_end_year(datetime.date(2027, 3, 15)) == 2026
+    assert sbh.completed_end_year(datetime.date(2027, 9, 1)) == 2027
+
+
+def test_dataset_ranges_extend_through_completed_end_year():
+    end = sbh.completed_end_year()
+    for spec in sbh.DATASETS.values():
+        assert end in spec["years"], f"{spec['table']} must cover the last completed end-year {end}"
+        assert end + 1 not in spec["years"], f"{spec['table']} must not pull the in-progress season"
+
+
+def test_newest_year_upstream_lag_degrades_to_skip_not_failure(monkeypatch):
+    spec = {"table": "silver_hist_team_seasons", "source": "s", "entity": "league",
+            "file": "f{year}", "min_rows": 1, "transform": "team_seasons"}
+    years = [2025, 2026]
+
+    def boom(spec_arg, year):
+        raise RuntimeError("404")
+
+    monkeypatch.setattr(sbh, "read_frame", boom)
+    monkeypatch.setattr(sbh, "unit_done", lambda *a: False)
+    written, skipped, failures = sbh.run_dataset("team_seasons", spec, years, False, True)
+    assert written == 0
+    assert any("2024-25" in f for f in failures)
+    assert not any("2025-26" in f for f in failures)

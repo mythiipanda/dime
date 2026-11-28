@@ -11,14 +11,15 @@ import PinButton from "../PinButton";
 import { Button } from "../../ds/Button";
 
 const money = (v: number | null | undefined) => v == null ? "—" : `$${(v / 1_000_000).toFixed(1)}M`;
-const pct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+const fractionPct = (v: number | null | undefined) => v == null ? "—" : `${(v * 100).toFixed(1)}%`;
+const percentPoints = (v: number | null | undefined) => v == null ? "—" : `${v.toFixed(1)}%`;
 const per_game = (v: number | null | undefined) => v == null ? "—" : v.toFixed(1);
 const TEAM_KEY = "dime_draft_team_v1";
 
 type Provenance = { table?: string; as_of?: string | null };
 type Block<T> = { ok?: boolean; error?: string; provenance?: Provenance } & T;
 
-type BoardRow = { pick: number; name: string; position: string | null; school: string | null; gp: number | null; pts: number | null; reb: number | null; ast: number | null; ts_pct: number | null; usg: number | null };
+type BoardRow = { board_order?: number; pick: number; name: string; position: string | null; school: string | null; gp: number | null; pts: number | null; reb: number | null; ast: number | null; ts_pct: number | null; usg: number | null };
 type AgentRow = { name: string; team: string; fa_type: string; prior_salary: number | null; cap_hold: number | null };
 type RoomRow = { team: string; committed: number | null; option_salary: number | null; fa_holds: number | null; roster_charges: number | null; projected_room: number | null };
 type Gap = { factor: string; label: string; value: number; rank: number; of: number };
@@ -30,7 +31,7 @@ type Draft = {
   season: string;
   error?: string;
   blocks: {
-    board: Block<{ season?: string; rows: BoardRow[] }>;
+    board: Block<{ season?: string; board?: "big_board" | "mock_draft"; order_semantics?: "rank" | "pick"; rows: BoardRow[] }>;
     free_agents: Block<{ rows: AgentRow[] }>;
     cap_room: Block<{ rows: RoomRow[] }>;
     fit: Block<{ team: string; gaps: Gap[]; cap: { committed: number | null; option_salary: number | null; fa_holds: number | null; projected_room: number | null } | null; targets: Target[]; errors: string[] }>;
@@ -47,7 +48,7 @@ const artifact = (title: string, columns: string[], rows: (string | number)[][],
 
 function Section({ title, cite, pin, children, wide }: { title: string; cite?: Provenance; pin?: DimeArtifact; children: React.ReactNode; wide?: boolean }) {
   return (
-    <section className={`flex flex-col rounded-xl border border-line bg-surface p-5 ${wide ? "sm:col-span-2" : ""}`}>
+    <section className={`flex min-w-0 flex-col rounded-xl border border-line bg-surface p-5 ${wide ? "sm:col-span-2" : ""}`}>
       <div className="mb-4 flex items-center justify-between gap-2">
         <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-3">{title}</h3>
         {pin && <PinButton artifact={pin} />}
@@ -62,7 +63,7 @@ function BlockError({ block, empty }: { block: { ok?: boolean; error?: string };
   return <p className="py-2 text-[12px] text-ink-3">{block.error ?? empty}</p>;
 }
 
-export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: string) => void; initialTeam?: string }) {
+export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void; initialTeam?: string }) {
   const [team, setTeam] = useState(initialTeam ?? "NYK");
   const [data, setData] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,11 +102,24 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
   const roomRows = blocks?.cap_room.rows ?? [];
   const fit = blocks?.fit;
   const teamName = nbaTeams.find(item => item.abbr === team)?.name ?? team;
+  const boardKind = blocks?.board.board;
+  const boardIsMock = boardKind === "mock_draft";
+  const boardOrderSemantics = blocks?.board.order_semantics ?? (boardIsMock ? "pick" : boardKind === "big_board" ? "rank" : undefined);
+  const boardTitle = boardIsMock ? "Mock draft" : boardKind === "big_board" ? "Big board" : "Prospect board";
+  const boardOrderLabel = boardOrderSemantics === "pick" ? "Pick" : boardOrderSemantics === "rank" ? "Rank" : "Order";
+  const boardPopulation = boardIsMock ? "Mock-draft population" : boardKind === "big_board" ? "Big-board population" : "Board population identity unavailable";
+  const boardOrderMeaning = boardOrderSemantics === "pick"
+    ? "order is a projected team-placement pick."
+    : boardOrderSemantics === "rank"
+      ? "order is a talent rank, not team placement."
+      : "order semantics are unavailable.";
+  const boardSemantics = boardKind ? `${boardPopulation} · ${boardOrderMeaning}` : `${boardPopulation}.`;
+  const boardOrder = (row: BoardRow) => row.board_order ?? row.pick;
 
   const boardPin = () => artifact(
-    `Draft board ${blocks?.board.season ?? ""}`,
-    ["pick", "player", "pos", "school", "gp", "pts", "reb", "ast", "ts%", "usg"],
-    boardRows.map(row => [row.pick, row.name, row.position ?? "", row.school ?? "", row.gp ?? "", row.pts ?? "", row.reb ?? "", row.ast ?? "", row.ts_pct != null ? pct(row.ts_pct) : "", row.usg != null ? pct(row.usg) : ""]),
+    `${boardTitle} ${blocks?.board.season ?? ""}`,
+    [boardOrderLabel.toLowerCase(), "player", "pos", "school", "gp", "pts", "reb", "ast", "ts%", "usg"],
+    boardRows.map(row => [boardOrder(row), row.name, row.position ?? "", row.school ?? "", row.gp ?? "", row.pts ?? "", row.reb ?? "", row.ast ?? "", row.ts_pct != null ? fractionPct(row.ts_pct) : "", row.usg != null ? percentPoints(row.usg) : ""]),
     blocks?.board.provenance);
 
   const agentsPin = () => artifact(
@@ -129,10 +143,10 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
   const buildReport = (): BoardReport => {
     const report: ReportBlock[] = [];
     report.push({
-      heading: "Prospect board",
-      meta: [`season ${blocks?.board.season ?? "—"}`],
-      table: { columns: ["Pick", "Player", "Pos", "School", "PTS", "REB", "AST", "TS%"], rows: boardRows.map(row => [String(row.pick), row.name, row.position ?? "—", row.school ?? "—", row.pts != null ? String(row.pts) : "—", row.reb != null ? String(row.reb) : "—", row.ast != null ? String(row.ast) : "—", pct(row.ts_pct)]) },
-      lines: [`Source: ${blocks?.board.provenance?.table ?? "unknown"}${blocks?.board.provenance?.as_of ? ` · as of ${String(blocks.board.provenance.as_of).slice(0, 10)}` : ""}`],
+      heading: boardTitle,
+      meta: [`season ${blocks?.board.season ?? "—"}`, boardIsMock ? "mock-draft picks" : boardKind === "big_board" ? "big-board ranks" : "board identity unavailable"],
+      table: { columns: [boardOrderLabel, "Player", "Pos", "School", "PTS", "REB", "AST", "TS%"], rows: boardRows.map(row => [String(boardOrder(row)), row.name, row.position ?? "—", row.school ?? "—", row.pts != null ? String(row.pts) : "—", row.reb != null ? String(row.reb) : "—", row.ast != null ? String(row.ast) : "—", fractionPct(row.ts_pct)]) },
+      lines: [boardSemantics, `Source: ${blocks?.board.provenance?.table ?? "unknown"}${blocks?.board.provenance?.as_of ? ` · as of ${String(blocks.board.provenance.as_of).slice(0, 10)}` : ""}`],
     });
     report.push({
       heading: "2027 free agents",
@@ -155,7 +169,7 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
         lines: [...lines, `Source: ${fit.provenance?.table ?? "unknown"}${fit.provenance?.as_of ? ` · as of ${String(fit.provenance.as_of).slice(0, 10)}` : ""}`],
       });
     }
-    return { title: `Draft & free agency — ${teamName}`, subtitle: "Dime draft workspace", generated: new Date().toISOString(), blocks: report };
+    return { title: `Draft & free agency · ${teamName}`, subtitle: "Dime draft workspace", generated: new Date().toISOString(), blocks: report };
   };
 
   const exportReport = (pdf: boolean) => {
@@ -186,11 +200,10 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-[17px] font-medium">Draft & free agency</h1>
-          <p className="mt-1 text-[12px] text-ink-3">Prospect board, the 2027 free agent class with cap room, and fit targets for one team's roster gaps.</p>
         </div>
         {data && (
           <div className="flex flex-wrap items-center gap-2">
-            {onAsk && <Button size="sm" variant="secondary" onClick={() => onAsk(askText())}>Ask Dime</Button>}
+            {onAsk && <Button size="sm" variant="secondary" onClick={() => onAsk(askText(), { kind: "draft_scout", summary: `${teamName} draft + free agency`, entities: { team: teamName } })}>Ask Dime</Button>}
             <Button size="sm" variant="secondary" disabled={exporting} onClick={() => exportReport(false)}>Report (.md)</Button>
             <Button size="sm" variant="secondary" disabled={exporting} onClick={() => exportReport(true)}>Report (PDF)</Button>
           </div>
@@ -209,29 +222,32 @@ export default function DraftView({ onAsk, initialTeam }: { onAsk?: (text: strin
 
       {!loading && !error && blocks && (
         <div className="grid items-stretch gap-4 sm:grid-cols-2">
-          <Section title={`Prospect board${blocks.board.season ? ` · ${blocks.board.season}` : ""}`} cite={blocks.board.provenance} pin={blocks.board.ok ? boardPin() : undefined} wide>
+          <Section title={`${boardTitle}${blocks.board.season ? ` · ${blocks.board.season}` : ""}`} cite={blocks.board.provenance} pin={blocks.board.ok ? boardPin() : undefined} wide>
             {blocks.board.rows.length ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-[12px]">
-                  <thead className="border-b border-line text-[10px] text-ink-3">
-                    <tr>{["#", "Player", "Pos", "School", "PTS", "REB", "AST", "TS%", "USG"].map(label => <th key={label} className="pb-2 pr-3 font-normal last:text-right">{label}</th>)}</tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {boardRows.map(row => (
-                      <tr key={row.pick}>
-                        <td className="py-2 pr-3 font-mono tabular-nums text-ink-3">{row.pick}</td>
-                        <td className="py-2 pr-3 text-ink">{row.name}</td>
-                        <td className="py-2 pr-3 text-ink-2">{row.position ?? "—"}</td>
-                        <td className="py-2 pr-3 text-ink-2">{row.school ?? "—"}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.pts)}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.reb)}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.ast)}</td>
-                        <td className="py-2 pr-3 font-mono tabular-nums">{pct(row.ts_pct)}</td>
-                        <td className="py-2 text-right font-mono tabular-nums">{pct(row.usg)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-2">
+                <p className="text-[12px] text-ink-3">{boardSemantics}</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-[12px]">
+                    <thead className="border-b border-line text-[10px] text-ink-3">
+                      <tr>{[boardOrderLabel, "Player", "Pos", "School", "PTS", "REB", "AST", "TS%", "USG"].map(label => <th key={label} className="pb-2 pr-3 font-normal last:text-right">{label}</th>)}</tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {boardRows.map(row => (
+                        <tr key={boardOrder(row)}>
+                          <td className="py-2 pr-3 font-mono tabular-nums text-ink-3">{boardOrder(row)}</td>
+                          <td className="py-2 pr-3 text-ink">{row.name}</td>
+                          <td className="py-2 pr-3 text-ink-2">{row.position ?? "—"}</td>
+                          <td className="py-2 pr-3 text-ink-2">{row.school ?? "—"}</td>
+                          <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.pts)}</td>
+                          <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.reb)}</td>
+                          <td className="py-2 pr-3 font-mono tabular-nums">{per_game(row.ast)}</td>
+                          <td className="py-2 pr-3 font-mono tabular-nums">{fractionPct(row.ts_pct)}</td>
+                          <td className="py-2 text-right font-mono tabular-nums">{percentPoints(row.usg)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : <BlockError block={blocks.board} empty="No prospect board rows." />}
           </Section>

@@ -3,7 +3,8 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ._helpers import (_cap_season_for_fa_year, _owned_connection, _pkg,
-                       _warehouse_tables)
+                       _warehouse_tables, declare_money)
+from .cap_hold_derivation import CAP_HOLD_CONTRACT, derive_cap_holds, hold_amount
 from .._core import team_error_message
 from ..competitive import _resolve_team_abbr
 
@@ -40,6 +41,34 @@ def _cap_room_rows(con, abbr: str, cap_season: str) -> list[dict]:
     if not abbr and "PROJECTED_ROOM" in have:
         sql += " ORDER BY PROJECTED_ROOM DESC"
     return _rows(con, sql, params, pick)
+
+
+def _normalize_hold_rows(rows: list[dict]) -> None:
+    for row in rows:
+        if "cap_hold" in row:
+            row["cap_hold_est"] = row.get("cap_hold")
+            continue
+        seed = row.get("CAP_HOLD_EST")
+        row["cap_hold"] = seed
+        row["cap_hold_est"] = seed
+        row["legacy_cap_hold_est"] = seed
+        row["provenance_class"] = "legacy_seed_estimate"
+        row["money_unit"] = "usd_dollars"
+
+
+def _enrich_cap_room(cap_room: list[dict], hold_rows: list[dict]) -> None:
+    grouped: dict[str, list[dict]] = {}
+    for row in hold_rows:
+        grouped.setdefault(str(row.get("TEAM") or "").upper(), []).append(row)
+    for row in cap_room:
+        team_rows = grouped.get(str(row.get("TEAM") or "").upper(), [])
+        row["fa_holds_derived"] = sum(hold_amount(item) for item in team_rows)
+        row["fa_holds_active_derived"] = sum(
+            hold_amount(item) for item in team_rows if item.get("active_in_baseline"))
+        row["fa_holds_unit"] = "usd_dollars"
+        row["cap_hold_provenance_classes"] = sorted(
+            {str(item.get("provenance_class") or "") for item in team_rows
+             if item.get("provenance_class")})
 
 
 @tool(description=(
@@ -96,10 +125,15 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                         "error": f"no free-agent data for FA year {fa_year} "
                                  f"or cap season {cap_season}; "
                                  "run seed_free_agents.py"}
+            hold_payload = derive_cap_holds(con, fa_year, abbr)
+            if hold_payload.get("rows"):
+                fa = list(hold_payload["rows"])
+                _enrich_cap_room(cap_room, fa)
     except FileNotFoundError:
         return {"tool": "get_free_agents", "ok": False,
                 "error": "warehouse absent; run seed_free_agents.py first."}
-    return {
+    _normalize_hold_rows(fa)
+    return declare_money({
         "tool": "get_free_agents",
         "ok": True,
         "team": abbr or "league",
@@ -113,5 +147,7 @@ def get_free_agents(team: str = "", fa_year: str = "2027") -> dict[str, Any]:
                        "cap_room": "silver_cap_room"},
             "sources": ["bref_contracts", "nba_cba"],
             "estimated": True,
+            "cap_hold_contract": CAP_HOLD_CONTRACT,
+            "cap_hold_derivation": hold_payload.get("meta") or {},
         },
-    }
+    }, ["cap_room", "salary", "amount"])

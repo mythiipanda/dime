@@ -98,7 +98,7 @@ function PlayerSearch({ onPick, disabled }: { onPick: (player: ResolvePlayer) =>
   );
 }
 
-export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: string) => void; initialPicks?: Pick[] }) {
+export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: string, context?: import("@/lib/view-context").ViewContext) => void; initialPicks?: Pick[] }) {
   const [picks, setPicks] = useState<Pick[]>(initialPicks ?? []);
   const [data, setData] = useState<CompareData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +165,7 @@ export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: st
 
   const pinArtifact = (): DimeArtifact => ({
     kind: "table",
-    title: `Player comparison — ${players.map(player => player.name).join(" vs ")}`,
+    title: `Player comparison · ${players.map(player => player.name).join(" vs ")}`,
     columns: [{ key: "metric", label: "metric" }, ...players.map(player => ({ key: `p${player.player_id}`, label: `${player.name} (${player.season})` }))],
     rows: [
       ...metrics.map(metric => [metric.label, ...players.map(player => player.season_line.row ? metric.fmt(Number(player.season_line.row?.[metric.key] ?? 0)) : "—")]),
@@ -192,9 +192,9 @@ export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: st
     });
     for (const player of players) {
       const blocks_for_player: ReportBlock[] = [];
-      if (player.impact.raptor_total != null) blocks_for_player.push({ heading: `${player.name} — impact`, meta: [player.season], lines: [`RAPTOR total: ${player.impact.raptor_total.toFixed(1)} · rank ${player.impact.rank}/${player.impact.of}`, `WAR: ${player.impact.war_total?.toFixed(1)}`, `Source: ${player.impact.provenance?.table}${player.impact.provenance?.as_of ? ` · as of ${String(player.impact.provenance.as_of).slice(0, 10)}` : ""}`] });
+      if (player.impact.raptor_total != null) blocks_for_player.push({ heading: `${player.name} · impact`, meta: [player.season], lines: [`RAPTOR total: ${player.impact.raptor_total.toFixed(1)} · rank ${player.impact.rank}/${player.impact.of}`, `WAR: ${player.impact.war_total?.toFixed(1)}`, `Source: ${player.impact.provenance?.table}${player.impact.provenance?.as_of ? ` · as of ${String(player.impact.provenance.as_of).slice(0, 10)}` : ""}`] });
       if (player.zones.zones?.length) blocks_for_player.push({ heading: `${player.name} — shooting zones`, meta: [player.season], table: { columns: ["Zone", "Att", "Makes", "FG%", "League", "Delta"], rows: player.zones.zones.map(zone => [zone.zone, String(zone.att), String(zone.makes), `${zone.pct}%`, zone.league_pct != null ? `${zone.league_pct}%` : "—", zone.delta_pp != null ? `${zone.delta_pp > 0 ? "+" : ""}${zone.delta_pp}pp` : "—"]) }, lines: [`Source: ${player.zones.provenance?.table}${player.zones.provenance?.as_of ? ` · as of ${String(player.zones.provenance.as_of).slice(0, 10)}` : ""}`] });
-      if (player.contract.row) blocks_for_player.push({ heading: `${player.name} — contract`, meta: [`cap sheet ${player.contract.season}`], lines: [`Salary: ${money(player.contract.row.salary)} (${player.contract.row.contract_type})`, `Guaranteed: ${player.contract.row.guaranteed ? "yes" : "no"}`, `Source: ${player.contract.provenance?.table}${player.contract.provenance?.as_of ? ` · as of ${String(player.contract.provenance.as_of).slice(0, 10)}` : ""}`] });
+      if (player.contract.row) blocks_for_player.push({ heading: `${player.name} · contract`, meta: [`cap sheet ${player.contract.season}`], lines: [`Salary: ${money(player.contract.row.salary)} (${player.contract.row.contract_type})`, `Guaranteed: ${player.contract.row.guaranteed ? "yes" : "no"}`, `Source: ${player.contract.provenance?.table}${player.contract.provenance?.as_of ? ` · as of ${String(player.contract.provenance.as_of).slice(0, 10)}` : ""}`] });
       if (player.arc.rows?.length) blocks_for_player.push({ heading: `${player.name} — age curve`, lines: [...player.arc.rows.map(row => `${row.season}: age ${row.age ?? "—"} · ${row.pts} pts · ${pct(row.ts_pct)} TS`), `Source: ${player.arc.provenance?.table}${player.arc.provenance?.as_of ? ` · as of ${String(player.arc.provenance.as_of).slice(0, 10)}` : ""}`] });
       blocks.push(...blocks_for_player);
     }
@@ -247,11 +247,10 @@ export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: st
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-[17px] font-medium">Compare players</h1>
-          <p className="mt-1 text-[12px] text-ink-3">Two to four players, same or different seasons — season lines, impact, shooting zones, contracts and age curves.</p>
         </div>
         {data && (
           <div className="flex flex-wrap items-center gap-2">
-            {onAsk && <Button size="sm" variant="secondary" onClick={() => onAsk(askText())}>Ask Dime to compare</Button>}
+            {onAsk && <Button size="sm" variant="secondary" onClick={() => onAsk(askText(), { kind: "compare", summary: `compare ${players.map(p => p.name).join(" vs ")}`, entities: { players: players.map(p => ({ name: p.name, season: p.season })) } })}>Ask Dime to compare</Button>}
             <PinButton artifact={pinArtifact()} />
             <Button size="sm" variant="secondary" disabled={exporting} onClick={() => exportReport(false)}>Report (.md)</Button>
             <Button size="sm" variant="secondary" disabled={exporting} onClick={() => exportReport(true)}>Report (PDF)</Button>
@@ -353,7 +352,7 @@ export default function CompareView({ onAsk, initialPicks }: { onAsk?: (text: st
             </div>
           </Section>
 
-          <Section title="Age curve — points per game" cite={arcCite} wide>
+          <Section title="Age curve: points per game" cite={arcCite} wide>
             {arcSeries.some(series => series.values.some(value => value != null))
               ? <ArtifactChart title="Points per game by age" series={arcSeries} xLabels={ageLabels.map(String)} unit="pts" footnote="Career points per game at each age." />
               : <p className="py-6 text-center text-[12px] text-ink-3">No career rows in the warehouse.</p>}

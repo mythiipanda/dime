@@ -19,7 +19,7 @@ _ENCODINGS: dict[str, dict[str, str]] = {
         "format": "YYYY-YY",
         "anchor": "start_year",
         "note": "canonical warehouse season label; the leading year is the start year; "
-                "present on nearly every silver table — the one season filter key that works warehouse-wide",
+                "present on nearly every silver table, the one season filter key that works warehouse-wide",
         "source": "shared/store.py save_frame writes FetchMeta.season; "
                   "scripts/seed_history.py season_label(end_year)",
     },
@@ -560,6 +560,38 @@ def _season_column_entries(supported: list[dict[str, Any]],
     return columns, ambiguities
 
 
+def _join_unambiguous_units(
+    schema: Mapping[str, Any] | None,
+    tables: list[str],
+    outputs: list[str],
+) -> dict[str, dict[str, str]]:
+    table_schemas = (schema or {}).get("tables") or {}
+    involved = {
+        str(name): cols for name, cols in table_schemas.items()
+        if str(name) in set(tables) and isinstance(cols, Mapping)
+    }
+    if not involved:
+        return {}
+    declared: dict[str, dict[str, str]] = {}
+    for output in outputs:
+        key = str(output).lower()
+        units = {
+            str(meta["unit"]).strip()
+            for cols in involved.values()
+            for col, meta in cols.items()
+            if str(col).lower() == key
+            and isinstance(meta, Mapping)
+            and isinstance(meta.get("unit"), str)
+            and str(meta.get("unit") or "").strip()
+        }
+        if len(units) == 1:
+            declared[str(output)] = {
+                "unit": next(iter(units)),
+                "note": "join output; column name carries one distinct unit across the involved tables",
+            }
+    return declared
+
+
 def annotate_result(
     result: Mapping[str, Any],
     schema: Mapping[str, Any] | None,
@@ -590,8 +622,10 @@ def annotate_result(
         if name.lower() in candidates or name.lower() in _SEASON_NAMES
     ]
     attribution = _attribution(result.get("sql"), tables)
-    output["declared_column_semantics"] = _declared_column_semantics(
-        schema, attribution)
+    declared = _declared_column_semantics(schema, attribution)
+    if not declared and len(tables) > 1:
+        declared = _join_unambiguous_units(schema, tables, outputs)
+    output["declared_column_semantics"] = declared
     semantics["query_attribution"] = {
         key: attribution.get(key) for key in (
             "mode", "reason", "lineage_proven")

@@ -303,11 +303,11 @@ async def _injuries_card(abbr: str, season: str,
         if rank is not None and 1 <= rank <= len(leaders):
             ppg = _r1(leaders[rank - 1].get("pts"))
         if rank is not None and rank <= 3:
-            impact = f"top-{rank} scorer at {ppg} ppg — major offensive hole"
+            impact = f"top-{rank} scorer at {ppg} ppg; major offensive hole"
         elif rank is not None and rank <= 8:
-            impact = f"rotation regular ({ppg} ppg) — depth gets tested"
+            impact = f"rotation regular ({ppg} ppg); depth gets tested"
         else:
-            impact = "depth piece — next man up"
+            impact = "depth piece; next man up"
         outs.append({"name": str(name), "impact": impact})
     questionable = [str(n) for n in (rows.get("questionable", []) or [])[:3]]
     return {"out": outs, "questionable": questionable}
@@ -360,9 +360,9 @@ def _xfactor_card(leaders: list[dict[str, Any]], season: str) -> dict[str, Any]:
     sr = round(lead.get("pts") or 0.0, 1)
     dr = round(delta, 1)
     if dr >= 2.0:
-        tail = " — heating up at the right time."
+        tail = " Heating up at the right time."
     elif dr <= -2.0:
-        tail = " — cooling off lately."
+        tail = " Cooling off lately."
     else:
         tail = "."
     return {
@@ -451,7 +451,7 @@ def _why_watch(away_abbr: str, home_abbr: str, date: str,
     xfb = card_b.get("xfactor", {}) or {}
     pick = xfa if xfa.get("player") else (xfb if xfb.get("player") else None)
     if pick:
-        s3 = f"X-factor: {pick.get('player')} — {pick.get('line')}"
+        s3 = f"X-factor: {pick.get('player')}, {pick.get('line')}"
     else:
         outs: list[str] = []
         for card in (card_a, card_b):
@@ -503,7 +503,7 @@ def _already_played(row: dict[str, Any], resolved: str,
             "date": date,
             "matchup": f"{away_abbr} @ {home_abbr}",
             "score": score,
-            "suggestion": "This one already tipped off — call get_recap"
+            "suggestion": "This one already tipped off. Call get_recap"
                           f" with game_id {gid} for the post-game recap.",
         },
         "meta": {"season": season, "source": "warehouse"},

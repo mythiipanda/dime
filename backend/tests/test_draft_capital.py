@@ -38,6 +38,32 @@ def test_season_label_from_min_year():
     assert _season_label([2027, 2030]) == "2026-27"
 
 
+def test_chain_verified_swap_overrides_traded_status():
+    payload = {
+        "last_edited": "2026-10-03T00:00:00+00:00",
+        "teams": [
+            {"team": "MIL", "picks": [
+                {"draft_year": 2028, "round": 1, "status": "traded",
+                 "held_by": ["POR", "WSH"], "protection": "Top-8 protected",
+                 "pooled": True, "conditional": False, "summary": "goes out"},
+                {"draft_year": 2029, "round": 1, "status": "traded",
+                 "held_by": ["POR", "WSH"], "protection": None,
+                 "pooled": True, "conditional": False, "summary": "goes out"},
+            ]},
+            {"team": "MIN", "picks": [
+                {"draft_year": 2030, "round": 1, "status": "traded",
+                 "held_by": ["SA", "DAL", "CHA"], "protection": "#1 protected",
+                 "pooled": True, "conditional": False, "summary": "goes out"},
+            ]},
+        ],
+    }
+    frame = _parse(payload)
+    rows = { (r["ORIG_TEAM"], r["DRAFT_YEAR"]): r["STATUS"] for r in frame.to_dicts() }
+    assert rows[("MIL", 2028)] == "swap"
+    assert rows[("MIN", 2030)] == "swap"
+    assert rows[("MIL", 2029)] == "traded"
+
+
 def test_parse_rows_and_codes():
     frame = _parse(PAYLOAD)
     assert frame.height == 3

@@ -2,9 +2,11 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { objectValue, sourceResult, sourceRecordSchema, type SourceRecord } from "./python-tools.js";
-import { resolvePlayerCard } from "./player-card.js";
-import { validateAnswerArtifact } from "./artifact-schemas.js";
+import { resolvePlayerCard, resolveProvenance } from "./player-card.js";
+import { artifactSourceSelectorSchema, validateAnswerArtifact } from "./artifact-schemas.js";
 import { resolveTeamCard } from "./team-card.js";
+import { resolveTradeVerdict } from "./trade-verdict.js";
+import { resolveCapSummary } from "./cap-summary.js";
 
 export { sourceRecordSchema, type SourceRecord } from "./python-tools.js";
 
@@ -65,7 +67,88 @@ function validateAnchor(
     }
 }
 
-const KNOWN_ARTIFACT_KINDS: readonly string[] = ["table", "compare", "chart", "shot_chart", "scatter", "player_card", "team_card", "memo"];
+type ArtifactSourceSelector = Static<typeof artifactSourceSelectorSchema>;
+
+function validateArtifactSource(
+    selector: ArtifactSourceSelector,
+    getSource: (ref: string) => SourceRecord | undefined,
+    availableRefs?: readonly string[]
+): { record: SourceRecord; data: Record<string, unknown> } {
+    const record = getSource(selector.ref);
+    if (!record) {
+        const refHint = availableRefs && availableRefs.length > 0
+            ? `. Available refs: [${availableRefs.slice(0, 20).join(", ")}]`
+            : "";
+        throw new Error(`Unknown artifact source ref: ${selector.ref}${refHint}`);
+    }
+    const res = sourceResult(record);
+    if (res.isError)
+        throw new Error(`Artifact source ref is an error result: ${selector.ref}`);
+    const data = objectValue(res.structuredContent.result);
+    if (!data)
+        throw new Error(`Artifact source ref has no object data: ${selector.ref}`);
+    const rows = Array.isArray(data.rows) ? data.rows : undefined;
+    if (!rows)
+        throw new Error(`Artifact source ref has no rows array: ${selector.ref}`);
+    const checkColumns = (rowData: Record<string, unknown>, rowIndex: number) => {
+        if (!selector.columns)
+            return;
+        for (const col of selector.columns) {
+            if (!Object.hasOwn(rowData, col)) {
+                const availableColumns = Object.keys(rowData).slice(0, 30).join(", ");
+                throw new Error(`Artifact source column '${col}' does not exist on row ${rowIndex} for ref: ${selector.ref}. Available columns: [${availableColumns}].`);
+            }
+        }
+    };
+    if (selector.rows) {
+        for (const rowIndex of selector.rows) {
+            if (rowIndex >= rows.length)
+                throw new Error(`Artifact source row index ${rowIndex} out of bounds (length: ${rows.length}) for ref: ${selector.ref}`);
+            const rowData = objectValue(rows[rowIndex]);
+            if (!rowData)
+                throw new Error(`Artifact source row ${rowIndex} is not an object for ref: ${selector.ref}`);
+            checkColumns(rowData, rowIndex);
+        }
+    }
+    else if (selector.columns) {
+        const rowData = objectValue(rows[0]);
+        if (!rowData)
+            throw new Error(`Artifact source columns require at least one row on ref: ${selector.ref}`);
+        checkColumns(rowData, 0);
+    }
+    return { record, data };
+}
+
+function mergeSourcesProvenance(entries: { record: SourceRecord; data: Record<string, unknown> }[]): Record<string, unknown> {
+    const provs = entries.map(entry => resolveProvenance(entry.record, entry.data) as Record<string, unknown>);
+    const tools = new Set(entries.map(entry => entry.record.tool));
+    const merged: Record<string, unknown> = { origin: "undeclared" };
+    if (tools.size === 1)
+        merged.capability = entries[0].record.tool;
+    for (const key of ["dataset", "season", "as_of"]) {
+        const values = new Set(provs.map(prov => prov[key]).filter(value => value !== undefined));
+        if (provs.every(prov => prov[key] !== undefined) && values.size === 1)
+            merged[key] = [...values][0];
+    }
+    if (provs.length === 1 && typeof provs[0].sql === "string")
+        merged.sql = provs[0].sql;
+    return merged;
+}
+
+function attachArtifactProvenance(
+    artifact: Record<string, unknown>,
+    getSource: (ref: string) => SourceRecord | undefined,
+    availableRefs?: readonly string[]
+): Record<string, unknown> {
+    if (artifact.sources === undefined)
+        return artifact;
+    if (!Value.Check(Type.Array(artifactSourceSelectorSchema, { minItems: 1 }), artifact.sources))
+        throw new Error("Invalid artifact sources: each entry needs a ref with optional rows and columns arrays");
+    const entries = (artifact.sources as ArtifactSourceSelector[]).map(selector => validateArtifactSource(selector, getSource, availableRefs));
+    return { ...artifact, provenance: mergeSourcesProvenance(entries) };
+}
+
+const KNOWN_ARTIFACT_KINDS: readonly string[] = ["table", "compare", "chart", "shot_chart", "scatter", "player_card", "team_card", "memo", "trade_verdict", "cap_summary"];
 
 const MARKDOWN_TABLE_ROW_RE = /^\s*\|.*\|\s*$/;
 const MARKDOWN_TABLE_NULL_CELLS = new Set(["", "-", "—", "–", "n/a", "null"]);
@@ -188,6 +271,16 @@ export function artifactRejectionReason(artifact: Record<string, unknown>): stri
     }
 }
 
+export function stripToolCallMarkup(text: string): string {
+    return text
+        .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, "")
+        .replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/g, "")
+        .replace(/<invoke\b[^>]*\/?>/g, "")
+        .replace(/<\/?function_calls>/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
 export function validateAnswerSubmission(
     input: unknown,
     getSource: (ref: string) => SourceRecord | undefined,
@@ -197,12 +290,16 @@ export function validateAnswerSubmission(
     if (!Value.Check(submitAnswerSchema, input)) {
         throw new Error("Invalid answer submission schema: blocks with non-empty text required");
     }
-    const blocks = input.blocks.map(block => {
+    const blocks = input.blocks.flatMap(block => {
         const anchors = block.anchors ?? [];
         for (const anchor of anchors)
             validateAnchor(anchor, getSource, availableRefs);
-        return { text: block.text, anchors };
+        const text = stripToolCallMarkup(block.text);
+        return text ? [{ text, anchors }] : [];
     });
+    if (blocks.length === 0) {
+        throw new Error("Invalid answer submission: blocks held only tool-call markup, no answer prose");
+    }
     const submitted = input.artifacts ? structuredClone(input.artifacts) : [];
     if (!submitted.some(artifact => objectValue(artifact)?.kind === "table"))
         for (const block of blocks)
@@ -216,6 +313,8 @@ export function validateAnswerSubmission(
         const kind = artifact.kind as string;
         if (kind === "player_card") return [resolvePlayerCard(artifact, getSource)];
         if (kind === "team_card") return [resolveTeamCard(artifact, getSource)];
+        if (kind === "trade_verdict") return [resolveTradeVerdict(artifact, getSource)];
+        if (kind === "cap_summary") return [resolveCapSummary(artifact, getSource)];
         if (kind === "memo") {
             for (const section of artifact.sections as unknown[]) {
                 const anchors = objectValue(section)?.anchors;
@@ -227,9 +326,9 @@ export function validateAnswerSubmission(
                     }
                 }
             }
-            return [artifact];
+            return [attachArtifactProvenance(artifact, getSource, availableRefs)];
         }
-        return [validateAnswerArtifact(artifact, index)];
+        return [attachArtifactProvenance(validateAnswerArtifact(artifact, index), getSource, availableRefs)];
     }) : undefined;
     const omitted = input.omitted?.map(item => String(item));
     return {
@@ -237,6 +336,28 @@ export function validateAnswerSubmission(
         ...(artifacts !== undefined ? { artifacts } : {}),
         ...(omitted !== undefined ? { omitted } : {})
     };
+}
+
+export function resolveSalvagedArtifacts(
+    artifacts: Record<string, unknown>[],
+    getSource: (ref: string) => SourceRecord | undefined,
+    availableRefs?: readonly string[]
+): { artifacts: Record<string, unknown>[]; dropped: number } {
+    const out: Record<string, unknown>[] = [];
+    let dropped = 0;
+    for (const artifact of artifacts) {
+        try {
+            const kind = artifact.kind as string;
+            if (kind === "player_card") out.push(resolvePlayerCard(artifact, getSource));
+            else if (kind === "team_card") out.push(resolveTeamCard(artifact, getSource));
+            else if (kind === "trade_verdict") out.push(resolveTradeVerdict(artifact, getSource));
+            else if (kind === "cap_summary") out.push(resolveCapSummary(artifact, getSource));
+            else out.push(attachArtifactProvenance(validateAnswerArtifact(artifact, out.length), getSource, availableRefs));
+        } catch {
+            dropped++;
+        }
+    }
+    return { artifacts: out, dropped };
 }
 
 export function createSubmitAnswerTool(
@@ -247,7 +368,7 @@ export function createSubmitAnswerTool(
     return defineTool({
         name: "submit_answer",
         label: "Submit answer",
-        description: "Submit final prose blocks with the visual artifacts the ask's shape calls for and optional source selectors. Ranked lists, leaderboards, top-N boards, rosters and multi-row results carry a 'table'; head-to-head asks a 'compare'; trends and season paths a 'chart'; court-location asks a 'shot_chart' — even when the ask names no artifact kind. Blocks carry the complete user-facing answer verbatim — the reader sees only what the submission holds, so write the full answer text into block text; never describe or announce the submission, name this tool call, or point to answer text that lives outside the submission. Kinds: (table, compare, chart, shot_chart, scatter, player_card, team_card, memo). Exact minimal shapes — table {kind,title,columns:[{key,label}],rows:[[cell,...] matching columns]}; compare {kind,title,aName,bName,rows:[{label,a,b}]}; chart {kind,title,series:[{name,values:[number|null,...]}],xLabels?} — series values align to xLabels by index; scatter {kind,title,xLabel,yLabel,points:[{label,x,y}]}; shot_chart {kind,title,zones:[{x,y,att,pct}]} with pct as a 0-1 fraction; memo {kind,title,sections:[{heading,body}]}. Extra keys are rejected — emit only listed fields plus an optional footnote. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. memo sections may carry anchors validated like block anchors. Artifacts with unknown kinds or no usable data are dropped and reported back as warnings. Every figure the question requests must appear in the submission verbatim — exact computed values, never rounded-away approximations; a number shown only as prose commentary outside blocks does not count. A block that merely announces or confirms the analysis ('Submitted.', 'Done', 'see above') discards all of it — the reader never sees your tool results, so put the computed values and tables in the blocks even when you could not satisfy every check. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out rather than silently dropping them. Validates selector traceability, not semantic correctness.",
+        description: "Submit final prose blocks with the visual artifacts the ask's shape calls for and optional source selectors. Ranked lists, leaderboards, top-N boards, rosters and multi-row results carry a 'table'; head-to-head asks a 'compare'; trends and season paths a 'chart'; court-location asks a 'shot_chart' — even when the ask names no artifact kind. Blocks carry the complete user-facing answer verbatim — the reader sees only what the submission holds, so write the full answer text into block text; never describe or announce the submission, name this tool call, or point to answer text that lives outside the submission. Kinds: (table, compare, chart, shot_chart, scatter, player_card, team_card, memo, trade_verdict, cap_summary). Exact minimal shapes — table {kind,title,columns:[{key,label}],rows:[[cell,...] matching columns]}; compare {kind,title,aName,bName,rows:[{label,a,b}]}; chart {kind,title,series:[{name,values:[number|null,...]}],xLabels?} — series values align to xLabels by index; scatter {kind,title,xLabel,yLabel,points:[{label,x,y}]}; shot_chart {kind,title,zones:[{x,y,att,pct}]} with pct as a 0-1 fraction; memo {kind,title,sections:[{heading,body}]}. Extra keys are rejected — emit only listed fields plus an optional footnote. player_card/team_card use ref/row/nameColumn and metrics [{column,label}], with optional sections [{label, ref, row, metrics, fields}] each resolved from its own source row; the host resolves values, units and per-section provenance. trade_verdict takes exactly {kind, title, ref} where ref is this run's get_trade_check or get_trade_legality result — the host resolves verdict, salary math, apron status, TPE creation, issues and checks from the evaluator; never write outcomes, legal flags, salaries or issues yourself, and never emit it when no trade evaluation ran this run. cap_summary takes exactly {kind, title, ref} where ref is this run's get_cap_scenario result — the host resolves payroll before/after, cap room, apron distances, roster counts, issues and steps from the evaluator; never write payrolls, room figures or apron flags yourself, and never emit it when no cap scenario evaluation ran this run. memo sections may carry anchors validated like block anchors. table/compare/chart/shot_chart/scatter/memo artifacts may carry sources: [{ref, rows?, columns?}] naming the source rows the artifact draws from — the host validates them like anchors and attaches merged provenance, so include sources whenever the artifact's figures come from tool results. Artifacts with unknown kinds or no usable data are dropped and reported back as warnings. Every figure the question requests must appear in the submission verbatim — exact computed values, never rounded-away approximations; a number shown only as prose commentary outside blocks does not count. A block that merely announces or confirms the analysis ('Submitted.', 'Done', 'see above') discards all of it — the reader never sees your tool results, so put the computed values and tables in the blocks even when you could not satisfy every check. On a partial submission, pass omitted: string[] naming the requested sub-questions or checks left out rather than silently dropping them. Validates selector traceability, not semantic correctness.",
         parameters: submitAnswerSchema,
         async execute(_callId, args) {
             const sources = getContextSources();

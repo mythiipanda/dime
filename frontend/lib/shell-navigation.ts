@@ -10,6 +10,7 @@ export const shellNavigation = [
   { id: "compare", label: "Compare", group: "Tools" },
   { id: "draft", label: "Draft", group: "Tools" },
   { id: "cap", label: "Cap", group: "Tools" },
+  { id: "planner", label: "Planner", group: "Tools" },
   { id: "history", label: "History", group: "Tools" },
   { id: "matchups", label: "Matchups", group: "Tools" },
   { id: "scout", label: "Scout", group: "Tools" },

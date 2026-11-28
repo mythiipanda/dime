@@ -10,6 +10,8 @@ import {
   type ScenarioResponse,
 } from "./lib/capsheet-fixture";
 
+const forceObjectError = { value: false };
+
 type ScenarioRequest = {
   season?: string;
   moves?: ScenarioMove[];
@@ -48,6 +50,7 @@ async function mountCapSheet(seededMoves?: ScenarioMove[]) {
   const previousFetch = globalThis.fetch;
   const previousStorage = globalThis.localStorage;
   const scenarioRequests: ScenarioRequest[] = [];
+  const objectRequests: { body: { kind: string; title: string; payload: { team: string; season: string; moves: ScenarioMove[] } }; headers: unknown }[] = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes("/api/cap/sheet")) return Response.json(capSheetFixture);
@@ -55,6 +58,23 @@ async function mountCapSheet(seededMoves?: ScenarioMove[]) {
       const body = JSON.parse(String(init?.body)) as ScenarioRequest;
       scenarioRequests.push(body);
       return Response.json(scenarioResult(body));
+    }
+    if (url.includes("/api/objects")) {
+      const body = JSON.parse(String(init?.body));
+      objectRequests.push({ body, headers: init?.headers });
+      if (forceObjectError.value) return new Response("x", { status: 503 });
+      return Response.json({
+        object_id: "obj-" + "ab".repeat(16),
+        kind: body.kind,
+        title: body.title,
+        payload: body.payload,
+        schema_version: 1,
+        created_at: "2026-11-27T13:00:00.000Z",
+        updated_at: "2026-11-27T13:00:00.000Z",
+        archived: false,
+        read_token: "testreadtoken" + "x".repeat(20),
+        owner_token: "testownertoken" + "y".repeat(40),
+      }, { status: 201 });
     }
     throw new Error(`Unexpected fetch ${url}`);
   };
@@ -79,6 +99,7 @@ async function mountCapSheet(seededMoves?: ScenarioMove[]) {
   return {
     host,
     scenarioRequests,
+    objectRequests,
     cleanup: async () => {
       await act(async () => root.unmount());
       globalThis.fetch = previousFetch;
@@ -101,8 +122,11 @@ async function clickOption(host: ParentNode, playerName: string, season: string)
   const row = [...host.querySelectorAll("tr")].find((entry) => entry.textContent?.includes(playerName))!;
   const cell = row.querySelectorAll("td")[yearIndex + 1];
   assert.ok(cell);
-  assert.match(cell.getAttribute("title") ?? "", /option/);
-  await click(cell);
+  const toggle = cell.querySelector("button");
+  assert.ok(toggle, "option cells are native buttons — keyboard-operable without a key handler shim");
+  assert.match(toggle.getAttribute("title") ?? "", /option/);
+  assert.equal(toggle.getAttribute("aria-pressed") !== null, true, "toggle state is exposed to assistive tech");
+  await click(toggle);
 }
 
 test("mixed signing and future option stays in the current season and surfaces the backend rejection", async () => {
@@ -140,6 +164,128 @@ test("same-season option-only scenarios derive the future option season", async 
     assert.ok(request.moves?.every((move) => move.kind === "option_decision" && move.season === "2029-30"));
     assert.match(mounted.host.textContent!, /evaluation season 2029-30/);
   } finally {
+    await mounted.cleanup();
+  }
+});
+
+test("share minting creates a persistent object and surfaces the copyable link", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    assert.equal([...mounted.host.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Share"), false, "no share entry before moves exist");
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    const share = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Share");
+    assert.ok(share, "share entry point renders once moves exist");
+    await click(share);
+    assert.equal(mounted.objectRequests.length, 1);
+    const mint = mounted.objectRequests[0];
+    assert.equal(mint.body.kind, "cap_scenario");
+    assert.equal(mint.body.payload.team, "BOS");
+    assert.equal(mint.body.payload.moves.length, 1);
+    assert.equal(mint.body.payload.moves[0].kind, "option_decision");
+    assert.equal(mint.body.payload.moves[0].player, "Jayson Tatum");
+    assert.ok(JSON.stringify(mint.headers).includes("x-dime-owner"), "owner header sent");
+    assert.match(mounted.host.textContent!, /Snapshot link minted/, "confirmation copy rendered");
+    const link = [...mounted.host.querySelectorAll("input[readonly],textarea")].find((el) => (el as HTMLInputElement).value.includes("/s/testreadtoken"));
+    assert.ok(link, "copyable link field present");
+    const stored = mounted.host.ownerDocument?.defaultView?.localStorage ?? globalThis.localStorage;
+    assert.ok(Object.keys(stored).some((key) => key.includes("obj-") || key.includes("dime_owner")), "owner token retained client-side");
+    const copyButton = [...mounted.host.querySelectorAll("button")].find((button) => /copy/i.test(button.textContent ?? ""));
+    assert.ok(copyButton, "copy affordance present");
+  } finally {
+    await mounted.cleanup();
+  }
+});
+
+test("share minting failure is honest and in-place", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    const share = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Share")!;
+    forceObjectError.value = true;
+    await click(share);
+    assert.equal(mounted.objectRequests.length, 1);
+    assert.match(mounted.host.textContent!, /couldn'?t be shared|share failed|try again/i);
+    assert.equal((mounted.host.textContent ?? "").includes("/s/testreadtoken"), false, "no phantom link on failure");
+  } finally {
+    forceObjectError.value = false;
+    await mounted.cleanup();
+  }
+});
+
+test("post-mint edits surface Share updated instead of a dead end", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    const share = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Share")!;
+    await click(share);
+    assert.equal(mounted.objectRequests.length, 1);
+    assert.equal([...mounted.host.querySelectorAll("button")].some((button) => button.textContent?.trim() === "Share"), false, "share hidden while snapshot matches");
+    await clickOption(mounted.host, "Jaylen Brown", "2029-30");
+    const again = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Share updated");
+    assert.ok(again, "Share updated appears once moves diverge");
+    assert.match(mounted.host.textContent!, /changed since this link was minted/);
+    await click(again);
+    assert.equal(mounted.objectRequests.length, 2, "second mint creates a new object");
+  } finally {
+    await mounted.cleanup();
+  }
+});
+
+test("waived players strike through in the waive season and all forward cells", async () => {
+  const mounted = await mountCapSheet([{ kind: "waive", player: "Jayson Tatum" }]);
+  try {
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    const loadSaved = [...mounted.host.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Load saved");
+    assert.ok(loadSaved, "Load saved button present");
+    await click(loadSaved);
+    const rows = [...mounted.host.querySelectorAll("tbody tr")];
+    const row = rows.find((tr) => (tr.textContent ?? "").includes("Jayson Tatum"));
+    assert.ok(row, "player row renders");
+    const cells = [...row.querySelectorAll("td")].slice(1);
+    assert.ok(cells.length > 1, "year cells render");
+    const struck = cells.filter((cell) => cell.className.includes("line-through"));
+    assert.equal(struck.length, cells.length, `every year cell strikes from the waive season forward, got ${struck.length} of ${cells.length}`);
+  } finally {
+    await mounted.cleanup();
+  }
+});
+
+test("roster rows without player_ids render distinctly — no key collapse for unsigned camp players", async () => {
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => { errors.push(args.map(String).join(" ")); };
+  const mounted = await mountCapSheet();
+  try {
+    const names = [...mounted.host.querySelectorAll("tbody tr th, tbody tr td:first-child")].map((cell) => cell.textContent ?? "");
+    assert.ok(names.length > 0, "roster renders");
+    const dupeKeyWarnings = errors.filter((line) => line.includes("same key"));
+    assert.deepEqual(dupeKeyWarnings, [], "no duplicate-key warnings even with null player_ids in the roster");
+  } finally {
+    console.error = originalError;
+    await mounted.cleanup();
+  }
+});
+
+
+test("draft sync failure surfaces a sonner toast instead of dying silently", async () => {
+  const mounted = await mountCapSheet();
+  try {
+    const { default: DimeToaster } = await import("./components/dime/DimeToaster");
+    const toasterHost = mounted.host.ownerDocument.createElement("div");
+    mounted.host.ownerDocument.body.appendChild(toasterHost);
+    const toasterRoot = createRoot(toasterHost);
+    await act(async () => toasterRoot.render(<DimeToaster />));
+    forceObjectError.value = true;
+    await clickOption(mounted.host, "Jayson Tatum", "2028-29");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    });
+    const toastText = mounted.host.ownerDocument.body.textContent ?? "";
+    assert.match(toastText, /aren't saving/i, "the sync failure surfaces as a toast");
+    assert.match(toastText, /retries as you keep editing/i, "the toast states the honest recovery behavior");
+    await act(async () => toasterRoot.unmount());
+  } finally {
+    forceObjectError.value = false;
     await mounted.cleanup();
   }
 });

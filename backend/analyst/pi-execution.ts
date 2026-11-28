@@ -6,7 +6,7 @@ import { Value } from "typebox/value";
 import { createAnalystSession } from "./runtime.js";
 import { connectPythonTools, objectValue, sourceEvidenceCard, sourceRecordSchema, sourceOutputSchema, sourceResult, type SourceRecord, type PythonToolsOptions } from "./python-tools.js";
 import { priorSourceTool, resolvedRuntime } from "./pi-context.js";
-import { artifactRejectionReason, createSubmitAnswerTool, submitAnswerSchema, type AnswerSubmission } from "./submit-tool.js";
+import { artifactRejectionReason, createSubmitAnswerTool, resolveSalvagedArtifacts, submitAnswerSchema, type AnswerSubmission, stripToolCallMarkup } from "./submit-tool.js";
 import { auditAnswerNumbers, auditLimitationClaims, createVerifyAnswerNumbersTool, isCapAsk, isDataAsk, limitationChallengeAdvisory, loadWarehouseInventory, missingRequiredTables, WAREHOUSE_TABLE_RE, ZERO_EVIDENCE_DATA_ASK_FLAG } from "./verify-answer.js";
 import type { AssistantMessage, Message } from "@earendil-works/pi-ai";
 import { countToolCall, createRunStatusTool, type RunStatusTracker } from "./run-status.js";
@@ -19,6 +19,7 @@ const TURN_END_STEER_MIN_CHARS = 240;
 const SUBMIT_FORCE_REMAINING_MS = 60_000;
 const WORKSPACE_MAX_DEPTH = 2;
 const ABORT_GRACE_MS = 10_000;
+const HARD_KILL_GRACE_MS = 5_000;
 const ABANDON_SENTINEL = Symbol("abandon-sentinel");
 const TRACE_RESULT_PREVIEW_CHARS = 4096;
 
@@ -41,25 +42,6 @@ function tracedResult(payload: unknown): TracedResult {
 const CODEMODE_STORE_ENTRY_TYPE = "codemode-store";
 const CODEMODE_STORE_FILE = "codemode-store.json";
 const CODEMODE_STORE_MAX_BYTES = 512 * 1024;
-
-const DISCOVERY_GLOBAL_NAME_RE = /^(all_tools|search_?tools|describe_?tool|describe_?namespace)$/i;
-const UNCERTAIN_SILENT_NAME_RE = /^read_source$/i;
-
-export function notFoundCorrectionCopy(malformed: string): { kind: "discovery_global" | "generic" | "silent"; copy: string | null } {
-    if (DISCOVERY_GLOBAL_NAME_RE.test(malformed)) {
-        return {
-            kind: "discovery_global",
-            copy: `Correction: ${malformed} is real but it is not a tool in the tools namespace — it is a bare global available inside codemode scripts. Call it with no prefix: await searchTools("the capability you need") returns ranked tool names and descriptions; await describeTool(name) returns one tool's declaration. These globals exist only inside codemode — they are not direct tool_calls either. Retry inside your codemode script now.`,
-        };
-    }
-    if (UNCERTAIN_SILENT_NAME_RE.test(malformed)) {
-        return { kind: "silent", copy: null };
-    }
-    return {
-        kind: "generic",
-        copy: `Correction: nothing is missing — the error you saw means only the invocation form was wrong, not that any tool is unavailable. submit_answer is a direct tool you invoke as a tool_call in your response — never JavaScript, never inside codemode — and there is no tools.xxx invocation form for it. The failing call used a malformed name (${malformed}). The same holds for sql_exec, verify_answer_numbers and the warehouse tools: invoke them as direct tool_calls by bare name. If you are looking for a tool whose exact name you don't know: inside codemode, await searchTools("capability words") is the real discovery primitive — bare global, no tools. prefix — and it returns the exact registered names. Retry what you were doing right now.`,
-    };
-}
 
 export function codemodeStoreSnapshot(branch: ReadonlyArray<{ type: string }>): Record<string, unknown> {
     const store = new Map<string, unknown>();
@@ -110,7 +92,7 @@ function salvageDraftSubmission(snapshot: Record<string, unknown>): AnswerSubmis
         const total = items.reduce((n, item) => n + (item.text as string).trim().length, 0);
         if (total >= 200 && total > bestLen) {
             bestLen = total;
-            best = items.map(item => ({ text: (item.text as string).trim(), anchors: [] }));
+            best = items.map(item => ({ text: stripToolCallMarkup((item.text as string).trim()), anchors: [] as [] })).filter(block => block.text.length > 0);
         }
     }
     if (!best)
@@ -164,8 +146,9 @@ function salvageNarrationSubmission(messages: ReadonlyArray<{ role: string; cont
             .map(block => block.text as string)
             .join("")
             .trim();
-        if (text.length >= 200)
-            return { blocks: [{ text, anchors: [] }], omitted: ["submission salvaged from the final narration — the run ended before submit_answer completed"] };
+        const cleaned = stripToolCallMarkup(text);
+        if (cleaned.length >= 200)
+            return { blocks: [{ text: cleaned, anchors: [] }], omitted: ["submission salvaged from the final narration — the run ended before submit_answer completed"] };
     }
     return undefined;
 }
@@ -457,6 +440,27 @@ export function compactPriorSubmissions(submissions: ReadonlyArray<{ run_id: str
 
 function sourceSummary(record: SourceRecord) {
     return sourceEvidenceCard(record);
+}
+
+const RATE_LIMIT_EVIDENCE = /(rate.?limit|too many (tokens|requests)|token[s]? per minute|\b429\b|quota exceeded|token_quota)/i;
+
+export function isRateLimitEvidence(text: string): boolean {
+    return RATE_LIMIT_EVIDENCE.test(text);
+}
+
+export function classifyFailureKind(kind: string, error: unknown, session: { messages: ReadonlyArray<{ role?: unknown; errorMessage?: unknown }> } | null | undefined, extraEvidence?: string): string {
+    if (kind !== "model")
+        return kind;
+    const parts: string[] = [error instanceof Error ? error.message : String(error ?? "")];
+    if (extraEvidence)
+        parts.push(extraEvidence);
+    if (session) {
+        for (const message of session.messages) {
+            if (message.role === "assistant" && typeof message.errorMessage === "string")
+                parts.push(message.errorMessage);
+        }
+    }
+    return parts.some(part => isRateLimitEvidence(part)) ? "quota" : kind;
 }
 
 function safeFailureMessage(kind: string, error: unknown, apiKey?: string): string {
@@ -1180,6 +1184,7 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                     return bridgeClosePromise;
                 };
                 let kind = "configuration";
+                let providerErrorEvidence = "";
                 let bridgeCwd: string | undefined;
                 let bridgePid: number | undefined;
                 let modelApiKey: string | undefined;
@@ -1191,6 +1196,26 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                 const startedAt = Date.now();
                 const cancel = () => { void session?.abort(); };
                 controller.signal.addEventListener("abort", cancel, { once: true });
+                let runSettled = false;
+                let hardKillTimer: ReturnType<typeof setTimeout> | undefined;
+                controller.signal.addEventListener("abort", () => {
+                    hardKillTimer = setTimeout(() => {
+                        if (runSettled)
+                            return;
+                        if (bridgePid !== undefined)
+                            try {
+                                process.kill(bridgePid, "SIGKILL");
+                            }
+                            catch {
+                            }
+                        try {
+                            session?.dispose();
+                        }
+                        catch {
+                        }
+                    }, HARD_KILL_GRACE_MS);
+                    hardKillTimer.unref();
+                }, { once: true });
                 try {
                     if (!Value.Check(analystContextSchema, input) || !input.q.trim())
                         throw new Error("Invalid product context");
@@ -1367,6 +1392,10 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                         if (mapped)
                             emit(mapped);
                         retryStormGuard(event);
+                        if (event.type === "auto_retry_end" && !event.success && typeof event.finalError === "string")
+                            providerErrorEvidence += ` ${event.finalError}`;
+                        if (event.type === "message_end" && event.message && event.message.role === "assistant" && typeof event.message.errorMessage === "string")
+                            providerErrorEvidence += ` ${event.message.errorMessage}`;
                         if (notFoundCorrections < 6) {
                             const messages = session?.messages ?? [];
                             for (let i = scannedToolResults; i < messages.length; i++) {
@@ -1378,16 +1407,13 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                                 if (notFound && !correctedNotFoundNames.has(notFound[1])) {
                                     correctedNotFoundNames.add(notFound[1]);
                                     notFoundCorrections++;
-                                    const correction = notFoundCorrectionCopy(notFound[1]);
                                     emit({ type: "tool_call", name: "tool_not_found_correction", args: { malformed: notFound[1] } });
-                                    emit({ type: "tool_result", name: "tool_not_found_correction", status: "ok", result: correction.copy === null ? `silenced malformed tool name (uncertain sub-case): ${notFound[1]}` : `corrected malformed tool name: ${notFound[1]}` });
-                                    if (correction.copy !== null) {
-                                        session?.agent.steer({
-                                            role: "user",
-                                            content: correction.copy,
-                                            timestamp: Date.now()
-                                        });
-                                    }
+                                    emit({ type: "tool_result", name: "tool_not_found_correction", status: "ok", result: `corrected malformed tool name: ${notFound[1]}` });
+                                    session?.agent.steer({
+                                        role: "user",
+                                        content: `Correction: nothing is missing — the error you saw means only the invocation form was wrong, not that any tool is unavailable. submit_answer is a direct tool you invoke as a tool_call in your response — never JavaScript, never inside codemode — and there is no tools.xxx invocation form for it. The failing call used a malformed name (${notFound[1]}). The same holds for sql_exec, verify_answer_numbers and the warehouse tools: invoke them as direct tool_calls by bare name. Retry what you were doing right now.`,
+                                        timestamp: Date.now()
+                                    });
                                     break;
                                 }
                             }
@@ -1470,9 +1496,20 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             if (!session.messages.some(message => message.role === "toolResult"))
                                 return;
                             const drafted = salvageDraftSubmission(mergedStoreSnapshot(codemodeStoreSnapshot(session.sessionManager.getBranch()), start.bridge.cwd));
-                            const salvaged = drafted ?? salvageNarrationSubmission(session.messages);
+                            let salvaged = drafted ?? salvageNarrationSubmission(session.messages);
                             if (!salvaged)
                                 return;
+                            if (salvaged.artifacts?.length) {
+                                const salvageSources = [...(start.sources ?? []), ...connected.results.values()];
+                                const salvageSourceMap = new Map(salvageSources.map(source => [source.ref, source]));
+                                const resolved = resolveSalvagedArtifacts(salvaged.artifacts, ref => salvageSourceMap.get(ref), [...salvageSourceMap.keys()]);
+                                const { artifacts: _rawSalvagedArtifacts, ...salvagedRest } = salvaged;
+                                salvaged = {
+                                    ...salvagedRest,
+                                    ...(resolved.artifacts.length ? { artifacts: resolved.artifacts } : {}),
+                                    ...(resolved.dropped ? { omitted: [...(salvaged.omitted ?? []), `${resolved.dropped} draft artifact(s) could not be resolved against this run's sources and were dropped`] } : {})
+                                };
+                            }
                             acceptedSubmission = salvaged;
                             if (!drafted) {
                                 emittedFromNarration = true;
@@ -1641,10 +1678,19 @@ export function createPiExecution(deps: AnalystDeps = {}) {
                             emit({ type: "answer", text: upgrade.blocks.map(block => block.text).join("\n\n"), submission: upgrade });
                         }
                     }
-                    if (!answerEmitted && !controller.signal.aborted)
-                        emit({ type: "failure", kind, message: safeFailureMessage(kind, error, modelApiKey) });
+                    if (!answerEmitted && !controller.signal.aborted) {
+                        const failureKind = classifyFailureKind(kind, error, session, providerErrorEvidence);
+                        const rawErrorText = error instanceof Error ? error.message : String(error ?? "");
+                        const failureError = failureKind === "quota" && !isRateLimitEvidence(rawErrorText)
+                            ? new Error("the model provider's rate limit or quota was exhausted mid-run")
+                            : error;
+                        emit({ type: "failure", kind: failureKind, message: safeFailureMessage(failureKind, failureError, modelApiKey) });
+                    }
                 }
                 finally {
+                    runSettled = true;
+                    if (hardKillTimer)
+                        clearTimeout(hardKillTimer);
                     if (budgetNudge)
                         clearTimeout(budgetNudge);
                     if (compositionDirective)
