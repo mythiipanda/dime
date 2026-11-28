@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowRight, Basketball, Copy, Database, User } from "iconoir-react";
+import { ArrowRight, Basketball, Check, Copy, Database, User } from "iconoir-react";
 import { PromptBar } from "../ds/PromptBar";
 import { CitationChip } from "../ds/CitationChip";
 import { EvidenceTrace } from "../ds/EvidenceTrace";
@@ -44,6 +44,28 @@ export function PiAnswer({ text, carry, prefix }: { text: string; carry: Verific
   </div>)}</>;
 }
 
+export function CopyAnswerButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1600);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <div className="mt-1 flex items-center">
+      <button
+        className="icon-button -ml-1.5 text-ink-3"
+        aria-label={copied ? "Copied" : "Copy answer"}
+        onClick={() => {
+          void navigator.clipboard.writeText(text).then(() => setCopied(true));
+        }}
+      >
+        {copied ? <Check width={13} height={13} /> : <Copy width={13} height={13} />}
+      </button>
+    </div>
+  );
+}
+
 export function AssistantTurn({ message, prefix, thread, onFollowUp, onRetry }: { message: Extract<ChatMsg, { role: "assistant" }>; prefix: string; thread?: string; onFollowUp: (text: string) => void; onRetry?: () => void }) {
   return <article className="assistant-turn">
     <div className="mb-3 flex items-center gap-2 text-[11px] text-ink-3"><Basketball width={14} height={14} /><span>Dime</span></div>
@@ -54,7 +76,7 @@ export function AssistantTurn({ message, prefix, thread, onFollowUp, onRetry }: 
     <StreamArtifacts artifacts={message.artifacts} shareContext={message.carry?.runId && thread ? { run_id: message.carry.runId, thread } : undefined} />
     <AnswerVerification carry={message.carry} artifacts={message.artifacts} prefix={prefix} />
     {message.failure && <div role="alert" className="my-4 flex items-center gap-3 rounded-lg border border-red/25 bg-red-tint px-4 py-3 text-[12px] text-red"><span className="flex-1">{normalizeFailureCopy(message.failure.message)}</span>{onRetry && <button className="failure-retry" onClick={onRetry}>Try again</button>}</div>}
-    {message.text && <button className="icon-button" aria-label="Copy answer" onClick={() => { void navigator.clipboard.writeText(message.text); }}><Copy width={13} height={13} /></button>}
+    {message.text && <CopyAnswerButton text={message.text} />}
     {message.suggestions.map(suggestion => <button key={suggestion} className="suggestion-row text-[12px]" onClick={() => onFollowUp(suggestion)}><ArrowRight width={13} height={13} />{suggestion}</button>)}
   </article>;
 }
