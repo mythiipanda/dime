@@ -198,3 +198,74 @@ test("visually hidden artifact announcements stay anchored to their local surfac
   assert.ok(caption.closest("table")!.parentElement!.parentElement!.classList.contains("relative"));
   dom.window.close();
 });
+
+test("trade_verdict resolver accepts evaluator-shaped payloads and rejects malformed ones", () => {
+  const valid = {
+    kind: "trade_verdict", title: "Washington-for-Poeltl works", legal: true, sourceRef: "trade-src",
+    teams: [
+      { team: "DAL", playersOut: ["P.J. Washington"], playersIn: ["Jakob Poeltl"], outgoing: 19813044, incoming: 19500000, payrollBefore: 183593937, allowedIncoming: 28909044, matchRule: "standard TPE matching", tpeCreation: { amount: 313044, condition: "non-simultaneous only" } },
+      { team: "TOR", playersOut: ["Jakob Poeltl"], playersIn: ["P.J. Washington"], outgoing: 19500000, incoming: 19813044, hardCap: "first apron" },
+    ],
+    checks: [{ rule: "salary matching", note: "both sides within band" }],
+    evaluationTool: "get_trade_check",
+  };
+  const [resolved] = asResolvedArtifacts([valid]);
+  assert.equal(resolved.kind, "trade_verdict");
+  if (resolved.kind !== "trade_verdict") return;
+  assert.equal(resolved.legal, true);
+  assert.equal(resolved.teams.length, 2);
+  assert.equal(resolved.teams[0].tpeCreation?.amount, 313044);
+  for (const malformed of [
+    { ...valid, legal: "yes" },
+    { ...valid, legal: undefined },
+    { ...valid, sourceRef: "" },
+    { ...valid, teams: [] },
+    { ...valid, teams: [{ team: "DAL" }] },
+    { ...valid, teams: [{ ...valid.teams[0], outgoing: "big" }, valid.teams[1]] },
+    { ...valid, teams: [{ ...valid.teams[0], playersOut: "P.J. Washington" }, valid.teams[1]] },
+  ]) assert.deepEqual(asResolvedArtifacts([malformed]), []);
+});
+
+test("trade_verdict markup renders the verdict, salary math, issues and evaluator framing", async () => {
+  const { default: ArtifactTradeVerdict } = await import("./components/dime/ArtifactTradeVerdict");
+  const worstcase = (await import("./lib/worstcase-fixture")).worstcaseFixtures.find(a => a.kind === "trade_verdict");
+  assert.ok(worstcase && worstcase.kind === "trade_verdict");
+  const html = renderToStaticMarkup(<ArtifactTradeVerdict artifact={worstcase} />);
+  assert.match(html, /Illegal/);
+  assert.match(html, /Dikembe Mutombo Mpolondo Mukamba Jean-Jacques Wamutombo/);
+  assert.match(html, /\$18\.1M/);
+  assert.match(html, /\$57\.1M/);
+  assert.match(html, /takes back too much/);
+  assert.match(html, /trade exception/);
+  assert.match(html, /hard-cap/);
+  assert.match(html, /evaluator/);
+  const legal = renderToStaticMarkup(<ArtifactTradeVerdict artifact={{ ...worstcase, legal: true, issues: undefined }} />);
+  assert.match(legal, /Legal/);
+});
+
+test("trade_verdict copy text carries the verdict and per-team salary rows", () => {
+  const artifact = {
+    kind: "trade_verdict" as const, title: "t", legal: false, sourceRef: "s",
+    issues: ["takes back too much"],
+    teams: [{ team: "CHA", playersOut: ["Grayson Allen"], playersIn: ["Devin Booker"], outgoing: 18125000, incoming: 57078728, matchRule: "outgoing plus $9.096M" }],
+    checks: [{ rule: "salary matching", note: "exceeds band" }],
+  };
+  const csv = artifactToCopyText(artifact);
+  assert.match(csv, /Verdict,Illegal/);
+  assert.match(csv, /CHA,Grayson Allen,18125000,Devin Booker,57078728/);
+  assert.match(csv, /Issue,takes back too much/);
+  assert.match(csv, /Check,salary matching,exceeds band/);
+});
+
+test("worst-case trade verdict survives the replay stream reducer", async () => {
+  const previous = process.env.NODE_ENV;
+  Object.assign(process.env, { NODE_ENV: "development" });
+  try {
+    const stream = new DimeStream();
+    await replayStream("worstcase", { onEvent: (type, data) => stream.handle(type, data), onDone: () => stream.finish(), onError: message => assert.fail(message) });
+    const verdict = stream.snapshot().artifacts.find(a => a.kind === "trade_verdict");
+    assert.ok(verdict && verdict.kind === "trade_verdict");
+    assert.equal(verdict.legal, false);
+    assert.equal(verdict.teams.length, 2);
+  } finally { Object.assign(process.env, { NODE_ENV: previous }); }
+});

@@ -7,6 +7,7 @@ import { mintObject, shareLink as objectShareLink } from "@/lib/objects-client";
 import { MintedLink, copyToClipboard } from "@/components/dime/MintedLink";
 import ArtifactChart, { type ChartSeries } from "@/components/dime/ArtifactChart";
 import ArtifactCompare from "@/components/dime/ArtifactCompare";
+import ArtifactTradeVerdict from "@/components/dime/ArtifactTradeVerdict";
 import ArtifactScatter from "@/components/dime/ArtifactScatter";
 import ArtifactShell from "@/components/dime/ArtifactShell";
 import ArtifactShotChart from "@/components/dime/ArtifactShotChart";
@@ -40,6 +41,7 @@ export function ArtifactBody({ artifact }: { artifact: DimeArtifact }) {
   if (artifact.kind === "memo") return artifact.sections ? <ArtifactMemo artifact={artifact} /> : <div className="p-4"><p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{artifact.text}</p></div>;
   if (artifact.kind === "player_card") return <ArtifactPlayerCard artifact={artifact} />;
   if (artifact.kind === "team_card") return <ArtifactTeamCard artifact={artifact} />;
+  if (artifact.kind === "trade_verdict") return <ArtifactTradeVerdict artifact={artifact} />;
   if (artifact.kind === "table") {
     return <ArtifactTable columns={artifact.columns} rows={artifact.rows} title={artifact.title} footnote={artifact.footnote} />;
   }
@@ -183,6 +185,27 @@ function escapeCsvCell(val: unknown): string {
 }
 
 export function artifactToCopyText(artifact: DimeArtifact): string {
+  if (artifact.kind === "trade_verdict") {
+    const lines = [`Verdict,${artifact.legal ? "Legal" : "Illegal"}`];
+    lines.push("Team,Players Out,Outgoing,Players In,Incoming,Payroll Before,Payroll After,Allowed Incoming,Match Rule,Hard Cap");
+    for (const team of artifact.teams) {
+      lines.push([
+        team.team,
+        team.playersOut.join("; "),
+        team.outgoing,
+        team.playersIn.join("; "),
+        team.incoming,
+        team.payrollBefore,
+        team.payrollAfter,
+        team.allowedIncoming,
+        team.matchRule,
+        team.hardCap,
+      ].map(escapeCsvCell).join(","));
+    }
+    for (const issue of artifact.issues ?? []) lines.push(["Issue", issue].map(escapeCsvCell).join(","));
+    for (const check of artifact.checks ?? []) lines.push(["Check", check.rule, check.note ?? ""].map(escapeCsvCell).join(","));
+    return lines.join("\n");
+  }
   if (artifact.kind === "memo") return memoToMarkdown(artifact);
   if (artifact.kind === "player_card" || artifact.kind === "team_card") {
     const name = artifact.kind === "player_card" ? artifact.playerName : artifact.teamName;

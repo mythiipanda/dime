@@ -216,6 +216,38 @@ export interface TeamCardArtifactPayload {
   sections?: PlayerCardSectionPayload[];
 }
 
+
+export interface TradeVerdictTeamPayload {
+  team: string;
+  playersOut: string[];
+  playersIn: string[];
+  outgoing?: number;
+  incoming?: number;
+  payrollBefore?: number;
+  payrollAfter?: number;
+  allowedIncoming?: number;
+  matchRule?: string;
+  hardCap?: string;
+  overApron1?: boolean;
+  overApron2?: boolean;
+  matchingFailed?: boolean;
+  aggregates?: boolean;
+  tpeCreation?: { amount: number; condition?: string };
+}
+
+export interface TradeVerdictArtifactPayload {
+  kind: "trade_verdict";
+  title: string;
+  source?: string;
+  provenance?: DimeProvenance;
+  legal: boolean;
+  issues?: string[];
+  teams: TradeVerdictTeamPayload[];
+  checks?: { rule: string; note?: string }[];
+  evaluationTool?: string;
+  sourceRef: string;
+}
+
 export type DimeArtifact =
   | TableArtifactPayload
   | CompareArtifactPayload
@@ -224,7 +256,8 @@ export type DimeArtifact =
   | ScatterArtifactPayload
   | PlayerCardArtifactPayload
   | TeamCardArtifactPayload
-  | MemoArtifactPayload;
+  | MemoArtifactPayload
+  | TradeVerdictArtifactPayload;
 
 export interface ArtifactEvent {
   type: "artifact";
