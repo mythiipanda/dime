@@ -61,6 +61,18 @@ export const worstcaseFixtures: DimeArtifact[] = [
       { heading: "Offense", body: "Nikola Jokić, Jonas Valančiūnas, and Luka Dončić all appear here to probe unicode rendering inside prose sections." },
     ],
     footnote: "Fictional memo. Unicode probe." },
+  { kind: "trade_verdict", title: "Worst-case illegal aggregation", legal: false, sourceRef: "worstcase-verdict-fixture",
+    issues: ["Valančiūnas Fixture-O'Neill Long-Name Athletics takes back too much", "Aggregation is prohibited above the second apron for the 2026-27 season and this issue string is deliberately verbose to probe wrapping inside the issue list"],
+    teams: [
+      { team: "VFL", playersOut: ["Dikembe Mutombo Mpolondo Mukamba Jean-Jacques Wamutombo"], playersIn: ["Nikola Jokić", "Jonas Valančiūnas"], outgoing: 18125000, incoming: 57078728, payrollBefore: 157719786, payrollAfter: 196675514, allowedIncoming: 27128000, matchRule: "outgoing salary plus $9.096M (below the first apron)", hardCap: "first apron", matchingFailed: true },
+      { team: "PHX", playersOut: ["Nikola Jokić", "Jonas Valančiūnas"], playersIn: ["Dikembe Mutombo Mpolondo Mukamba Jean-Jacques Wamutombo"], outgoing: 57078728, incoming: 18125000, payrollBefore: 193393075, payrollAfter: 154439347, allowedIncoming: 57078728, matchRule: "100% of outgoing (above the first apron)", overApron1: true, overApron2: true, tpeCreation: { amount: 38953728, condition: "would generate only if this construction is executed as a non-simultaneous trade" } },
+    ],
+    checks: [
+      { rule: "salary matching", note: "VFL incoming exceeds the band by $29.9M" },
+      { rule: "second apron aggregation", note: "no aggregation above the second apron" },
+    ],
+    evaluationTool: "get_trade_check",
+    provenance: { origin: "undeclared", capability: "Worst-case fixture · no live query", season: "Illustrative season", liveSources: [] } },
 ];
 
 export const worstcaseEvents: [string, unknown][] = [

@@ -21,6 +21,8 @@ export type {
   PlayerCardArtifactPayload,
   PlayerCardSectionPayload,
   TeamCardArtifactPayload,
+  TradeVerdictArtifactPayload,
+  TradeVerdictTeamPayload,
   ScatterArtifactPayload,
   ShotChartArtifactPayload,
   StreamFailure,

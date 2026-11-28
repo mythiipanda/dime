@@ -8,6 +8,8 @@ import type {
   DimeProvenance,
   MemoAnchor,
   MemoArtifactPayload,
+  TradeVerdictArtifactPayload,
+  TradeVerdictTeamPayload,
   MemoSectionPayload,
   PlayerCardArtifactPayload,
   PlayerCardSectionPayload,
@@ -425,6 +427,70 @@ function resolveMemo(
   };
 }
 
+
+function parseVerdictTeam(raw: unknown): TradeVerdictTeamPayload | null {
+  if (!raw || typeof raw !== "object") return null;
+  const entry = raw as Record<string, unknown>;
+  if (typeof entry.team !== "string" || !entry.team) return null;
+  if (!Array.isArray(entry.playersOut) || !Array.isArray(entry.playersIn)) return null;
+  const playersOut = entry.playersOut.filter((p): p is string => typeof p === "string");
+  const playersIn = entry.playersIn.filter((p): p is string => typeof p === "string");
+  if (playersOut.length !== entry.playersOut.length || playersIn.length !== entry.playersIn.length) return null;
+  const team: TradeVerdictTeamPayload = { team: entry.team, playersOut, playersIn };
+  const numericKeys = ["outgoing", "incoming", "payrollBefore", "payrollAfter", "allowedIncoming"] as const;
+  for (const key of numericKeys) {
+    if (entry[key] === undefined) continue;
+    const value = finiteNumber(entry[key]);
+    if (value === undefined) return null;
+    team[key] = value;
+  }
+  if (typeof entry.matchRule === "string" && entry.matchRule) team.matchRule = entry.matchRule;
+  if (typeof entry.hardCap === "string" && entry.hardCap) team.hardCap = entry.hardCap;
+  for (const flag of ["overApron1", "overApron2", "matchingFailed", "aggregates"] as const) {
+    if (entry[flag] === true) team[flag] = true;
+  }
+  if (entry.tpeCreation && typeof entry.tpeCreation === "object") {
+    const tpe = entry.tpeCreation as Record<string, unknown>;
+    const amount = finiteNumber(tpe.amount);
+    if (amount !== undefined) {
+      team.tpeCreation = { amount, ...(typeof tpe.condition === "string" && tpe.condition ? { condition: tpe.condition } : {}) };
+    }
+  }
+  return team;
+}
+
+function resolveTradeVerdict(entry: Record<string, unknown>, title: string, provenance: DimeProvenance | undefined): TradeVerdictArtifactPayload | null {
+  if (typeof entry.legal !== "boolean") return null;
+  if (typeof entry.sourceRef !== "string" || !entry.sourceRef) return null;
+  if (!Array.isArray(entry.teams) || entry.teams.length === 0) return null;
+  const teams: TradeVerdictTeamPayload[] = [];
+  for (const rawTeam of entry.teams) {
+    const team = parseVerdictTeam(rawTeam);
+    if (!team) return null;
+    teams.push(team);
+  }
+  const issues = Array.isArray(entry.issues)
+    ? entry.issues.filter((issue): issue is string => typeof issue === "string" && issue !== "")
+    : [];
+  const checks: { rule: string; note?: string }[] = [];
+  if (Array.isArray(entry.checks)) {
+    for (const rawCheck of entry.checks) {
+      if (!rawCheck || typeof rawCheck !== "object") continue;
+      const check = rawCheck as Record<string, unknown>;
+      if (typeof check.rule !== "string" || !check.rule) continue;
+      checks.push({ rule: check.rule, ...(typeof check.note === "string" && check.note ? { note: check.note } : {}) });
+    }
+  }
+  return {
+    kind: "trade_verdict", title, legal: entry.legal, teams,
+    ...(issues.length ? { issues } : {}),
+    ...(checks.length ? { checks } : {}),
+    ...(typeof entry.evaluationTool === "string" && entry.evaluationTool ? { evaluationTool: entry.evaluationTool } : {}),
+    sourceRef: entry.sourceRef,
+    source: provenanceSource(provenance), provenance,
+  };
+}
+
 const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   chart: resolveChart,
   shot_chart: resolveShotChart,
@@ -433,7 +499,8 @@ const ARTIFACT_RESOLVERS: Record<string, ArtifactResolver> = {
   scatter: resolveScatter,
   player_card: resolvePlayerCard,
   team_card: resolveTeamCard,
-  memo: resolveMemo,};
+  memo: resolveMemo,
+  trade_verdict: resolveTradeVerdict,};
 
 export function memoToMarkdown(artifact: MemoArtifactPayload): string {
   const lines: string[] = [`# ${artifact.title}`];
