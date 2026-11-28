@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, Square, Check, NavArrowDown } from "iconoir-react";
+import { ArrowUp, Check, ChevronDown, Square } from "lucide-react";
 
 const providerKeys: Record<string, string> = { gemini: "GEMINI_API_KEY (or GOOGLE_API_KEY)", nvidia: "NVIDIA_NIM_API_KEY", openrouter: "OPENROUTER_API_KEY", mistral: "MISTRAL_API_KEY", cerebras: "CEREBRAS_API_KEY", groq: "GROQ_API_KEY", agnes: "AGNES_API_KEY", reflection: "REFLECTION_API_KEY", inception: "INCEPTION_API_KEY" };
 
@@ -141,7 +141,7 @@ export function PromptBar({ value, onChange, onSend, onStop, busy, models, model
           className="flex h-7 items-center gap-1 rounded-[8px] px-1.5 text-[12px] font-medium text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink"
         >
           {selected?.label ?? (modelsLoading ? "Loading models…" : "No model")}
-          <span className="text-ink-3"><NavArrowDown width={11} height={11} strokeWidth={2.4} /></span>
+          <span className="text-ink-3"><ChevronDown width={11} height={11} strokeWidth={2.4} /></span>
         </button>}
       </div>
       <button type={busy ? "button" : "submit"} onClick={busy ? onStop : undefined} disabled={!busy && !!disabledReason} title={busy ? "Stop response" : disabledReason} aria-describedby={!busy && !selected && !modelsLoading && !modelError ? "provider-setup" : undefined} aria-label={busy ? "Stop response" : "Send message"} className="flex size-7 items-center justify-center rounded-lg bg-ink text-page transition-opacity hover:opacity-80 disabled:bg-hover-2 disabled:text-ink-3">{busy ? <Square width={13} height={13} /> : <ArrowUp width={17} height={17} />}</button>

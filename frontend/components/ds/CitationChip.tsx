@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Database, ArrowDown } from "iconoir-react";
+import { ArrowDown, Database } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "../ui/popover";
 import type { citationDetails } from "../../lib/citation-details";
 

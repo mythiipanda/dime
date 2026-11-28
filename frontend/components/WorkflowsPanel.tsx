@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, ArrowLeft, NavArrowDown, Check, Basketball, Group, StatsReport } from "iconoir-react";
+import { ArrowLeft, ArrowRight, BarChart3, Check, ChevronDown, Users } from "lucide-react";
+import { BasketballIcon } from "@/components/ds/BasketballIcon";
 import { TEAM_ABBR_BY_FULL_NAME } from "../lib/teams";
 import { workflows, validateWorkflow, type Workflow, type WorkflowValues } from "../lib/workflows";
 import { Button } from "./ds/Button";
@@ -10,7 +11,7 @@ import { SegmentedControl } from "./ds/SegmentedControl";
 import { ValuePill } from "./ds/ValuePill";
 
 const categories = ["All tasks", "Game prep", "Roster", "Player evaluation"] as const;
-const categoryIcons = { "Game prep": Basketball, Roster: Group, "Player evaluation": StatsReport };
+const categoryIcons = { "Game prep": BasketballIcon, Roster: Users, "Player evaluation": BarChart3 };
 const countLabel = (count: number, label: string) => `${count} ${label}${count === 1 ? "" : "s"}`;
 
 export default function WorkflowsPanel({ onRun }: { onRun: (request: string) => void }) {
@@ -34,7 +35,7 @@ export default function WorkflowsPanel({ onRun }: { onRun: (request: string) => 
       <form onSubmit={(e) => { e.preventDefault(); if (!issues.length) onRun(selected.buildRequest(values)); }}>
         <div className="grid gap-8 lg:grid-cols-[1.35fr_1fr]">
           <div><div className="rounded-xl border border-line bg-surface p-6"><div className="mb-6 flex items-center justify-between"><h2 className="text-[13px] font-medium">Set the context</h2><span className="text-[10px] text-ink-3">2025–26 season</span></div><div className="grid gap-5">{selected.fields.map((f) => <label key={f.id} className="workflow-field"><span>{f.label}{!f.required && <span className="ml-1 text-ink-3">(optional)</span>}</span>{f.kind === "team" || f.kind === "select" ? <select required={f.required} aria-invalid={issues.some(issue => issue.field.id === f.id && issue.kind === "same-team") || undefined} aria-describedby={issues.some(issue => issue.field.id === f.id && issue.kind === "same-team") ? `workflow-error-${f.id}` : undefined} value={values[f.id] || ""} onChange={(e) => setValues({ ...values, [f.id]: e.target.value })}><option value="">{f.placeholder}</option>{f.kind === "team" ? Object.entries(TEAM_ABBR_BY_FULL_NAME).map(([name, abbr]) => <option key={abbr} value={abbr}>{name} ({abbr})</option>) : f.options?.map((o) => <option key={o}>{o}</option>)}</select> : <input required={f.required} placeholder={f.placeholder} value={values[f.id] || ""} onChange={(e) => setValues({ ...values, [f.id]: e.target.value })} />}</label>)}</div>{issues.filter(issue => issue.kind === "same-team").map(issue => <p key={issue.field.id} id={`workflow-error-${issue.field.id}`} role="alert" className="mt-3 text-[12px] text-red">{issue.message}</p>)}</div>
-            <details className="mt-4 rounded-xl border border-line"><summary className="flex list-none items-center justify-between px-5 py-4 text-[12px] text-ink-2">Preview request<NavArrowDown width={13} height={13} /></summary><pre className="whitespace-pre-wrap border-t border-line p-5 font-mono text-[11px] leading-[1.8] text-ink-2">{selected.buildRequest(values)}</pre></details>
+            <details className="mt-4 rounded-xl border border-line"><summary className="flex list-none items-center justify-between px-5 py-4 text-[12px] text-ink-2">Preview request<ChevronDown width={13} height={13} /></summary><pre className="whitespace-pre-wrap border-t border-line p-5 font-mono text-[11px] leading-[1.8] text-ink-2">{selected.buildRequest(values)}</pre></details>
           </div>
           <div className="pt-1"><h2 className="mb-4 text-[13px] font-medium">What you’ll get</h2><ol className="grid gap-4">{selected.deliverable.map((section, i) => <li key={section} className="flex items-center gap-3 text-[12px] text-ink-2"><span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-line text-[10px] tabular-nums text-ink-3">{String(i + 1).padStart(2, "0")}</span>{section}</li>)}</ol><div className="mt-6 border-t border-line pt-5"><p className="flex items-center gap-2 text-[11px] text-ink-2"><Check width={13} height={13} />Warehouse sources and citations</p><p className="mt-2 text-[11px] leading-relaxed text-ink-3">Missing data is called out, never filled in. Continue the analysis in a new chat.</p></div></div>
         </div>
