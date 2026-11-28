@@ -474,6 +474,38 @@ function parseVerdictTeam(raw: unknown): TradeVerdictTeamPayload | null {
   return team;
 }
 
+
+function resolveConstruction(entry: Record<string, unknown>): Record<string, unknown> | undefined {
+  const raw = entry.construction;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  return raw as Record<string, unknown>;
+}
+
+function tradeConstructionOf(entry: Record<string, unknown>): import("@/lib/workbench-navigation").TradeConstructionSeed | undefined {
+  const raw = resolveConstruction(entry);
+  if (!raw || !Array.isArray(raw.legs) || raw.legs.length === 0 || typeof raw.season !== "string" || !raw.season) return undefined;
+  const legs: import("@/lib/workbench-navigation").TradeConstructionSeed["legs"] = [];
+  for (const rawLeg of raw.legs) {
+    if (!rawLeg || typeof rawLeg !== "object") return undefined;
+    const leg = rawLeg as Record<string, unknown>;
+    if (typeof leg.from !== "string" || !leg.from || typeof leg.to !== "string" || !leg.to) return undefined;
+    const out: { from: string; to: string; players?: string | string[]; picks?: Record<string, unknown>[] } = { from: leg.from, to: leg.to };
+    if (typeof leg.players === "string" && leg.players) out.players = leg.players;
+    else if (Array.isArray(leg.players) && leg.players.every(p => typeof p === "string")) out.players = leg.players as string[];
+    if (Array.isArray(leg.picks)) out.picks = leg.picks.filter(p => p && typeof p === "object") as Record<string, unknown>[];
+    legs.push(out);
+  }
+  return { legs, season: raw.season };
+}
+
+function capConstructionOf(entry: Record<string, unknown>): import("@/lib/workbench-navigation").CapScenarioSeed | undefined {
+  const raw = resolveConstruction(entry);
+  if (!raw || typeof raw.team !== "string" || !raw.team || typeof raw.season !== "string" || !raw.season) return undefined;
+  if (!Array.isArray(raw.moves)) return undefined;
+  const moves = raw.moves.filter(move => move && typeof move === "object" && !Array.isArray(move)) as Record<string, unknown>[];
+  return { team: raw.team, season: raw.season, moves, ...(typeof raw.waiver_date === "string" && raw.waiver_date ? { waiver_date: raw.waiver_date } : {}) };
+}
+
 function resolveTradeVerdict(entry: Record<string, unknown>, title: string, provenance: DimeProvenance | undefined): TradeVerdictArtifactPayload | null {
   if (typeof entry.legal !== "boolean") return null;
   if (typeof entry.sourceRef !== "string" || !entry.sourceRef) return null;
@@ -503,6 +535,7 @@ function resolveTradeVerdict(entry: Record<string, unknown>, title: string, prov
     ...(typeof entry.evaluationTool === "string" && entry.evaluationTool ? { evaluationTool: entry.evaluationTool } : {}),
     sourceRef: entry.sourceRef,
     source: provenanceSource(provenance), provenance,
+    ...(tradeConstructionOf(entry) ? { construction: tradeConstructionOf(entry) } : {}),
   };
 }
 
@@ -524,6 +557,8 @@ function resolveCapSummary(entry: Record<string, unknown>, title: string, proven
     out[key] = value;
   }
   if (typeof entry.season === "string" && entry.season) out.season = entry.season;
+  const construction = capConstructionOf(entry);
+  if (construction) out.construction = construction;
   if (typeof entry.hardCap === "string" && entry.hardCap) out.hardCap = entry.hardCap;
   if (typeof entry.evaluationTool === "string" && entry.evaluationTool) out.evaluationTool = entry.evaluationTool;
   for (const flag of ["overTax", "overApron1", "overApron2"] as const) {
