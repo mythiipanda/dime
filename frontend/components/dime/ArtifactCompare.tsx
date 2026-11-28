@@ -83,7 +83,7 @@ export default function ArtifactCompare({
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 py-2.5 text-[11px] text-ink-3">
         <span className="inline-block size-2 rounded-[2px] bg-ink" /> {aName}
         <span className="ml-2 inline-block size-2 rounded-[2px] bg-ink-3" /> {bName}
-        {rows.some((r) => r.a < 0 || r.b < 0) ? <span className="ml-1">signed rows diverge from the zero line; elsewhere bars share one baseline — the protruding tip is the gap</span> : <span className="ml-1">bars share one baseline — the protruding tip is the gap</span>}
+        {rows.some((r) => r.a < 0 || r.b < 0) ? <span className="ml-1">signed rows diverge from the zero line; elsewhere bars share one baseline; the protruding tip is the gap</span> : <span className="ml-1">bars share one baseline; the protruding tip is the gap</span>}
       </div>
     </div>
   );

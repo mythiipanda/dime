@@ -63,7 +63,7 @@ export default function ScenarioMoveList({
             <motion.div layout key={unitKeys[unitIndex]} className="rounded-[8px] border border-line px-2.5 py-2">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3">
-                  {numbered && <span className="mr-1.5 font-mono normal-case tracking-normal">{unitIndex + 1}</span>}Trade{meta?.partner ? ` with ${meta.partner}` : ""} — {outCount} out / {inCount} in
+                  {numbered && <span className="mr-1.5 font-mono normal-case tracking-normal">{unitIndex + 1}</span>}Trade{meta?.partner ? ` with ${meta.partner}` : ""} · {outCount} out / {inCount} in
                 </span>
                 {!readOnly && (
                   <span className="flex shrink-0 items-center gap-2">
@@ -87,11 +87,11 @@ export default function ScenarioMoveList({
                 ))}
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                <span className="text-[10.5px] leading-[1.4] text-ink-3">One transaction — its legs move as a unit.</span>
+                <span className="text-[10.5px] leading-[1.4] text-ink-3">One transaction; its legs move as a unit.</span>
                 {meta?.verdict != null && (
                   <span
                     className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${meta.verdict ? "bg-green-tint text-green" : "bg-red/10 text-red"}`}
-                    title={meta.evaluated_at ? `Both teams' states frozen at evaluation — ${meta.evaluated_at.slice(0, 10)}` : "Both teams' states frozen at evaluation"}
+                    title={meta.evaluated_at ? `Both teams' states frozen at evaluation · ${meta.evaluated_at.slice(0, 10)}` : "Both teams' states frozen at evaluation"}
                   >
                     {meta.verdict ? "legal" : "illegal"} at import{meta.evaluated_at ? ` · ${meta.evaluated_at.slice(0, 10)}` : ""}
                   </span>

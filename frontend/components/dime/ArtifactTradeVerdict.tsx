@@ -117,7 +117,7 @@ export default function ArtifactTradeVerdict({ artifact }: { artifact: TradeVerd
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
         <p className="flex items-center gap-1.5 text-xs text-ink-3">
           <Scale size={12} aria-hidden="true" />
-          The verdict is the evaluator&apos;s, resolved server-side. Estimate only — confirm with a cap specialist.
+          The verdict is the evaluator&apos;s, resolved server-side. Estimate only; confirm with a cap specialist.
         </p>
       </div>
     </div>
