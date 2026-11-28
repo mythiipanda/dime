@@ -668,7 +668,7 @@ def _team_side(team: str, moves: list[dict[str, Any]], con: Any,
         return None, _trade_error(
             f"{team_code}: unknown outgoing players {'; '.join(out_unk)}")
     try:
-        pay_before, _payroll_rows = _payroll(team_code, con, season)
+        pay_before, _payroll_rows, _dead_rows = _payroll(team_code, con, season)
     except SalaryColumnError as exc:
         return None, _trade_error(str(exc), exc.reason)
     in_rows, in_names, in_total, err = _incoming_rows(

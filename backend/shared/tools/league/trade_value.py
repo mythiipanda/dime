@@ -298,8 +298,8 @@ def get_trade_check(
                               f"not grading a one-sided 'trade'. If you "
                               f"meant a past real-world trade, say which "
                               f"teams and players were in it.")}
-        pay_a, _ = _payroll(team_a, con, season)
-        pay_b, _ = _payroll(team_b, con, season)
+        pay_a, _roster_a, _dead_a = _payroll(team_a, con, season)
+        pay_b, _roster_b, _dead_b = _payroll(team_b, con, season)
         salary_date = _salary_date(con)
         source = _payroll_source(con)
     pay_after_a = pay_a - out_a + out_b
@@ -440,7 +440,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
         name = str(record["PLAYER_NAME"])
         team_a = canonical_team_abbr(record["TEAM"])
         incoming = int(record["salary"])
-        pay_a, _ = _payroll(team_a, con, season)
+        pay_a, _roster_a, _dead_a = _payroll(team_a, con, season)
         room_a = max(0, CAP["cap"] - pay_a)
         expanded_a, rule_expanded_a = _allowed_incoming(incoming, False, room_a)
         strict_a, rule_strict_a = _allowed_incoming(incoming, True, room_a)
@@ -457,7 +457,7 @@ def get_trade_partners(player: str = "", season: str | None = None,
         for team in partners:
             if restrict and team not in restrict:
                 continue
-            pay_b, roster = _payroll(team, con, season)
+            pay_b, roster, _dead = _payroll(team, con, season)
             room_b = max(0, CAP["cap"] - pay_b)
             packages = _partner_package_rows(
                 team, roster, incoming, pay_a, room_a, pay_b, room_b, limit)

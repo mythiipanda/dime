@@ -153,9 +153,9 @@ def test_season_matched_column_wins_over_first_match(
         [("LeBron James", "LAL", 10, 20, "2025-26")])
     con = store.connect(read_only=True)
     try:
-        total_2526, roster = league_mod._payroll(
+        total_2526, roster, _dead = league_mod._payroll(
             "LAL", con, season="2025-26")
-        total_2425, _ = league_mod._payroll("LAL", con, season="2024-25")
+        total_2425, _r, _d = league_mod._payroll("LAL", con, season="2024-25")
     finally:
         con.close()
     assert total_2526 == 20
