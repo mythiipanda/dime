@@ -162,7 +162,7 @@ export function ProvenancePanel({ provenance }: { provenance: DimeProvenance }) 
     ? provenance.evidence
     : [{ label: "", provenance }];
   return (
-    <QuietDetails label={<>Sources &amp; provenance</>}>
+    <QuietDetails label={<>Provenance</>}>
       <dl className="mt-2 flex flex-col gap-2.5 text-[12px] leading-relaxed">
         {evidence.map((entry, i) => (
           <div key={i} className="flex flex-col gap-1">
